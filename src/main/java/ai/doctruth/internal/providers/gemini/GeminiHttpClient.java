@@ -21,7 +21,9 @@ import ai.doctruth.internal.providers.gemini.wire.Part;
 import ai.doctruth.internal.providers.gemini.wire.SystemInstruction;
 import ai.doctruth.internal.providers.gemini.wire.UsageMetadata;
 import ai.doctruth.internal.retry.RetryGate;
+import ai.doctruth.internal.schema.ProviderSchemaProjection;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -82,8 +84,8 @@ public final class GeminiHttpClient {
     private static GenerateContentRequest buildBody(ProviderRequest request) {
         SystemInstruction system = new SystemInstruction(List.of(new Part(request.systemPrompt())));
         Content userTurn = new Content("user", List.of(new Part(request.userPrompt())));
-        return new GenerateContentRequest(
-                system, List.of(userTurn), new GenerationConfig(JSON_MIME, request.responseSchema()));
+        JsonNode responseSchema = ProviderSchemaProjection.forGemini(request.responseSchema());
+        return new GenerateContentRequest(system, List.of(userTurn), new GenerationConfig(JSON_MIME, responseSchema));
     }
 
     private static ProviderResponse toProviderResponse(GenerateContentResponse response) throws ProviderException {

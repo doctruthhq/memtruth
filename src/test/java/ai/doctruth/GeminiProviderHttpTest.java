@@ -130,6 +130,32 @@ class GeminiProviderHttpTest {
                             matchingJsonPath("$.generationConfig.responseMimeType", equalTo("application/json")))
                     .withRequestBody(matchingJsonPath("$.generationConfig.responseSchema.type", equalTo("object"))));
         }
+
+        @Test
+        @DisplayName("Pydantic-style schema is down-converted for Gemini responseSchema")
+        void pydanticSchemaIsDownConvertedForGemini() throws Exception {
+            wm.stubFor(post(urlEqualTo(PATH))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody(CANNED_OK)));
+            var request = new ProviderRequest(
+                    "you are precise", "extract profile", ProviderSchemaFixtures.nestedPydanticSchema(), OPTIONS);
+
+            providerForBaseUrl().complete(request);
+
+            wm.verify(postRequestedFor(urlPathEqualTo(PATH))
+                    .withRequestBody(matchingJsonPath("$.generationConfig.responseSchema.$defs", absent()))
+                    .withRequestBody(
+                            matchingJsonPath("$.generationConfig.responseSchema.properties.address.$ref", absent()))
+                    .withRequestBody(matchingJsonPath(
+                            "$.generationConfig.responseSchema.properties.address.properties.city.type",
+                            equalTo("string")))
+                    .withRequestBody(
+                            matchingJsonPath("$.generationConfig.responseSchema.properties.nickname.anyOf", absent()))
+                    .withRequestBody(matchingJsonPath(
+                            "$.generationConfig.responseSchema.properties.nickname.nullable", equalTo("true"))));
+        }
     }
 
     @Nested

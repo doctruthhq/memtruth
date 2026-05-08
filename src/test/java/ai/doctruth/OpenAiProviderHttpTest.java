@@ -125,6 +125,32 @@ class OpenAiProviderHttpTest {
                     .withRequestBody(matchingJsonPath("$.response_format.json_schema.strict", equalTo("true")))
                     .withRequestBody(matchingJsonPath("$.response_format.json_schema.schema.type", equalTo("object"))));
         }
+
+        @Test
+        @DisplayName("Pydantic-style schema is passed through unchanged for OpenAI json_schema")
+        void pydanticSchemaPassesThroughForOpenAi() throws Exception {
+            wm.stubFor(post(urlEqualTo(CHAT_PATH))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody(CANNED_RESPONSE)));
+            var request = new ProviderRequest(
+                    "you are an extraction agent",
+                    "extract profile",
+                    ProviderSchemaFixtures.nestedPydanticSchema(),
+                    OPTIONS);
+
+            provider().complete(request);
+
+            wm.verify(postRequestedFor(urlEqualTo(CHAT_PATH))
+                    .withRequestBody(matchingJsonPath(
+                            "$.response_format.json_schema.schema.$defs.Address.type", equalTo("object")))
+                    .withRequestBody(matchingJsonPath(
+                            "$.response_format.json_schema.schema.properties.address.$ref", equalTo("#/$defs/Address")))
+                    .withRequestBody(matchingJsonPath(
+                            "$.response_format.json_schema.schema.properties.nickname.anyOf[1].type",
+                            equalTo("null"))));
+        }
     }
 
     @Nested

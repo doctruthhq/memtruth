@@ -128,6 +128,24 @@ class AnthropicProviderHttpTest {
                     .withRequestBody(matchingJsonPath("$.tool_choice.type", equalTo("tool")))
                     .withRequestBody(matchingJsonPath("$.tool_choice.name", equalTo("extract"))));
         }
+
+        @Test
+        @DisplayName("Pydantic-style schema is passed through unchanged for Anthropic tool input_schema")
+        void pydanticSchemaPassesThroughForAnthropic() throws Exception {
+            wm.stubFor(post(urlEqualTo(MESSAGES_PATH))
+                    .willReturn(aResponse().withStatus(200).withBody(CANNED_BODY)));
+            var request = new ProviderRequest(
+                    "be helpful", "extract profile", ProviderSchemaFixtures.nestedPydanticSchema(), OPTIONS);
+
+            provider().complete(request);
+
+            wm.verify(postRequestedFor(urlEqualTo(MESSAGES_PATH))
+                    .withRequestBody(matchingJsonPath("$.tools[0].input_schema.$defs.Address.type", equalTo("object")))
+                    .withRequestBody(matchingJsonPath(
+                            "$.tools[0].input_schema.properties.address.$ref", equalTo("#/$defs/Address")))
+                    .withRequestBody(matchingJsonPath(
+                            "$.tools[0].input_schema.properties.nickname.anyOf[1].type", equalTo("null"))));
+        }
     }
 
     @Nested

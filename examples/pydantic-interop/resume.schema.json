@@ -1,0 +1,39 @@
+{
+  "$defs": {
+    "Experience": {
+      "type": "object",
+      "properties": {
+        "company": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "startYear": { "type": "integer", "minimum": 1970 },
+        "endYear": {
+          "anyOf": [{ "type": "integer", "minimum": 1970 }, { "type": "null" }],
+          "default": null
+        }
+      },
+      "required": ["company", "title", "startYear"],
+      "additionalProperties": false
+    }
+  },
+  "title": "ResumeExtraction",
+  "type": "object",
+  "properties": {
+    "fullName": { "type": "string", "minLength": 1 },
+    "email": {
+      "anyOf": [{ "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" }, { "type": "null" }],
+      "default": null
+    },
+    "skills": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+    "experience": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Experience" },
+      "minItems": 1
+    }
+  },
+  "required": ["fullName", "skills", "experience"],
+  "additionalProperties": false
+}

@@ -90,6 +90,14 @@ Provider wrappers are implementation details for this layer:
 
 The public contract should remain provider-agnostic.
 
+Provider-facing schema can be weaker than the caller schema, but local
+validation must not be. Current policy:
+
+- Anthropic and OpenAI receive caller schemas unchanged where possible.
+- Gemini receives a projected schema with local `$ref` inlined and nullable
+  unions converted to `nullable: true`.
+- DeepSeek uses JSON object mode; the full caller schema is enforced locally.
+
 ### 4. Validation and repair
 
 Validation must be first-class because schema conformance is not enough for
@@ -207,6 +215,19 @@ doctruth migrate pydantic myapp.schemas:Resume --out resume.schema.json --check
 That tool should remain outside the runtime core: it may invoke Python during
 migration, but production Java services must only need the exported JSON Schema
 file and the DocTruth jar.
+
+The golden-path example is `examples/pydantic-interop`: it contains a nested
+Pydantic-style resume schema, a Java `extractJson(...)` example with required
+citations, and audit JSON output instructions.
+
+Real-project smoke coverage is split in two:
+
+- `OptiTalentResumeSmokeIT` reads local OptiTalent resume PDFs read-only and
+  drives parse -> JSON extraction -> citation matching with a canned provider.
+- `OptiTalentLlmSmokeIT` is live-only (`-Ddoctruth.live=true` / `-P live`) and
+  reads provider keys from the process environment or OptiTalent `.env` files
+  without printing key values. It reports provider success/failure categories,
+  so stale local keys are visible without blocking recorded CI.
 
 ## Wrapper sequencing
 

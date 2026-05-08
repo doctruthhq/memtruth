@@ -76,6 +76,20 @@ primitive types, enums, nested object properties, array items,
 requests include the validation/citation failure so the provider can repair the
 JSON instead of blindly receiving the same prompt again.
 
+For build-time migration from Python-owned schemas, the jar also exposes a
+small CLI:
+
+```bash
+java -jar target/doctruth-java-0.1.0-SNAPSHOT.jar \
+  migrate pydantic myapp.schemas:ResumeExtraction \
+  --out schemas/resume.schema.json \
+  --check
+```
+
+The CLI may invoke Python during migration; production Java extraction only
+needs the exported schema file and the DocTruth jar. A complete example lives in
+[`examples/pydantic-interop`](examples/pydantic-interop/).
+
 ## Providers
 
 | Provider | Status | Endpoint |
@@ -162,9 +176,11 @@ The five rules in [AGENTS.md](AGENTS.md) govern every commit:
 ## Documentation
 
 - [Engineering principles](AGENTS.md) — load-bearing; read before any non-trivial change
-- [Structured extraction engine](docs/architecture/auditable-structured-extraction-engine.md) — project scope, schema-bound extraction, validation, evidence gating, and OSS/commercial boundary
+- [Structured extraction engine](docs/architecture/auditable-structured-extraction-engine.md) — project scope, schema-bound extraction, validation, and evidence gating
+- [Error handling](docs/error-handling.md) — stable error-code matrix and provider schema-normalization semantics
 - [Architecture decisions](docs/adr/) — ADRs explaining non-obvious calls
 - [Quickstart](examples/quickstart/) — runnable copy-paste example
+- [Pydantic interop](examples/pydantic-interop/) — JSON Schema migration + `extractJson(...)` golden path
 - [Release process](docs/release.md) — Maven Central signing, GPG, Sonatype Central Portal
 - [Changelog](CHANGELOG.md) — Keep a Changelog 1.1, semver
 
@@ -172,9 +188,9 @@ The five rules in [AGENTS.md](AGENTS.md) govern every commit:
 
 **v0.1.0-alpha measured numbers (this commit):**
 
-- Tests: 603 unit + 14 integration = **617 passing**, 0 failures
-- Test coverage: **93.6% line / 80.6% branch** — gates set at 90% bundle line, 80% bundle branch, and 80% line per class
-- Single jar size: **192 KB** — well under the 500 KB target
+- Tests: 628 unit + 15 integration = **643 passing**, 0 failures, 1 live smoke skipped in recorded CI
+- Test coverage: **93.7% line / 81.0% branch** — gates set at 90% bundle line, 80% bundle branch, and 80% line per class
+- Single jar size: **202 KB** — well under the 500 KB target
 
 ## Maintainer
 

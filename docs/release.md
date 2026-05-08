@@ -33,7 +33,7 @@ gpg --keyserver keys.openpgp.org    --send-keys <KEYID>
 
 ### 3. Add GitHub Actions secrets
 
-In `doctruthhq/doctruth-java → Settings → Secrets and variables → Actions`:
+In `doctruthhq/DocTruth → Settings → Secrets and variables → Actions`:
 
 | Secret | Value |
 | --- | --- |

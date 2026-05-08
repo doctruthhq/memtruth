@@ -26,19 +26,7 @@ No es un framework de agentes, un framework de chains, un wrapper de bases vecto
 
 ## Instalación
 
-Coordenada corta:
-
-```text
-ai.doctruth:doctruth-java:0.1.0-alpha
-```
-
-Descarga rápida:
-
-```bash
-mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
-```
-
-Maven:
+Requiere Java 25+. Gradle puede usar la misma coordenada: `ai.doctruth:doctruth-java:0.1.0-alpha`.
 
 ```xml
 <dependency>
@@ -48,13 +36,11 @@ Maven:
 </dependency>
 ```
 
-Gradle:
+Actualizar a la última release:
 
-```groovy
-implementation "ai.doctruth:doctruth-java:0.1.0-alpha"
+```bash
+mvn versions:use-latest-releases -Dincludes=ai.doctruth:doctruth-java -DgenerateBackupPoms=false
 ```
-
-Requiere Java 25+.
 
 ## Inicio Rápido
 

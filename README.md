@@ -26,19 +26,7 @@ It is not an agent framework, chain framework, vector database wrapper, or UI. I
 
 ## Installation
 
-Short coordinate:
-
-```text
-ai.doctruth:doctruth-java:0.1.0-alpha
-```
-
-Download once:
-
-```bash
-mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
-```
-
-Maven:
+Requires Java 25+. Gradle users can use the same coordinate: `ai.doctruth:doctruth-java:0.1.0-alpha`.
 
 ```xml
 <dependency>
@@ -48,13 +36,11 @@ Maven:
 </dependency>
 ```
 
-Gradle:
+Upgrade to the latest release:
 
-```groovy
-implementation "ai.doctruth:doctruth-java:0.1.0-alpha"
+```bash
+mvn versions:use-latest-releases -Dincludes=ai.doctruth:doctruth-java -DgenerateBackupPoms=false
 ```
-
-Requires Java 25+.
 
 ## Quick Start
 

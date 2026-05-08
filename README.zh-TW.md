@@ -26,19 +26,7 @@ DocTruth 主要回答一個問題：
 
 ## 安裝
 
-最短座標：
-
-```text
-ai.doctruth:doctruth-java:0.1.0-alpha
-```
-
-拉取一次：
-
-```bash
-mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
-```
-
-Maven:
+需要 Java 25+。Gradle 可以使用同一個座標：`ai.doctruth:doctruth-java:0.1.0-alpha`。
 
 ```xml
 <dependency>
@@ -48,13 +36,11 @@ Maven:
 </dependency>
 ```
 
-Gradle:
+升級到最新 release：
 
-```groovy
-implementation "ai.doctruth:doctruth-java:0.1.0-alpha"
+```bash
+mvn versions:use-latest-releases -Dincludes=ai.doctruth:doctruth-java -DgenerateBackupPoms=false
 ```
-
-需要 Java 25+。
 
 ## 快速開始
 

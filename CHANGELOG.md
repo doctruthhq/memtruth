@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [0.1.0-alpha] - 2026-05-07
+## [0.1.0-alpha] - 2026-05-09
 
 First public alpha. The audit primitives the Java enterprise stack has been
 missing — every LLM-extracted field carries a verifiable evidence chain
@@ -45,9 +45,16 @@ missing — every LLM-extracted field carries a verifiable evidence chain
 - **PROV-O audit JSON export (Layer 5)** — W3C-PROV-compatible provenance
   payloads (`Activity`, `Entity`, `Agent`, `wasGeneratedBy`, `wasDerivedFrom`)
   suitable for regulated-industry audit trails.
-- **AU compliance contract test pack** — golden-file suite under
-  `src/test/resources/compliance/au/` covering APRA CPS 230 and the
-  Privacy Act 1988 evidence-chain expectations. 434 unit tests at v0.1.0-alpha.
+- **JSON Schema / Pydantic interop** — `extractJson(...)` accepts external
+  JSON Schema contracts, including common Pydantic v2 exports with local
+  `$defs` / `$ref`, nullable unions, nested objects, arrays, enums, scalar
+  constraints, and `additionalProperties=false`.
+- **Custom constraints** — field and object constraints attach caller-owned
+  business rules to validation and retry semantics.
+- **CLI helpers** — parse documents and migrate Python-owned Pydantic schemas
+  into checked JSON Schema files for Java extraction.
+- **Multilingual README** — English, Simplified Chinese, Traditional Chinese,
+  and Spanish project entry points.
 - **Failsafe-backed retry** — exponential backoff on transient provider
   failures via `dev.failsafe:failsafe`; per-call retry count carried on
   `Provenance`.

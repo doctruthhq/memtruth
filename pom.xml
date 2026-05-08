@@ -423,7 +423,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
-                            <autoPublish>false</autoPublish>
+                            <autoPublish>true</autoPublish>
                             <tokenAuth>true</tokenAuth>
                         </configuration>
                     </plugin>

@@ -77,17 +77,17 @@ git push origin v0.1.0
 The `Release` workflow (`.github/workflows/release.yml`) fires on the `v*` tag:
 
 - Builds + signs jar / sources jar / javadoc jar with GPG
-- Deploys to the Central Portal staging area via `central-publishing-maven-plugin`
+- Deploys to the Central Portal via `central-publishing-maven-plugin`
+- Automatically publishes the deployment after Central validation passes
 - Uploads signed artefacts as workflow artifacts (30-day retention)
 
 Watch it at https://github.com/doctruthhq/DocTruth/actions.
 
-### 5. Promote on the Central Portal (manual)
+### 5. Wait for Central propagation
 
-`autoPublish=false` until we trust the pipeline. Log in to
-https://central.sonatype.com → Publishing Deployments → review the staged
-deployment → click **Publish**. Propagation to Maven Central takes ~10–30 min;
-search index updates in ~4 hours.
+`autoPublish=true`, so the GitHub Actions release job publishes automatically
+after Central validation passes. Propagation to Maven Central usually takes
+~10–30 min; search index updates can take ~4 hours.
 
 ### 6. Bump to next `-SNAPSHOT`
 
@@ -135,11 +135,9 @@ mvn dependency:resolve
 
 ## Rolling back
 
-- **Before promote**: in the Central Portal UI, click **Drop** on the staged
-  deployment. No further action needed; the version slot is free for re-release.
-- **After promote**: Maven Central releases are **immutable**. Cut a new patch
-  (`0.1.1`) that fixes or reverts the issue. Do NOT attempt to re-publish the
-  same coordinates.
+Maven Central releases are **immutable** after publish. Cut a new patch
+(`0.1.1`) that fixes or reverts the issue. Do NOT attempt to re-publish the
+same coordinates.
 
 ---
 

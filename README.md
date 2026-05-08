@@ -4,58 +4,81 @@
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
 </p>
 
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.zh-TW.md">繁體中文</a> ·
+  <a href="README.es.md">Español</a>
+</p>
+
 [![CI](https://github.com/doctruthhq/DocTruth/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/DocTruth/actions)
-[![Maven Central](https://img.shields.io/badge/maven--central-pending-lightgrey.svg)](#installation)
+[![Maven Central](https://img.shields.io/maven-central/v/ai.doctruth/doctruth-java.svg?label=Maven%20Central)](#installation)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-> **Auditable LLM extraction for Java. Parse documents, extract structured data, and attach field-level citations, confidence, and provenance.**
+**Auditable LLM extraction for Java.** Parse documents, extract structured data, and attach field-level citations, confidence, and provenance.
 
-## Overview
+DocTruth is for teams that need to answer one question reliably:
 
-DocTruth is an open-source, framework-agnostic Java 25 library for document-grounded structured extraction. It is designed for applications that need to answer a simple audit question: *where did this extracted value come from?*
+> Where did this extracted value come from?
 
-The library focuses on the extraction boundary: parsing source files, assembling model context, requesting typed output from an LLM provider, matching extracted fields back to source text, and exporting an auditable result. It is not a chain framework, agent framework, vector-store wrapper, or Spring extension.
+It is not an agent framework, chain framework, vector database wrapper, or UI. It is a small Java library for the extraction boundary: source document in, validated structured output plus evidence trail out.
 
-## 60-second hello world
+## Installation
+
+```xml
+<dependency>
+    <groupId>ai.doctruth</groupId>
+    <artifactId>doctruth-java</artifactId>
+    <version>0.1.0-alpha</version>
+</dependency>
+```
+
+```groovy
+implementation "ai.doctruth:doctruth-java:0.1.0-alpha"
+```
+
+Requires Java 25+.
+
+## Quick Start
 
 ```java
-import ai.doctruth.Citation;
-import ai.doctruth.Confidence;
 import ai.doctruth.DocTruth;
 import ai.doctruth.OpenAiProvider;
 import ai.doctruth.PdfDocumentParser;
-import ai.doctruth.Provenance;
 import java.math.BigDecimal;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.time.LocalDate;
 
 record Contract(String partyA, String partyB, LocalDate effectiveDate, BigDecimal totalValue) {}
 
 var doc = PdfDocumentParser.parse(Path.of("contract.pdf"));
+
 var result = DocTruth.from(new OpenAiProvider(System.getenv("OPENAI_API_KEY")))
         .extract("Extract the contract terms", Contract.class)
         .withProvenance()
-        .withSourcePublishedAt(Instant.parse("2026-01-01T00:00:00Z"))
-        .withBitemporal()
         .withConfidence()
+        .withBitemporal()
         .run(doc);
 
-Contract value           = result.value();
-Citation partyACitation  = result.citations().get("partyA");   // page 1, line 3, "Acme Corp Ltd", matchScore 0.97
-Confidence partyAConf    = result.confidence().get("partyA");  // score derived from citation match quality
-Provenance prov          = result.provenance();                // model, modelVersion, extractedAt, sourcePublishedAt, retries
-result.toAuditJson(Path.of("audit/contract-2026-Q2.jsonld"));  // W3C PROV-O JSON-LD, audit-team-ready
+Contract contract = result.value();
+var partyACitation = result.citations().get("partyA");
 ```
 
-The complete runnable example lives in [`examples/quickstart/Quickstart.java`](examples/quickstart/Quickstart.java) — copy-paste, set `OPENAI_API_KEY`, run.
+See [`examples/quickstart`](examples/quickstart/) for a runnable example.
 
-## JSON Schema / Pydantic interop
+## What It Does
 
-Java records are the native path, but external schema contracts are first-class.
-If a Python team already owns Pydantic models, export their JSON Schema and load
-it directly:
+- Parses PDF, DOCX, XLSX, and CSV into sections with source locations.
+- Extracts Java records or JSON Schema-bound objects through LLM providers.
+- Validates structured output locally and retries repairable failures.
+- Matches extracted fields back to exact source quotes.
+- Returns per-field `Citation`, `Confidence`, and `Provenance`.
+- Exports W3C PROV-O JSON-LD audit files with `toAuditJson(...)`.
+
+## JSON Schema and Pydantic Interop
+
+Java records are the native path. JSON Schema is the interoperability path.
 
 ```java
 var schema = JsonSchema.from(Path.of("contract.schema.json"));
@@ -66,162 +89,59 @@ var result = DocTruth.from(provider)
         .requireCitation("totalValue")
         .withMaxRetries(2)
         .runJson(doc);
-
-JsonNode value = result.value();
-Citation partyA = result.citations().get("partyA");
 ```
 
-DocTruth validates returned JSON locally against the JSON Schema contract. The
-interop path covers common Pydantic v2 exports: local `$defs` / `$ref`, nullable
-`anyOf` unions, `oneOf` / `allOf`, `type: ["string", "null"]`, required fields,
-primitive types, enums, nested object properties, array items,
-`additionalProperties=false`, and common scalar / array constraints such as
-`minLength`, `pattern`, `minimum`, `maximum`, `minItems`, and `maxItems`. Retry
-requests include the validation/citation failure so the provider can repair the
-JSON instead of blindly receiving the same prompt again.
+DocTruth supports common Pydantic v2 JSON Schema exports, including local `$defs` / `$ref`, nullable unions, nested objects, arrays, enums, required fields, scalar constraints, and `additionalProperties=false`.
 
-For build-time migration from Python-owned schemas, the jar also exposes a
-small CLI:
+Build-time helper:
 
 ```bash
-java -jar target/doctruth-java-0.1.0-SNAPSHOT.jar \
+java -jar target/doctruth-java-0.1.0-alpha.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   --out schemas/resume.schema.json \
   --check
 ```
 
-The CLI may invoke Python during migration; production Java extraction only
-needs the exported schema file and the DocTruth jar. A complete example lives in
-[`examples/pydantic-interop`](examples/pydantic-interop/).
+Production Java extraction only needs the exported schema file and the DocTruth jar.
 
 ## Providers
 
-The primary integration path is OpenAI-compatible chat completions because many
-hosted, gateway, and local models expose that API shape. Anthropic and Gemini
-remain first-class providers where their native structured-output features are
-useful.
+OpenAI-compatible chat completions are the primary path because many hosted, gateway, and local models expose that API shape.
 
-| Provider | Status | Endpoint |
-| --- | --- | --- |
-| OpenAI / OpenAI-compatible | `response_format: json_schema`; custom endpoint and model supported | `api.openai.com/v1/chat/completions` |
-| Anthropic | Tool-use forcing + prompt cache | `api.anthropic.com/v1/messages` |
-| Gemini | `responseMimeType` + `responseSchema` | `generativelanguage.googleapis.com/v1beta` |
-| DeepSeek | Convenience OpenAI-compatible adapter | `api.deepseek.com/v1/chat/completions` |
+| Provider | Structured output mode |
+| --- | --- |
+| OpenAI / OpenAI-compatible | `response_format: json_schema` |
+| Anthropic | tool-use forcing |
+| Gemini | `responseMimeType` + `responseSchema` |
+| DeepSeek | OpenAI-compatible JSON mode plus local validation |
 
-Provider clients are hand-rolled `java.net.http.HttpClient` clients — no vendor SDK on the classpath. See [ADR 0003](docs/adr/0003-llm-provider-dependency-strategy.md) for the rationale.
+Provider clients use JDK `java.net.http.HttpClient`; no vendor SDKs are on the classpath.
 
-## Capabilities
+## CLI
 
-- **PDF parsing** — Apache PDFBox 3.x; detected layout blocks as `TextSection` records with page, line, and char offset preserved.
-- **DOCX parsing** — Apache POI; paragraph/table extraction with source locations.
-- **XLSX and CSV parsing** — spreadsheet and delimited text ingestion with structured sections.
-- **Citation matching** — Apache Commons Text JaroWinkler similarity; low-confidence matches remain visible through `matchScore` instead of being silently omitted.
-- **JSON Schema extraction** — `extractJson(...)` accepts caller-supplied JSON Schema, including Pydantic v2 exported schemas with nested `$defs` / `$ref`, and returns validated `JsonNode` output.
-- **Custom constraints** — `withFieldConstraint(...)` and `withObjectConstraint(...)` enforce business rules with stable error codes and retry semantics.
-- **PROV-O JSON-LD audit export** — `result.toAuditJson()` emits W3C PROV-O JSON-LD with full `Activity` / `Entity` / `Agent` / `wasGeneratedBy` / `wasDerivedFrom` graph.
-- **OpenAI-compatible first provider layer** — OpenAI-compatible endpoints are the default path; Anthropic and Gemini remain native first-class integrations.
-- **Smart context strategies** — `PriorityTruncate`, `SlidingWindow`, `Hierarchical`. STRICT vs WARN_AND_INCLUDE policy on overflow — no silent overrun.
-- **Bi-temporal provenance** — `extractedAt` plus caller-supplied `sourcePublishedAt`, so downstream systems can answer *"was this extraction performed before or after the source was last revised?"*.
-- **Failsafe-backed retries** — exponential backoff with jitter via `dev.failsafe:failsafe`; `Retry-After` header honored on 429 / 503.
-
-## Why no vendor SDKs?
-
-Single jar < 500 KB, no transitive bloat, no version lock to a vendor's `0.x` SDK. Adding a new provider is one wire-record package + one `HttpClient` class — no waiting on someone else's release cycle. See [ADR 0003](docs/adr/0003-llm-provider-dependency-strategy.md).
-
-## Installation
-
-**Maven** (Maven Central publication pending; build locally until then):
-
-```xml
-<dependency>
-    <groupId>ai.doctruth</groupId>
-    <artifactId>doctruth-java</artifactId>
-    <version>0.1.0-alpha</version>
-</dependency>
+```bash
+java -jar target/doctruth-java-0.1.0-alpha.jar parse contract.pdf
+java -jar target/doctruth-java-0.1.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
 ```
-
-**Gradle**:
-
-```groovy
-dependencies {
-    implementation 'ai.doctruth:doctruth-java:0.1.0-alpha'
-}
-```
-
-## Architecture
-
-Five layers; every public type lives in `ai.doctruth.*` (root) or `ai.doctruth.spi.*`. Internals are under `ai.doctruth.internal.*` and are explicitly NOT public API.
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 5. Audit + Export — toAuditJson() → W3C PROV-O JSON-LD       │
-│    Standard format SOC 2 / HIPAA / EU AI Act auditors ingest │
-├──────────────────────────────────────────────────────────────┤
-│ 4. High-level fluent API — DocTruth.from(provider)           │
-│    .extract(prompt, type).withProvenance().run(doc)          │
-├──────────────────────────────────────────────────────────────┤
-│ 3. Smart context assembly — PriorityTruncate w/ STRICT or    │
-│    WARN_AND_INCLUDE policy (no silent overrun, ever)         │
-├──────────────────────────────────────────────────────────────┤
-│ 2. Evidence-attributed extraction — per-field Citation,      │
-│    Confidence, bi-temporal Provenance; non-silent fuzzy      │
-│    matching via Apache Commons Text (JaroWinkler)            │
-├──────────────────────────────────────────────────────────────┤
-│ 1. Document parsing — PdfDocumentParser (Apache PDFBox 3.x); │
-│    DocxDocumentParser (Apache POI); docId = SHA-256 of bytes │
-└──────────────────────────────────────────────────────────────┘
-```
-
-## Engineering principles
-
-The five rules in [CONTRIBUTING.md](CONTRIBUTING.md) govern every commit:
-
-1. **Decoupled by default** — one reason to change per public type; layers communicate only through root-package records and sealed interfaces.
-2. **Auditable + debuggable + loggable everywhere** — every external boundary emits SLF4J events; every public exception carries a stable error code plus structured context. **No silent failures.**
-3. **No god files / classes / functions** — file ≤ 300 LOC, method body ≤ 30 LOC, class ≤ 8 public methods or ≤ 5 record components.
-4. **Build, don't synthesize** — JDK + already-declared deps before hand-rolling utilities; new dependencies require an ADR.
-5. **Elegance over cleverness** — records over classes, sealed interfaces over inheritance, pattern-matching `switch` with no `default`, `Optional<T>` over null. From any public-API call site to the implementation in ≤ 3 hops.
 
 ## Documentation
 
-- [Contributing guide](CONTRIBUTING.md) — engineering principles, TDD discipline, review checklist
-- [Structured extraction engine](docs/architecture/auditable-structured-extraction-engine.md) — project scope, schema-bound extraction, validation, and evidence gating
-- [Error handling](docs/error-handling.md) — stable error-code matrix and provider schema-normalization semantics
-- [Architecture decisions](docs/adr/) — ADRs explaining non-obvious calls
-- [Quickstart](examples/quickstart/) — runnable copy-paste example
-- [Pydantic interop](examples/pydantic-interop/) — JSON Schema migration + `extractJson(...)` golden path
-- [Release process](docs/release.md) — Maven Central signing, GPG, Sonatype Central Portal
-- [Changelog](CHANGELOG.md) — Keep a Changelog 1.1, semver
+- [Quickstart example](examples/quickstart/)
+- [Pydantic interop example](examples/pydantic-interop/)
+- [Architecture](docs/architecture/auditable-structured-extraction-engine.md)
+- [Error handling](docs/error-handling.md)
+- [Release process](docs/release.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
-## Quality
+## Status
 
-**v0.1.0-alpha measured numbers (this commit):**
+`0.1.0-alpha` is an early public alpha. The API is usable, tested, and published for feedback, but may still change before `1.0`.
 
-- Tests: 628 unit + 15 integration = **643 passing**, 0 failures, 1 live smoke skipped in recorded CI
-- Test coverage: **93.7% line / 81.0% branch** — gates set at 90% bundle line, 80% bundle branch, and 80% line per class
-- Single jar size: **202 KB** — well under the 500 KB target
+Current verification baseline: 628 unit tests and 16 integration tests passing, with 2 external smoke tests skipped, coverage gates at 90% line / 80% branch, single jar about 202 KB.
 
-## Maintainer
+## License
 
-**doctruthhq maintainers** — GitHub [@doctruthhq](https://github.com/doctruthhq). Issues triaged within 5 business days, PRs reviewed within 10. Major architectural decisions documented as ADRs in [`docs/adr/`](docs/adr).
+Code is licensed under [Apache License 2.0](LICENSE).
 
-## License & Trademark
-
-**Code**: Apache License 2.0 — see [LICENSE](LICENSE). Picked for the explicit patent grant and broad open-source compatibility. Full reasoning in [ADR 0008](docs/adr/0008-license-apache-2-0-and-trademark.md).
-
-**Trademark**: `DocTruth`, `doctruth.ai`, and the DocTruth logo are trademarks of doctruthhq. The Apache 2.0 grant covers the source code and binaries; it does **not** grant permission to use the DocTruth name or logo to identify, market, or describe a fork or competing service. Forks must use a different name. See the [NOTICE](NOTICE) file for the full trademark policy.
-
-## Citation
-
-```bibtex
-@software{doctruthhq_doctruth_java_2026,
-  author       = {{doctruthhq maintainers}},
-  title        = {{DocTruth}: Auditable LLM Extraction for Java},
-  year         = {2026},
-  version      = {0.1.0-alpha},
-  url          = {https://github.com/doctruthhq/DocTruth},
-  note         = {Per-field source citation, per-field confidence,
-                  and bi-temporal provenance for LLM extraction in Java 25+;
-                  framework-agnostic, single-jar, Apache 2.0 licensed.}
-}
-```
+`DocTruth`, `doctruth.ai`, and the DocTruth logo are trademarks of doctruthhq. See [NOTICE](NOTICE).

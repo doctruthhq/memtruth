@@ -44,7 +44,7 @@ CP="target/doctruth-java-0.1.0-SNAPSHOT.jar:$(cat /tmp/doctruth-cp.txt)"
 Compile and run:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
 javac -cp "$CP" -d /tmp/pydantic-interop-build \
   examples/pydantic-interop/PydanticInteropExample.java
 java -cp "/tmp/pydantic-interop-build:$CP" \

@@ -5,18 +5,15 @@ import java.util.Objects;
 
 /**
  * Optional OCR backend, plugged into {@code PdfDocumentParser} to recover text from scanned
- * (image-only) pages. The OSS library ships ONLY this interface plus the {@link #NOOP}
- * default — no real OCR engine is bundled (per AGENTS.md "What this project is NOT —
- * NOT an OCR library"). Real implementations are owned by:
+ * (image-only) pages. DocTruth ships only this interface plus the {@link #NOOP}
+ * default. Real OCR engines are supplied by callers because OCR model/runtime choices are
+ * outside the generic extraction library boundary:
  *
  * <ul>
- *   <li>The {@code doctruth-enterprise} commercial jar — {@code TesseractOcrEngine},
- *       {@code LlmVisionOcrEngine}, {@code TextractOcrEngine}.
- *   <li>Community contributions — anything implementing this single-method interface.
+ *   <li>Local engines such as Tesseract.
+ *   <li>Cloud OCR adapters such as Textract or Document AI.
+ *   <li>Any custom implementation of this single-method interface.
  * </ul>
- *
- * <p>This is the fourth SPI in the open-core split (per ADR 0006), alongside
- * {@link AuditEventListener}, {@link SignatureProvider}, and {@code LlmProvider.region()}.
  *
  * <p>Threading: implementations MUST be thread-safe — the parser may invoke {@code ocr}
  * concurrently across pages on virtual threads.
@@ -38,7 +35,7 @@ public interface OcrEngine {
     OcrPageResult ocr(BufferedImage pageImage, int pageNumber);
 
     /**
-     * No-op engine — returns empty text on every page. The OSS default; means
+     * No-op engine — returns empty text on every page. The default; means
      * {@code PdfDocumentParser} treats scanned pages as zero-content (matches the v0.1.0-alpha
      * behaviour before this SPI shipped). Callers wanting real OCR plug in a richer impl.
      */

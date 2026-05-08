@@ -10,14 +10,14 @@
     <version>0.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>doctruth-java</name>
-    <description>Auditable LLM extraction for Java — every field carries source, confidence, and bi-temporal provenance.</description>
+    <name>DocTruth</name>
+    <description>Open-source auditable LLM extraction for Java — every field carries source, confidence, and bi-temporal provenance.</description>
     <url>https://doctruth.ai</url>
 
     <scm>
-        <connection>scm:git:git://github.com/doctruthhq/doctruth-java.git</connection>
-        <developerConnection>scm:git:ssh://github.com:doctruthhq/doctruth-java.git</developerConnection>
-        <url>https://github.com/doctruthhq/doctruth-java/tree/main</url>
+        <connection>scm:git:git://github.com/doctruthhq/DocTruth.git</connection>
+        <developerConnection>scm:git:ssh://github.com:doctruthhq/DocTruth.git</developerConnection>
+        <url>https://github.com/doctruthhq/DocTruth/tree/main</url>
     </scm>
 
     <distributionManagement>
@@ -32,7 +32,7 @@
             <name>Apache License, Version 2.0</name>
             <url>https://www.apache.org/licenses/LICENSE-2.0</url>
             <distribution>repo</distribution>
-            <comments>Code is Apache 2.0. The doctruth and doctruth.ai names and logos are
+            <comments>Code is Apache 2.0. The DocTruth and doctruth.ai names and logos are
             trademarks of doctruthhq — see the NOTICE file for trademark policy.</comments>
         </license>
     </licenses>

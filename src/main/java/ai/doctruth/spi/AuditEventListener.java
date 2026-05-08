@@ -2,9 +2,9 @@ package ai.doctruth.spi;
 
 /**
  * Callback the library invokes for every auditable event. Default
- * {@link #NOOP no-op} for callers who don't need observability; commercial-tier
- * consumers plug in {@code SplunkAuditEventListener}, {@code DatadogAuditEventListener},
- * etc.
+ * {@link #NOOP no-op} for callers who don't need observability; custom implementations
+ * can forward events to systems such as Splunk, Datadog, CloudWatch, or internal audit
+ * pipelines.
  *
  * @since 0.1.0
  */

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>{@code SectionRenderer} is the single source of "render one parsed section to a flat
  * string" logic shared between {@code ExtractionBuilder.renderUserPrompt} and
- * {@code PriorityTruncate.assemble}. Per AGENTS.md "Engineering principles" §1
+ * {@code PriorityTruncate.assemble}. Per CONTRIBUTING.md "Engineering principles" §1
  * (decoupled by default, single source of truth), this rendering MUST live in exactly one
  * place; if a future caller needs different behaviour they should extend with a sibling
  * renderer rather than duplicating.

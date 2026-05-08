@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>DeepSeek's Chat Completions API is OpenAI-compatible at the wire level; we deliberately
  * do not share wire records with the OpenAI provider so each provider can evolve
- * independently (per AGENTS.md §1 decoupling).
+ * independently (per CONTRIBUTING.md §1 decoupling).
  *
  * @hidden
  */

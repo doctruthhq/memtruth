@@ -14,9 +14,9 @@ import ai.doctruth.ProviderException;
  * it as the public {@link ProviderException} via Java subtype polymorphism.
  *
  * <p>This subclass exists instead of widening the public {@link ProviderException}
- * signature (which would be a breaking change per AGENTS.md "Public API contracts"). A
+ * signature (which would be a breaking change per CONTRIBUTING.md "Public API contracts"). A
  * ThreadLocal alternative was rejected because it interacts poorly with virtual threads
- * (per AGENTS.md "Concurrency").
+ * (per CONTRIBUTING.md "Concurrency").
  *
  * <p>NOT public API.
  *

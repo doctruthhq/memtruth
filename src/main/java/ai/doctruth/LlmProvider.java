@@ -37,11 +37,11 @@ public sealed interface LlmProvider permits AnthropicProvider, OpenAiProvider, G
      * Optional region identifier for the provider's deployment, e.g. {@code "ap-southeast-2"}
      * for AWS Bedrock-AU or {@code "australiaeast"} for Azure-OpenAI-AU. Recorded into
      * {@link Provenance#region()} on every {@link ExtractionResult}; when the caller has
-     * data-residency requirements (AU bank tier, EU GDPR), this is what proves them.
+     * data-residency requirements, this is what proves them.
      *
      * <p>Default: empty (the four built-in providers point at their public global endpoints,
-     * which return {@code Optional.empty()}). Commercial-tier {@code RegionEnforcingTransport}
-     * and Bedrock-aware providers populate this.
+     * which return {@code Optional.empty()}). Region-aware provider wrappers can populate
+     * this.
      */
     default Optional<String> region() {
         return Optional.empty();

@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
  *       Negative durations are also rejected with {@code IllegalArgumentException}.
  * </ul>
  *
- * <p>Per AGENTS.md "Build, don't synthesize" §4 we use {@link java.time.Duration} (JDK time)
+ * <p>Per CONTRIBUTING.md "Build, don't synthesize" §4 we use {@link java.time.Duration} (JDK time)
  * rather than raw {@code long milliseconds}.
  */
 class ProviderOptionsTest {

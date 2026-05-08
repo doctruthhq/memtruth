@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
  * Behaviour test for {@link Hierarchical#assemble(ParsedDocument)}.
  *
  * <p>{@code Hierarchical.assemble} is a Phase-3 placeholder. Calling it must fail loudly
- * (per AGENTS.md "Engineering principles" §2 — no silent failures), with a message that
+ * (per CONTRIBUTING.md "Engineering principles" §2 — no silent failures), with a message that
  * names the method and points the caller at the Phase 3 milestone in
  * the planned context-assembly phase.
  */

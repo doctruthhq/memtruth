@@ -1,25 +1,25 @@
-# doctruth-java
+# DocTruth
 
-[![CI](https://github.com/doctruthhq/doctruth-java/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/doctruth-java/actions)
+[![CI](https://github.com/doctruthhq/DocTruth/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/DocTruth/actions)
 [![Maven Central](https://img.shields.io/badge/maven--central-pending-lightgrey.svg)](#installation)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-> **Auditable LLM extraction for Java. Parse documents, extract typed records, and attach field-level citations, confidence, and provenance.**
+> **Auditable LLM extraction for Java. Parse documents, extract structured data, and attach field-level citations, confidence, and provenance.**
 
 ## Overview
 
-`doctruth-java` is a small, framework-agnostic Java 25 library for document-grounded structured extraction. It is designed for applications that need to answer a simple audit question: *where did this extracted value come from?*
+DocTruth is an open-source, framework-agnostic Java 25 library for document-grounded structured extraction. It is designed for applications that need to answer a simple audit question: *where did this extracted value come from?*
 
 The library focuses on the extraction boundary: parsing source files, assembling model context, requesting typed output from an LLM provider, matching extracted fields back to source text, and exporting an auditable result. It is not a chain framework, agent framework, vector-store wrapper, or Spring extension.
 
 ## 60-second hello world
 
 ```java
-import ai.doctruth.AnthropicProvider;
 import ai.doctruth.Citation;
 import ai.doctruth.Confidence;
 import ai.doctruth.DocTruth;
+import ai.doctruth.OpenAiProvider;
 import ai.doctruth.PdfDocumentParser;
 import ai.doctruth.Provenance;
 import java.math.BigDecimal;
@@ -30,7 +30,7 @@ import java.time.LocalDate;
 record Contract(String partyA, String partyB, LocalDate effectiveDate, BigDecimal totalValue) {}
 
 var doc = PdfDocumentParser.parse(Path.of("contract.pdf"));
-var result = DocTruth.from(new AnthropicProvider(System.getenv("ANTHROPIC_API_KEY")))
+var result = DocTruth.from(new OpenAiProvider(System.getenv("OPENAI_API_KEY")))
         .extract("Extract the contract terms", Contract.class)
         .withProvenance()
         .withSourcePublishedAt(Instant.parse("2026-01-01T00:00:00Z"))
@@ -45,7 +45,7 @@ Provenance prov          = result.provenance();                // model, modelVe
 result.toAuditJson(Path.of("audit/contract-2026-Q2.jsonld"));  // W3C PROV-O JSON-LD, audit-team-ready
 ```
 
-The complete runnable example lives in [`examples/quickstart/Quickstart.java`](examples/quickstart/Quickstart.java) — copy-paste, set `ANTHROPIC_API_KEY`, run.
+The complete runnable example lives in [`examples/quickstart/Quickstart.java`](examples/quickstart/Quickstart.java) — copy-paste, set `OPENAI_API_KEY`, run.
 
 ## JSON Schema / Pydantic interop
 
@@ -92,14 +92,19 @@ needs the exported schema file and the DocTruth jar. A complete example lives in
 
 ## Providers
 
+The primary integration path is OpenAI-compatible chat completions because many
+hosted, gateway, and local models expose that API shape. Anthropic and Gemini
+remain first-class providers where their native structured-output features are
+useful.
+
 | Provider | Status | Endpoint |
 | --- | --- | --- |
+| OpenAI / OpenAI-compatible | `response_format: json_schema`; custom endpoint and model supported | `api.openai.com/v1/chat/completions` |
 | Anthropic | Tool-use forcing + prompt cache | `api.anthropic.com/v1/messages` |
-| OpenAI | `response_format: json_schema` | `api.openai.com/v1/chat/completions` |
 | Gemini | `responseMimeType` + `responseSchema` | `generativelanguage.googleapis.com/v1beta` |
-| DeepSeek | OpenAI-compatible | `api.deepseek.com/v1/chat/completions` |
+| DeepSeek | Convenience OpenAI-compatible adapter | `api.deepseek.com/v1/chat/completions` |
 
-All four providers are hand-rolled `java.net.http.HttpClient` clients — no vendor SDK on the classpath. See [ADR 0003](docs/adr/0003-llm-provider-dependency-strategy.md) for the rationale.
+Provider clients are hand-rolled `java.net.http.HttpClient` clients — no vendor SDK on the classpath. See [ADR 0003](docs/adr/0003-llm-provider-dependency-strategy.md) for the rationale.
 
 ## Capabilities
 
@@ -110,7 +115,7 @@ All four providers are hand-rolled `java.net.http.HttpClient` clients — no ven
 - **JSON Schema extraction** — `extractJson(...)` accepts caller-supplied JSON Schema, including Pydantic v2 exported schemas with nested `$defs` / `$ref`, and returns validated `JsonNode` output.
 - **Custom constraints** — `withFieldConstraint(...)` and `withObjectConstraint(...)` enforce business rules with stable error codes and retry semantics.
 - **PROV-O JSON-LD audit export** — `result.toAuditJson()` emits W3C PROV-O JSON-LD with full `Activity` / `Entity` / `Agent` / `wasGeneratedBy` / `wasDerivedFrom` graph.
-- **4 LLM providers** — Anthropic, OpenAI, Gemini, DeepSeek; identical `extract(...)` semantics across all four.
+- **OpenAI-compatible first provider layer** — OpenAI-compatible endpoints are the default path; Anthropic and Gemini remain native first-class integrations.
 - **Smart context strategies** — `PriorityTruncate`, `SlidingWindow`, `Hierarchical`. STRICT vs WARN_AND_INCLUDE policy on overflow — no silent overrun.
 - **Bi-temporal provenance** — `extractedAt` plus caller-supplied `sourcePublishedAt`, so downstream systems can answer *"was this extraction performed before or after the source was last revised?"*.
 - **Failsafe-backed retries** — exponential backoff with jitter via `dev.failsafe:failsafe`; `Retry-After` header honored on 429 / 503.
@@ -165,7 +170,7 @@ Five layers; every public type lives in `ai.doctruth.*` (root) or `ai.doctruth.s
 
 ## Engineering principles
 
-The five rules in [AGENTS.md](AGENTS.md) govern every commit:
+The five rules in [CONTRIBUTING.md](CONTRIBUTING.md) govern every commit:
 
 1. **Decoupled by default** — one reason to change per public type; layers communicate only through root-package records and sealed interfaces.
 2. **Auditable + debuggable + loggable everywhere** — every external boundary emits SLF4J events; every public exception carries a stable error code plus structured context. **No silent failures.**
@@ -175,7 +180,7 @@ The five rules in [AGENTS.md](AGENTS.md) govern every commit:
 
 ## Documentation
 
-- [Engineering principles](AGENTS.md) — load-bearing; read before any non-trivial change
+- [Contributing guide](CONTRIBUTING.md) — engineering principles, TDD discipline, review checklist
 - [Structured extraction engine](docs/architecture/auditable-structured-extraction-engine.md) — project scope, schema-bound extraction, validation, and evidence gating
 - [Error handling](docs/error-handling.md) — stable error-code matrix and provider schema-normalization semantics
 - [Architecture decisions](docs/adr/) — ADRs explaining non-obvious calls
@@ -198,19 +203,19 @@ The five rules in [AGENTS.md](AGENTS.md) govern every commit:
 
 ## License & Trademark
 
-**Code**: Apache License 2.0 — see [LICENSE](LICENSE). Picked over MIT for the explicit patent grant and enterprise-friendly procurement posture. Full reasoning in [ADR 0008](docs/adr/0008-license-apache-2-0-and-trademark.md).
+**Code**: Apache License 2.0 — see [LICENSE](LICENSE). Picked for the explicit patent grant and broad open-source compatibility. Full reasoning in [ADR 0008](docs/adr/0008-license-apache-2-0-and-trademark.md).
 
-**Trademark**: `doctruth`, `doctruth.ai`, and the doctruth logo are trademarks of doctruthhq. The Apache 2.0 grant covers the source code and binaries; it does **not** grant permission to use the doctruth name or logo to identify, market, or describe a fork or competing service. Forks must use a different name. See the [NOTICE](NOTICE) file for the full trademark policy.
+**Trademark**: `DocTruth`, `doctruth.ai`, and the DocTruth logo are trademarks of doctruthhq. The Apache 2.0 grant covers the source code and binaries; it does **not** grant permission to use the DocTruth name or logo to identify, market, or describe a fork or competing service. Forks must use a different name. See the [NOTICE](NOTICE) file for the full trademark policy.
 
 ## Citation
 
 ```bibtex
 @software{doctruthhq_doctruth_java_2026,
   author       = {{doctruthhq maintainers}},
-  title        = {{doctruth-java}: Auditable LLM Extraction for Java Enterprise},
+  title        = {{DocTruth}: Auditable LLM Extraction for Java},
   year         = {2026},
   version      = {0.1.0-alpha},
-  url          = {https://github.com/doctruthhq/doctruth-java},
+  url          = {https://github.com/doctruthhq/DocTruth},
   note         = {Per-field source citation, per-field confidence,
                   and bi-temporal provenance for LLM extraction in Java 25+;
                   framework-agnostic, single-jar, Apache 2.0 licensed.}

@@ -133,8 +133,7 @@ class LlmProviderTest {
         }
 
         @Test
-        @DisplayName("an anonymous subclass overriding region() returns the override (commercial-tier"
-                + " RegionEnforcingTransport plug-in shape)")
+        @DisplayName("an anonymous subclass overriding region() returns the override")
         void overrideReflected() {
             LlmProvider regionAware = new AnthropicProvider("test-key") {
                 @Override

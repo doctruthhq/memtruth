@@ -272,7 +272,7 @@ public final class CitationMatcher {
                 // enclosing classes (common in tests). The component's accessor method
                 // is conceptually always public, but reflective invocation enforces the
                 // enclosing class's visibility. Records are not JDK built-ins, so
-                // setAccessible is permitted per AGENTS.md §1.
+                // setAccessible is permitted per CONTRIBUTING.md §1.
                 accessor.setAccessible(true);
                 v = accessor.invoke(record);
             } catch (ReflectiveOperationException e) {

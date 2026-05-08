@@ -49,7 +49,7 @@ class JavaBaselineContractTest {
 
     private static Path[] currentJavaBaselineDocs() {
         return new Path[] {
-            Path.of("AGENTS.md"),
+            Path.of("CONTRIBUTING.md"),
             Path.of("README.md"),
             Path.of("examples/quickstart/README.md"),
             Path.of("examples/quickstart/Quickstart.java")

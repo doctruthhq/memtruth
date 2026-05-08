@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
  * </ul>
  *
  * <p>This phase intentionally keeps the interface method-less; behaviour (e.g. an
- * {@code assemble(ParsedDocument)} method) lands in Phase 3 per the project roadmap The sealed
+ * {@code assemble(ParsedDocument)} method) belongs on concrete strategies. The sealed
  * contract here exists so that consumers can write exhaustive pattern-matching {@code switch}
  * over the strategy family without a {@code default} branch — adding a fourth strategy is
  * therefore a compile-time forcing function across the codebase.

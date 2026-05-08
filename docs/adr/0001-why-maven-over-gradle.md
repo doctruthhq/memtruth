@@ -6,7 +6,7 @@
 
 ## Context
 
-`doctruth-java` is a public, single-jar library aimed at Java backend engineers in
+DocTruth is a public, single-jar library aimed at Java backend engineers in
 regulated industries (banking, insurance, healthcare, construction, government).
 The build tool choice affects (a) friction for downstream consumers reading the
 build, (b) friction for a maintainer authoring the build, and (c) the
@@ -38,7 +38,8 @@ Use **Apache Maven** for the build.
 ### What Maven costs us
 
 - **Slower builds for large multi-module projects.** Mitigated: this library is
-  intentionally single-module until v0.4.0 (per AGENTS.md split criteria).
+  intentionally single-module while the published jar stays small and the build
+  remains easy to audit.
 - **Less expressive build logic.** Acceptable: the build should not need
   expressive logic. If we ever need scripting, `exec-maven-plugin` is enough.
 - **Verbose pom.xml.** Acceptable: verbosity is a feature for a security-

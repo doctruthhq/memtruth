@@ -13,10 +13,10 @@ import org.junit.jupiter.api.Test;
 /**
  * Contract tests for {@link ProviderException}.
  *
- * <p>Per AGENTS.md "Engineering principles" §2 (Auditable + debuggable + loggable everywhere):
+ * <p>Per CONTRIBUTING.md "Engineering principles" §2 (Auditable + debuggable + loggable everywhere):
  * an LLM-provider failure must surface (a) which provider failed, (b) the upstream HTTP status
  * if the parser saw one, and (c) whether the caller may safely retry — so that retry / circuit
- * breaker logic upstream can act deterministically. Per AGENTS.md "Code style + conventions" —
+ * breaker logic upstream can act deterministically. Per CONTRIBUTING.md "Code style + conventions" —
  * Error handling: this is a CHECKED exception extending {@link Exception} directly.
  *
  * <p>Invariants this exception must enforce:
@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
  *   <li>{@code cause} is optional.
  * </ul>
  *
- * <p>Per AGENTS.md "Engineering principles" §4 (Build, don't synthesize): we use the JDK-idiomatic
+ * <p>Per CONTRIBUTING.md "Engineering principles" §4 (Build, don't synthesize): we use the JDK-idiomatic
  * primitive {@link OptionalInt} rather than {@code Optional<Integer>}.
  */
 class ProviderExceptionTest {

@@ -16,12 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@DisplayName("OptiTalent LLM key live smoke")
-class OptiTalentLlmSmokeIT {
+@DisplayName("external LLM key live smoke")
+class ExternalLlmSmokeIT {
 
-    private static final Logger LOG = LoggerFactory.getLogger(OptiTalentLlmSmokeIT.class);
-    private static final Path DEFAULT_ENV =
-            Path.of("/Users/jameslee/OptiTalent Nan V1/optitalent-monorepo/frontend/.env");
+    private static final Logger LOG = LoggerFactory.getLogger(ExternalLlmSmokeIT.class);
     private static final String SCHEMA = """
             {
               "type": "object",
@@ -37,7 +35,7 @@ class OptiTalentLlmSmokeIT {
         assumeTrue(Boolean.getBoolean("doctruth.live"), "live LLM smoke only runs under -P live");
         Map<String, String> env = loadEnv();
         Map<String, LlmProvider> providers = configuredProviders(env);
-        assumeTrue(!providers.isEmpty(), "no provider keys found in env or OptiTalent .env");
+        assumeTrue(!providers.isEmpty(), "no provider keys found in environment");
 
         var categories = new LinkedHashMap<String, String>();
         for (Map.Entry<String, LlmProvider> entry : providers.entrySet()) {
@@ -82,8 +80,10 @@ class OptiTalentLlmSmokeIT {
 
     private static Map<String, String> loadEnv() throws IOException {
         var merged = new LinkedHashMap<>(System.getenv());
-        Path envPath = Path.of(System.getenv().getOrDefault("DOCTRUTH_OPTITALENT_ENV", DEFAULT_ENV.toString()));
-        if (Files.isRegularFile(envPath)) {
+        String configuredPath = System.getenv("DOCTRUTH_LIVE_ENV");
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            Path envPath = Path.of(configuredPath);
+            assumeTrue(Files.isRegularFile(envPath), "DOCTRUTH_LIVE_ENV does not point to a readable file");
             for (String line : Files.readAllLines(envPath)) {
                 parseEnvLine(line).ifPresent(entry -> merged.putIfAbsent(entry.getKey(), entry.getValue()));
             }

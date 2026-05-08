@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
  *
  * <p>Contract: parse a PDF file from disk into a {@link ParsedDocument} with one
  * {@link TextSection} per detected layout block (paragraph / heading / list) within each
- * non-blank page. Tables and figures arrive in Phase 3 (per the project roadmap).
+ * non-blank page. Tables and figures are covered by separate parser surfaces.
  */
 class PdfDocumentParserTest {
 
@@ -104,7 +104,7 @@ class PdfDocumentParserTest {
             var doc = PdfDocumentParser.parse(pdfPath);
 
             assertThat(doc.metadata().pageCount()).isEqualTo(2);
-            // Only the non-blank page becomes a section (matches AGENTS.md "engineering principles"
+            // Only the non-blank page becomes a section (matches CONTRIBUTING.md "engineering principles"
             // — empty TextSections are noise, not signal).
             assertThat(doc.sections()).hasSize(1);
             assertThat(((TextSection) doc.sections().get(0)).text()).contains("real content");

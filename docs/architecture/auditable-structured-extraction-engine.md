@@ -5,12 +5,11 @@
 - **Owner**: doctruthhq maintainers
 - **Related ADRs**: [ADR 0003](../adr/0003-llm-provider-dependency-strategy.md),
   [ADR 0005](../adr/0005-fuzzy-citation-matching-via-commons-text.md),
-  [ADR 0006](../adr/0006-oss-commercial-separation-design.md),
   [ADR 0009](../adr/0009-auditable-structured-extraction-engine-scope.md)
 
 ## Positioning
 
-`doctruth-java` should not stop at document parsing and evidence matching. The
+DocTruth should not stop at document parsing and evidence matching. The
 project direction is:
 
 > **DocTruth = auditable structured extraction engine**
@@ -33,7 +32,7 @@ DocTruth should not become any of these:
 | Not this | Reason |
 | --- | --- |
 | Java clone of Pydantic | Java already has records, Bean Validation, Jackson, and JSON Schema tooling. Rebuilding Python's data-model runtime would be the wrong abstraction. |
-| Wrapper around Python Instructor | Adds a cross-language runtime dependency and weakens the Java enterprise procurement story. |
+| Wrapper around Python Instructor | Adds a cross-language runtime dependency and weakens the Java deployment story. |
 | LangChain4j or Spring AI replacement | General chains, agents, tools, vector stores, memory, and app orchestration are outside the evidence/provenance boundary. |
 | Domain schema library | Resume, contract, medical, insurance, and procurement schemas belong to callers or optional packs, not the generic core. |
 
@@ -83,9 +82,9 @@ DocTruth should accept schemas from multiple sources:
 
 Provider wrappers are implementation details for this layer:
 
-- OpenAI-compatible structured output / JSON mode where available.
-- Anthropic tool-use forcing where available.
-- Gemini JSON response mode where available.
+- OpenAI-compatible structured output / JSON mode as the primary integration path.
+- Anthropic tool-use forcing where native Anthropic semantics are useful.
+- Gemini JSON response mode where native Gemini semantics are useful.
 - Prompt-plus-parse fallback when native structured output is not strong enough.
 
 The public contract should remain provider-agnostic.
@@ -93,7 +92,7 @@ The public contract should remain provider-agnostic.
 Provider-facing schema can be weaker than the caller schema, but local
 validation must not be. Current policy:
 
-- Anthropic and OpenAI receive caller schemas unchanged where possible.
+- OpenAI-compatible providers and Anthropic receive caller schemas unchanged where possible.
 - Gemini receives a projected schema with local `$ref` inlined and nullable
   unions converted to `nullable: true`.
 - DeepSeek uses JSON object mode; the full caller schema is enforced locally.
@@ -220,12 +219,13 @@ The golden-path example is `examples/pydantic-interop`: it contains a nested
 Pydantic-style resume schema, a Java `extractJson(...)` example with required
 citations, and audit JSON output instructions.
 
-Real-project smoke coverage is split in two:
+External smoke coverage is split in two:
 
-- `OptiTalentResumeSmokeIT` reads local OptiTalent resume PDFs read-only and
-  drives parse -> JSON extraction -> citation matching with a canned provider.
-- `OptiTalentLlmSmokeIT` is live-only (`-Ddoctruth.live=true` / `-P live`) and
-  reads provider keys from the process environment or OptiTalent `.env` files
+- `ExternalPdfCorpusSmokeIT` reads a caller-supplied local PDF corpus read-only
+  and drives parse -> JSON extraction -> citation matching with a canned
+  provider.
+- `ExternalLlmSmokeIT` is live-only (`-Ddoctruth.live=true` / `-P live`) and
+  reads provider keys from the process environment or a caller-supplied env file
   without printing key values. It reports provider success/failure categories,
   so stale local keys are visible without blocking recorded CI.
 
@@ -243,14 +243,15 @@ The implementation order should be:
 Provider wrappers come after the constraint layer because the wrapper is not
 the product. The product is reliable, evidence-gated structured extraction.
 
-## OSS vs paid boundary
+## Project boundary
 
-The core engine should be OSS. If the OSS library cannot perform a complete
-auditable structured extraction locally, it will not earn developer trust.
+The engine should be fully useful as a local Java library. If the library cannot
+perform a complete auditable structured extraction locally, it will not earn
+developer trust.
 
-### OSS core
+### In the generic library
 
-These belong in Apache 2.0 OSS:
+These belong in DocTruth itself:
 
 | Area | Reason |
 | --- | --- |
@@ -266,28 +267,27 @@ These belong in Apache 2.0 OSS:
 | Provider wrappers | Needed for a usable framework-agnostic engine. |
 | Audit JSON export | Core auditability primitive. |
 
-### Paid enterprise layer
+### Outside the generic library
 
-These are fair commercial features because they are ongoing operational,
-compliance, integration, or maintenance work:
+These belong outside the generic extraction loop because they are deployment,
+integration, organization-specific policy, or domain-maintained application
+work:
 
 | Area | Reason |
 | --- | --- |
-| Maintained regulatory packs | Ongoing legal/regulatory maintenance and SLA, not generic extraction. |
-| Jurisdiction-specific contract tests | Value comes from keeping them current and auditor-ready. |
-| SIEM connectors | Enterprise integration and support burden. |
+| Domain schema packs | Domain-maintained material, not generic extraction. |
+| Jurisdiction-specific interpretation | Needs current domain ownership and review. |
+| Observability connectors | Organization-specific integration. |
 | Region/data-residency enforcement | Customer-specific infrastructure policy. |
-| Managed key pools and vendor-key rotation | Hosted/ops value. |
-| Dedicated hosted tenancy | Operational service. |
-| Compliance dashboard and auditor portal | Product surface for compliance teams. |
-| Premium OCR/form packs | Domain-specific maintenance and data-quality work. |
-| SLA/support | Service relationship. |
+| Managed key pools and vendor-key rotation | Operational integration outside the single-jar library. |
+| Compliance dashboard and auditor portal | Application surface for compliance teams, not a Java primitive. |
+| OCR engines and form-recognition models | Heavy runtime/model choices should be pluggable rather than bundled. |
 
 Rule of thumb:
 
-> If a competent engineer can copy it in a week, make it OSS. If it requires
-> continuous maintenance, compliance expertise, enterprise integration, or
-> hosted operations, it can be paid.
+> If a competent engineer can copy it in a week, keep it in the core. If it requires
+> continuous domain maintenance, organization-specific integration, or
+> deployment operations, keep it outside the generic engine.
 
 ## Product bar
 

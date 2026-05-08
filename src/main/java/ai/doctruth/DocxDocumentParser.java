@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Layer 1 entry point: read a DOCX file from disk into a {@link ParsedDocument} with one
  * {@link TextSection} per non-blank paragraph and one {@link TableSection} per table. Backed
- * by Apache POI ({@link XWPFDocument}) — chosen per AGENTS.md §4 "Build, don't synthesize"
+ * by Apache POI ({@link XWPFDocument}) — chosen per CONTRIBUTING.md §4 "Build, don't synthesize"
  * (POI is the canonical Java OOXML lib; hand-rolling a DOCX zip+XML parser would violate the
  * principle).
  *
@@ -32,7 +32,8 @@ import org.slf4j.LoggerFactory;
  * ({@code metadata.pageCount == 1}, every section anchored to {@code pageStart == 1}). Word
  * page breaks are a render-time concept driven by the consuming reader's font + page-size
  * settings — POI does not expose post-pagination page numbers without a layout engine.
- * Section-break-aware multi-page tracking arrives Phase 3+ per the project roadmap
+ * Section-break-aware multi-page tracking is intentionally left for a later parser
+ * improvement.
  *
  * <p>The parser is a stateless utility — it has no per-instance config in v0.1.0-alpha
  * (so the static method form is the right level of API surface, per Engineering Principles
@@ -88,7 +89,7 @@ public final class DocxDocumentParser {
         } catch (IOException | RuntimeException e) {
             // POI throws unchecked exceptions (e.g. POIXMLException, NotOfficeXmlFileException)
             // for malformed DOCX; wrap as IOException-caused ParseException so callers get a
-            // single typed boundary (AGENTS.md §2 — public API throws checked ParseException).
+            // single typed boundary (CONTRIBUTING.md §2 — public API throws checked ParseException).
             Throwable cause = e instanceof IOException ? e : new IOException(e);
             throw new ParseException(
                     "DOCX_PARSE_FAILED",

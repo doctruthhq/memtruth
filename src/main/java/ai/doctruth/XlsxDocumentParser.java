@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Layer 1 entry point: read an XLSX file from disk into a {@link ParsedDocument} with one
  * {@link TableSection} per non-empty sheet. Backed by Apache POI ({@link XSSFWorkbook}) —
- * chosen per AGENTS.md §4 "Build, don't synthesize" (POI is the canonical Java OOXML lib).
+ * chosen per CONTRIBUTING.md §4 "Build, don't synthesize" (POI is the canonical Java OOXML lib).
  *
  * <p>v0.1.0-alpha sheet-as-page analogy: spreadsheet workbooks have no native "pages" the way
  * PDFs do, but every sheet is a self-contained tabular surface. We map each sheet to a logical
@@ -91,7 +91,7 @@ public final class XlsxDocumentParser {
         } catch (IOException | RuntimeException e) {
             // POI throws unchecked exceptions (e.g. POIXMLException, NotOfficeXmlFileException)
             // for malformed XLSX; wrap as IOException-caused ParseException so callers get a
-            // single typed boundary (AGENTS.md §2 — public API throws checked ParseException).
+            // single typed boundary (CONTRIBUTING.md §2 — public API throws checked ParseException).
             Throwable cause = e instanceof IOException ? e : new IOException(e);
             throw new ParseException(
                     "XLSX_PARSE_FAILED",

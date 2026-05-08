@@ -6,12 +6,12 @@
 
 ## Context
 
-The library's core differentiator (per AGENTS.md "Engineering principles" §2) is
+The library's core differentiator (per CONTRIBUTING.md "Engineering principles" §2) is
 **non-silent citation matching**. A prior production pattern used a short substring prefix match that
 returned `page=None` when no match was found — silent failure that compliance teams had to
 discover by inspection.
 
-`doctruth-java` matches every extracted field back to its source span via:
+DocTruth matches every extracted field back to its source span via:
 
 1. **Exact substring** (fast path, `matchScore = 1.0`).
 2. **Fuzzy similarity** (slow path, `matchScore` from a similarity metric).
@@ -40,7 +40,7 @@ similarity primitives. Specifically:
 
 ### Why Commons Text wins
 
-- **AGENTS.md "Engineering principles" §4** explicitly lists it: *"String similarity / fuzzy
+- **CONTRIBUTING.md "Engineering principles" §4** explicitly lists it: *"String similarity / fuzzy
   match → Apache Commons Text"*. Using it is consistent with the project's codified default.
 - **Single small jar** (~250 KB) plus one well-known transitive dep (commons-lang3, ~700 KB,
   also already common in enterprise classpaths).
@@ -69,16 +69,16 @@ similarity primitives. Specifically:
 
 ## Alternatives considered
 
-- **Hand-rolled Levenshtein DP.** ~30 LOC, looks easy. Rejected per AGENTS.md §4 "Build,
+- **Hand-rolled Levenshtein DP.** ~30 LOC, looks easy. Rejected per CONTRIBUTING.md §4 "Build,
   don't synthesize" — the canonical case the principle was written for. Hand-rolled
   similarity has subtle bugs in normalisation, Unicode handling, and locale-aware
   case-folding (e.g. Turkish dotted/dotless I) that Commons Text already handles.
-- **JDK-only via `String.equals` + `.contains`.** Inadequate — this is exactly what Tender
-  Luban used (the 20-char prefix anti-pattern). Rejected.
+- **JDK-only via `String.equals` + `.contains`.** Inadequate — short-prefix
+  matching is the anti-pattern this library exists to replace. Rejected.
 - **Apache Lucene's `LevenshteinAutomata`.** Powerful but Lucene is a 4 MB dep tree (we'd
   pull `lucene-core`); over-spec for a string-similarity feature.
 - **JaroWinkler from a single-purpose lib (e.g. `info.debatty:java-string-similarity`).**
-  Smaller (~100 KB) but obscure, single-maintainer, and not on the AGENTS.md preferred list.
+  Smaller (~100 KB) but obscure, single-maintainer, and not on the CONTRIBUTING.md preferred list.
   Rejected for ecosystem-trust reasons.
 - **Embedding-based semantic similarity (Sentence-BERT, OpenAI embeddings).** Requires ML
   model artefacts or a network call per match — both out of scope for a primitive library
@@ -98,4 +98,4 @@ completely different). Below the threshold, the matcher returns `Optional.empty(
 the caller emits an SLF4J `warn` event tagging the offending field path.
 
 The Commons Text dependency is NOT exposed through the public API — only `Citation`
-records. Per AGENTS.md "Engineering principles" §1, internal types must not leak.
+records. Per CONTRIBUTING.md "Engineering principles" §1, internal types must not leak.

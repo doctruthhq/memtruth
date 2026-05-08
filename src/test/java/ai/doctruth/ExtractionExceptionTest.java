@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Contract tests for {@link ExtractionException}.
  *
- * <p>Per AGENTS.md "Engineering principles" §2 (Auditable + debuggable + loggable everywhere):
+ * <p>Per CONTRIBUTING.md "Engineering principles" §2 (Auditable + debuggable + loggable everywhere):
  * every public exception carries a stable string {@code errorCode} plus structured context
- * (here: the {@code retries} count consumed before the failure was raised). Per AGENTS.md
+ * (here: the {@code retries} count consumed before the failure was raised). Per CONTRIBUTING.md
  * "Code style + conventions" — Error handling: this is a CHECKED exception extending
  * {@link Exception} directly (NOT {@link RuntimeException}).
  *

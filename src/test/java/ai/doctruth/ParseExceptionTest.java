@@ -13,10 +13,10 @@ import org.junit.jupiter.api.Test;
 /**
  * Contract tests for {@link ParseException}.
  *
- * <p>Per AGENTS.md "Engineering principles" §2 (Auditable + debuggable + loggable everywhere):
+ * <p>Per CONTRIBUTING.md "Engineering principles" §2 (Auditable + debuggable + loggable everywhere):
  * a parse failure must surface enough structured context for the caller to localise the problem
  * — the source name (e.g. PDF filename) and, when the parser knows it, the failing page. Per
- * AGENTS.md "Code style + conventions" — Error handling: this is a CHECKED exception extending
+ * CONTRIBUTING.md "Code style + conventions" — Error handling: this is a CHECKED exception extending
  * {@link Exception} directly (NOT {@link RuntimeException}).
  *
  * <p>Invariants this exception must enforce:
@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
  *   <li>{@code cause} is optional.
  * </ul>
  *
- * <p>Per AGENTS.md "Engineering principles" §4 (Build, don't synthesize): we use the JDK-idiomatic
+ * <p>Per CONTRIBUTING.md "Engineering principles" §4 (Build, don't synthesize): we use the JDK-idiomatic
  * primitive {@link OptionalInt} rather than {@code Optional<Integer>} to avoid Integer boxing.
  */
 class ParseExceptionTest {

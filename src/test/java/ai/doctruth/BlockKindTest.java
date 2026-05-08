@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
  * Contract tests for {@link BlockKind}.
  *
  * <p>The enum constants are part of the public API surface and frozen at v0.1.0 — adding
- * a new kind is a major version bump per AGENTS.md "Public API contracts". These tests
+ * a new kind is a major version bump per CONTRIBUTING.md "Public API contracts". These tests
  * pin the wire-shape against accidental reorderings and unknown-name lookups.
  */
 class BlockKindTest {

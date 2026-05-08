@@ -1,4 +1,4 @@
-# doctruth-java evidence-overlay
+# DocTruth evidence overlay
 
 Visual companion to `result.toAuditJson()`. Given a PDF and an `ExtractionResult`,
 this example renders one PNG per cited page with every `Citation` drawn as a
@@ -27,13 +27,12 @@ You need the lib jar built first:
 
 ```bash
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
-/opt/homebrew/bin/mvn -B -ntp -f /Users/jameslee/java-doc-truth/pom.xml package -DskipTests
+mvn -B -ntp package -DskipTests
 ```
 
 Then compile + run the standalone example (no Maven submodule):
 
 ```bash
-cd /Users/jameslee/java-doc-truth
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
   mvn -q dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
 CP="target/doctruth-java-0.1.0-SNAPSHOT.jar:$(cat /tmp/cp.txt)"

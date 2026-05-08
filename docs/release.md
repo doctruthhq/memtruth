@@ -28,8 +28,7 @@ gpg --keyserver keys.openpgp.org    --send-keys <KEYID>
 ### 2. Register Sonatype Central Portal
 
 - Sign up at https://central.sonatype.com
-- Verify the `ai.doctruth` namespace (DNS TXT record on `doctruth.ai`, OR
-  use the GitHub-verified `io.github.jamesbbbriz` namespace as a fallback).
+- Verify the `ai.doctruth` namespace with a DNS TXT record on `doctruth.ai`.
 - Generate a **user token** at Account → Generate User Token. Copy both halves.
 
 ### 3. Add GitHub Actions secrets
@@ -81,7 +80,7 @@ The `Release` workflow (`.github/workflows/release.yml`) fires on the `v*` tag:
 - Deploys to the Central Portal staging area via `central-publishing-maven-plugin`
 - Uploads signed artefacts as workflow artifacts (30-day retention)
 
-Watch it at https://github.com/doctruthhq/doctruth-java/actions.
+Watch it at https://github.com/doctruthhq/DocTruth/actions.
 
 ### 5. Promote on the Central Portal (manual)
 

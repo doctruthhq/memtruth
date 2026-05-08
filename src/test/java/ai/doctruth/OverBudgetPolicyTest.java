@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  *       the budget overrun visible to the caller via observability.
  * </ul>
  *
- * <p>Why an enum, not a sealed interface: per AGENTS.md "Engineering principles" §4 ("Build,
+ * <p>Why an enum, not a sealed interface: per CONTRIBUTING.md "Engineering principles" §4 ("Build,
  * don't synthesize"), a fixed, finite set of value-only constants is the canonical Java idiom
  * for {@code enum}. A sealed interface would be appropriate if each policy carried its own
  * configuration (e.g. callbacks, thresholds) — they do not. Promoting to a sealed interface

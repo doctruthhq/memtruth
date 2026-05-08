@@ -45,6 +45,12 @@ Thumbs.db
 # Website
 website/
 
+# Private / maintainer-local development docs
+AGENTS.md
+docs/adr/0002-license-mit-initial.md
+docs/adr/0006-oss-commercial-separation-design.md
+docs/strategy/
+
 # Test artifacts
 **/test-output/
 **/recordings/*.tmp.json

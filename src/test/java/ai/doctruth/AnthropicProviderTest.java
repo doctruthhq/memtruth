@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
  * Contract tests for {@link AnthropicProvider}.
  *
  * <p>{@code AnthropicProvider} is a non-final concrete public class implementing
- * {@link LlmProvider}. It validates its API key in the constructor (per AGENTS.md "no silent
+ * {@link LlmProvider}. It validates its API key in the constructor (per CONTRIBUTING.md "no silent
  * failures") and delegates {@link AnthropicProvider#complete(ProviderRequest)} to the internal
  * Anthropic HTTP client per ADR 0003.
  *

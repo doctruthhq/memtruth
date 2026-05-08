@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
  * Contract tests for {@link SignatureProvider}.
  *
  * <p>The OSS default is {@link SignatureProvider#IDENTITY} — it returns the input
- * unchanged but rejects null. Commercial-tier impls (HMAC, Ed25519) plug in via
- * the same single-method interface.
+ * unchanged but rejects null. Custom signing implementations plug in via the same
+ * single-method interface.
  */
 class SignatureProviderTest {
 

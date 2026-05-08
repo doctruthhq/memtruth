@@ -18,7 +18,7 @@ public sealed interface ContextStrategy permits PriorityTruncate, SlidingWindow,
      * truncation / windowing rules.
      *
      * <p>Implementations MUST NOT silently overrun the strategy's documented budget — per
-     * AGENTS.md "Engineering principles" §2 (no silent failures) and the production lessons
+     * CONTRIBUTING.md "Engineering principles" §2 (no silent failures) and the production lessons
      * codified in {@link OverBudgetPolicy}. Callers either get a result inside the
      * budget, a clearly-flagged warning + an over-budget result, or an
      * {@link ExtractionException}.

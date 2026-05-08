@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * SPI integration tests for {@link ExtractionBuilder}: kept in a sibling file so
- * {@link ExtractionBuilderTest} stays under the AGENTS.md "no god files" 500-LOC test cap.
+ * {@link ExtractionBuilderTest} stays under the CONTRIBUTING.md "no god files" 500-LOC test cap.
  *
  * <p>Coverage:
  *

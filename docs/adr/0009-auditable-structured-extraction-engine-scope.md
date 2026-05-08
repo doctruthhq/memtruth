@@ -10,7 +10,7 @@ The first implementation wave proved the low-level evidence path: document
 parsers, citations, confidence, provenance, provider clients, audit export, and
 custom field/object constraints.
 
-The remaining product question is whether `doctruth-java` should stop at
+The remaining product question is whether DocTruth should stop at
 parser/evidence primitives or include Instructor/Pydantic-class structured
 extraction behavior.
 
@@ -39,9 +39,9 @@ plus citation helper. That is weaker than the project purpose.
 
 ## Decision
 
-DocTruth will own **auditable structured extraction** as a core OSS capability.
+DocTruth will own **auditable structured extraction** as an open-source core capability.
 
-The OSS engine scope includes:
+The engine scope includes:
 
 1. Document parsing.
 2. Evidence location.
@@ -69,30 +69,28 @@ The current custom constraint API is the first accepted slice of this decision:
 .withObjectConstraint(contract -> !contract.partyA().equals(contract.partyB()), "partyA and partyB must differ")
 ```
 
-## OSS vs commercial boundary
+## Project boundary
 
-The structured extraction engine itself stays OSS. The OSS library must be
-fully useful for local, self-hosted auditable extraction.
+The structured extraction engine should stay fully useful as a local Java
+library. Domain-specific applications can build on top of it, but they should
+not become generic core behavior.
 
-| Capability | Tier | Rationale |
+| Capability | Boundary | Rationale |
 | --- | --- | --- |
-| Java record/class schema extraction | OSS | Core Java developer experience. |
-| JSON Schema input | OSS | Core interoperability primitive. |
-| Imported Pydantic JSON Schema | OSS | Compatibility with existing Python contracts; not domain IP. |
-| Type/enum/required validation | OSS | Baseline structured extraction behavior. |
-| Field/object constraints | OSS | Core reliability and business-rule primitive. |
-| Retry/repair engine | OSS | Required for an Instructor-class replacement. |
-| Citation requirement policies | OSS | Core DocTruth differentiator. |
-| Provider structured-output wrappers | OSS | Needed for the engine to work without framework lock-in. |
-| Audit JSON export | OSS | Core auditability primitive. |
-| Maintained regulatory packs | Commercial | Ongoing legal/regulatory maintenance and SLA. |
-| Jurisdiction-specific contract tests | Commercial | Value is current regulatory interpretation and auditor-ready reporting. |
-| SIEM/data-residency/key-management integrations | Commercial | Enterprise operations and support burden. |
-| Hosted dashboard / auditor portal | Commercial/SaaS | Product and operational surface beyond the library. |
-| Premium OCR/form packs | Commercial | Domain-specific maintenance and data-quality work. |
-
-This refines ADR 0006: commercial value should sit above or beside the generic
-engine, not inside the generic extraction loop.
+| Java record/class schema extraction | In core | Core Java developer experience. |
+| JSON Schema input | In core | Core interoperability primitive. |
+| Imported Pydantic JSON Schema | In core | Compatibility with existing Python contracts. |
+| Type/enum/required validation | In core | Baseline structured extraction behavior. |
+| Field/object constraints | In core | Core reliability and business-rule primitive. |
+| Retry/repair engine | In core | Required for an Instructor-class replacement. |
+| Citation requirement policies | In core | Core DocTruth differentiator. |
+| Provider structured-output wrappers | In core | Needed for the engine to work without framework lock-in. |
+| Audit JSON export | In core | Core auditability primitive. |
+| Domain schemas | Out of core | Resume, contract, medical, insurance, and procurement schemas belong to applications. |
+| Jurisdiction-specific interpretation | Out of core | Legal/regulatory interpretation changes over time and should be owned by domain packages or applications. |
+| SIEM, key-management, and residency integrations | Out of core | Organization-specific deployment policy. |
+| Dashboard / auditor portal | Out of core | Application surface beyond the library. |
+| OCR engines and form-recognition models | Out of core by default | Heavy model/runtime choices should be pluggable rather than bundled. |
 
 ## Consequences
 
@@ -103,8 +101,9 @@ engine, not inside the generic extraction loop.
   chain framework.
 - Python/Pydantic teams can interoperate through JSON Schema without putting
   Python into Java production services.
-- Commercial packaging remains honest: the open-source core is complete, paid
-  layers sell maintenance, integration, governance, and hosted operations.
+- Packaging remains honest: the generic library is complete for auditable
+  extraction, and deployment or organization-specific integrations stay outside
+  the generic extraction loop.
 
 ### Costs
 
@@ -143,9 +142,9 @@ engine, not inside the generic extraction loop.
    extraction layer with citation gating.
 2. JSON Schema support forces a dependency that makes the jar exceed the size
    budget without clear user value.
-3. Commercial users demand that a generic extraction primitive move behind the
-   paid tier; default answer is no unless the primitive is actually an
-   enterprise integration or maintained compliance artifact.
+3. Users ask to add domain behavior to the generic core; default answer is no
+   unless the behavior is truly generic evidence, validation, or provenance
+   infrastructure.
 
 ## Alternatives considered
 
@@ -153,8 +152,8 @@ engine, not inside the generic extraction loop.
   orchestration elsewhere and weakens DocTruth's product identity.
 - **Java Pydantic clone.** Rejected: wrong abstraction for Java and too much
   runtime surface.
-- **Python Instructor bridge.** Rejected: cross-language dependency breaks the
-  Java enterprise story.
-- **Commercialize the structured extraction engine.** Rejected: a crippled OSS
-  core will not win developer trust. Commercial value should come from
-  maintained packs, governance integrations, hosted operations, and support.
+- **Python Instructor bridge.** Rejected: cross-language dependency weakens the
+  Java deployment story.
+- **Keep the structured extraction engine incomplete.** Rejected: an incomplete
+  core will not win developer trust. Applications and organization-specific
+  integrations can sit outside the library without weakening the generic engine.

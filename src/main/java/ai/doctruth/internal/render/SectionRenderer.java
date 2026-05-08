@@ -22,7 +22,7 @@ import ai.doctruth.TextSection;
  *   <li>{@link FigureSection}: {@code "[Figure: " + caption() + "]"}.
  * </ul>
  *
- * <p>Package-private to internal callers (per AGENTS.md "Engineering principles" §1 —
+ * <p>Package-private to internal callers (per CONTRIBUTING.md "Engineering principles" §1 —
  * the public API surface stays minimal). Public visibility on the static method is the
  * compromise that lets {@code ai.doctruth} root-package code call this without exposing
  * the class outside the {@code internal} subtree to downstream consumers; the
@@ -33,7 +33,7 @@ import ai.doctruth.TextSection;
 public final class SectionRenderer {
 
     private SectionRenderer() {
-        // Utility class — instances are nonsensical. (AGENTS.md "elegance over cleverness"
+        // Utility class — instances are nonsensical. (CONTRIBUTING.md "elegance over cleverness"
         // tolerates a static helper here because the alternative — a method on every
         // ParsedSection variant — would couple the public sealed interface to a rendering
         // concern that genuinely belongs out-of-band.)

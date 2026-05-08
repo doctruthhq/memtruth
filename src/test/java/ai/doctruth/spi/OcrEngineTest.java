@@ -130,7 +130,7 @@ class OcrEngineTest {
         }
 
         @Test
-        @DisplayName("record component count stays within the canonical agent limit")
+        @DisplayName("record component count stays within the contribution limit")
         void recordComponentCount() {
             assertThat(OcrRegion.class.getRecordComponents()).hasSizeLessThanOrEqualTo(5);
         }

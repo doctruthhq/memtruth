@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// doctruth-java evidence-overlay — visual proof of the audit chain.
+// DocTruth evidence overlay — visual proof of the audit chain.
 // Takes a real PDF + an ExtractionResult and produces one PNG per cited page
 // with every Citation drawn as a coloured highlight box on the rendered page.
 // This is the eyeball companion to result.toAuditJson() — open the PNG and
@@ -514,11 +514,8 @@ public final class EvidenceOverlay {
 
     public static void main(String[] args) throws Exception {
         int count = args.length > 0 ? Integer.parseInt(args[0]) : 1;
-        Path fixtureDir = Files.isDirectory(Path.of("fixtures/pdf"))
-                ? Path.of("fixtures/pdf") : Path.of("/Users/jameslee/java-doc-truth/fixtures/pdf");
-        Path outputBase = Files.isDirectory(Path.of("examples/evidence-overlay"))
-                ? Path.of("examples/evidence-overlay/output")
-                : Path.of("/Users/jameslee/java-doc-truth/examples/evidence-overlay/output");
+        Path fixtureDir = Path.of("fixtures/pdf");
+        Path outputBase = Path.of("examples/evidence-overlay/output");
 
         var picks = pickDemoFixtures(fixtureDir, count);
         if (picks.isEmpty()) {

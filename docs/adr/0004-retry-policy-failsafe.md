@@ -30,7 +30,7 @@ declared in `pom.xml`.
 
 ### Why Failsafe wins
 
-- **AGENTS.md "Engineering principles" §4** lists Failsafe explicitly as the preferred
+- **CONTRIBUTING.md "Engineering principles" §4** lists Failsafe explicitly as the preferred
   retry/circuit-breaker library; using it is consistent with the project's codified
   defaults.
 - **Single small jar.** Failsafe is one ~250 KB jar with zero transitive dependencies.
@@ -89,6 +89,6 @@ Failsafe's `Failsafe.with(retryPolicy).get(supplier)` and adds:
 - SLF4J emit at `warn` for each retry attempt with `attempt`, `cause.class`, `nextDelay`.
 - Translation of `FailsafeException` → `ProviderException` with `retryable=true` /
   `retryable=false` based on the abort policy, so callers see only our public exception type
-  (per AGENTS.md §1 decoupling — Failsafe types must not leak through the public API).
+  (per CONTRIBUTING.md §1 decoupling — Failsafe types must not leak through the public API).
 - A pluggable `Predicate<Throwable> isRetryable` so each provider can declare
   its own retryable condition without duplicating retry plumbing.

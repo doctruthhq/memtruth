@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `doctruth-java` are documented in this file.
+All notable changes to DocTruth are documented in this file.
 
 The format is based on [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -34,7 +34,7 @@ missing — every LLM-extracted field carries a verifiable evidence chain
   Gemini, DeepSeek. No SDK dependency, no Spring AI, no LangChain4j. Sealed
   `LlmProvider` interface; identical `extract(...)` semantics across all four.
   *Why this matters:* one library, framework-agnostic, single-jar drop-in
-  for any Java 21+ project.
+  for any Java 25+ project.
 - **Evidence-attributed extraction (Layers 2 + 4)** — fluent
   `DocTruth.from(provider).extract(prompt, T.class).withProvenance().run(doc)`
   API enforcing per-field citation, per-section confidence, retry on missing
@@ -52,5 +52,5 @@ missing — every LLM-extracted field carries a verifiable evidence chain
   failures via `dev.failsafe:failsafe`; per-call retry count carried on
   `Provenance`.
 
-[Unreleased]: https://github.com/doctruthhq/doctruth-java/compare/v0.1.0-alpha...HEAD
-[0.1.0-alpha]: https://github.com/doctruthhq/doctruth-java/releases/tag/v0.1.0-alpha
+[Unreleased]: https://github.com/doctruthhq/DocTruth/compare/v0.1.0-alpha...HEAD
+[0.1.0-alpha]: https://github.com/doctruthhq/DocTruth/releases/tag/v0.1.0-alpha

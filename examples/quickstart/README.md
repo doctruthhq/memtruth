@@ -1,18 +1,18 @@
-# doctruth-java quickstart
+# DocTruth quickstart
 
 The simplest possible run: parse a PDF, extract a typed `Contract` record from
-it via Anthropic, and emit a per-field audit log. One Java file, no Maven
+it via an OpenAI-compatible endpoint, and emit a per-field audit log. One Java file, no Maven
 submodule, no framework.
 
 ## What this does
 
 1. Generates a tiny in-memory PDF (or reads `args[0]` if you pass a path).
-2. Calls `DocTruth.from(new AnthropicProvider(key)).extract(...).withProvenance().withSourcePublishedAt(...).withBitemporal().withConfidence().run(doc)`.
+2. Calls `DocTruth.from(new OpenAiProvider(key)).extract(...).withProvenance().withSourcePublishedAt(...).withBitemporal().withConfidence().run(doc)`.
 3. Prints the extracted value, the per-field citations, the per-field confidence map size, the run provenance, and writes a `audit.json` next to the PDF.
 
 ## Run it
 
-You need: Java 25+, an `ANTHROPIC_API_KEY`, and the `doctruth-java` jar on the
+You need: Java 25+, an `OPENAI_API_KEY`, and the DocTruth jar on the
 classpath. There are two equally-valid ways to invoke it.
 
 ### Path A — via Maven `exec:java` in your own project
@@ -32,7 +32,7 @@ this to your `pom.xml` once:
 Then run:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
 mvn exec:java \
   -Dexec.mainClass="ai.doctruth.examples.quickstart.Quickstart" \
   -Dexec.args="path/to/contract.pdf"   # optional; omit for the bundled sample PDF
@@ -41,7 +41,7 @@ mvn exec:java \
 ### Path B — plain `javac` + `java`
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
 mvn -q -f /path/to/doctruth-java/pom.xml package -DskipTests
 mvn -q -f /path/to/doctruth-java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/doctruth-cp.txt
 CP="/path/to/doctruth-java/target/doctruth-java-0.1.0-SNAPSHOT.jar:$(cat /tmp/doctruth-cp.txt)"
@@ -64,7 +64,7 @@ Citations: 4 field(s)
 Confidence: 4 field(s)
 
 Provenance:
-  model=anthropic modelVersion=claude-sonnet-4-5
+  model=openai modelVersion=gpt-4o
   extractedAt=2026-05-07T05:30:14.218Z
   sourcePublishedAt=2026-01-01T00:00:00Z
 
@@ -78,11 +78,17 @@ Audit JSON written to: /tmp/audit.json
 Change one line — the rest of the pipeline is provider-agnostic:
 
 ```java
-// Anthropic (this quickstart)
-DocTruth.from(new AnthropicProvider(System.getenv("ANTHROPIC_API_KEY")))
-
-// OpenAI
+// OpenAI / OpenAI-compatible (this quickstart)
 DocTruth.from(new OpenAiProvider(System.getenv("OPENAI_API_KEY")))
+
+// OpenAI-compatible endpoint with an explicit model
+DocTruth.from(new OpenAiProvider(
+        System.getenv("OPENAI_API_KEY"),
+        URI.create("https://api.openai.com/v1/chat/completions"),
+        "gpt-4o"))
+
+// Anthropic
+DocTruth.from(new AnthropicProvider(System.getenv("ANTHROPIC_API_KEY")))
 
 // Gemini
 DocTruth.from(new GeminiProvider(System.getenv("GOOGLE_API_KEY")))
@@ -102,8 +108,8 @@ shape compliance teams already know how to ingest. Compact example:
   "@type": "prov:Entity",
   "prov:wasGeneratedBy": {
     "@type": "prov:Activity",
-    "model": "anthropic",
-    "modelVersion": "claude-sonnet-4-5",
+    "model": "openai",
+    "modelVersion": "gpt-4o",
     "extractedAt": "2026-05-07T05:30:14.218Z"
   },
   "citations": {

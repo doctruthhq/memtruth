@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>v0.1.0-alpha contract: parse a DOCX file from disk into a {@link ParsedDocument} with
  * one {@link TextSection} per non-blank paragraph and one {@link TableSection} per table.
  * DOCX is logically continuous (no native page numbers); every section uses synthetic
- * {@code pageNumber = 1} until layout-aware parsing arrives Phase 3+ (the project roadmap).
+ * {@code pageNumber = 1} until layout-aware parsing is supported.
  */
 class DocxDocumentParserTest {
 
@@ -78,7 +78,7 @@ class DocxDocumentParserTest {
             var doc = DocxDocumentParser.parse(docxPath);
 
             // Only the two non-blank paragraphs become sections — empty TextSections are
-            // noise, not signal (AGENTS.md §2 "no silent failures meaningless content").
+            // noise, not signal (CONTRIBUTING.md §2 "no silent failures meaningless content").
             assertThat(doc.sections()).hasSize(2);
             assertThat(((TextSection) doc.sections().get(0)).text()).contains("real content");
             assertThat(((TextSection) doc.sections().get(1)).text()).contains("more content");

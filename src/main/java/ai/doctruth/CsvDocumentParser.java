@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Layer 1 entry point: read a CSV file from disk into a {@link ParsedDocument} containing
  * exactly one {@link TableSection} that mirrors the CSV row-major. Backed by
- * {@code com.fasterxml.jackson.dataformat:jackson-dataformat-csv} — chosen per AGENTS.md §4
+ * {@code com.fasterxml.jackson.dataformat:jackson-dataformat-csv} — chosen per CONTRIBUTING.md §4
  * "Build, don't synthesize" and ADR 0007 (zero new transitive deps; reuses the Jackson
  * already on the classpath).
  *
@@ -38,9 +38,9 @@ import org.slf4j.LoggerFactory;
  *       {@code pageStart == pageEnd == 1}; rows map to {@link SourceLocation} lines
  *       ({@code lineStart == 1}, {@code lineEnd == rows.size()}).
  *   <li><b>No header detection.</b> Every row is data — the caller decides whether row 0
- *       is a header. Header-aware parsing arrives in Phase 2.
+ *       is a header. Header-aware parsing can be added when a real fixture requires it.
  *   <li><b>Comma-only delimiter.</b> Auto-detection of {@code ;}, tab, and {@code |}
- *       (common in EU CSV exports) is Phase 2.
+ *       (common in EU CSV exports) can be added when a real fixture requires it.
  *   <li><b>Empty file → zero sections.</b> A file with no rows produces a
  *       {@code ParsedDocument} carrying zero sections — matches the PDF blank-page rule
  *       (empty content is noise, not signal).
@@ -50,9 +50,9 @@ import org.slf4j.LoggerFactory;
  * </ul>
  *
  * <p>The parser is a stateless utility — it has no per-instance config in v0.1.0-alpha
- * (so the static method form is the right level of API surface, per AGENTS.md "Engineering
- * Principles" §5). When per-call options arrive (Phase 2: header / delimiter / charset
- * overrides) this becomes an instance class with a builder.
+ * (so the static method form is the right level of API surface, per CONTRIBUTING.md "Engineering
+ * Principles" §5). If per-call options arrive (header / delimiter / charset overrides),
+ * this becomes an instance class with a builder.
  *
  * @since 0.1.0
  */

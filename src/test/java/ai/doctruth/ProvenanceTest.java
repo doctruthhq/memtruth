@@ -39,7 +39,7 @@ class ProvenanceTest {
     class PublicApiShape {
 
         @Test
-        @DisplayName("record component count stays within the canonical agent limit")
+        @DisplayName("record component count stays within the contribution limit")
         void recordComponentCount() {
             assertThat(Provenance.class.getRecordComponents()).hasSizeLessThanOrEqualTo(5);
         }

@@ -23,8 +23,8 @@ import org.junit.jupiter.api.io.TempDir;
  * Contract tests for {@link ExtractionResult#toAuditJson()} / {@link ExtractionResult#toAuditJson(Path)}.
  *
  * <p>The output is W3C PROV-O JSON-LD — the audit format auditors and compliance teams
- * already know how to ingest (per the project roadmap). The library's brand promise is "every field
- * traceable", and {@code toAuditJson} is the concrete artefact that proves it.
+ * already know how to ingest. The library's brand promise is "every field traceable",
+ * and {@code toAuditJson} is the concrete artefact that proves it.
  */
 class ExtractionResultAuditJsonTest {
 

@@ -73,8 +73,8 @@ public record ExtractionResult<T>(
     /**
      * Render this result as audit JSON and pipe through {@code signer} for tamper-evident
      * persistence. The default {@link SignatureProvider#IDENTITY} preserves the existing
-     * {@link #toAuditJson()} bytes unchanged; commercial-tier impls (HMAC, Ed25519) wrap
-     * the JSON before it leaves the JVM.
+     * {@link #toAuditJson()} bytes unchanged; custom implementations can wrap or sign the
+     * JSON before it leaves the JVM.
      *
      * @throws NullPointerException if {@code signer} is null.
      */

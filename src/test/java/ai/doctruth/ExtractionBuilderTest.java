@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
  * Contract tests for {@link ExtractionBuilder}.
  *
  * <p>The builder is the orchestration core of the fluent API: every {@code with*} method
- * returns a fresh immutable builder (per AGENTS.md "elegance over cleverness — immutable
+ * returns a fresh immutable builder (per CONTRIBUTING.md "elegance over cleverness — immutable
  * data over shared mutable state"); {@code run(doc)} performs a single provider call,
  * parses the JSON via Jackson into {@code T}, and assembles a {@link Provenance} record
  * from {@link LlmProvider#name()}, {@link ProviderUsage#modelVersion()}, and the

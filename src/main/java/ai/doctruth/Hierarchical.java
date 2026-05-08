@@ -26,7 +26,7 @@ public record Hierarchical(int maxDepth) implements ContextStrategy {
 
     /**
      * v0.1.0-alpha stub: not yet implemented. Phase 3 wires up multi-level summarisation; the
-     * audit-able {@link UnsupportedOperationException} marker is intentional (per AGENTS.md
+     * audit-able {@link UnsupportedOperationException} marker is intentional (per CONTRIBUTING.md
      * §2 — no silent failures) so any caller using the stub fails loudly.
      */
     @Override

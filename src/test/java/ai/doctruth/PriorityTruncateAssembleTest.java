@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Behaviour tests for {@link PriorityTruncate#assemble(ParsedDocument)}.
  *
- * <p>Behavioural contract pinned here to prevent silent context-budget overruns; AGENTS.md §2
+ * <p>Behavioural contract pinned here to prevent silent context-budget overruns; CONTRIBUTING.md §2
  * "no silent failures" exists to make this explicit:
  *
  * <ul>
@@ -46,7 +46,7 @@ import org.junit.jupiter.api.Test;
  * <p><b>Note on log assertions:</b> the WARN_AND_INCLUDE path emits a SLF4J {@code warn}.
  * These tests verify the structural return-value behaviour and trust the log statement
  * (capturing a SLF4J event in-test would require pulling in a logback / log4j2 testing
- * appender, which AGENTS.md "Build, don't synthesize" + ADR 0003 "no extra deps" both push
+ * appender, which CONTRIBUTING.md "Build, don't synthesize" + ADR 0003 "no extra deps" both push
  * back on for a single-line warning). The grep-style structural check on the source file
  * is left out as the brief allows — return-value behaviour is the load-bearing contract.
  */

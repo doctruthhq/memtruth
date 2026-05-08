@@ -9,7 +9,7 @@ package ai.doctruth;
  * LLM → citation match → audit.)
  *
  * <p>The enum constants are frozen at v0.1.0 — adding new kinds in future requires a
- * major bump per AGENTS.md "Public API contracts".
+ * major bump per CONTRIBUTING.md "Public API contracts".
  *
  * @since 0.1.0
  */

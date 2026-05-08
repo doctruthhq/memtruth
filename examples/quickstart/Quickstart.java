@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// doctruth-java quickstart — copy-paste runnable demo.
+// DocTruth quickstart — copy-paste runnable demo.
 //
-// Drop this file into any Java 25+ project that has doctruth-java on the
-// classpath, set ANTHROPIC_API_KEY, and run `main`. See README.md next to
+// Drop this file into any Java 25+ project that has DocTruth on the
+// classpath, set OPENAI_API_KEY, and run `main`. See README.md next to
 // this file for the exact shell commands.
 package ai.doctruth.examples.quickstart;
 
-import ai.doctruth.AnthropicProvider;
 import ai.doctruth.DocTruth;
+import ai.doctruth.OpenAiProvider;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.PdfDocumentParser;
 import java.math.BigDecimal;
@@ -29,10 +29,10 @@ public final class Quickstart {
 
     public static void main(String[] args) throws Exception {
         // 1. API key from env. Fail fast with a clear message — no silent fallback.
-        var apiKey = System.getenv("ANTHROPIC_API_KEY");
+        var apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
-            System.err.println("ERROR: set ANTHROPIC_API_KEY in your environment.");
-            System.err.println("       e.g. export ANTHROPIC_API_KEY=sk-ant-...");
+            System.err.println("ERROR: set OPENAI_API_KEY in your environment.");
+            System.err.println("       e.g. export OPENAI_API_KEY=sk-...");
             System.exit(2);
         }
 
@@ -50,7 +50,7 @@ public final class Quickstart {
         // 4. The fluent extraction call — provider, prompt, target type, evidence flags.
         //    .withProvenance() asks the library to attach a Citation per extracted field.
         //    .withBitemporal() records both extractedAt + sourcePublishedAt on the result.
-        var result = DocTruth.from(new AnthropicProvider(apiKey))
+        var result = DocTruth.from(new OpenAiProvider(apiKey))
                 .extract("Extract the contract terms", Contract.class)
                 .withProvenance()
                 .withSourcePublishedAt(Instant.parse("2026-01-01T00:00:00Z"))

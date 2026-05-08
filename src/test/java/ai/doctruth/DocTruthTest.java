@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
  * and are covered in {@link ExtractionBuilderTest}; this file pins the entry-point
  * invariants only.
  *
- * <p>Note on the fake provider: per AGENTS.md "no god files / classes" we keep one anonymous
+ * <p>Note on the fake provider: per CONTRIBUTING.md "no god files / classes" we keep one anonymous
  * subclass per test method rather than introducing a shared helper class. The subclass
  * pattern (and the rationale for {@code AnthropicProvider} being non-final) is documented in
  * {@link AnthropicProviderTest}.

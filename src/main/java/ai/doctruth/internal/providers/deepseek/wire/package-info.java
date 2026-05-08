@@ -1,7 +1,7 @@
 /**
  * DeepSeek Chat Completions wire-format records (request + response). NOT public API.
  *
- * <p>DeepSeek's API is OpenAI-API-compatible at the wire level, but per AGENTS.md §1
+ * <p>DeepSeek's API is OpenAI-API-compatible at the wire level, but per CONTRIBUTING.md §1
  * (decoupling) the records are intentionally <em>not</em> shared with the OpenAI provider.
  * If DeepSeek diverges in the future (e.g. {@code reasoning_content} for DeepSeek-R1) we
  * want to evolve this surface independently. The cost is ~70 lines of duplicate records;

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  *       one byte of JSON. An empty body is a transport-layer failure that should surface as
  *       {@link ProviderException}, never as a {@code ProviderResponse}.
  *   <li>{@code usage} non-null — token accounting is mandatory for cost-attribution and
- *       observability per AGENTS.md "Auditable + debuggable + loggable everywhere".
+ *       observability per CONTRIBUTING.md "Auditable + debuggable + loggable everywhere".
  * </ul>
  */
 class ProviderResponseTest {

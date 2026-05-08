@@ -19,15 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@DisplayName("OptiTalent read-only resume smoke")
-class OptiTalentResumeSmokeIT {
+@DisplayName("external read-only PDF corpus smoke")
+class ExternalPdfCorpusSmokeIT {
 
-    private static final Logger LOG = LoggerFactory.getLogger(OptiTalentResumeSmokeIT.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ExternalPdfCorpusSmokeIT.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int MAX_PDFS = 20;
     private static final int TARGET_OK = 3;
-    private static final Path DEFAULT_RESUMES =
-            Path.of("/Users/jameslee/OptiTalent Nan V1/optitalent-monorepo/frontend/storage/resumes/resumes");
     private static final String MARKER_SCHEMA = """
             {
               "type": "object",
@@ -38,13 +36,15 @@ class OptiTalentResumeSmokeIT {
             """;
 
     @Test
-    @DisplayName("bounded real OptiTalent PDFs parse and pass JSON extraction with citation matching")
-    void realOptiTalentPdfsRunThroughDocTruthPipeline() throws Exception {
-        Path resumesDir =
-                Path.of(System.getenv().getOrDefault("DOCTRUTH_OPTITALENT_RESUMES_DIR", DEFAULT_RESUMES.toString()));
-        assumeTrue(Files.isDirectory(resumesDir), "OptiTalent resumes directory not present; skipping smoke");
-        List<Path> pdfs = listPdfs(resumesDir);
-        assumeTrue(!pdfs.isEmpty(), "OptiTalent resumes directory has no PDFs; skipping smoke");
+    @DisplayName("bounded external PDFs parse and pass JSON extraction with citation matching")
+    void externalPdfsRunThroughDocTruthPipeline() throws Exception {
+        String configuredDir = System.getenv("DOCTRUTH_PDF_CORPUS_DIR");
+        assumeTrue(
+                configuredDir != null && !configuredDir.isBlank(), "DOCTRUTH_PDF_CORPUS_DIR not set; skipping smoke");
+        Path corpusDir = Path.of(configuredDir);
+        assumeTrue(Files.isDirectory(corpusDir), "DOCTRUTH_PDF_CORPUS_DIR is not a directory; skipping smoke");
+        List<Path> pdfs = listPdfs(corpusDir);
+        assumeTrue(!pdfs.isEmpty(), "PDF corpus directory has no PDFs; skipping smoke");
 
         Map<String, Integer> categories = new LinkedHashMap<>();
         int ok = 0;
@@ -69,9 +69,9 @@ class OptiTalentResumeSmokeIT {
             }
         }
 
-        LOG.info("OptiTalent resume smoke categories: {}", categories);
+        LOG.info("external PDF corpus smoke categories: {}", categories);
         assertThat(ok)
-                .as("at least one real OptiTalent PDF should parse and match citation")
+                .as("at least one external PDF should parse and match citation")
                 .isPositive();
         assertThat(categories).doesNotContainKey("EXTRACTION_EVIDENCE_MISSING");
     }
@@ -91,7 +91,7 @@ class OptiTalentResumeSmokeIT {
 
     private static Optional<String> markerText(ParsedDocument doc) {
         return doc.sections().stream()
-                .map(OptiTalentResumeSmokeIT::sectionText)
+                .map(ExternalPdfCorpusSmokeIT::sectionText)
                 .map(String::strip)
                 .filter(text -> text.length() >= 8)
                 .map(text -> text.length() > 80 ? text.substring(0, 80) : text)
@@ -114,7 +114,7 @@ class OptiTalentResumeSmokeIT {
             @Override
             public ProviderResponse complete(ProviderRequest request) throws ProviderException {
                 return new ProviderResponse(
-                        "{\"marker\":" + markerJson + "}", new ProviderUsage(0, 0, "opititalent-smoke-fake"));
+                        "{\"marker\":" + markerJson + "}", new ProviderUsage(0, 0, "external-corpus-smoke-fake"));
             }
         };
         DocTruth.from(provider)

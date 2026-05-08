@@ -6,7 +6,9 @@
 
 ## Context
 
-AGENTS.md scope was extended to cover office formats beyond PDF + DOCX — XLSX (sibling ADR) and CSV.
+DocTruth scope includes office formats beyond PDF and DOCX; XLSX and CSV keep
+spreadsheet-like source data in the same evidence/citation model as narrative
+documents.
 CSV is the single most common machine-readable data interchange format in regulated-industry
 back offices (financial services, construction tender comparison spreadsheets, healthcare
 extracts), so v0.1.0-alpha needs a `CsvDocumentParser` mirroring the shape of
@@ -21,9 +23,9 @@ The candidate Java CSV libraries are:
 - **univocity-parsers** — fastest in published JMH benchmarks, has auto-delimiter detection
   and other goodies, but the project's licensing has shifted (Apache 2.0 → LGPL → unclear),
   which is a non-starter for an Apache 2.0 licensed library that wants frictionless enterprise
-  adoption (ADR 0002).
+  adoption (ADR 0008).
 - **Hand-rolled `Files.lines()` + manual quoting state machine.** Rejected on principle
-  per AGENTS.md §4 ("Build, don't synthesize") — RFC 4180 quoting / embedded newlines /
+  per CONTRIBUTING.md §4 ("Build, don't synthesize") — RFC 4180 quoting / embedded newlines /
   CRLF / BOM are exactly the case where a hand-rolled parser silently corrupts edge cases.
 
 ## Decision
@@ -46,28 +48,29 @@ Implementation contract (mirrors `PdfDocumentParser` / `DocxDocumentParser`):
 
 - **Zero new transitive deps.** Reuses the Jackson core/databind already on our classpath
   (`jackson-databind` 2.18.2 is the JSON dep for provider call payloads). No new jar tree.
-- **Tiny.** ~50 KB; well within the &lt;500 KB total-jar budget per AGENTS.md "What this
+- **Tiny.** ~50 KB; well within the &lt;500 KB total-jar budget per CONTRIBUTING.md "What this
   project IS".
 - **Spec-compliant.** RFC 4180 quoting, embedded newlines, CRLF normalisation, optional
   BOM stripping — all already in the library, all production-tested at Jackson scale.
 - **Idiomatic for the project.** The codebase is already fluent in Jackson — using its
-  CSV module keeps the cognitive surface small (AGENTS.md §5 "elegance over cleverness").
+  CSV module keeps the cognitive surface small (CONTRIBUTING.md §5 "elegance over cleverness").
 - **Charset-agnostic.** We control the `Reader` (via `Files.newBufferedReader(path,
   charset)`), so the UTF-8-with-Latin-1-fallback policy fits naturally.
 
 ### What jackson-dataformat-csv costs
 
 - **Less feature-rich than univocity.** No auto-delimiter detection (semicolon `;` and tab
-  `\t` are common in EU CSV exports). Accepted: comma-only is fine for v0.1.0-alpha; a
-  per-call delimiter override arrives in Phase 2.
+  `\t` are common in EU CSV exports). Accepted: comma-only is fine for the
+  initial parser; per-call delimiter options can be added when a real fixture
+  requires them.
 - **Performance is "good enough", not "fastest".** univocity-parsers is faster on synthetic
   benchmarks. We don't care at the v0.1.0 scale (single-document parse on the read path).
 
 ### Revisit triggers
 
 1. A user reports a real-world CSV the parser cannot handle for a delimiter / encoding
-   reason → add per-call options (delimiter, charset override, header-aware mode) in
-   Phase 2 still on jackson-dataformat-csv.
+   reason → add per-call options (delimiter, charset override, header-aware mode)
+   while staying on jackson-dataformat-csv.
 2. Performance becomes a real bottleneck (multi-MB CSV ingestion path) → re-benchmark
    univocity, but only if the licensing has stabilised.
 
@@ -76,11 +79,11 @@ Implementation contract (mirrors `PdfDocumentParser` / `DocxDocumentParser`):
 - **Apache Commons CSV.** Solid choice, but adds a new dep tree (~100 KB) for functionality
   Jackson already covers. Rejected on jar-size grounds.
 - **OpenCSV.** Heavier; historical Lombok dependency complicates downstream classpath; not
-  on the AGENTS.md preferred list. Rejected.
+  on the CONTRIBUTING.md preferred list. Rejected.
 - **univocity-parsers.** Fastest, has auto-delimiter detection, but the LGPL/Apache
   licensing history is ambiguous enough to scare enterprise customers. Hard reject for an
   Apache 2.0 library.
-- **Hand-rolled.** Rejected per AGENTS.md §4 — the canonical case for "build, don't
+- **Hand-rolled.** Rejected per CONTRIBUTING.md §4 — the canonical case for "build, don't
   synthesize". RFC 4180 quoting edge cases are exactly the bugs this principle exists to
   prevent.
 

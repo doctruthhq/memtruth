@@ -27,7 +27,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
  * suite exercises the hand-rolled wire records + {@code AnthropicHttpClient} delegation.
  *
  * <p>The provider is constructed with a per-test endpoint pointing at the WireMock server so
- * no real Anthropic traffic is generated; per AGENTS.md "Tests" main-CI uses recorded
+ * no real Anthropic traffic is generated; per CONTRIBUTING.md "Tests" main-CI uses recorded
  * responses, never live API.
  */
 class AnthropicProviderHttpTest {

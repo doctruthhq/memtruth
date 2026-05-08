@@ -13,7 +13,7 @@ import ai.doctruth.internal.providers.deepseek.DeepSeekHttpClient;
  * <p>DeepSeek's Chat Completions endpoint is OpenAI-API-compatible at the wire level; the
  * vendor-specific wire records and HTTP plumbing live under
  * {@code ai.doctruth.internal.providers.deepseek.*} so the OpenAI and DeepSeek providers
- * can evolve independently (per AGENTS.md §1 decoupling).
+ * can evolve independently (per CONTRIBUTING.md §1 decoupling).
  *
  * <p>{@code non-sealed} so that test code (and advanced users) can anonymously subclass to
  * supply canned responses or wrap behaviour.

@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory;
  * downstream LLM calls) arrives in v0.2.0+ when {@code ContextStrategy} is widened to return a
  * richer {@code AssembledContext} record.
  *
- * <p>Why so minimal? Three reasons (per AGENTS.md "Engineering principles"):
+ * <p>Why so minimal? Three reasons (per CONTRIBUTING.md "Engineering principles"):
  *
  * <ol>
  *   <li>Shipping a complex multi-window assembler before we know how callers consume it would

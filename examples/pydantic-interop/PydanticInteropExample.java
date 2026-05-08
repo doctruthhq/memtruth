@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package ai.doctruth.examples.pydanticinterop;
 
-import ai.doctruth.AnthropicProvider;
 import ai.doctruth.DocTruth;
 import ai.doctruth.JsonSchema;
+import ai.doctruth.OpenAiProvider;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.PdfDocumentParser;
 import java.nio.file.Path;
@@ -19,9 +19,9 @@ public final class PydanticInteropExample {
             System.err.println("usage: PydanticInteropExample <resume.pdf> <resume.schema.json> <audit.json>");
             System.exit(2);
         }
-        String apiKey = System.getenv("ANTHROPIC_API_KEY");
+        String apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
-            System.err.println("set ANTHROPIC_API_KEY before running this example");
+            System.err.println("set OPENAI_API_KEY before running this example");
             System.exit(2);
         }
 
@@ -32,7 +32,7 @@ public final class PydanticInteropExample {
         ParsedDocument doc = PdfDocumentParser.parse(pdfPath);
         JsonSchema schema = JsonSchema.from(schemaPath);
 
-        var result = DocTruth.from(new AnthropicProvider(apiKey))
+        var result = DocTruth.from(new OpenAiProvider(apiKey))
                 .extractJson("Extract resume fields. Return JSON only.", schema)
                 .requireCitation("fullName")
                 .requireCitation("experience[0].company")

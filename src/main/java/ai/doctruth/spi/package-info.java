@@ -1,9 +1,8 @@
 /**
- * Service Provider Interface (SPI) extension points for {@code doctruth-java}. The OSS
- * library publishes these interfaces and ships default implementations (NOOP / IDENTITY).
- * Commercial-tier consumers (the {@code doctruth-enterprise} jar) plug in richer
- * implementations — HMAC-signed audit JSON, SIEM push listeners, region-enforcing
- * transports — without changing the OSS API. See ADR 0006.
+ * Service Provider Interface (SPI) extension points for DocTruth. The library publishes
+ * these interfaces and ships conservative default implementations (NOOP / IDENTITY).
+ * Callers can plug in organization-specific implementations — signed audit JSON, event
+ * listeners, region-aware transports — without changing the public API.
  *
  * @since 0.1.0
  */

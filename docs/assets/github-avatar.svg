@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">DocTruth avatar</title>
+  <desc id="desc">Document citation verification mark.</desc>
+  <rect width="512" height="512" rx="92" fill="#071832"/>
+  <path d="M118 74h182l72 74v278H118z" fill="#ffffff" stroke="#dff5ff" stroke-width="14" stroke-linejoin="round"/>
+  <path d="M300 74v74h72" fill="#dff5ff" stroke="#14a8ee" stroke-width="14" stroke-linejoin="round"/>
+  <path d="M166 178h90M166 226h126M166 274h78" stroke="#071832" stroke-width="24" stroke-linecap="round"/>
+  <path d="M372 184h42v148h-42" stroke="#14a8ee" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="438" cy="206" r="20" fill="#14a8ee"/>
+  <circle cx="438" cy="258" r="20" fill="#14a8ee"/>
+  <circle cx="438" cy="310" r="20" fill="#f5a400"/>
+  <path d="M168 350l38 39 86-103" stroke="#0f9f6e" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

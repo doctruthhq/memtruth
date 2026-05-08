@@ -1,5 +1,9 @@
 # DocTruth
 
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
+</p>
+
 [![CI](https://github.com/doctruthhq/DocTruth/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/DocTruth/actions)
 [![Maven Central](https://img.shields.io/badge/maven--central-pending-lightgrey.svg)](#installation)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)

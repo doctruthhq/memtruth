@@ -1,0 +1,17 @@
+Source PDF: /var/folders/_z/t9p2v1234/T/doctruth-quickstart-3417829.pdf
+Parsed 1 page(s) from doctruth-quickstart-3417829.pdf
+
+Extracted value:
+  Contract[partyA=Acme Industrial Materials Pty Ltd, partyB=BetaCorp Construction Ltd, effectiveDate=2026-04-01, totalValue=2450000]
+
+Citations: 4 field(s)
+  first: partyA -> page 1 line 2  matchScore=1.00
+
+Confidence: 4 field(s)
+
+Provenance:
+  model=anthropic modelVersion=claude-sonnet-4-5
+  extractedAt=2026-05-07T05:30:14.218Z
+  sourcePublishedAt=2026-01-01T00:00:00Z
+
+Audit JSON written to: /var/folders/_z/t9p2v1234/T/audit.json

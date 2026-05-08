@@ -1,0 +1,295 @@
+package ai.doctruth.internal.citation;
+
+import java.lang.reflect.RecordComponent;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+
+import ai.doctruth.Citation;
+import ai.doctruth.FigureSection;
+import ai.doctruth.ParsedDocument;
+import ai.doctruth.ParsedSection;
+import ai.doctruth.SourceLocation;
+import ai.doctruth.TableSection;
+import ai.doctruth.TextSection;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.commons.text.similarity.JaroWinklerSimilarity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Walk extracted records, maps, lists, and JSON nodes; match each leaf field back to
+ * source text via exact substring first, then Jaro-Winkler fuzzy windows. Weak matches
+ * are logged and surfaced instead of being silently omitted.
+ *
+ * @hidden
+ */
+public final class CitationMatcher {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CitationMatcher.class);
+
+    /** Default {@code minScore} per ADR 0005. */
+    public static final double DEFAULT_MIN_SCORE = 0.85;
+
+    private static final JaroWinklerSimilarity JW = new JaroWinklerSimilarity();
+
+    private final double minScore;
+
+    public CitationMatcher() {
+        this(DEFAULT_MIN_SCORE);
+    }
+
+    public CitationMatcher(double minScore) {
+        if (Double.isNaN(minScore) || minScore < 0.0 || minScore > 1.0) {
+            throw new IllegalArgumentException("minScore must be a real number in [0.0, 1.0], got " + minScore);
+        }
+        this.minScore = minScore;
+    }
+
+    /**
+     * Walk {@code value} and produce a citation per non-null, non-blank leaf, keyed by
+     * JSON-pointer-ish field path.
+     *
+     * @throws NullPointerException if {@code value} or {@code doc} is null.
+     */
+    public Map<String, Citation> matchAll(Object value, ParsedDocument doc) {
+        Objects.requireNonNull(value, "value");
+        Objects.requireNonNull(doc, "doc");
+        var leaves = new ArrayList<Leaf>();
+        traverse("", value, leaves);
+        var sections = renderedSections(doc);
+        var fallback = fallbackLocation(doc);
+        var out = new LinkedHashMap<String, Citation>();
+        for (var leaf : leaves) {
+            out.put(leaf.path(), matchOne(leaf.value(), leaf.path(), sections, fallback));
+        }
+        return Map.copyOf(out);
+    }
+
+    private Citation matchOne(String needle, String path, List<Rendered> sections, SourceLocation fallback) {
+        for (var sec : sections) {
+            int idx = sec.text().indexOf(needle);
+            if (idx >= 0) {
+                return new Citation(sec.location(), needle, 1.0);
+            }
+        }
+        var best = bestFuzzy(needle, sections);
+        if (best == null) {
+            LOG.warn("citation match unavailable: field={} score=0.0 threshold={}", path, minScore);
+            return new Citation(fallback, needle, 0.0);
+        }
+        if (best.matchScore() < minScore) {
+            LOG.warn(
+                    "citation match below threshold: field={} score={} threshold={}",
+                    path,
+                    best.matchScore(),
+                    minScore);
+        }
+        return best;
+    }
+
+    private static Citation bestFuzzy(String needle, List<Rendered> sections) {
+        Citation best = null;
+        for (var sec : sections) {
+            var c = bestFuzzyWindow(needle, sec.text(), sec.location());
+            if (c == null) {
+                continue;
+            }
+            if (best == null || c.matchScore() > best.matchScore()) {
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Heuristic fuzzy window: pick a window length of {@code |needle|} (with ±20% jitter
+     * during scoring) and slide a coarse stride across {@code haystack}. Seed positions
+     * include matches of {@code needle.substring(0, min(5, len))} plus a uniform stride —
+     * good enough to find a JaroWinkler peak without full O(n) scan.
+     */
+    private static Citation bestFuzzyWindow(String needle, String haystack, SourceLocation loc) {
+        if (haystack.isEmpty() || needle.isEmpty()) {
+            return null;
+        }
+        int n = needle.length();
+        int lo = Math.max(1, (int) Math.floor(n * 0.8));
+        int hi = Math.min(haystack.length(), (int) Math.ceil(n * 1.2));
+        var positions = candidatePositions(needle, haystack);
+        double bestScore = -1.0;
+        String bestQuote = null;
+        for (int pos : positions) {
+            for (int len = lo; len <= hi; len += Math.max(1, (hi - lo) / 2)) {
+                int end = Math.min(haystack.length(), pos + len);
+                if (end <= pos) {
+                    continue;
+                }
+                String window = haystack.substring(pos, end);
+                double score = JW.apply(needle, window);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestQuote = window;
+                }
+            }
+        }
+        if (bestQuote == null || bestQuote.isBlank()) {
+            return null;
+        }
+        double clamped = Math.max(0.0, Math.min(1.0, bestScore));
+        return new Citation(loc, bestQuote, clamped);
+    }
+
+    private static List<Integer> candidatePositions(String needle, String haystack) {
+        var out = new ArrayList<Integer>();
+        out.add(0);
+        String prefix = needle.substring(0, Math.min(5, needle.length()));
+        if (!prefix.isBlank()) {
+            int from = 0;
+            while (from <= haystack.length() - prefix.length()) {
+                int idx = haystack.indexOf(prefix, from);
+                if (idx < 0) {
+                    break;
+                }
+                out.add(idx);
+                from = idx + 1;
+                if (out.size() > 8) {
+                    break;
+                }
+            }
+        }
+        int stride = Math.max(8, haystack.length() / 8);
+        for (int p = stride; p < haystack.length(); p += stride) {
+            out.add(p);
+        }
+        return out;
+    }
+
+    private static List<Rendered> renderedSections(ParsedDocument doc) {
+        var out = new ArrayList<Rendered>(doc.sections().size());
+        for (var s : doc.sections()) {
+            out.add(new Rendered(textOf(s), locationOf(s)));
+        }
+        return out;
+    }
+
+    private static String textOf(ParsedSection s) {
+        return switch (s) {
+            case TextSection ts -> ts.text();
+            case TableSection ts -> {
+                var sb = new StringBuilder();
+                for (var row : ts.rows()) {
+                    if (sb.length() > 0) {
+                        sb.append('\n');
+                    }
+                    sb.append(String.join(" | ", row));
+                }
+                yield sb.toString();
+            }
+            case FigureSection fs -> "[Figure: " + fs.caption() + "]";
+        };
+    }
+
+    private static SourceLocation locationOf(ParsedSection s) {
+        return switch (s) {
+            case TextSection ts -> ts.location();
+            case TableSection ts -> ts.location();
+            case FigureSection fs -> fs.location();
+        };
+    }
+
+    private static SourceLocation fallbackLocation(ParsedDocument doc) {
+        return new SourceLocation(1, 1, 1, 1, 0);
+    }
+
+    // --- traversal -----------------------------------------------------------
+
+    private static void traverse(String path, Object node, List<Leaf> out) {
+        if (node == null) {
+            return;
+        }
+        if (node instanceof Optional<?> opt) {
+            opt.ifPresent(v -> traverse(path, v, out));
+            return;
+        }
+        if (node instanceof List<?> list) {
+            for (int i = 0; i < list.size(); i++) {
+                traverse(path + "[" + i + "]", list.get(i), out);
+            }
+            return;
+        }
+        if (node instanceof Map<?, ?> map) {
+            for (var e : map.entrySet()) {
+                traverse(joinPath(path, String.valueOf(e.getKey())), e.getValue(), out);
+            }
+            return;
+        }
+        if (node instanceof JsonNode json) {
+            traverseJson(path, json, out);
+            return;
+        }
+        if (node.getClass().isRecord()) {
+            traverseRecord(path, node, out);
+            return;
+        }
+        var leaf = String.valueOf(node);
+        if (leaf == null || leaf.isBlank()) {
+            return;
+        }
+        out.add(new Leaf(path, leaf));
+    }
+
+    private static void traverseJson(String path, JsonNode node, List<Leaf> out) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return;
+        }
+        if (node.isObject()) {
+            node.fields().forEachRemaining(e -> traverseJson(joinPath(path, e.getKey()), e.getValue(), out));
+            return;
+        }
+        if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                traverseJson(path + "[" + i + "]", node.get(i), out);
+            }
+            return;
+        }
+        String leaf = node.isTextual() ? node.asText() : node.toString();
+        if (!leaf.isBlank()) {
+            out.add(new Leaf(path, leaf));
+        }
+    }
+
+    private static void traverseRecord(String path, Object record, List<Leaf> out) {
+        RecordComponent[] comps = record.getClass().getRecordComponents();
+        for (var c : comps) {
+            Object v;
+            try {
+                var accessor = c.getAccessor();
+                // Records may be declared in a non-exported package or with non-public
+                // enclosing classes (common in tests). The component's accessor method
+                // is conceptually always public, but reflective invocation enforces the
+                // enclosing class's visibility. Records are not JDK built-ins, so
+                // setAccessible is permitted per AGENTS.md §1.
+                accessor.setAccessible(true);
+                v = accessor.invoke(record);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(
+                        "failed to read record component " + c.getName() + " on " + record.getClass(), e);
+            }
+            traverse(joinPath(path, c.getName()), v, out);
+        }
+    }
+
+    private static String joinPath(String parent, String child) {
+        return parent.isEmpty() ? child : parent + "." + child;
+    }
+
+    // --- carriers ------------------------------------------------------------
+
+    private record Leaf(String path, String value) {}
+
+    private record Rendered(String text, SourceLocation location) {}
+}

@@ -1,0 +1,59 @@
+# Build output
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# Maven
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+buildNumber.properties
+release.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+
+# IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated/
+.springBeans
+.sts4-cache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.local
+*.env
+
+# Website
+website/
+
+# Test artifacts
+**/test-output/
+**/recordings/*.tmp.json
+
+# Real-world fixture corpus — never check in (may contain customer/PII data)
+fixtures/
+
+# Generated example output (re-runnable via `mvn package -DskipTests` + java)
+examples/evidence-overlay/output/
+
+# Local Claude skill state (per-developer)
+.claude/

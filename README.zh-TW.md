@@ -26,7 +26,13 @@ DocTruth 主要回答一個問題：
 
 ## 安裝
 
-需要 Java 25+。Gradle 可以使用同一個座標：`ai.doctruth:doctruth-java:0.1.0-alpha`。
+需要 Java 25+。驗證 Maven Central 可用：
+
+```bash
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
+```
+
+在 Maven 專案中使用：
 
 ```xml
 <dependency>
@@ -35,6 +41,8 @@ DocTruth 主要回答一個問題：
     <version>0.1.0-alpha</version>
 </dependency>
 ```
+
+Gradle 使用同一個座標：`ai.doctruth:doctruth-java:0.1.0-alpha`。
 
 升級到最新 release：
 

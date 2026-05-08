@@ -26,7 +26,13 @@ No es un framework de agentes, un framework de chains, un wrapper de bases vecto
 
 ## Instalación
 
-Requiere Java 25+. Gradle puede usar la misma coordenada: `ai.doctruth:doctruth-java:0.1.0-alpha`.
+Requiere Java 25+. Verifica Maven Central:
+
+```bash
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
+```
+
+Usar en un proyecto Maven:
 
 ```xml
 <dependency>
@@ -35,6 +41,8 @@ Requiere Java 25+. Gradle puede usar la misma coordenada: `ai.doctruth:doctruth-
     <version>0.1.0-alpha</version>
 </dependency>
 ```
+
+Gradle usa la misma coordenada: `ai.doctruth:doctruth-java:0.1.0-alpha`.
 
 Actualizar a la última release:
 

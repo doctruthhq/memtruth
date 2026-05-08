@@ -26,6 +26,20 @@ No es un framework de agentes, un framework de chains, un wrapper de bases vecto
 
 ## Instalación
 
+Coordenada corta:
+
+```text
+ai.doctruth:doctruth-java:0.1.0-alpha
+```
+
+Descarga rápida:
+
+```bash
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
+```
+
+Maven:
+
 ```xml
 <dependency>
     <groupId>ai.doctruth</groupId>
@@ -33,6 +47,8 @@ No es un framework de agentes, un framework de chains, un wrapper de bases vecto
     <version>0.1.0-alpha</version>
 </dependency>
 ```
+
+Gradle:
 
 ```groovy
 implementation "ai.doctruth:doctruth-java:0.1.0-alpha"
@@ -68,6 +84,10 @@ var partyACitation = result.citations().get("partyA");
 Ejemplo ejecutable: [`examples/quickstart`](examples/quickstart/).
 
 ## Qué Hace
+
+<p align="center">
+  <img src="docs/assets/capabilities.png" alt="DocTruth capabilities: parse, assemble context, extract with LLM providers, validate schema, attach evidence, and export audit JSON">
+</p>
 
 - Analiza PDF, DOCX, XLSX y CSV en secciones con ubicaciones de origen.
 - Extrae Java records u objetos definidos por JSON Schema mediante proveedores LLM.

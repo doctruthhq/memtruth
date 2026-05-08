@@ -26,6 +26,20 @@ DocTruth 主要回答一个问题：
 
 ## 安装
 
+最短坐标：
+
+```text
+ai.doctruth:doctruth-java:0.1.0-alpha
+```
+
+拉取一次：
+
+```bash
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
+```
+
+Maven:
+
 ```xml
 <dependency>
     <groupId>ai.doctruth</groupId>
@@ -33,6 +47,8 @@ DocTruth 主要回答一个问题：
     <version>0.1.0-alpha</version>
 </dependency>
 ```
+
+Gradle:
 
 ```groovy
 implementation "ai.doctruth:doctruth-java:0.1.0-alpha"
@@ -68,6 +84,10 @@ var partyACitation = result.citations().get("partyA");
 完整示例见 [`examples/quickstart`](examples/quickstart/)。
 
 ## 能力
+
+<p align="center">
+  <img src="docs/assets/capabilities.png" alt="DocTruth capabilities: parse, assemble context, extract with LLM providers, validate schema, attach evidence, and export audit JSON">
+</p>
 
 - 将 PDF、DOCX、XLSX、CSV 解析成带来源位置的 sections。
 - 通过 LLM provider 抽取 Java records 或 JSON Schema 约束的对象。

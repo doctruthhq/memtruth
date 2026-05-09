@@ -22,7 +22,7 @@ DocTruth is for teams that need to answer one question reliably:
 
 > Where did this extracted value come from?
 
-It is not an agent framework, chain framework, vector database wrapper, or UI. It is a small Java library for the extraction boundary: source document in, validated structured output plus evidence trail out.
+The core boundary is simple: source document in, validated structured output plus evidence trail out.
 
 ## Installation
 

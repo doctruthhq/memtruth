@@ -44,7 +44,7 @@ mvn exec:java \
 export OPENAI_API_KEY=sk-...
 mvn -q -f /path/to/doctruth-java/pom.xml package -DskipTests
 mvn -q -f /path/to/doctruth-java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/doctruth-cp.txt
-CP="/path/to/doctruth-java/target/doctruth-java-0.1.0-SNAPSHOT.jar:$(cat /tmp/doctruth-cp.txt)"
+CP="/path/to/doctruth-java/target/doctruth-java-0.2.0-alpha.jar:$(cat /tmp/doctruth-cp.txt)"
 javac -cp "$CP" -d build /path/to/doctruth-java/examples/quickstart/Quickstart.java
 java  -cp "build:$CP" ai.doctruth.examples.quickstart.Quickstart
 ```

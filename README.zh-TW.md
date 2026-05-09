@@ -29,7 +29,7 @@ DocTruth 主要回答一個問題：
 需要 Java 25+。驗證 Maven Central 可用：
 
 ```bash
-mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.2.0-alpha
 ```
 
 在 Maven 專案中使用：
@@ -38,11 +38,11 @@ mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
 <dependency>
     <groupId>ai.doctruth</groupId>
     <artifactId>doctruth-java</artifactId>
-    <version>0.1.0-alpha</version>
+    <version>0.2.0-alpha</version>
 </dependency>
 ```
 
-Gradle 使用同一個座標：`ai.doctruth:doctruth-java:0.1.0-alpha`。
+Gradle 使用同一個座標：`ai.doctruth:doctruth-java:0.2.0-alpha`。
 
 升級到最新 release：
 
@@ -110,7 +110,7 @@ DocTruth 支援常見 Pydantic v2 JSON Schema 輸出，包括本地 `$defs` / `$
 建置期遷移工具：
 
 ```bash
-java -jar target/doctruth-java-0.1.0-alpha.jar \
+java -jar target/doctruth-java-0.2.0-alpha.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   --out schemas/resume.schema.json \
   --check
@@ -134,8 +134,8 @@ Provider client 使用 JDK `java.net.http.HttpClient`，不引入 vendor SDK。
 ## CLI
 
 ```bash
-java -jar target/doctruth-java-0.1.0-alpha.jar parse contract.pdf
-java -jar target/doctruth-java-0.1.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
+java -jar target/doctruth-java-0.2.0-alpha.jar parse contract.pdf
+java -jar target/doctruth-java-0.2.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
 ```
 
 ## 文件
@@ -150,9 +150,9 @@ java -jar target/doctruth-java-0.1.0-alpha.jar migrate pydantic myapp.schemas:Mo
 
 ## 狀態
 
-`0.1.0-alpha` 是早期公開 alpha。API 已可用、已測試、可供回饋，但在 `1.0` 前仍可能調整。
+`0.2.0-alpha` 是早期公開 alpha。API 已可用、已測試、可供回饋，但在 `1.0` 前仍可能調整。
 
-目前驗證基線：628 個 unit test 和 16 個 integration test 通過，2 個外部 smoke test 跳過，覆蓋率門檻為 90% line / 80% branch，單 jar 約 202 KB。
+目前驗證基線：645 個 unit test 和 16 個 integration test 通過，2 個外部 smoke test 跳過，覆蓋率門檻為 90% line / 80% branch，單 jar 約 205 KB。
 
 ## License
 

@@ -29,7 +29,7 @@ It is not an agent framework, chain framework, vector database wrapper, or UI. I
 Requires Java 25+. Verify Maven Central availability:
 
 ```bash
-mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0-alpha
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.2.0-alpha
 ```
 
 Use in a Maven project:
@@ -38,11 +38,11 @@ Use in a Maven project:
 <dependency>
     <groupId>ai.doctruth</groupId>
     <artifactId>doctruth-java</artifactId>
-    <version>0.1.0-alpha</version>
+    <version>0.2.0-alpha</version>
 </dependency>
 ```
 
-Gradle uses the same coordinate: `ai.doctruth:doctruth-java:0.1.0-alpha`.
+Gradle uses the same coordinate: `ai.doctruth:doctruth-java:0.2.0-alpha`.
 
 Upgrade to the latest release:
 
@@ -123,7 +123,7 @@ DocTruth supports common Pydantic v2 JSON Schema exports, including local `$defs
 Build-time helper:
 
 ```bash
-java -jar target/doctruth-java-0.1.0-alpha.jar \
+java -jar target/doctruth-java-0.2.0-alpha.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   --out schemas/resume.schema.json \
   --check
@@ -147,8 +147,8 @@ Provider clients use JDK `java.net.http.HttpClient`; no vendor SDKs are on the c
 ## CLI
 
 ```bash
-java -jar target/doctruth-java-0.1.0-alpha.jar parse contract.pdf
-java -jar target/doctruth-java-0.1.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
+java -jar target/doctruth-java-0.2.0-alpha.jar parse contract.pdf
+java -jar target/doctruth-java-0.2.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
 ```
 
 ## Documentation
@@ -163,9 +163,9 @@ java -jar target/doctruth-java-0.1.0-alpha.jar migrate pydantic myapp.schemas:Mo
 
 ## Status
 
-`0.1.0-alpha` is an early public alpha. The API is usable, tested, and published for feedback, but may still change before `1.0`.
+`0.2.0-alpha` is an early public alpha. The API is usable, tested, and published for feedback, but may still change before `1.0`.
 
-Current verification baseline: 628 unit tests and 16 integration tests passing, with 2 external smoke tests skipped, coverage gates at 90% line / 80% branch, single jar about 202 KB.
+Current verification baseline: 645 unit tests and 16 integration tests passing, with 2 external smoke tests skipped, coverage gates at 90% line / 80% branch, single jar about 205 KB.
 
 ## License
 

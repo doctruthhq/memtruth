@@ -17,7 +17,7 @@ runtime dependency.
 If your Python model is importable as `myapp.schemas:ResumeExtraction`:
 
 ```bash
-java -jar target/doctruth-java-0.1.0-SNAPSHOT.jar \
+java -jar target/doctruth-java-0.2.0-alpha.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   --out examples/pydantic-interop/resume.schema.json \
   --check
@@ -38,7 +38,7 @@ Build the jar and classpath:
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
   mvn -B -ntp package -DskipTests
 mvn -q dependency:build-classpath -Dmdep.outputFile=/tmp/doctruth-cp.txt
-CP="target/doctruth-java-0.1.0-SNAPSHOT.jar:$(cat /tmp/doctruth-cp.txt)"
+CP="target/doctruth-java-0.2.0-alpha.jar:$(cat /tmp/doctruth-cp.txt)"
 ```
 
 Compile and run:

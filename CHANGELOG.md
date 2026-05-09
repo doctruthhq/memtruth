@@ -13,6 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.2.0-alpha] - 2026-05-09
+
+Second public alpha focused on Java-native structured extraction hardening and
+release safety.
+
+### Added
+
+- Java-native schema generation for records and simple POJOs, including nested
+  objects, lists, maps, enums, dates, numbers, Jackson property annotations, and
+  fail-fast rejection for raw `Object` / unbounded shapes.
+- Typed extraction contract tests proving Java records are schema-validated
+  before deserialization, then retried on repairable provider output.
+- Internal mapper support for `Optional<T>` so absent and explicit `null`
+  values map consistently to `Optional.empty()`.
+
+### Changed
+
+- `Optional<T>` now has precise schema semantics: it is omitted from
+  `required`, and only Optional fields include `null` in their generated type.
+- Non-Optional reference fields are strict: explicit JSON `null` is rejected by
+  local schema validation before typed object mapping.
+- Custom dotted field constraints now traverse Optional intermediate values
+  safely, so caller-owned validation works for optional nested objects.
+- CI now requires Spotless, Checkstyle, full recorded verification, integration
+  tests, and Jacoco coverage gates before merge; release tags verify before
+  deploying to Maven Central.
+
+### Fixed
+
+- Fixed Java typed extraction paths where Optional fields could validate at the
+  schema layer but fail during runtime object mapping.
+- Fixed overly permissive non-Optional object schemas that previously accepted
+  `null`.
+
 ## [0.1.0-alpha] - 2026-05-09
 
 First public alpha. The audit primitives the Java enterprise stack has been
@@ -59,5 +93,6 @@ missing — every LLM-extracted field carries a verifiable evidence chain
   failures via `dev.failsafe:failsafe`; per-call retry count carried on
   `Provenance`.
 
-[Unreleased]: https://github.com/doctruthhq/DocTruth/compare/v0.1.0-alpha...HEAD
+[Unreleased]: https://github.com/doctruthhq/DocTruth/compare/v0.2.0-alpha...HEAD
+[0.2.0-alpha]: https://github.com/doctruthhq/DocTruth/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/doctruthhq/DocTruth/releases/tag/v0.1.0-alpha

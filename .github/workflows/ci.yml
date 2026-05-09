@@ -32,7 +32,10 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
-      - name: Verify (unit + recorded LLM)
+      - name: Style and static checks
+        run: mvn -B -ntp spotless:check checkstyle:check
+
+      - name: Verify (unit + integration + recorded LLM + coverage)
         run: mvn -B -ntp verify -P recorded
 
       - name: Upload surefire reports on failure

@@ -32,6 +32,9 @@ jobs:
           gpg-private-key: ${{ secrets.OSSRH_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
+      - name: Verify release commit
+        run: mvn -B -ntp spotless:check checkstyle:check verify -P recorded
+
       - name: Deploy to Sonatype Central Portal
         run: mvn -B -ntp -P release deploy -DskipTests
         env:

@@ -11,13 +11,15 @@ import java.util.stream.Collectors;
 import ai.doctruth.internal.citation.CitationMatcher;
 import ai.doctruth.internal.citation.EvidenceGate;
 import ai.doctruth.internal.render.SectionRenderer;
+import ai.doctruth.internal.schema.JavaNativeObjectMapper;
 import ai.doctruth.internal.schema.JsonSchemaBuilder;
+import ai.doctruth.internal.schema.JsonSchemaValidator;
 import ai.doctruth.spi.AuditEvent;
 import ai.doctruth.spi.AuditEventListener;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +34,7 @@ public final class ExtractionBuilder<T> {
 
     private static final Logger LOG = LoggerFactory.getLogger(ExtractionBuilder.class);
 
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
+    private static final ObjectMapper MAPPER = JavaNativeObjectMapper.create();
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
 
@@ -139,7 +141,7 @@ public final class ExtractionBuilder<T> {
         for (int retry = 0; retry <= state.maxRetries; retry++) {
             ProviderResponse response = callProvider(request);
             try {
-                T value = parseValue(response.rawJson(), retry);
+                T value = parseValue(response.rawJson(), schema, retry);
                 state.constraints.validate(value, retry);
                 Map<String, Citation> matched = EvidenceGate.match(
                         value, doc, state.recordProvenance || state.recordConfidence, state.recordProvenance, retry);
@@ -197,9 +199,11 @@ public final class ExtractionBuilder<T> {
         }
     }
 
-    private T parseValue(String rawJson, int retries) throws ExtractionException {
+    private T parseValue(String rawJson, JsonNode schema, int retries) throws ExtractionException {
         try {
-            return MAPPER.readValue(rawJson, type);
+            var value = MAPPER.readTree(rawJson);
+            JsonSchemaValidator.validate(value, schema, retries);
+            return MAPPER.treeToValue(value, type);
         } catch (JsonProcessingException e) {
             throw new ExtractionException(
                     "EXTRACTION_PARSE_FAILED",

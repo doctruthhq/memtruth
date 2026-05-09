@@ -1,5 +1,9 @@
 package ai.doctruth.internal.schema;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
@@ -28,13 +32,19 @@ public final class JsonSchemaBuilder {
     }
 
     public static ObjectNode forType(Class<?> type) {
-        return schemaFor(MAPPER.constructType(type));
+        return schemaFor(MAPPER.constructType(type), "$");
     }
 
-    private static ObjectNode schemaFor(JavaType type) {
+    private static ObjectNode schemaFor(JavaType type, String path) {
         Class<?> raw = type.getRawClass();
         if (raw == String.class || CharSequence.class.isAssignableFrom(raw)) {
             return typed("string");
+        }
+        if (raw == LocalDate.class) {
+            return formattedString("date");
+        }
+        if (raw == Instant.class || raw == OffsetDateTime.class || raw == LocalDateTime.class) {
+            return formattedString("date-time");
         }
         if (raw == boolean.class || raw == Boolean.class) {
             return typed("boolean");
@@ -49,18 +59,21 @@ public final class JsonSchemaBuilder {
             return enumSchema(raw);
         }
         if (Optional.class.isAssignableFrom(raw)) {
-            return schemaFor(type.containedTypeOrUnknown(0));
+            return nullable(schemaFor(type.containedTypeOrUnknown(0), path));
         }
         if (Collection.class.isAssignableFrom(raw)) {
-            return arraySchema(type.containedTypeOrUnknown(0));
+            return arraySchema(type.containedTypeOrUnknown(0), path);
         }
         if (Map.class.isAssignableFrom(raw)) {
-            return typed("object");
+            return mapSchema(type.containedTypeOrUnknown(1), path);
         }
-        return objectSchema(type);
+        if (raw == Object.class) {
+            throw unsupported(path, raw);
+        }
+        return objectSchema(type, path);
     }
 
-    private static ObjectNode objectSchema(JavaType type) {
+    private static ObjectNode objectSchema(JavaType type, String path) {
         var schema = typed("object");
         ObjectNode properties = JSON.objectNode();
         ArrayNode required = JSON.arrayNode();
@@ -69,8 +82,11 @@ public final class JsonSchemaBuilder {
             if (!prop.couldSerialize()) {
                 continue;
             }
-            properties.set(prop.getName(), schemaFor(prop.getPrimaryType()));
-            required.add(prop.getName());
+            var propertySchema = schemaFor(prop.getPrimaryType(), path + "." + prop.getName());
+            properties.set(prop.getName(), propertySchema);
+            if (!isOptional(prop.getPrimaryType())) {
+                required.add(prop.getName());
+            }
         }
         schema.set("properties", properties);
         schema.set("required", required);
@@ -78,9 +94,15 @@ public final class JsonSchemaBuilder {
         return schema;
     }
 
-    private static ObjectNode arraySchema(JavaType itemType) {
+    private static ObjectNode arraySchema(JavaType itemType, String path) {
         var schema = typed("array");
-        schema.set("items", schemaFor(itemType));
+        schema.set("items", schemaFor(itemType, path + "[]"));
+        return schema;
+    }
+
+    private static ObjectNode mapSchema(JavaType valueType, String path) {
+        var schema = typed("object");
+        schema.set("additionalProperties", schemaFor(valueType, path + ".*"));
         return schema;
     }
 
@@ -98,6 +120,32 @@ public final class JsonSchemaBuilder {
         var schema = JSON.objectNode();
         schema.put("type", type);
         return schema;
+    }
+
+    private static ObjectNode formattedString(String format) {
+        var schema = typed("string");
+        schema.put("format", format);
+        return schema;
+    }
+
+    private static boolean isOptional(JavaType type) {
+        return Optional.class.isAssignableFrom(type.getRawClass());
+    }
+
+    private static ObjectNode nullable(ObjectNode schema) {
+        var type = schema.path("type");
+        if (!type.isTextual()) {
+            return schema;
+        }
+        ArrayNode nullableType = JSON.arrayNode();
+        nullableType.add(type.asText());
+        nullableType.add("null");
+        schema.set("type", nullableType);
+        return schema;
+    }
+
+    private static IllegalArgumentException unsupported(String path, Class<?> raw) {
+        return new IllegalArgumentException("unsupported Java schema type at " + path + ": " + raw.getName());
     }
 
     private static boolean isInteger(Class<?> raw) {

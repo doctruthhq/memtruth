@@ -90,9 +90,22 @@ See [`examples/quickstart`](examples/quickstart/) for a runnable example.
 - Returns per-field `Citation`, `Confidence`, and `Provenance`.
 - Exports W3C PROV-O JSON-LD audit files with `toAuditJson(...)`.
 
-## JSON Schema and Pydantic Interop
+## Java Schema and JSON Schema Interop
 
-Java records are the native path. JSON Schema is the interoperability path.
+Java records and simple POJOs are the native path. DocTruth turns the target
+Java type into the same JSON Schema contract it sends to providers and validates
+locally before deserializing the response.
+
+Supported Java-native schema shapes include nested records/classes, `List<T>`,
+`Map<String, T>`, enums, `String`, booleans, integer and decimal numbers,
+`BigDecimal`, `LocalDate`, and Jackson property annotations such as
+`@JsonProperty` and `@JsonIgnore`. `Optional<T>` is treated as an optional field:
+it is omitted from `required`, while the wrapped value type is still reflected in
+the generated schema. Raw `Object` and unbounded shapes fail fast instead of
+becoming unauditable catch-all objects.
+
+JSON Schema remains the interoperability path for external schema producers such
+as Pydantic.
 
 ```java
 var schema = JsonSchema.from(Path.of("contract.schema.json"));

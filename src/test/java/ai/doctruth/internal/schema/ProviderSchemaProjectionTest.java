@@ -58,6 +58,32 @@ class ProviderSchemaProjectionTest {
     }
 
     @Test
+    void geminiProjectionPreservesNullableObjectPropertiesFromJavaSchema() {
+        JsonNode projected = ProviderSchemaProjection.forGemini(json("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "payment": {
+                      "type": ["object", "null"],
+                      "properties": { "totalValue": { "type": "number" } },
+                      "required": ["totalValue"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["payment"]
+                }
+                """));
+
+        assertThat(projected.at("/properties/payment/type").asText()).isEqualTo("object");
+        assertThat(projected.at("/properties/payment/nullable").asBoolean()).isTrue();
+        assertThat(projected
+                        .at("/properties/payment/properties/totalValue/type")
+                        .asText())
+                .isEqualTo("number");
+        assertThat(projected.at("/properties/payment/required/0").asText()).isEqualTo("totalValue");
+    }
+
+    @Test
     void geminiProjectionMergesAllOfAndProjectsArrayItems() {
         JsonNode projected = ProviderSchemaProjection.forGemini(json("""
                 {

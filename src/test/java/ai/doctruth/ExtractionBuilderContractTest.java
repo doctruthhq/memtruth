@@ -27,6 +27,8 @@ class ExtractionBuilderContractTest {
 
     record ContractWithPayment(String partyA, Payment payment) {}
 
+    record ContractWithOptionalPayment(String partyA, Optional<Payment> payment) {}
+
     static final class LegacyContract {
         public String partyA;
     }
@@ -300,22 +302,22 @@ class ExtractionBuilderContractTest {
         }
 
         @Test
-        @DisplayName("nested field constraint can handle a null intermediate record")
-        void nestedFieldConstraintHandlesNullIntermediate() throws ExtractionException {
+        @DisplayName("nested field constraint can handle an absent Optional intermediate record")
+        void nestedFieldConstraintHandlesAbsentOptionalIntermediate() throws ExtractionException {
             LlmProvider fake = new AnthropicProvider("test-key") {
                 @Override
                 public ProviderResponse complete(ProviderRequest req) {
-                    return contractResponse("{\"partyA\":\"Acme\",\"payment\":null}");
+                    return contractResponse("{\"partyA\":\"Acme\"}");
                 }
             };
 
             var result = DocTruth.from(fake)
-                    .extract("ok", ContractWithPayment.class)
+                    .extract("ok", ContractWithOptionalPayment.class)
                     .withFieldConstraint(
                             "payment.totalValue", BigDecimal.class, value -> value == null, "must be absent")
                     .run(contractDoc());
 
-            assertThat(result.value()).isEqualTo(new ContractWithPayment("Acme", null));
+            assertThat(result.value()).isEqualTo(new ContractWithOptionalPayment("Acme", Optional.empty()));
         }
 
         @Test

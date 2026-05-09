@@ -65,7 +65,7 @@ public final class ProviderSchemaProjection {
     private static Optional<ObjectNode> projectNullableUnion(JsonNode schema, JsonNode root) {
         Optional<JsonNode> unionBranch = nonNullAnyOfBranch(schema);
         if (unionBranch.isEmpty()) {
-            unionBranch = nonNullTypeArrayBranch(schema);
+            unionBranch = nonNullTypeArrayBranch(schema, root);
         }
         if (unionBranch.isEmpty()) {
             return Optional.empty();
@@ -88,7 +88,7 @@ public final class ProviderSchemaProjection {
         return isNullSchema(second) ? Optional.of(first) : Optional.empty();
     }
 
-    private static Optional<JsonNode> nonNullTypeArrayBranch(JsonNode schema) {
+    private static Optional<JsonNode> nonNullTypeArrayBranch(JsonNode schema, JsonNode root) {
         JsonNode type = schema.path("type");
         if (!type.isArray() || type.size() != 2) {
             return Optional.empty();
@@ -98,6 +98,12 @@ public final class ProviderSchemaProjection {
                 var branch = JSON.objectNode();
                 branch.put("type", typeValue.asText());
                 copyNonStructuralKeywords(schema, branch);
+                copyScalar("required", schema, branch);
+                copyObjectProperties(schema, root, branch);
+                copyArrayItems(schema, root, branch);
+                if (schema.has("additionalProperties")) {
+                    branch.set("additionalProperties", projectGemini(schema.get("additionalProperties"), root));
+                }
                 return Optional.of(branch);
             }
         }

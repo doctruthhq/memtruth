@@ -76,7 +76,7 @@ DocTruth should accept schemas from multiple sources:
 
 | Schema source | Core behavior |
 | --- | --- |
-| Java record/class | Generate JSON Schema and deserialize to typed Java value. |
+| Java record/class | Native path: generate JSON Schema, validate provider JSON locally, then deserialize to the typed Java value. |
 | JSON Schema | Send schema to model provider when supported, validate returned JSON locally. |
 | Imported Pydantic JSON Schema | Treat it as standard JSON Schema; do not depend on Python or Pydantic at runtime. |
 
@@ -88,6 +88,24 @@ Provider wrappers are implementation details for this layer:
 - Prompt-plus-parse fallback when native structured output is not strong enough.
 
 The public contract should remain provider-agnostic.
+
+Java-native schema generation follows Java and Jackson conventions rather than a
+private data-model runtime:
+
+- Records and simple POJOs become `type: object` schemas with named properties.
+- Nested records/classes are represented as nested object schemas.
+- `List<T>` becomes an array schema, and `Map<String, T>` becomes an object with
+  `additionalProperties` set to the value schema.
+- Enums, booleans, integer numbers, decimal numbers, `BigDecimal`, and
+  `LocalDate` map to standard JSON Schema scalar types. `LocalDate` uses
+  `type: string` and `format: date`.
+- Jackson annotations such as `@JsonProperty`, `@JsonIgnore`, and date formatting
+  are honoured where they affect the serialized JSON contract.
+- `Optional<T>` means the field may be absent; the wrapped value type still
+  defines the field schema when present.
+- Raw `Object`, unbounded wildcard types, and other catch-all shapes should fail
+  fast with a diagnostic error instead of producing a schema that cannot be
+  audited.
 
 Provider-facing schema can be weaker than the caller schema, but local
 validation must not be. Current policy:

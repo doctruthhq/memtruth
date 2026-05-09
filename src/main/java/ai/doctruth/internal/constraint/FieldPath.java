@@ -3,6 +3,7 @@ package ai.doctruth.internal.constraint;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
+import java.util.Optional;
 
 import ai.doctruth.ExtractionException;
 
@@ -13,6 +14,9 @@ final class FieldPath {
     static Object read(Object target, String path, int retries) throws ExtractionException {
         Object current = target;
         for (String segment : path.split("\\.")) {
+            if (current instanceof Optional<?> optional) {
+                current = optional.orElse(null);
+            }
             if (current == null) {
                 return null;
             }

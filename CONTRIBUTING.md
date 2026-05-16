@@ -33,6 +33,14 @@ Public API compatibility:
 - `ai.doctruth.internal.*` types are not public API and may change in any release.
 - Removing a public type, changing a public method signature, or changing record components requires a major version bump.
 - Internal dependency types must not leak into public method signatures.
+- `PublicApiSnapshotTest` snapshots the public SDK surface. If you intentionally change
+  public API, regenerate it with:
+
+```bash
+mvn -Dtest=ai.doctruth.PublicApiSnapshotTest -Ddoctruth.updatePublicApiSnapshot=true test
+```
+
+Review `src/test/resources/ai/doctruth/public-api-snapshot.txt` before committing.
 
 Scope boundaries:
 
@@ -73,7 +81,7 @@ mvn verify               # unit + integration + JaCoCo coverage gate (~10s)
 mvn spotless:apply       # auto-format
 ```
 
-`mvn verify` runs the JaCoCo coverage check (line ≥ 85% bundle-wide, excluding `ai.doctruth.internal.providers.*` wire records). Lower the gate only by ADR.
+`mvn verify` runs the JaCoCo coverage check (line ≥ 90% bundle-wide, excluding `ai.doctruth.internal.providers.*` wire records). Lower the gate only by ADR.
 
 ## How to add a new LLM provider
 
@@ -110,9 +118,10 @@ Before opening a PR, confirm:
 - [ ] No file exceeds 300 LOC; no method body exceeds 30 LOC
 - [ ] No new entries in `<dependencies>` without an ADR in the same PR
 - [ ] Public-API changes flagged in the PR title (e.g. `feat!:` or `BREAKING CHANGE:` footer)
+- [ ] Public-API snapshot updated for intentional `ai.doctruth.*` / `ai.doctruth.spi.*` changes
 - [ ] Commit message follows Conventional Commits — `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:` (one concept per commit, one concept per PR)
 - [ ] If your change touches `ai.doctruth.*` or `ai.doctruth.spi.*`, the corresponding `*Test` class is updated
-- [ ] If your change touches the AU compliance posture, `docs/compliance/au-audit-readiness.md` and `AustralianAuditContractTest` are updated together
+- [ ] If your change touches evidence/audit semantics, update `docs/evidence-schema.md`, `docs/error-handling.md`, and the nearest contract test together
 
 ## Code review guarantee
 

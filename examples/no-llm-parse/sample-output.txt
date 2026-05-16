@@ -1,0 +1,7 @@
+fixtures/pdf/ResumeAFIQDANISH.pdf
+pages: 1
+sections: 12
+text: 12
+tables: 0
+figures: 0
+bbox coverage: 12/12

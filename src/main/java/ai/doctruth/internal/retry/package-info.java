@@ -5,7 +5,5 @@
  * version bump. Failsafe ({@code dev.failsafe.*}) types are confined to this package by
  * design (per CONTRIBUTING.md §1 decoupling); they MUST NOT leak through public method
  * signatures.
- *
- * @hidden
  */
 package ai.doctruth.internal.retry;

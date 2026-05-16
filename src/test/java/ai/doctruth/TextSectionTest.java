@@ -3,6 +3,8 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test;
 class TextSectionTest {
 
     private static final SourceLocation LOC = new SourceLocation(1, 1, 1, 1, 0);
+    private static final BoundingBox BBOX = new BoundingBox(10.0, 20.0, 110.0, 40.0);
 
     @Nested
     @DisplayName("happy path")
@@ -45,6 +48,15 @@ class TextSectionTest {
             assertThat(section.text()).isEqualTo("Section 1 — Indemnities");
             assertThat(section.location()).isEqualTo(LOC);
             assertThat(section.kind()).isEqualTo(BlockKind.HEADING);
+            assertThat(section.boundingBox()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("four-arg constructor retains a page-normalized bounding box")
+        void fourArgRetainsBoundingBox() {
+            var section = new TextSection("Section 1", LOC, BlockKind.HEADING, Optional.of(BBOX));
+
+            assertThat(section.boundingBox()).contains(BBOX);
         }
 
         @Test
@@ -110,6 +122,14 @@ class TextSectionTest {
             assertThatThrownBy(() -> new TextSection("hello", LOC, null))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("kind");
+        }
+
+        @Test
+        @DisplayName("rejects null boundingBox optional")
+        void nullBoundingBoxOptional() {
+            assertThatThrownBy(() -> new TextSection("hello", LOC, BlockKind.OTHER, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("boundingBox");
         }
 
         @Test

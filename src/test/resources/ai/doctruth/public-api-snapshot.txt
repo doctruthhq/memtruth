@@ -1,0 +1,422 @@
+TYPE class ai.doctruth.AnthropicProvider [public]
+  ctor AnthropicProvider(java.lang.String)
+  ctor AnthropicProvider(java.lang.String, java.net.URI, java.lang.String)
+  method ai.doctruth.ProviderResponse complete(ai.doctruth.ProviderRequest) [public]
+  method java.lang.String apiKey() [public]
+  method java.lang.String name() [public]
+
+TYPE enum ai.doctruth.BlockKind [public final]
+  enum-constants HEADING, BODY, LIST, OTHER
+  method ai.doctruth.BlockKind valueOf(java.lang.String) [public static]
+  method ai.doctruth.BlockKind[] values() [public static]
+
+TYPE record ai.doctruth.BoundingBox [public final]
+  record-components double x0, double y0, double x1, double y1
+  ctor BoundingBox(double, double, double, double)
+  method boolean equals(java.lang.Object) [public final]
+  method double x0() [public]
+  method double x1() [public]
+  method double y0() [public]
+  method double y1() [public]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.Citation [public final]
+  record-components ai.doctruth.SourceLocation location, java.lang.String exactQuote, double matchScore, java.util.Optional boundingBox
+  ctor Citation(ai.doctruth.SourceLocation, java.lang.String, double)
+  ctor Citation(ai.doctruth.SourceLocation, java.lang.String, double, java.util.Optional)
+  method ai.doctruth.SourceLocation location() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method double matchScore() [public]
+  method int hashCode() [public final]
+  method java.lang.String exactQuote() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional boundingBox() [public]
+
+TYPE record ai.doctruth.Confidence [public final]
+  record-components double score, java.lang.String rationale
+  ctor Confidence(double, java.lang.String)
+  method boolean equals(java.lang.Object) [public final]
+  method double score() [public]
+  method int hashCode() [public final]
+  method java.lang.String rationale() [public]
+  method java.lang.String toString() [public final]
+
+TYPE interface ai.doctruth.ContextStrategy [public abstract interface]
+  permits ai.doctruth.PriorityTruncate, ai.doctruth.SlidingWindow, ai.doctruth.Hierarchical
+  method java.lang.String assemble(ai.doctruth.ParsedDocument) [public abstract]
+
+TYPE class ai.doctruth.CsvDocumentParser [public final]
+  method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
+
+TYPE class ai.doctruth.DeepSeekProvider [public]
+  ctor DeepSeekProvider(java.lang.String)
+  ctor DeepSeekProvider(java.lang.String, java.net.URI, java.lang.String)
+  method ai.doctruth.ProviderResponse complete(ai.doctruth.ProviderRequest) [public]
+  method java.lang.String apiKey() [public]
+  method java.lang.String name() [public]
+
+TYPE class ai.doctruth.DocTruth [public final]
+  method ai.doctruth.DocTruth from(ai.doctruth.LlmProvider) [public static]
+  method ai.doctruth.DocTruthClient withOpenAi() [public static]
+  method ai.doctruth.DocTruthClient withOpenAi(java.lang.String) [public static]
+  method ai.doctruth.DocTruthClient withProvider(ai.doctruth.LlmProvider) [public static]
+  method ai.doctruth.ExtractionBuilder extract(java.lang.String, java.lang.Class) [public]
+  method ai.doctruth.JsonExtractionBuilder extractJson(java.lang.String, ai.doctruth.JsonSchema) [public]
+
+TYPE class ai.doctruth.DocTruthClient [public final]
+  method ai.doctruth.DocTruthDocument from(ai.doctruth.ParsedDocument) [public]
+  method ai.doctruth.DocTruthDocument fromCsv(java.nio.file.Path) [public]
+  method ai.doctruth.DocTruthDocument fromDocx(java.nio.file.Path) [public]
+  method ai.doctruth.DocTruthDocument fromPdf(java.lang.String) [public]
+  method ai.doctruth.DocTruthDocument fromPdf(java.nio.file.Path) [public]
+  method ai.doctruth.DocTruthDocument fromXlsx(java.nio.file.Path) [public]
+
+TYPE class ai.doctruth.DocTruthDocument [public final]
+  method ai.doctruth.DocumentExtractionBuilder extract(java.lang.String, java.lang.Class) [public]
+  method ai.doctruth.DocumentJsonExtractionBuilder extractJson(java.lang.String, ai.doctruth.JsonSchema) [public]
+
+TYPE class ai.doctruth.DocumentExtractionBuilder [public final]
+  method ai.doctruth.DocumentExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
+  method ai.doctruth.DocumentExtractionBuilder withEvidence() [public]
+  method ai.doctruth.DocumentExtractionBuilder withMaxRetries(int) [public]
+  method ai.doctruth.DocumentExtractionBuilder withSourcePublishedAt(java.time.Instant) [public]
+  method ai.doctruth.ExtractionResult run() [public]
+
+TYPE class ai.doctruth.DocumentJsonExtractionBuilder [public final]
+  method ai.doctruth.DocumentJsonExtractionBuilder requireCitation(java.lang.String) [public]
+  method ai.doctruth.DocumentJsonExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
+  method ai.doctruth.DocumentJsonExtractionBuilder withEvidence() [public]
+  method ai.doctruth.DocumentJsonExtractionBuilder withMaxRetries(int) [public]
+  method ai.doctruth.DocumentJsonExtractionBuilder withSourcePublishedAt(java.time.Instant) [public]
+  method ai.doctruth.ExtractionResult runJson() [public]
+
+TYPE record ai.doctruth.DocumentMetadata [public final]
+  record-components java.lang.String sourceFilename, int pageCount, java.util.Optional sourcePublishedAt
+  ctor DocumentMetadata(java.lang.String, int, java.util.Optional)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int pageCount() [public]
+  method java.lang.String sourceFilename() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional sourcePublishedAt() [public]
+
+TYPE class ai.doctruth.DocxDocumentParser [public final]
+  method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
+
+TYPE class ai.doctruth.ExtractionBuilder [public final]
+  method ai.doctruth.ExtractionBuilder withAuditListener(ai.doctruth.spi.AuditEventListener) [public]
+  method ai.doctruth.ExtractionBuilder withBitemporal() [public]
+  method ai.doctruth.ExtractionBuilder withConfidence() [public]
+  method ai.doctruth.ExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
+  method ai.doctruth.ExtractionBuilder withFieldConstraint(java.lang.String, java.lang.Class, java.util.function.Predicate, java.lang.String) [public]
+  method ai.doctruth.ExtractionBuilder withMaxRetries(int) [public]
+  method ai.doctruth.ExtractionBuilder withObjectConstraint(java.util.function.Predicate, java.lang.String) [public]
+  method ai.doctruth.ExtractionBuilder withProvenance() [public]
+  method ai.doctruth.ExtractionBuilder withSourcePublishedAt(java.time.Instant) [public]
+  method ai.doctruth.ExtractionResult run(ai.doctruth.ParsedDocument) [public]
+
+TYPE class ai.doctruth.ExtractionException [public]
+  ctor ExtractionException(java.lang.String, java.lang.String, int)
+  ctor ExtractionException(java.lang.String, java.lang.String, int, java.lang.Throwable)
+  method int retries() [public]
+  method java.lang.String errorCode() [public]
+
+TYPE record ai.doctruth.ExtractionResult [public final]
+  record-components java.lang.Object value, java.util.Map citations, java.util.Map confidence, ai.doctruth.Provenance provenance
+  ctor ExtractionResult(java.lang.Object, java.util.Map, java.util.Map, ai.doctruth.Provenance)
+  method ai.doctruth.Citation citation(java.lang.String) [public]
+  method ai.doctruth.Citation requireCitation(java.lang.String) [public]
+  method ai.doctruth.Provenance provenance() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.Object value() [public]
+  method java.lang.String toAuditJson() [public]
+  method java.lang.String toAuditJson(ai.doctruth.spi.SignatureProvider) [public]
+  method java.lang.String toString() [public final]
+  method java.util.Map citations() [public]
+  method java.util.Map confidence() [public]
+  method java.util.Optional findCitation(java.lang.String) [public]
+  method void toAuditJson(java.nio.file.Path) [public]
+  method void toAuditJson(java.nio.file.Path, ai.doctruth.spi.SignatureProvider) [public]
+  method void writeAudit(java.lang.String) [public]
+  method void writeAudit(java.nio.file.Path) [public]
+
+TYPE record ai.doctruth.FigureSection [public final]
+  record-components java.lang.String caption, ai.doctruth.SourceLocation location
+  ctor FigureSection(java.lang.String, ai.doctruth.SourceLocation)
+  method ai.doctruth.SourceLocation location() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String caption() [public]
+  method java.lang.String toString() [public final]
+
+TYPE class ai.doctruth.GeminiProvider [public]
+  ctor GeminiProvider(java.lang.String)
+  ctor GeminiProvider(java.lang.String, java.net.URI, java.lang.String)
+  method ai.doctruth.ProviderResponse complete(ai.doctruth.ProviderRequest) [public]
+  method java.lang.String apiKey() [public]
+  method java.lang.String name() [public]
+
+TYPE record ai.doctruth.Hierarchical [public final]
+  record-components int maxDepth
+  ctor Hierarchical(int)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int maxDepth() [public]
+  method java.lang.String assemble(ai.doctruth.ParsedDocument) [public]
+  method java.lang.String toString() [public final]
+
+TYPE class ai.doctruth.JsonExtractionBuilder [public final]
+  method ai.doctruth.ExtractionResult runJson(ai.doctruth.ParsedDocument) [public]
+  method ai.doctruth.JsonExtractionBuilder requireCitation(java.lang.String) [public]
+  method ai.doctruth.JsonExtractionBuilder withBitemporal() [public]
+  method ai.doctruth.JsonExtractionBuilder withConfidence() [public]
+  method ai.doctruth.JsonExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
+  method ai.doctruth.JsonExtractionBuilder withMaxRetries(int) [public]
+  method ai.doctruth.JsonExtractionBuilder withProvenance() [public]
+  method ai.doctruth.JsonExtractionBuilder withSourcePublishedAt(java.time.Instant) [public]
+
+TYPE class ai.doctruth.JsonSchema [public final]
+  method ai.doctruth.JsonSchema from(java.lang.String) [public static]
+  method ai.doctruth.JsonSchema from(java.nio.file.Path) [public static]
+  method com.fasterxml.jackson.databind.JsonNode node() [public]
+
+TYPE interface ai.doctruth.LlmProvider [public abstract interface]
+  permits ai.doctruth.AnthropicProvider, ai.doctruth.OpenAiProvider, ai.doctruth.GeminiProvider, ai.doctruth.DeepSeekProvider
+  method ai.doctruth.ProviderResponse complete(ai.doctruth.ProviderRequest) [public abstract]
+  method java.lang.String name() [public abstract]
+  method java.util.Optional region() [public]
+
+TYPE class ai.doctruth.LlmProviders [public final]
+  method ai.doctruth.AnthropicProvider anthropic(java.lang.String) [public static]
+  method ai.doctruth.DeepSeekProvider deepSeek(java.lang.String) [public static]
+  method ai.doctruth.GeminiProvider gemini(java.lang.String) [public static]
+  method ai.doctruth.OpenAiProvider openAi(java.lang.String) [public static]
+  method ai.doctruth.OpenAiProvider openAiCompatible(java.lang.String, java.net.URI, java.lang.String) [public static]
+
+TYPE class ai.doctruth.OpenAiProvider [public]
+  ctor OpenAiProvider(java.lang.String)
+  ctor OpenAiProvider(java.lang.String, java.net.URI, java.lang.String)
+  method ai.doctruth.ProviderResponse complete(ai.doctruth.ProviderRequest) [public]
+  method java.lang.String apiKey() [public]
+  method java.lang.String model() [public]
+  method java.lang.String name() [public]
+  method java.net.URI endpoint() [public]
+
+TYPE enum ai.doctruth.OverBudgetPolicy [public final]
+  enum-constants STRICT, WARN_AND_INCLUDE
+  method ai.doctruth.OverBudgetPolicy valueOf(java.lang.String) [public static]
+  method ai.doctruth.OverBudgetPolicy[] values() [public static]
+
+TYPE class ai.doctruth.ParseException [public]
+  ctor ParseException(java.lang.String, java.lang.String, java.lang.String, java.util.OptionalInt)
+  ctor ParseException(java.lang.String, java.lang.String, java.lang.String, java.util.OptionalInt, java.lang.Throwable)
+  method java.lang.String errorCode() [public]
+  method java.lang.String sourceName() [public]
+  method java.util.OptionalInt pageNumber() [public]
+
+TYPE record ai.doctruth.ParsedDocument [public final]
+  record-components java.lang.String docId, java.util.List sections, ai.doctruth.DocumentMetadata metadata
+  ctor ParsedDocument(java.lang.String, java.util.List, ai.doctruth.DocumentMetadata)
+  method ai.doctruth.DocumentMetadata metadata() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String docId() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List sections() [public]
+
+TYPE interface ai.doctruth.ParsedSection [public abstract interface]
+  permits ai.doctruth.TextSection, ai.doctruth.TableSection, ai.doctruth.FigureSection
+
+TYPE class ai.doctruth.PdfDocumentParser [public final]
+  method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
+
+TYPE record ai.doctruth.PriorityTruncate [public final]
+  record-components java.util.List prioritySectionPatterns, int maxChars, ai.doctruth.OverBudgetPolicy onOverBudget
+  ctor PriorityTruncate(java.util.List, int, ai.doctruth.OverBudgetPolicy)
+  method ai.doctruth.OverBudgetPolicy onOverBudget() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int maxChars() [public]
+  method java.lang.String assemble(ai.doctruth.ParsedDocument) [public]
+  method java.lang.String toString() [public final]
+  method java.util.List prioritySectionPatterns() [public]
+
+TYPE record ai.doctruth.Provenance [public final]
+  record-components java.lang.String model, java.lang.String modelVersion, java.time.Instant extractedAt, java.util.Optional sourcePublishedAt, ai.doctruth.ProvenanceDetails details
+  ctor Provenance(java.lang.String, java.lang.String, java.time.Instant, java.util.Optional, ai.doctruth.ProvenanceDetails)
+  ctor Provenance(java.lang.String, java.lang.String, java.time.Instant, java.util.Optional, java.util.Optional, java.util.Optional, int)
+  method ai.doctruth.ProvenanceDetails details() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int retries() [public]
+  method java.lang.String model() [public]
+  method java.lang.String modelVersion() [public]
+  method java.lang.String toString() [public final]
+  method java.time.Instant extractedAt() [public]
+  method java.util.Optional region() [public]
+  method java.util.Optional retainUntil() [public]
+  method java.util.Optional sourcePublishedAt() [public]
+
+TYPE record ai.doctruth.ProvenanceDetails [public final]
+  record-components java.util.Optional region, java.util.Optional retainUntil, int retries
+  ctor ProvenanceDetails(java.util.Optional, java.util.Optional, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int retries() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional region() [public]
+  method java.util.Optional retainUntil() [public]
+
+TYPE class ai.doctruth.ProviderException [public]
+  ctor ProviderException(java.lang.String, java.lang.String, java.lang.String, java.util.OptionalInt, boolean)
+  ctor ProviderException(java.lang.String, java.lang.String, java.lang.String, java.util.OptionalInt, boolean, java.lang.Throwable)
+  method boolean retryable() [public]
+  method java.lang.String errorCode() [public]
+  method java.lang.String providerName() [public]
+  method java.util.OptionalInt httpStatus() [public]
+
+TYPE record ai.doctruth.ProviderOptions [public final]
+  record-components int maxRetries, java.time.Duration timeout
+  ctor ProviderOptions(int, java.time.Duration)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int maxRetries() [public]
+  method java.lang.String toString() [public final]
+  method java.time.Duration timeout() [public]
+
+TYPE record ai.doctruth.ProviderRequest [public final]
+  record-components java.lang.String systemPrompt, java.lang.String userPrompt, com.fasterxml.jackson.databind.JsonNode responseSchema, ai.doctruth.ProviderOptions options
+  ctor ProviderRequest(java.lang.String, java.lang.String, com.fasterxml.jackson.databind.JsonNode, ai.doctruth.ProviderOptions)
+  method ai.doctruth.ProviderOptions options() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method com.fasterxml.jackson.databind.JsonNode responseSchema() [public]
+  method int hashCode() [public final]
+  method java.lang.String systemPrompt() [public]
+  method java.lang.String toString() [public final]
+  method java.lang.String userPrompt() [public]
+
+TYPE record ai.doctruth.ProviderResponse [public final]
+  record-components java.lang.String rawJson, ai.doctruth.ProviderUsage usage
+  ctor ProviderResponse(java.lang.String, ai.doctruth.ProviderUsage)
+  method ai.doctruth.ProviderUsage usage() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String rawJson() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.ProviderUsage [public final]
+  record-components int inputTokens, int outputTokens, java.lang.String modelVersion
+  ctor ProviderUsage(int, int, java.lang.String)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int inputTokens() [public]
+  method int outputTokens() [public]
+  method java.lang.String modelVersion() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.SlidingWindow [public final]
+  record-components int windowChars, int overlapChars
+  ctor SlidingWindow(int, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int overlapChars() [public]
+  method int windowChars() [public]
+  method java.lang.String assemble(ai.doctruth.ParsedDocument) [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.SourceLocation [public final]
+  record-components int pageStart, int pageEnd, int lineStart, int lineEnd, int charOffset
+  ctor SourceLocation(int, int, int, int, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int charOffset() [public]
+  method int hashCode() [public final]
+  method int lineEnd() [public]
+  method int lineStart() [public]
+  method int pageEnd() [public]
+  method int pageStart() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.TableSection [public final]
+  record-components java.util.List rows, ai.doctruth.SourceLocation location
+  ctor TableSection(java.util.List, ai.doctruth.SourceLocation)
+  method ai.doctruth.SourceLocation location() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.List rows() [public]
+
+TYPE record ai.doctruth.TextSection [public final]
+  record-components java.lang.String text, ai.doctruth.SourceLocation location, ai.doctruth.BlockKind kind, java.util.Optional boundingBox
+  ctor TextSection(java.lang.String, ai.doctruth.SourceLocation)
+  ctor TextSection(java.lang.String, ai.doctruth.SourceLocation, ai.doctruth.BlockKind)
+  ctor TextSection(java.lang.String, ai.doctruth.SourceLocation, ai.doctruth.BlockKind, java.util.Optional)
+  method ai.doctruth.BlockKind kind() [public]
+  method ai.doctruth.SourceLocation location() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional boundingBox() [public]
+
+TYPE class ai.doctruth.XlsxDocumentParser [public final]
+  method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
+
+TYPE record ai.doctruth.spi.AuditEvent [public final]
+  record-components java.lang.String kind, java.time.Instant at, java.util.Map attributes
+  ctor AuditEvent(java.lang.String, java.time.Instant, java.util.Map)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String kind() [public]
+  method java.lang.String toString() [public final]
+  method java.time.Instant at() [public]
+  method java.util.Map attributes() [public]
+
+TYPE interface ai.doctruth.spi.AuditEventListener [public abstract interface]
+  method void onEvent(ai.doctruth.spi.AuditEvent) [public abstract]
+
+TYPE record ai.doctruth.spi.OcrBox [public final]
+  record-components int x, int y, int width, int height
+  ctor OcrBox(int, int, int, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int height() [public]
+  method int width() [public]
+  method int x() [public]
+  method int y() [public]
+  method java.lang.String toString() [public final]
+
+TYPE interface ai.doctruth.spi.OcrEngine [public abstract interface]
+  method ai.doctruth.spi.OcrPageResult ocr(java.awt.image.BufferedImage, int) [public abstract]
+
+TYPE record ai.doctruth.spi.OcrPageResult [public final]
+  record-components java.lang.String text, double confidence, java.util.List regions, int pageNumber
+  ctor OcrPageResult(java.lang.String, double, java.util.List, int)
+  method ai.doctruth.spi.OcrPageResult empty(int) [public static]
+  method boolean equals(java.lang.Object) [public final]
+  method double confidence() [public]
+  method int hashCode() [public final]
+  method int pageNumber() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List regions() [public]
+
+TYPE record ai.doctruth.spi.OcrRegion [public final]
+  record-components java.lang.String text, ai.doctruth.spi.OcrBox box, double confidence
+  ctor OcrRegion(java.lang.String, ai.doctruth.spi.OcrBox, double)
+  ctor OcrRegion(java.lang.String, int, int, int, int, double)
+  method ai.doctruth.spi.OcrBox box() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method double confidence() [public]
+  method int hashCode() [public final]
+  method int height() [public]
+  method int width() [public]
+  method int x() [public]
+  method int y() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+
+TYPE interface ai.doctruth.spi.SignatureProvider [public abstract interface]
+  method java.lang.String sign(java.lang.String) [public abstract]
+

@@ -33,6 +33,48 @@ public final class DocTruth {
     }
 
     /**
+     * Begin the document-first happy path with an explicit provider.
+     *
+     * <pre>{@code
+     * var result = DocTruth.withProvider(provider)
+     *     .fromPdf(Path.of("resume.pdf"))
+     *     .extract("Extract resume fields", Resume.class)
+     *     .withEvidence()
+     *     .run();
+     * }</pre>
+     *
+     * @throws NullPointerException if {@code provider} is null.
+     */
+    public static DocTruthClient withProvider(LlmProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        return new DocTruthClient(provider);
+    }
+
+    /**
+     * Begin the document-first happy path with the OpenAI provider using
+     * {@code OPENAI_API_KEY} from the process environment.
+     *
+     * @throws IllegalStateException if {@code OPENAI_API_KEY} is absent or blank.
+     */
+    public static DocTruthClient withOpenAi() {
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("OPENAI_API_KEY is not set");
+        }
+        return withOpenAi(apiKey);
+    }
+
+    /**
+     * Begin the document-first happy path with the OpenAI provider and an explicit key.
+     *
+     * @throws NullPointerException     if {@code apiKey} is null.
+     * @throws IllegalArgumentException if {@code apiKey} is blank.
+     */
+    public static DocTruthClient withOpenAi(String apiKey) {
+        return withProvider(new OpenAiProvider(apiKey));
+    }
+
+    /**
      * Stage an extraction call: pair a free-text prompt with the target type.
      *
      * @throws NullPointerException     if {@code prompt} or {@code type} is null.

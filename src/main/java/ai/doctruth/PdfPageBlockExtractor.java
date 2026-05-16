@@ -34,7 +34,8 @@ final class PdfPageBlockExtractor {
         }
         double medianHeight = medianHeight(positions);
         var groups = groupByYGap(positions, estimateLineSpacing(positions, medianHeight));
-        return renderBlocks(pageNumber, positions, groups, medianHeight);
+        var mediaBox = pdf.getPage(pageNumber - 1).getMediaBox();
+        return renderBlocks(pageNumber, positions, groups, medianHeight, mediaBox.getWidth(), mediaBox.getHeight());
     }
 
     private static List<TextPosition> capturePageTextPositions(PDDocument pdf, int pageNumber) throws IOException {
@@ -53,7 +54,12 @@ final class PdfPageBlockExtractor {
     }
 
     private static List<PdfTextBlock> renderBlocks(
-            int pageNumber, List<TextPosition> positions, List<List<TextPosition>> groups, double medianHeight) {
+            int pageNumber,
+            List<TextPosition> positions,
+            List<List<TextPosition>> groups,
+            double medianHeight,
+            double pageWidth,
+            double pageHeight) {
         if (groups.isEmpty()) {
             return List.of();
         }
@@ -66,7 +72,11 @@ final class PdfPageBlockExtractor {
             int lineCount = Math.max(1, (int) text.lines().count());
             int charOffset = clampOffset(pageText, text, charCursor);
             var loc = new SourceLocation(pageNumber, pageNumber, lineCursor, lineCursor + lineCount - 1, charOffset);
-            out.add(new PdfTextBlock(text, classify(text, avgHeight(group), medianHeight), loc));
+            out.add(new PdfTextBlock(
+                    text,
+                    classify(text, avgHeight(group), medianHeight),
+                    loc,
+                    PdfTextPositionBoxes.layoutBox(group, pageWidth, pageHeight)));
             charCursor = charOffset + text.length();
             lineCursor += lineCount;
         }

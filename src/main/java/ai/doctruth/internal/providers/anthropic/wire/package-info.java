@@ -6,7 +6,5 @@
  * {@code input_tokens}) so Jackson maps each record component without custom annotations.
  * These records exist only to insulate {@link ai.doctruth.AnthropicProvider} from vendor JSON
  * drift, per ADR 0003.
- *
- * @hidden
  */
 package ai.doctruth.internal.providers.anthropic.wire;

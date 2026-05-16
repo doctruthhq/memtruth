@@ -6,7 +6,5 @@
  * place in the codebase that converts a {@link ai.doctruth.ParsedSection} to a flat string,
  * so changes to that representation happen in exactly one location (per CONTRIBUTING.md
  * "Engineering principles" §1 — decoupled by default, single source of truth).
- *
- * @hidden
  */
 package ai.doctruth.internal.render;

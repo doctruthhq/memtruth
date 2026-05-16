@@ -1,4 +1,4 @@
-# DocTruth
+# DocTruth - 面向 Java 的可审计 LLM 抽取
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -16,13 +16,15 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**面向 Java 的可审计 LLM 抽取库。** 解析文档、抽取结构化数据，并为每个字段附上来源引用、置信度和 provenance。
+**面向 Java 的可审计 LLM 抽取库。** DocTruth 将 PDF、DOCX、XLSX 和 CSV 转成 schema-bound structured output，并为每个字段附上来源引用、可选 PDF bounding box、置信度、provenance 和 PROV-O audit JSON。
 
 DocTruth 主要回答一个问题：
 
 > 这个抽取值从哪里来？
 
 它不是 agent 框架、chain 框架、向量数据库封装，也不是 UI。它只专注于抽取边界：输入源文档，输出经过验证的结构化结果和证据链。
+
+它不绑定框架，可以放进 plain Java、Spring Boot、LangChain4j、Spring AI、Quarkus、Micronaut，或者任何已经在调用 OpenAI、Anthropic、Gemini、DeepSeek 或 OpenAI-compatible endpoint 的 Java 服务。
 
 ## 安装
 
@@ -110,9 +112,9 @@ DocTruth 支持常见 Pydantic v2 JSON Schema 输出，包括本地 `$defs` / `$
 构建期迁移工具：
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha.jar \
+java -jar target/doctruth-java-0.2.0-alpha-all.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
-  --out schemas/resume.schema.json \
+  -o schemas/resume.schema.json \
   --check
 ```
 
@@ -134,8 +136,10 @@ Provider client 使用 JDK `java.net.http.HttpClient`，不引入 vendor SDK。
 ## CLI
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha.jar parse contract.pdf
-java -jar target/doctruth-java-0.2.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
+mvn package -DskipTests
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
+java -jar target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
+java -jar target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contract.schema.json
 ```
 
 ## 文档

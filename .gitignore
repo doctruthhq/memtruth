@@ -60,6 +60,8 @@ fixtures/
 
 # Generated example output (re-runnable via `mvn package -DskipTests` + java)
 examples/evidence-overlay/output/
+.doctruth/
+dist/
 
 # Local Claude skill state (per-developer)
 .claude/

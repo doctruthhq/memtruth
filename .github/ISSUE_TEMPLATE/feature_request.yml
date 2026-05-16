@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a narrowly-scoped DocTruth capability
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DocTruth accepts features that strengthen source evidence, provenance, confidence, schema validation, or audit export. General agent, RAG, UI, or workflow features are usually out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What evidence, extraction, validation, or audit problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful API or behavior change.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Parser evidence
+        - Citation matching
+        - Bounding boxes
+        - Schema validation
+        - Provider behavior
+        - Audit JSON
+        - CLI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What did you try instead?
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This feature needs source evidence, provenance, confidence, schema validation, or audit export semantics.
+          required: true
+        - label: This feature is not a general-purpose agent, vector store, chatbot, or UI workflow request.
+          required: true

@@ -158,12 +158,24 @@ The result should expose:
 
 ## Target public API shape
 
-The API should stay fluent and Java-native:
+The primary API should stay fluent, Java-native, and document-first:
 
 ```java
 record Contract(String partyA, String partyB, BigDecimal totalValue) {}
 
-var result = DocTruth.from(provider)
+var result = DocTruth.withProvider(provider)
+        .fromPdf(Path.of("contract.pdf"))
+        .extract("Extract contract terms", Contract.class)
+        .withEvidence()
+        .run();
+```
+
+Advanced validation keeps the same mental model, with extra constraints added
+before `run()`:
+
+```java
+var result = DocTruth.withProvider(provider)
+        .fromPdf(Path.of("contract.pdf"))
         .extract("Extract contract terms", Contract.class)
         .withFieldConstraint(
                 "totalValue",
@@ -173,22 +185,24 @@ var result = DocTruth.from(provider)
         .withObjectConstraint(
                 contract -> !contract.partyA().equals(contract.partyB()),
                 "partyA and partyB must differ")
-        .withProvenance()
-        .withConfidence()
+        .withEvidence()
         .withMaxRetries(2)
-        .run(doc);
+        .run();
 ```
 
-JSON Schema entry points preserve the same semantics while avoiding Java
-overload ambiguity with `extract("prompt", null)`:
+JSON Schema is the advanced interoperability path for teams that own schemas
+outside Java. It uses the same document-first flow while preserving validation,
+repair, evidence, provenance, and audit semantics:
 
 ```java
-var result = DocTruth.from(provider)
+var result = DocTruth.withProvider(provider)
+        .fromPdf(Path.of("contract.pdf"))
         .extractJson("Extract contract terms", JsonSchema.from(schemaPath))
         .requireCitation("partyA")
         .requireCitation("totalValue")
+        .withEvidence()
         .withMaxRetries(2)
-        .runJson(doc);
+        .runJson();
 ```
 
 The schema source changes; validation, repair, evidence gating, provenance, and
@@ -226,7 +240,7 @@ runtime validators, serializers, computed fields, or Python plugin ecosystem.
 A future migration CLI can make the build-time export path easier, for example:
 
 ```bash
-doctruth migrate pydantic myapp.schemas:Resume --out resume.schema.json --check
+doctruth migrate pydantic myapp.schemas:Resume -o resume.schema.json --check
 ```
 
 That tool should remain outside the runtime core: it may invoke Python during

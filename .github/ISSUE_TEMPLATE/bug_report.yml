@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a reproducible DocTruth bug
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please use synthetic documents and remove secrets, API keys, and customer data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: DocTruth returned a weak citation for an exact source quote.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Minimal steps, code, document shape, or fixture needed to reproduce.
+      placeholder: |
+        1. Parse sample.pdf with PdfDocumentParser
+        2. Extract Contract.class with withProvenance()
+        3. Observe citation matchScore...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - PDF parser
+        - DOCX parser
+        - XLSX parser
+        - CSV parser
+        - Citation matching
+        - Bounding boxes
+        - JSON Schema
+        - Java schema reflection
+        - Provider integration
+        - Audit JSON
+        - CLI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.2.0-alpha or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: java -version
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or audit output
+      description: Paste minimal logs or audit JSON. Redact secrets and source documents.
+      render: text

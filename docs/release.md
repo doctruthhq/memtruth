@@ -41,6 +41,8 @@ In `doctruthhq/DocTruth → Settings → Secrets and variables → Actions`:
 | `MAVEN_PASSWORD` | Central Portal token password |
 | `OSSRH_GPG_PRIVATE_KEY` | Contents of `private.asc` (full ASCII-armored block) |
 | `MAVEN_GPG_PASSPHRASE` | GPG key passphrase |
+| `HOMEBREW_TAP_TOKEN` | Optional token with write access to `doctruthhq/homebrew-tap` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` / `DEEPSEEK_API_KEY` | Optional nightly live smoke keys |
 
 Delete `private.asc` from the local disk afterwards.
 
@@ -62,7 +64,19 @@ Move items from `## [Unreleased]` into a new `## [0.1.0] - YYYY-MM-DD` section.
 Keep the `## [Unreleased]` heading at the top with empty `### Added/Changed/Fixed`
 subheadings ready for the next cycle.
 
-### 3. Commit, tag, push
+### 3. Confirm the public API snapshot
+
+If this release intentionally changes `ai.doctruth.*` or `ai.doctruth.spi.*`,
+regenerate and review the API snapshot before tagging:
+
+```bash
+mvn -Dtest=ai.doctruth.PublicApiSnapshotTest -Ddoctruth.updatePublicApiSnapshot=true test
+git diff -- src/test/resources/ai/doctruth/public-api-snapshot.txt
+```
+
+For patch releases, the snapshot should usually be unchanged.
+
+### 4. Commit, tag, push
 
 ```bash
 git add pom.xml CHANGELOG.md
@@ -72,24 +86,32 @@ git push origin main
 git push origin v0.1.0
 ```
 
-### 4. GitHub Actions runs
+### 5. GitHub Actions runs
 
 The `Release` workflow (`.github/workflows/release.yml`) fires on the `v*` tag:
 
+- Builds the standalone CLI jar and packages GitHub Release artifacts
+- Creates `doctruth-<version>.tar.gz`, `doctruth-java-<version>-all.jar`,
+  `checksums.txt`, a CycloneDX SBOM, and a generated Homebrew formula
+- Smoke-tests the generated CLI tarball before publishing
+- Creates a GitHub Release with those CLI artifacts attached
 - Builds + signs jar / sources jar / javadoc jar with GPG
 - Deploys to the Central Portal via `central-publishing-maven-plugin`
 - Automatically publishes the deployment after Central validation passes
-- Uploads signed artefacts as workflow artifacts (30-day retention)
+- Updates `doctruthhq/homebrew-tap` automatically when `HOMEBREW_TAP_TOKEN`
+  is configured; otherwise the generated formula is attached for manual tap update
+- Uploads signed artefacts and CLI distribution files as workflow artifacts
+  (30-day retention)
 
 Watch it at https://github.com/doctruthhq/DocTruth/actions.
 
-### 5. Wait for Central propagation
+### 6. Wait for Central propagation
 
 `autoPublish=true`, so the GitHub Actions release job publishes automatically
 after Central validation passes. Propagation to Maven Central usually takes
 ~10–30 min; search index updates can take ~4 hours.
 
-### 6. Bump to next `-SNAPSHOT`
+### 7. Bump to next `-SNAPSHOT`
 
 ```bash
 mvn -B versions:set -DnewVersion=0.2.0-SNAPSHOT -DgenerateBackupPoms=false
@@ -130,6 +152,34 @@ cat > pom.xml <<'EOF'
 EOF
 mvn dependency:resolve
 ```
+
+Verify the CLI release artifacts from the GitHub Release:
+
+```bash
+shasum -a 256 -c checksums.txt
+tar -xzf doctruth-0.1.0.tar.gz
+JAVA=/path/to/java ./doctruth-0.1.0/bin/doctruth version
+JAVA=/path/to/java ./doctruth-0.1.0/bin/doctruth doctor
+```
+
+When `HOMEBREW_TAP_TOKEN` is not configured, update the Homebrew tap manually
+with the generated formula:
+
+```bash
+cp doctruth.rb ../homebrew-tap/Formula/doctruth.rb
+cd ../homebrew-tap
+brew install --build-from-source ./Formula/doctruth.rb
+doctruth version
+doctruth doctor
+git add Formula/doctruth.rb
+git commit -m "doctruth 0.1.0"
+git push origin main
+```
+
+Public Javadocs are deployed by `.github/workflows/javadocs.yml` on release tags
+and manual dispatch. The dependency review workflow blocks high-severity
+dependency changes on pull requests, and Dependabot opens weekly Maven and
+GitHub Actions update PRs.
 
 ---
 

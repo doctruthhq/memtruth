@@ -7,8 +7,8 @@ submodule, no framework.
 ## What this does
 
 1. Generates a tiny in-memory PDF (or reads `args[0]` if you pass a path).
-2. Calls `DocTruth.from(new OpenAiProvider(key)).extract(...).withProvenance().withSourcePublishedAt(...).withBitemporal().withConfidence().run(doc)`.
-3. Prints the extracted value, the per-field citations, the per-field confidence map size, the run provenance, and writes a `audit.json` next to the PDF.
+2. Calls `DocTruth.withOpenAi(key).fromPdf(...).extract(...).withEvidence().run()`.
+3. Prints the extracted value, the per-field citations, the per-field confidence map size, the run provenance, and writes an `audit.json` next to the PDF.
 
 ## Run it
 
@@ -53,13 +53,13 @@ java  -cp "build:$CP" ai.doctruth.examples.quickstart.Quickstart
 
 ```
 Source PDF: /tmp/doctruth-quickstart-3417829.pdf
-Parsed 1 page(s) from doctruth-quickstart-3417829.pdf
 
 Extracted value:
   Contract[partyA=Acme Industrial Materials Pty Ltd, partyB=BetaCorp Construction Ltd, effectiveDate=2026-04-01, totalValue=2450000]
 
 Citations: 4 field(s)
   first: partyA -> page 1 line 2  matchScore=1.00
+  bbox: BoundingBox[x0=72.4, y0=118.0, x1=380.7, y1=142.5]   # present when PDF geometry is available
 
 Confidence: 4 field(s)
 
@@ -79,22 +79,22 @@ Change one line — the rest of the pipeline is provider-agnostic:
 
 ```java
 // OpenAI / OpenAI-compatible (this quickstart)
-DocTruth.from(new OpenAiProvider(System.getenv("OPENAI_API_KEY")))
+DocTruth.withOpenAi(System.getenv("OPENAI_API_KEY"))
 
 // OpenAI-compatible endpoint with an explicit model
-DocTruth.from(new OpenAiProvider(
+DocTruth.withProvider(LlmProviders.openAiCompatible(
         System.getenv("OPENAI_API_KEY"),
         URI.create("https://api.openai.com/v1/chat/completions"),
         "gpt-4o"))
 
 // Anthropic
-DocTruth.from(new AnthropicProvider(System.getenv("ANTHROPIC_API_KEY")))
+DocTruth.withProvider(LlmProviders.anthropic(System.getenv("ANTHROPIC_API_KEY")))
 
 // Gemini
-DocTruth.from(new GeminiProvider(System.getenv("GOOGLE_API_KEY")))
+DocTruth.withProvider(LlmProviders.gemini(System.getenv("GOOGLE_API_KEY")))
 
 // DeepSeek
-DocTruth.from(new DeepSeekProvider(System.getenv("DEEPSEEK_API_KEY")))
+DocTruth.withProvider(LlmProviders.deepSeek(System.getenv("DEEPSEEK_API_KEY")))
 ```
 
 ## Audit log
@@ -106,14 +106,41 @@ shape compliance teams already know how to ingest. Compact example:
 {
   "@context": "https://www.w3.org/ns/prov",
   "@type": "prov:Entity",
+  "doctruth:value": {
+    "partyA": "Acme Industrial Materials Pty Ltd"
+  },
+  "doctruth:retries": 0,
   "prov:wasGeneratedBy": {
     "@type": "prov:Activity",
-    "model": "openai",
-    "modelVersion": "gpt-4o",
-    "extractedAt": "2026-05-07T05:30:14.218Z"
+    "prov:startedAtTime": "2026-05-07T05:30:14.218Z",
+    "prov:wasAssociatedWith": {
+      "@type": "prov:SoftwareAgent",
+      "rdfs:label": "openai",
+      "prov:version": "gpt-4o"
+    }
   },
-  "citations": {
-    "partyA": { "page": 1, "line": 2, "exactQuote": "Acme Industrial Materials Pty Ltd", "matchScore": 1.0 }
-  }
+  "prov:wasDerivedFrom": [
+    {
+      "@type": "prov:Entity",
+      "doctruth:fieldPath": "partyA",
+      "prov:value": "Acme Industrial Materials Pty Ltd",
+      "doctruth:matchScore": 1.0,
+      "doctruth:sourceLocation": {
+        "pageStart": 1,
+        "pageEnd": 1,
+        "lineStart": 2,
+        "lineEnd": 2,
+        "charOffset": 31
+      },
+      "doctruth:boundingBox": {
+        "x0": 72.4,
+        "y0": 118.0,
+        "x1": 380.7,
+        "y1": 142.5
+      }
+    }
+  ]
 }
 ```
+
+See [the evidence schema](../../docs/evidence-schema.md) for the full contract.

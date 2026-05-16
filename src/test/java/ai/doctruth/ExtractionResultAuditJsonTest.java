@@ -113,6 +113,33 @@ class ExtractionResultAuditJsonTest {
         }
 
         @Test
+        @DisplayName("a citation bounding box is exported when present")
+        void citationBoundingBoxAppears() throws Exception {
+            var loc = new SourceLocation(1, 1, 3, 3, 0);
+            var box = new BoundingBox(10.0, 20.0, 110.0, 40.0);
+            var citation = new Citation(loc, "Alex Chen", 0.97, Optional.of(box));
+            var confidence = new Confidence(0.91, "exact substring match");
+            var prov = new Provenance(
+                    "anthropic",
+                    "claude-sonnet-4-5-20250929",
+                    Instant.parse("2026-05-07T07:30:00Z"),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    0);
+            var result = new ExtractionResult<>(
+                    new Person("Alex Chen", 30), Map.of("name", citation), Map.of("name", confidence), prov);
+
+            JsonNode entry = MAPPER.readTree(result.toAuditJson())
+                    .path("prov:wasDerivedFrom")
+                    .get(0);
+
+            JsonNode bbox = entry.path("doctruth:boundingBox");
+            assertThat(bbox.path("x0").asDouble()).isEqualTo(10.0);
+            assertThat(bbox.path("y1").asDouble()).isEqualTo(40.0);
+        }
+
+        @Test
         @DisplayName("each confidence entry appears under 'doctruth:confidence' with score + rationale")
         void confidenceMapAppears() throws Exception {
             var json = sample(Optional.empty()).toAuditJson();

@@ -7,6 +7,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -19,6 +20,8 @@ import ai.doctruth.TableSection;
 import ai.doctruth.TextSection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -100,15 +103,13 @@ class CliSupportTest {
 
     @Test
     void documentParsersRouteSupportedFormatsAndReportFailures() throws Exception {
-        assertThat(DocumentParsers.parse(Path.of("fixtures/docx/default.docx"))
-                        .metadata()
-                        .sourceFilename())
-                .isEqualTo("default.docx");
-        assertThat(DocumentParsers.parse(Path.of("fixtures/xlsx/ssg_skills_framework.xlsx"))
-                        .sections())
-                .isNotEmpty();
-        assertThat(DocumentParsers.parse(Path.of("fixtures/csv/iris.csv")).sections())
-                .isNotEmpty();
+        Path docx = writeDocx("default.docx");
+        Path xlsx = writeXlsx("skills.xlsx");
+        Path csv = writeCsv("iris.csv");
+
+        assertThat(DocumentParsers.parse(docx).metadata().sourceFilename()).isEqualTo("default.docx");
+        assertThat(DocumentParsers.parse(xlsx).sections()).isNotEmpty();
+        assertThat(DocumentParsers.parse(csv).sections()).isNotEmpty();
 
         Path invalidPdf = tempDir.resolve("broken.pdf");
         Files.writeString(invalidPdf, "not a pdf");
@@ -118,6 +119,37 @@ class CliSupportTest {
         assertThatThrownBy(() -> DocumentParsers.parse(tempDir.resolve("README")))
                 .isInstanceOf(CliException.class)
                 .hasMessageContaining("unsupported document format");
+    }
+
+    private Path writeDocx(String filename) throws Exception {
+        Path path = tempDir.resolve(filename);
+        try (var docx = new XWPFDocument()) {
+            docx.createParagraph().createRun().setText("hello from docx");
+            try (var out = Files.newOutputStream(path)) {
+                docx.write(out);
+            }
+        }
+        return path;
+    }
+
+    private Path writeXlsx(String filename) throws Exception {
+        Path path = tempDir.resolve(filename);
+        try (var workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("Sheet1");
+            var row = sheet.createRow(0);
+            row.createCell(0).setCellValue("skill");
+            row.createCell(1).setCellValue("evidence");
+            try (var out = Files.newOutputStream(path)) {
+                workbook.write(out);
+            }
+        }
+        return path;
+    }
+
+    private Path writeCsv(String filename) throws Exception {
+        Path path = tempDir.resolve(filename);
+        Files.write(path, List.of("species,sepal", "setosa,5.1"));
+        return path;
     }
 
     @Test

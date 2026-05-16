@@ -232,8 +232,9 @@ doctruth audit .doctruth/runs/<run-id>/audit.json
 
 `0.2.0-alpha` is an early public alpha. The API is usable, tested, and published for feedback, but may still change before `1.0`.
 
-Current verification baseline: `mvn verify` passes with 679 unit tests and 16
-integration tests, coverage gates at 90% line / 80% branch.
+Current verification baseline: `mvn verify` passes with 703 unit tests and the
+tracked integration suite; optional local corpus tests run when `fixtures/` is
+present. Coverage gates are 90% line / 79% branch.
 
 ## License
 

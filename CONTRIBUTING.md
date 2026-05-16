@@ -81,7 +81,9 @@ mvn verify               # unit + integration + JaCoCo coverage gate (~10s)
 mvn spotless:apply       # auto-format
 ```
 
-`mvn verify` runs the JaCoCo coverage check (line ≥ 90% bundle-wide, excluding `ai.doctruth.internal.providers.*` wire records). Lower the gate only by ADR.
+`mvn verify` runs the JaCoCo coverage check (line ≥ 90% and branch ≥ 79%
+bundle-wide, excluding `ai.doctruth.internal.providers.*` wire records). Lower
+the gate only by ADR.
 
 ## How to add a new LLM provider
 

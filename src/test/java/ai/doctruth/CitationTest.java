@@ -3,6 +3,8 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,8 @@ import org.junit.jupiter.api.Test;
  */
 class CitationTest {
 
+    private static final BoundingBox BBOX = new BoundingBox(10.0, 20.0, 110.0, 40.0);
+
     private static SourceLocation sampleLocation() {
         return new SourceLocation(1, 1, 3, 3, 0);
     }
@@ -38,6 +42,15 @@ class CitationTest {
             assertThat(citation.location()).isSameAs(loc);
             assertThat(citation.exactQuote()).isEqualTo("Acme Corp Ltd");
             assertThat(citation.matchScore()).isEqualTo(0.97);
+            assertThat(citation.boundingBox()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("four-arg constructor retains a page-normalized bounding box")
+        void fourArgRetainsBoundingBox() {
+            var citation = new Citation(sampleLocation(), "Acme Corp Ltd", 0.97, Optional.of(BBOX));
+
+            assertThat(citation.boundingBox()).contains(BBOX);
         }
 
         @Test
@@ -85,6 +98,14 @@ class CitationTest {
             assertThatThrownBy(() -> new Citation(sampleLocation(), null, 1.0))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("exactQuote");
+        }
+
+        @Test
+        @DisplayName("rejects null boundingBox optional")
+        void nullBoundingBoxOptional() {
+            assertThatThrownBy(() -> new Citation(sampleLocation(), "x", 1.0, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("boundingBox");
         }
 
         @Test

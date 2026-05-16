@@ -38,6 +38,21 @@ jobs:
       - name: Verify (unit + integration + recorded LLM + coverage)
         run: mvn -B -ntp verify -P recorded
 
+      - name: Resolve project version
+        run: echo "PROJECT_VERSION=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
+
+      - name: Compile quickstart against packaged SDK
+        run: scripts/compile-quickstart.sh
+
+      - name: Package CLI release artifacts
+        run: scripts/package-cli-release.sh --version "${PROJECT_VERSION}"
+
+      - name: Smoke CLI release tarball
+        run: scripts/smoke-cli-release.sh --version "${PROJECT_VERSION}"
+
+      - name: Generate SBOM
+        run: mvn -B -ntp -DskipTests cyclonedx:makeAggregateBom
+
       - name: Upload surefire reports on failure
         if: failure()
         uses: actions/upload-artifact@v4

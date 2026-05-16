@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import ai.doctruth.internal.audit.ProvOExporter;
 import ai.doctruth.spi.SignatureProvider;
@@ -56,6 +57,42 @@ public record ExtractionResult<T>(
     }
 
     /**
+     * Convenience accessor for the citation of one field path.
+     *
+     * @return the citation for {@code fieldPath}, or {@code null} when this result has no citation for that path.
+     * @throws NullPointerException if {@code fieldPath} is null.
+     */
+    public Citation citation(String fieldPath) {
+        Objects.requireNonNull(fieldPath, "fieldPath");
+        return citations.get(fieldPath);
+    }
+
+    /**
+     * Java-native citation lookup for callers that want to handle missing evidence
+     * explicitly.
+     *
+     * @throws NullPointerException if {@code fieldPath} is null.
+     */
+    public Optional<Citation> findCitation(String fieldPath) {
+        Objects.requireNonNull(fieldPath, "fieldPath");
+        return Optional.ofNullable(citations.get(fieldPath));
+    }
+
+    /**
+     * Return a citation or fail with an actionable message. Use this when a field is not
+     * allowed to continue downstream without source evidence.
+     *
+     * @throws NullPointerException     if {@code fieldPath} is null.
+     * @throws IllegalArgumentException if no citation exists for {@code fieldPath}.
+     */
+    public Citation requireCitation(String fieldPath) {
+        return findCitation(fieldPath)
+                .orElseThrow(() -> new IllegalArgumentException("No citation for field path '" + fieldPath + "'. "
+                        + "Call withEvidence()/withProvenance(), check the field name, "
+                        + "or inspect result.citations().keySet()."));
+    }
+
+    /**
      * Write {@link #toAuditJson()} to {@code path}, creating parent directories if needed.
      *
      * @throws NullPointerException if {@code path} is null.
@@ -68,6 +105,27 @@ public record ExtractionResult<T>(
             Files.createDirectories(parent);
         }
         Files.writeString(path, toAuditJson());
+    }
+
+    /**
+     * Alias for {@link #toAuditJson(Path)} using product language from the happy-path SDK.
+     *
+     * @throws NullPointerException if {@code path} is null.
+     * @throws IOException          if the file or its parents cannot be written.
+     */
+    public void writeAudit(Path path) throws IOException {
+        toAuditJson(path);
+    }
+
+    /**
+     * Alias for {@link #toAuditJson(Path)} accepting a string path.
+     *
+     * @throws NullPointerException if {@code path} is null.
+     * @throws IOException          if the file or its parents cannot be written.
+     */
+    public void writeAudit(String path) throws IOException {
+        Objects.requireNonNull(path, "path");
+        toAuditJson(Path.of(path));
     }
 
     /**

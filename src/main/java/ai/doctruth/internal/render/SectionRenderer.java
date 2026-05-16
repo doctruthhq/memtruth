@@ -24,9 +24,8 @@ import ai.doctruth.TextSection;
  *
  * <p>Package-private to internal callers (per CONTRIBUTING.md "Engineering principles" §1 —
  * the public API surface stays minimal). Public visibility on the static method is the
- * compromise that lets {@code ai.doctruth} root-package code call this without exposing
- * the class outside the {@code internal} subtree to downstream consumers; the
- * {@code @hidden} on {@code package-info} signals the no-stability promise.
+ * compromise that lets {@code ai.doctruth} root-package code call this without treating
+ * the class as stable public API for downstream consumers.
  *
  * @hidden
  */

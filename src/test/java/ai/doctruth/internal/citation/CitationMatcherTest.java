@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import ai.doctruth.BoundingBox;
 import ai.doctruth.Citation;
 import ai.doctruth.DocumentMetadata;
 import ai.doctruth.ParsedDocument;
@@ -61,6 +62,12 @@ class CitationMatcherTest {
                 "doc-1", List.copyOf(sections), new DocumentMetadata("test.pdf", pages.size(), Optional.empty()));
     }
 
+    private static ParsedDocument docWithBox(String text, BoundingBox box) {
+        var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var section = new TextSection(text, loc, ai.doctruth.BlockKind.BODY, Optional.of(box));
+        return new ParsedDocument("doc-1", List.of(section), new DocumentMetadata("test.pdf", 1, Optional.empty()));
+    }
+
     @Nested
     @DisplayName("ExactMatch")
     class ExactMatch {
@@ -78,6 +85,18 @@ class CitationMatcherTest {
             assertThat(c.matchScore()).isEqualTo(1.0);
             assertThat(c.exactQuote()).isEqualTo("Alex Chen");
             assertThat(c.location().pageStart()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("an exact text-section match carries the section bounding box onto the citation")
+        void exactMatchCarriesBoundingBox() {
+            var box = new BoundingBox(10.0, 20.0, 110.0, 40.0);
+            var doc = docWithBox("Alex Chen, 30 years old", box);
+            var matcher = new CitationMatcher();
+
+            Map<String, Citation> out = matcher.matchAll(new Person("Alex Chen", 30), doc);
+
+            assertThat(out.get("name").boundingBox()).contains(box);
         }
 
         @Test

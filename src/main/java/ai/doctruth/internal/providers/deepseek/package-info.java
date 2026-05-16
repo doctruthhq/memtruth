@@ -8,7 +8,5 @@
  *
  * <p>Anything under this package may be renamed, moved, or removed without a major
  * version bump.
- *
- * @hidden
  */
 package ai.doctruth.internal.providers.deepseek;

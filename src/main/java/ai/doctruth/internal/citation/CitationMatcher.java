@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import ai.doctruth.BoundingBox;
 import ai.doctruth.Citation;
 import ai.doctruth.FigureSection;
 import ai.doctruth.ParsedDocument;
@@ -74,7 +75,7 @@ public final class CitationMatcher {
         for (var sec : sections) {
             int idx = sec.text().indexOf(needle);
             if (idx >= 0) {
-                return new Citation(sec.location(), needle, 1.0);
+                return new Citation(sec.location(), needle, 1.0, sec.boundingBox());
             }
         }
         var best = bestFuzzy(needle, sections);
@@ -95,7 +96,7 @@ public final class CitationMatcher {
     private static Citation bestFuzzy(String needle, List<Rendered> sections) {
         Citation best = null;
         for (var sec : sections) {
-            var c = bestFuzzyWindow(needle, sec.text(), sec.location());
+            var c = bestFuzzyWindow(needle, sec.text(), sec.location(), sec.boundingBox());
             if (c == null) {
                 continue;
             }
@@ -106,13 +107,8 @@ public final class CitationMatcher {
         return best;
     }
 
-    /**
-     * Heuristic fuzzy window: pick a window length of {@code |needle|} (with ±20% jitter
-     * during scoring) and slide a coarse stride across {@code haystack}. Seed positions
-     * include matches of {@code needle.substring(0, min(5, len))} plus a uniform stride —
-     * good enough to find a JaroWinkler peak without full O(n) scan.
-     */
-    private static Citation bestFuzzyWindow(String needle, String haystack, SourceLocation loc) {
+    private static Citation bestFuzzyWindow(
+            String needle, String haystack, SourceLocation loc, Optional<BoundingBox> boundingBox) {
         if (haystack.isEmpty() || needle.isEmpty()) {
             return null;
         }
@@ -140,7 +136,7 @@ public final class CitationMatcher {
             return null;
         }
         double clamped = Math.max(0.0, Math.min(1.0, bestScore));
-        return new Citation(loc, bestQuote, clamped);
+        return new Citation(loc, bestQuote, clamped, boundingBox);
     }
 
     private static List<Integer> candidatePositions(String needle, String haystack) {
@@ -171,7 +167,7 @@ public final class CitationMatcher {
     private static List<Rendered> renderedSections(ParsedDocument doc) {
         var out = new ArrayList<Rendered>(doc.sections().size());
         for (var s : doc.sections()) {
-            out.add(new Rendered(textOf(s), locationOf(s)));
+            out.add(new Rendered(textOf(s), locationOf(s), boundingBoxOf(s)));
         }
         return out;
     }
@@ -201,11 +197,17 @@ public final class CitationMatcher {
         };
     }
 
+    private static Optional<BoundingBox> boundingBoxOf(ParsedSection s) {
+        return switch (s) {
+            case TextSection ts -> ts.boundingBox();
+            case TableSection ignored -> Optional.empty();
+            case FigureSection ignored -> Optional.empty();
+        };
+    }
+
     private static SourceLocation fallbackLocation(ParsedDocument doc) {
         return new SourceLocation(1, 1, 1, 1, 0);
     }
-
-    // --- traversal -----------------------------------------------------------
 
     private static void traverse(String path, Object node, List<Leaf> out) {
         if (node == null) {
@@ -287,9 +289,7 @@ public final class CitationMatcher {
         return parent.isEmpty() ? child : parent + "." + child;
     }
 
-    // --- carriers ------------------------------------------------------------
-
     private record Leaf(String path, String value) {}
 
-    private record Rendered(String text, SourceLocation location) {}
+    private record Rendered(String text, SourceLocation location, Optional<BoundingBox> boundingBox) {}
 }

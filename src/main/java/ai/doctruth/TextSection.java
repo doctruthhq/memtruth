@@ -1,6 +1,7 @@
 package ai.doctruth;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A run of plain text recovered from the source document, anchored to a {@link SourceLocation}
@@ -17,15 +18,25 @@ import java.util.Objects;
  *
  * @param text     the recovered text run.
  * @param location the source-document span this text was recovered from.
- * @param kind     the geometric / typographic classification of the block.
+ * @param kind        the geometric / typographic classification of the block.
+ * @param boundingBox optional page-normalized visual region for PDF-originated text.
  * @since 0.1.0
  */
-public record TextSection(String text, SourceLocation location, BlockKind kind) implements ParsedSection {
+public record TextSection(String text, SourceLocation location, BlockKind kind, Optional<BoundingBox> boundingBox)
+        implements ParsedSection {
 
     public TextSection {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(location, "location");
         Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(boundingBox, "boundingBox");
+    }
+
+    /**
+     * Backward-compat 3-arg constructor — leaves the visual bounding box absent.
+     */
+    public TextSection(String text, SourceLocation location, BlockKind kind) {
+        this(text, location, kind, Optional.empty());
     }
 
     /**

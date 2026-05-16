@@ -17,9 +17,9 @@ runtime dependency.
 If your Python model is importable as `myapp.schemas:ResumeExtraction`:
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha.jar \
+java -jar target/doctruth-java-0.2.0-alpha-all.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
-  --out examples/pydantic-interop/resume.schema.json \
+  -o examples/pydantic-interop/resume.schema.json \
   --check
 ```
 

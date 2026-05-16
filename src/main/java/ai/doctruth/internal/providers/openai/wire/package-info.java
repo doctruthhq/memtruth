@@ -6,7 +6,5 @@
  * {@code prompt_tokens}, {@code finish_reason}) so Jackson maps each record component
  * without custom annotations. These records exist only to insulate
  * {@link ai.doctruth.OpenAiProvider} from vendor JSON drift, per ADR 0003.
- *
- * @hidden
  */
 package ai.doctruth.internal.providers.openai.wire;

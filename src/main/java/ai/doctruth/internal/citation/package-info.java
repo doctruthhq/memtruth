@@ -9,7 +9,5 @@
  *
  * <p>Apache Commons Text is confined to this package; no concrete Commons Text type
  * appears in the public {@code ai.doctruth.*} API.
- *
- * @hidden
  */
 package ai.doctruth.internal.citation;

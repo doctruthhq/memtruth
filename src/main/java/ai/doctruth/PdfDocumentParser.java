@@ -107,7 +107,7 @@ public final class PdfDocumentParser {
         }
         var counts = new EnumMap<BlockKind, Integer>(BlockKind.class);
         for (var block : blocks) {
-            sections.add(new TextSection(block.text(), block.location(), block.kind()));
+            sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
             counts.merge(block.kind(), 1, Integer::sum);
         }
         LOG.debug("page={} blocks={} kinds={}", page, blocks.size(), counts);

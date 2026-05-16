@@ -8,7 +8,5 @@
  * annotations. Anything under this package may be renamed, moved, or removed without a
  * major version bump per ADR 0003 — vendor-specific knowledge stays here and never leaks
  * through {@link ai.doctruth.LlmProvider}.
- *
- * @hidden
  */
 package ai.doctruth.internal.providers.gemini.wire;

@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 5
+    groups:
+      maven-runtime:
+        dependency-type: production
+      maven-test:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 5

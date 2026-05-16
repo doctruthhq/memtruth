@@ -41,7 +41,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
  *       "doctruth:fieldPath": "name",
  *       "prov:value": "Alex Chen",
  *       "doctruth:matchScore": 0.97,
- *       "doctruth:sourceLocation": {"pageStart": 1, "pageEnd": 1, "lineStart": 3, "lineEnd": 3, "charOffset": 0}
+ *       "doctruth:sourceLocation": {"pageStart": 1, "pageEnd": 1, "lineStart": 3, "lineEnd": 3, "charOffset": 0},
+ *       "doctruth:boundingBox": {"x0": 10.0, "y0": 20.0, "x1": 110.0, "y1": 40.0}
  *     }, ...
  *   ],
  *   "doctruth:confidence": {
@@ -107,6 +108,7 @@ public final class ProvOExporter {
         entry.put("prov:value", citation.exactQuote());
         entry.put("doctruth:matchScore", citation.matchScore());
         entry.set("doctruth:sourceLocation", locationNode(citation.location()));
+        citation.boundingBox().ifPresent(box -> entry.set("doctruth:boundingBox", MAPPER.valueToTree(box)));
         return entry;
     }
 

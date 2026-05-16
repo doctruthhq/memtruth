@@ -3,34 +3,30 @@ package ai.doctruth.cli;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 
-import ai.doctruth.JsonSchema;
-import ai.doctruth.internal.schema.JsonSchemaCompatibility;
+import ai.doctruth.LlmProvider;
 
 /**
- * Minimal command-line entry point for build-time migration helpers. Runtime library
- * users do not need this class, and production extraction does not depend on Python.
+ * Command-line entry point. The CLI is a developer onboarding surface; the library API
+ * remains the production integration surface.
  */
 public final class DocTruthCli {
 
-    private final PrintStream out;
-    private final PrintStream err;
-    private final PydanticExporter exporter;
+    private final CliContext context;
 
     public DocTruthCli() {
-        this(System.getenv(), System.out, System.err, new PythonPydanticExporter(System.getenv()));
+        this(System.getenv(), System.out, System.err, new PythonPydanticExporter(System.getenv()), Providers::create);
     }
 
-    DocTruthCli(Map<String, String> env, PrintStream out, PrintStream err, PydanticExporter exporter) {
-        Objects.requireNonNull(env, "env");
-        this.out = Objects.requireNonNull(out, "out");
-        this.err = Objects.requireNonNull(err, "err");
-        this.exporter = Objects.requireNonNull(exporter, "exporter");
+    DocTruthCli(
+            Map<String, String> env,
+            PrintStream out,
+            PrintStream err,
+            PydanticExporter exporter,
+            ProviderFactory providers) {
+        this.context = new CliContext(env, out, err, exporter, providers);
     }
 
     public static void main(String[] args) {
@@ -41,80 +37,41 @@ public final class DocTruthCli {
         try {
             return runChecked(args);
         } catch (UsageException e) {
-            err.println(e.getMessage());
+            context.err().println(e.getMessage());
+            context.err().println("Try: doctruth --help");
             return 2;
-        } catch (MigrationException e) {
-            err.println(e.getMessage());
+        } catch (CliException e) {
+            context.err().println(e.getMessage());
             return 1;
         }
     }
 
-    private int runChecked(String[] args) throws MigrationException {
-        if (args.length < 1 || "--help".equals(args[0])) {
-            throw new UsageException(usage());
-        }
-        if (args.length >= 3 && "migrate".equals(args[0]) && "pydantic".equals(args[1])) {
-            migratePydantic(args);
+    private int runChecked(String[] args) throws CliException {
+        if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
+            context.out().println(Usage.main());
             return 0;
         }
-        throw new UsageException(usage());
+        if ("--version".equals(args[0]) || "version".equals(args[0])) {
+            context.out().println("DocTruth " + version());
+            return 0;
+        }
+        switch (args[0]) {
+            case "init" -> new InitCommand(context).run(args);
+            case "parse" -> new ParseCommand(context).run(args);
+            case "schema" -> new SchemaCommand(context).run(args);
+            case "extract" -> new ExtractCommand(context).run(args);
+            case "audit" -> new AuditCommand(context).run(args);
+            case "migrate" -> new MigrateCommand(context).run(args);
+            case "doctor" -> new DoctorCommand(context).run(args);
+            case "completion" -> new CompletionCommand(context).run(args);
+            default -> throw new UsageException("unknown command: " + args[0]);
+        }
+        return 0;
     }
 
-    private void migratePydantic(String[] args) throws MigrationException {
-        String spec = args[2];
-        if (!spec.contains(":")) {
-            throw new UsageException("expected <module>:<Model> for pydantic migration");
-        }
-        var options = MigrationOptions.parse(Arrays.copyOfRange(args, 3, args.length));
-        String schemaJson = exportSchema(spec);
-        JsonSchema schema = readSchema(schemaJson);
-        if (options.check()) {
-            checkCompatible(schema);
-        }
-        writeSchema(options.out(), schemaJson);
-        out.println(options.check() ? "schema compatible: " + options.out() : "schema exported: " + options.out());
-    }
-
-    private String exportSchema(String spec) throws MigrationException {
-        try {
-            return exporter.export(spec);
-        } catch (IOException e) {
-            throw new MigrationException("failed to export Pydantic schema: " + e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new MigrationException("Pydantic schema export interrupted", e);
-        }
-    }
-
-    private static JsonSchema readSchema(String schemaJson) throws MigrationException {
-        try {
-            return JsonSchema.from(schemaJson);
-        } catch (IllegalArgumentException e) {
-            throw new MigrationException("exported Pydantic schema is not valid JSON: " + e.getMessage(), e);
-        }
-    }
-
-    private static void checkCompatible(JsonSchema schema) throws MigrationException {
-        var errors = JsonSchemaCompatibility.check(schema.node());
-        if (!errors.isEmpty()) {
-            throw new MigrationException("schema compatibility check failed: " + String.join("; ", errors));
-        }
-    }
-
-    private static void writeSchema(Path out, String schemaJson) throws MigrationException {
-        try {
-            Path parent = out.toAbsolutePath().getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.writeString(out, schemaJson, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new MigrationException("failed to write schema to " + out + ": " + e.getMessage(), e);
-        }
-    }
-
-    private static String usage() {
-        return "usage: doctruth migrate pydantic <module>:<Model> --out <schema.json> [--check]";
+    private static String version() {
+        String value = DocTruthCli.class.getPackage().getImplementationVersion();
+        return value == null || value.isBlank() ? "0.2.0-alpha" : value;
     }
 
     @FunctionalInterface
@@ -122,24 +79,9 @@ public final class DocTruthCli {
         String export(String spec) throws IOException, InterruptedException;
     }
 
-    private record MigrationOptions(Path out, boolean check) {
-        static MigrationOptions parse(String[] args) {
-            Path out = null;
-            boolean check = false;
-            for (int i = 0; i < args.length; i++) {
-                if ("--check".equals(args[i])) {
-                    check = true;
-                } else if ("--out".equals(args[i]) && i + 1 < args.length) {
-                    out = Path.of(args[++i]);
-                } else {
-                    throw new UsageException("unknown or incomplete option: " + args[i]);
-                }
-            }
-            if (out == null) {
-                throw new UsageException("--out <schema.json> is required");
-            }
-            return new MigrationOptions(out, check);
-        }
+    @FunctionalInterface
+    interface ProviderFactory {
+        LlmProvider create(ProviderConfig options) throws CliException;
     }
 
     static final class PythonPydanticExporter implements PydanticExporter {
@@ -154,7 +96,7 @@ public final class DocTruthCli {
         private final Map<String, String> env;
 
         PythonPydanticExporter(Map<String, String> env) {
-            this.env = Map.copyOf(env);
+            this.env = Map.copyOf(Objects.requireNonNull(env, "env"));
         }
 
         @Override
@@ -168,26 +110,6 @@ public final class DocTruthCli {
                 throw new IOException("python exited " + exit + ": " + stderr.strip());
             }
             return stdout;
-        }
-    }
-
-    private static class UsageException extends RuntimeException {
-        private static final long serialVersionUID = 1L;
-
-        private UsageException(String message) {
-            super(message);
-        }
-    }
-
-    private static class MigrationException extends Exception {
-        private static final long serialVersionUID = 1L;
-
-        private MigrationException(String message) {
-            super(message);
-        }
-
-        private MigrationException(String message, Throwable cause) {
-            super(message, cause);
         }
     }
 }

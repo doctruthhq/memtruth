@@ -8,9 +8,6 @@
 package ai.doctruth.examples.quickstart;
 
 import ai.doctruth.DocTruth;
-import ai.doctruth.OpenAiProvider;
-import ai.doctruth.ParsedDocument;
-import ai.doctruth.PdfDocumentParser;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,34 +40,26 @@ public final class Quickstart {
                 : writeSamplePdf();
         System.out.println("Source PDF: " + pdfPath);
 
-        // 3. Parse PDF -> ParsedDocument (layout blocks with page+line preserved).
-        ParsedDocument doc = PdfDocumentParser.parse(pdfPath);
-        System.out.println("Parsed " + doc.metadata().pageCount() + " page(s) from " + doc.metadata().sourceFilename());
-
-        // 4. The fluent extraction call — provider, prompt, target type, evidence flags.
-        //    .withProvenance() asks the library to attach a Citation per extracted field.
-        //    .withBitemporal() records both extractedAt + sourcePublishedAt on the result.
-        var result = DocTruth.from(new OpenAiProvider(apiKey))
+        // 3. The happy-path extraction call: provider -> PDF -> typed value + evidence.
+        var result = DocTruth.withOpenAi(apiKey)
+                .fromPdf(pdfPath)
                 .extract("Extract the contract terms", Contract.class)
-                .withProvenance()
+                .withEvidence()
                 .withSourcePublishedAt(Instant.parse("2026-01-01T00:00:00Z"))
-                .withBitemporal()
-                .withConfidence()
-                .run(doc);
+                .run();
 
-        // 5. Show the extracted value and the audit trail that makes it defensible.
+        // 4. Show the extracted value and the audit trail that makes it defensible.
         System.out.println();
         System.out.println("Extracted value:");
         System.out.println("  " + result.value());
 
         System.out.println();
         System.out.println("Citations: " + result.citations().size() + " field(s)");
-        result.citations().entrySet().stream().findFirst().ifPresent(e -> {
-            var c = e.getValue();
-            System.out.printf(
-                    "  first: %s -> page %d line %d  matchScore=%.2f%n",
-                    e.getKey(), c.location().pageStart(), c.location().lineStart(), c.matchScore());
-        });
+        var partyA = result.requireCitation("partyA");
+        System.out.printf(
+                "  first: %s -> page %d line %d  matchScore=%.2f%n",
+                "partyA", partyA.location().pageStart(), partyA.location().lineStart(), partyA.matchScore());
+        partyA.boundingBox().ifPresent(box -> System.out.println("  bbox: " + box));
 
         System.out.println();
         System.out.println("Confidence: " + result.confidence().size() + " field(s)");
@@ -82,9 +71,9 @@ public final class Quickstart {
         System.out.println("  extractedAt=" + p.extractedAt());
         p.sourcePublishedAt().ifPresent(t -> System.out.println("  sourcePublishedAt=" + t));
 
-        // 6. JSON-LD audit log — what compliance teams ingest. Written next to the PDF.
+        // 5. JSON-LD audit log — what compliance teams ingest. Written next to the PDF.
         var auditPath = pdfPath.resolveSibling("audit.json");
-        result.toAuditJson(auditPath);
+        result.writeAudit(auditPath);
         System.out.println();
         System.out.println("Audit JSON written to: " + auditPath);
     }

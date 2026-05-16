@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +16,8 @@ jobs:
   release:
     name: release (Sonatype Central Portal)
     runs-on: ubuntu-latest
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +37,17 @@ jobs:
       - name: Verify release commit
         run: mvn -B -ntp spotless:check checkstyle:check verify -P recorded
 
+      - name: Package CLI release artifacts
+        run: scripts/package-cli-release.sh --version "${GITHUB_REF_NAME#v}"
+
+      - name: Smoke CLI release tarball
+        run: scripts/smoke-cli-release.sh --version "${GITHUB_REF_NAME#v}"
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          mvn -B -ntp -DskipTests cyclonedx:makeAggregateBom
+          cp target/bom.json dist/doctruth-${GITHUB_REF_NAME#v}-sbom.cdx.json
+
       - name: Deploy to Sonatype Central Portal
         run: mvn -B -ntp -P release deploy -DskipTests
         env:
@@ -48,10 +61,39 @@ jobs:
         with:
           name: release-artefacts
           path: |
+            dist/*
+            dist/homebrew/*
             target/*.jar
             target/*.jar.asc
             target/*.pom
           retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/doctruth-*.tar.gz
+            dist/doctruth-java-*-all.jar
+            dist/doctruth-*-sbom.cdx.json
+            dist/checksums.txt
+            dist/homebrew/doctruth.rb
+          generate_release_notes: true
+
+      - name: Update Homebrew tap
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_VERSION#v}"
+          git config --global user.name "doctruth-release-bot"
+          git config --global user.email "release-bot@doctruth.ai"
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/doctruthhq/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp dist/homebrew/doctruth.rb tap/Formula/doctruth.rb
+          cd tap
+          git add Formula/doctruth.rb
+          git commit -m "doctruth ${version}" || exit 0
+          git push origin HEAD:main
 
       - name: Upload surefire reports on failure
         if: failure()

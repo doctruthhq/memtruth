@@ -56,6 +56,14 @@ class PdfDocumentParserTest {
             assertThat(ts.location().pageStart()).isEqualTo(1);
             assertThat(ts.location().pageEnd()).isEqualTo(1);
             assertThat(ts.kind()).isNotNull();
+            assertThat(ts.boundingBox()).hasValueSatisfying(bbox -> {
+                assertThat(bbox.x0()).isLessThan(bbox.x1());
+                assertThat(bbox.y0()).isLessThan(bbox.y1());
+                assertThat(bbox.x0()).isBetween(0.0, 1000.0);
+                assertThat(bbox.x1()).isBetween(0.0, 1000.0);
+                assertThat(bbox.y0()).isBetween(0.0, 1000.0);
+                assertThat(bbox.y1()).isBetween(0.0, 1000.0);
+            });
         }
 
         @Test

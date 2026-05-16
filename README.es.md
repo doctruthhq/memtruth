@@ -1,4 +1,4 @@
-# DocTruth
+# DocTruth - Extracción LLM Auditable para Java
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -16,13 +16,15 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**Extracción LLM auditable para Java.** Analiza documentos, extrae datos estructurados y adjunta citas por campo, confianza y procedencia.
+**Extracción LLM auditable para Java.** DocTruth convierte PDF, DOCX, XLSX y CSV en structured output basado en schema, con citas de fuente por campo, bounding boxes opcionales para PDF, confianza, provenance y PROV-O audit JSON.
 
 DocTruth existe para responder una pregunta:
 
 > ¿De dónde salió este valor extraído?
 
 No es un framework de agentes, un framework de chains, un wrapper de bases vectoriales ni una UI. Es una biblioteca Java pequeña para el límite de extracción: documento de entrada, salida estructurada validada y evidencia verificable.
+
+Es framework-agnostic y encaja en plain Java, Spring Boot, LangChain4j, Spring AI, Quarkus, Micronaut o cualquier servicio Java que ya use OpenAI, Anthropic, Gemini, DeepSeek o un endpoint compatible con OpenAI.
 
 ## Instalación
 
@@ -110,9 +112,9 @@ DocTruth soporta exportaciones comunes de Pydantic v2 JSON Schema, incluyendo `$
 Herramienta de migración en build-time:
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha.jar \
+java -jar target/doctruth-java-0.2.0-alpha-all.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
-  --out schemas/resume.schema.json \
+  -o schemas/resume.schema.json \
   --check
 ```
 
@@ -134,8 +136,10 @@ Los clientes usan `java.net.http.HttpClient` del JDK; no hay SDKs de proveedores
 ## CLI
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha.jar parse contract.pdf
-java -jar target/doctruth-java-0.2.0-alpha.jar migrate pydantic myapp.schemas:Model --out schema.json --check
+mvn package -DskipTests
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
+java -jar target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
+java -jar target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contract.schema.json
 ```
 
 ## Documentación

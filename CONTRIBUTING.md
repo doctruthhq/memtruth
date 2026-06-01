@@ -8,11 +8,11 @@ These five rules govern every change. They take precedence over local convenienc
 
 1. **Decoupled by default** — one reason to change per public type. Layers communicate only through typed records and sealed interfaces in `ai.doctruth.*` (root) and `ai.doctruth.spi.*`. If a class imports more than three other concrete `ai.doctruth.*` types, split it.
 2. **Auditable + debuggable + loggable everywhere** — every external boundary (LLM call, file I/O, network) emits SLF4J events at the documented levels. Every public exception carries a stable string error code plus structured context. **No silent failures, anywhere.**
-3. **No god files / classes / functions** — hard limits, refactor rather than lift them:
-   - Source file ≤ 300 LOC (excluding Javadoc + imports)
-   - Test file ≤ 500 LOC
-   - Class / record ≤ 8 public methods OR ≤ 5 record components
-   - Method body ≤ 30 LOC
+3. **No god files / classes / functions** — split by responsibility and
+   reviewability. A file, class, or method should have one clear reason to
+   change. Refactor when a unit coordinates unrelated concerns, requires broad
+   setup to test one behavior, or hides a public contract behind incidental
+   collaborators.
 4. **Build, don't synthesize** — check the JDK 25+ standard library and existing direct deps before hand-rolling. Adding a new direct dependency requires an ADR (`docs/adr/000N-why-<libname>.md`) in the same PR. The bar is "JDK + existing deps genuinely cannot do this clearly", not "this lib is convenient".
 5. **Elegance over cleverness** — records over classes, sealed interfaces over inheritance, pattern-matching `switch` with no `default`, `Optional<T>` over null. From any public-API call site to the implementation in ≤ 3 hops.
 

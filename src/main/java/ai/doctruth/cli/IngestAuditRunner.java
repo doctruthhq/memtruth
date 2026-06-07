@@ -129,7 +129,7 @@ final class IngestAuditRunner {
             int maxBlockLines,
             Map<String, Integer> kindCounts) {
         if (textChars < LOW_TEXT_CHARS || textSections.isEmpty()) {
-            out.add(new IngestAuditFinding("doctruth_text", "low_text_layer_chars", textChars, LOW_TEXT_CHARS));
+            out.add(new IngestAuditFinding("doctruth_text", "ocr_route_required", textChars, LOW_TEXT_CHARS));
         }
         if (textWithBbox < textSections.size()) {
             out.add(new IngestAuditFinding("evidence_mapping", "missing_text_bboxes", textWithBbox, textSections.size()));

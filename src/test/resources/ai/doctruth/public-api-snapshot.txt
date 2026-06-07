@@ -69,7 +69,9 @@ TYPE class ai.doctruth.DocTruthClient [public final]
   method ai.doctruth.DocTruthDocument fromCsv(java.nio.file.Path) [public]
   method ai.doctruth.DocTruthDocument fromDocx(java.nio.file.Path) [public]
   method ai.doctruth.DocTruthDocument fromPdf(java.lang.String) [public]
+  method ai.doctruth.DocTruthDocument fromPdf(java.lang.String, ai.doctruth.spi.OcrEngine) [public]
   method ai.doctruth.DocTruthDocument fromPdf(java.nio.file.Path) [public]
+  method ai.doctruth.DocTruthDocument fromPdf(java.nio.file.Path, ai.doctruth.spi.OcrEngine) [public]
   method ai.doctruth.DocTruthDocument fromXlsx(java.nio.file.Path) [public]
 
 TYPE class ai.doctruth.DocTruthDocument [public final]
@@ -231,6 +233,7 @@ TYPE interface ai.doctruth.ParsedSection [public abstract interface]
 
 TYPE class ai.doctruth.PdfDocumentParser [public final]
   method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
+  method ai.doctruth.ParsedDocument parse(java.nio.file.Path, ai.doctruth.spi.OcrEngine) [public static]
 
 TYPE record ai.doctruth.PriorityTruncate [public final]
   record-components java.util.List prioritySectionPatterns, int maxChars, ai.doctruth.OverBudgetPolicy onOverBudget

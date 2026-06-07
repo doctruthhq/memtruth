@@ -86,9 +86,10 @@ Run a no-LLM PDF corpus audit before extraction:
 doctruth ingest-audit ./resumes --json -o ingest-audit.json
 ```
 
-This walks local PDFs and reports parser-layer gaps only: low/empty text layer,
-oversized blocks, missing headings, missing text bboxes, and parse failures. It
-does not call providers and does not include recovered document text in the JSON.
+This walks local PDFs and reports parser-layer gaps only: pages that should be
+routed to OCR before DocTruth block assembly, oversized blocks, missing headings,
+missing text bboxes, and parse failures. It does not call providers or OCR
+engines and does not include recovered document text in the JSON.
 
 ### Schema
 

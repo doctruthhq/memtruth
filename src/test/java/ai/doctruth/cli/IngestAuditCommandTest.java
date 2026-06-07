@@ -41,6 +41,7 @@ class IngestAuditCommandTest {
         assertThat(tree.path("totalFiles").asInt()).isEqualTo(2);
         assertThat(tree.path("parsed").asInt()).isEqualTo(2);
         assertThat(tree.path("issueSummary").path("doctruth_text").asInt()).isEqualTo(1);
+        assertThat(tree.path("files").get(0).path("findings").toString()).contains("ocr_route_required");
         assertThat(tree.path("files").get(0).path("findings").toString()).doesNotContain("Built conveyors");
     }
 

@@ -14,8 +14,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 
+import ai.doctruth.spi.OcrEngine;
+import ai.doctruth.spi.OcrPageResult;
+import ai.doctruth.spi.OcrRegion;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +35,8 @@ import org.slf4j.LoggerFactory;
 public final class PdfDocumentParser {
 
     private static final Logger LOG = LoggerFactory.getLogger(PdfDocumentParser.class);
+    private static final int LOW_TEXT_LAYER_CHARS = 50;
+    private static final float OCR_RENDER_DPI = 150f;
 
     private PdfDocumentParser() {
         throw new AssertionError("no instances");
@@ -42,13 +50,24 @@ public final class PdfDocumentParser {
      *                              an unknown password, or PDFBox raises any IO error.
      */
     public static ParsedDocument parse(Path pdfPath) throws ParseException {
+        return parse(pdfPath, OcrEngine.NOOP);
+    }
+
+    /**
+     * Parse a PDF with an OCR engine wired into the page runtime. Each page is preflighted
+     * before DocTruth block assembly; pages with an insufficient text layer are rendered and
+     * routed through {@code ocrEngine}, while normal text-layer pages stay on the PDFBox block
+     * path.
+     */
+    public static ParsedDocument parse(Path pdfPath, OcrEngine ocrEngine) throws ParseException {
         Objects.requireNonNull(pdfPath, "pdfPath");
+        Objects.requireNonNull(ocrEngine, "ocrEngine");
         requireRegularFile(pdfPath);
         try (PDDocument pdf = Loader.loadPDF(pdfPath.toFile())) {
             int pageCount = pdf.getNumberOfPages();
             var metadata = new DocumentMetadata(pdfPath.getFileName().toString(), pageCount, Optional.empty());
             String docId = "sha256:" + sha256Hex(pdfPath);
-            var sections = extractSections(pdf, pageCount);
+            var sections = extractSections(pdf, pageCount, ocrEngine);
             LOG.debug("parsed pdf path={} pages={} sections={}", pdfPath, pageCount, sections.size());
             return new ParsedDocument(docId, sections, metadata);
         } catch (IOException e) {
@@ -91,12 +110,72 @@ public final class PdfDocumentParser {
         }
     }
 
-    private static List<ParsedSection> extractSections(PDDocument pdf, int pageCount) throws IOException {
+    private static List<ParsedSection> extractSections(PDDocument pdf, int pageCount, OcrEngine ocrEngine) throws IOException {
         var sections = new ArrayList<ParsedSection>(pageCount);
         for (int page = 1; page <= pageCount; page++) {
-            appendPageSections(pdf, page, sections);
+            if (shouldRouteToOcr(pdf, page, ocrEngine)) {
+                appendOcrPageSections(pdf, page, ocrEngine, sections);
+            } else {
+                appendPageSections(pdf, page, sections);
+            }
         }
         return sections;
+    }
+
+    private static boolean shouldRouteToOcr(PDDocument pdf, int page, OcrEngine ocrEngine) throws IOException {
+        return ocrEngine != OcrEngine.NOOP && textLayerCharCount(pdf, page) < LOW_TEXT_LAYER_CHARS;
+    }
+
+    private static int textLayerCharCount(PDDocument pdf, int page) throws IOException {
+        var count = new int[1];
+        var stripper = new PDFTextStripper() {
+            @Override
+            protected void writeString(String text, List<TextPosition> textPositions) {
+                count[0] += text.replaceAll("\\s+", "").length();
+            }
+        };
+        stripper.setSortByPosition(true);
+        stripper.setSuppressDuplicateOverlappingText(true);
+        stripper.setStartPage(page);
+        stripper.setEndPage(page);
+        stripper.getText(pdf);
+        return count[0];
+    }
+
+    private static void appendOcrPageSections(
+            PDDocument pdf, int page, OcrEngine ocrEngine, List<ParsedSection> sections) throws IOException {
+        var image = new PDFRenderer(pdf).renderImageWithDPI(page - 1, OCR_RENDER_DPI);
+        OcrPageResult result = Objects.requireNonNull(ocrEngine.ocr(image, page), "ocr result");
+        if (result.text().isBlank()) {
+            LOG.debug("skipping blank OCR page page={}", page);
+            return;
+        }
+        int lineCount = Math.max(1, (int) result.text().lines().count());
+        sections.add(new TextSection(
+                result.text().stripTrailing(),
+                new SourceLocation(page, page, 1, lineCount, 0),
+                BlockKind.BODY,
+                ocrBoundingBox(result, image.getWidth(), image.getHeight())));
+        LOG.debug("page={} routed=ocr chars={} confidence={}", page, result.text().length(), result.confidence());
+    }
+
+    private static Optional<BoundingBox> ocrBoundingBox(OcrPageResult result, int imageWidth, int imageHeight) {
+        if (result.regions().isEmpty() || imageWidth <= 0 || imageHeight <= 0) {
+            return Optional.of(new BoundingBox(0.0, 0.0, 1000.0, 1000.0));
+        }
+        int x0 = result.regions().stream().mapToInt(OcrRegion::x).min().orElse(0);
+        int y0 = result.regions().stream().mapToInt(OcrRegion::y).min().orElse(0);
+        int x1 = result.regions().stream().mapToInt(region -> region.x() + region.width()).max().orElse(imageWidth);
+        int y1 = result.regions().stream().mapToInt(region -> region.y() + region.height()).max().orElse(imageHeight);
+        return Optional.of(new BoundingBox(
+                clamp1000(x0 * 1000.0 / imageWidth),
+                clamp1000(y0 * 1000.0 / imageHeight),
+                clamp1000(x1 * 1000.0 / imageWidth),
+                clamp1000(y1 * 1000.0 / imageHeight)));
+    }
+
+    private static double clamp1000(double value) {
+        return Math.max(0.0, Math.min(1000.0, value));
     }
 
     private static void appendPageSections(PDDocument pdf, int page, List<ParsedSection> sections) throws IOException {

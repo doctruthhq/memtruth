@@ -5,10 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import ai.doctruth.spi.OcrEngine;
+import ai.doctruth.spi.OcrPageResult;
+import ai.doctruth.spi.OcrRegion;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -116,6 +121,56 @@ class PdfDocumentParserTest {
             // — empty TextSections are noise, not signal).
             assertThat(doc.sections()).hasSize(1);
             assertThat(((TextSection) doc.sections().get(0)).text()).contains("real content");
+        }
+
+        @Test
+        @DisplayName("low-text PDF pages are routed to OCR before DocTruth section assembly")
+        void lowTextPageRoutesToOcrBeforeSectionAssembly() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            var calls = new AtomicInteger();
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> {
+                calls.incrementAndGet();
+                return new OcrPageResult(
+                        "OCR recovered resume text",
+                        0.91,
+                        List.of(new OcrRegion("OCR recovered resume text", 10, 20, 120, 30, 0.91)),
+                        pageNumber);
+            };
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(calls).hasValue(1);
+            assertThat(doc.sections()).hasSize(1);
+            var section = (TextSection) doc.sections().get(0);
+            assertThat(section.text()).isEqualTo("OCR recovered resume text");
+            assertThat(section.location().pageStart()).isEqualTo(1);
+            assertThat(section.boundingBox()).hasValueSatisfying(box -> {
+                assertThat(box.x0()).isGreaterThanOrEqualTo(0.0);
+                assertThat(box.x1()).isLessThanOrEqualTo(1000.0);
+                assertThat(box.y0()).isGreaterThanOrEqualTo(0.0);
+                assertThat(box.y1()).isLessThanOrEqualTo(1000.0);
+            });
+        }
+
+        @Test
+        @DisplayName("usable text-layer PDF pages do not call OCR")
+        void usableTextLayerPagesDoNotCallOcr() throws Exception {
+            var pdfPath = writeSinglePagePdf(
+                    tempDir,
+                    "This PDF has enough selectable text for DocTruth parsing without OCR routing.");
+            var calls = new AtomicInteger();
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> {
+                calls.incrementAndGet();
+                return new OcrPageResult("should not be used", 0.5, List.of(), pageNumber);
+            };
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(calls).hasValue(0);
+            assertThat(doc.sections()).hasSize(1);
+            assertThat(((TextSection) doc.sections().get(0)).text())
+                    .contains("This PDF has enough selectable text")
+                    .doesNotContain("should not be used");
         }
 
         @Test
@@ -330,6 +385,15 @@ class PdfDocumentParserTest {
 
     private static Path writeSinglePagePdf(Path dir, String text) throws IOException {
         return writeMultiPagePdf(dir, List.of(text));
+    }
+
+    private static Path writeBlankPagePdf(Path dir) throws IOException {
+        var path = dir.resolve("blank-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            pdf.addPage(new PDPage());
+            pdf.save(path.toFile());
+        }
+        return path;
     }
 
     private static Path writeMultiPagePdf(Path dir, List<String> pageTexts) throws IOException {

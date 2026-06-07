@@ -10,6 +10,9 @@ import org.apache.pdfbox.text.TextPosition;
 final class PdfLineSegment {
 
     private static final Pattern NUMBERED_ITEM = Pattern.compile("^\\s*\\d{1,2}.{0,2}[.)、]\\s+.*");
+    private static final Pattern RESPONSIBILITY_SUBHEADING = Pattern.compile(
+            ".*\\b(?:analysis|design|documentation|inspection|management|mapping|optimization|profiling|support|troubleshooting)\\b.*:",
+            Pattern.CASE_INSENSITIVE);
 
     final List<TextPosition> positions;
     final String text;
@@ -54,7 +57,7 @@ final class PdfLineSegment {
 
     boolean isBoldResponsibilityHeading() {
         String stripped = text.strip();
-        return bold && stripped.length() >= 8 && stripped.endsWith(":");
+        return stripped.length() >= 8 && stripped.endsWith(":") && (bold || RESPONSIBILITY_SUBHEADING.matcher(stripped).matches());
     }
 
     boolean isResumeSectionHeading() {
@@ -87,6 +90,7 @@ final class PdfLineSegment {
     boolean looksLikeInlineFieldValue() {
         String stripped = text.strip();
         return !isResumeSectionHeading()
+                && !isKnownFieldLabel(stripped)
                 && stripped.length() >= 2
                 && stripped.length() <= 24
                 && !containsSentencePunctuation(stripped);
@@ -114,6 +118,21 @@ final class PdfLineSegment {
                     "summary",
                     "technical skills",
                     "work experience" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isKnownFieldLabel(String text) {
+        return switch (text.toLowerCase(Locale.ROOT).replace(":", "").strip()) {
+            case "address",
+                    "contact",
+                    "current address",
+                    "date of birth",
+                    "email",
+                    "linkedin",
+                    "phone",
+                    "tel",
+                    "telephone" -> true;
             default -> false;
         };
     }

@@ -2,7 +2,6 @@ package ai.doctruth;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 import org.apache.pdfbox.text.TextPosition;
 
@@ -13,9 +12,6 @@ final class PdfVisualTextLayout {
     private static final double LINE_SEGMENT_GAP_FACTOR = 3.0;
     private static final float BLOCK_GAP_FACTOR = 1.5f;
     private static final double BASELINE_EPSILON = 2.0;
-    private static final Pattern DATE_RANGE = Pattern.compile(
-            ".*\\b(?:19|20)\\d{2}\\b\\s*(?:[-–—]|to)\\s*(?:\\b(?:19|20)\\d{2}\\b|present|now).*",
-            Pattern.CASE_INSENSITIVE);
 
     private PdfVisualTextLayout() {
         throw new AssertionError("no instances");
@@ -96,7 +92,9 @@ final class PdfVisualTextLayout {
                     }
                     continue;
                 }
-                if (previous != null && PdfTextPositionMetrics.horizontalGap(previous, p) > splitGap && !current.isEmpty()) {
+                if (previous != null
+                        && PdfLineSegmentSplitPolicy.shouldSplitLineSegment(current, previous, p, splitGap)
+                        && !current.isEmpty()) {
                     out.add(PdfLineSegment.from(current));
                     current = new ArrayList<>();
                 }
@@ -151,7 +149,7 @@ final class PdfVisualTextLayout {
 
     private static void attachInlineDateSegments(List<PdfLineSegment> lines) {
         for (var line : lines) {
-            if (!line.looksLikeInlineDate(DATE_RANGE)) {
+            if (!PdfLineSegmentSplitPolicy.isInlineDate(line)) {
                 continue;
             }
             PdfLineSegment leftPeer = null;
@@ -242,6 +240,9 @@ final class PdfVisualTextLayout {
             return false;
         }
         if (line.columnIndex != lastLine.columnIndex) {
+            return true;
+        }
+        if (PdfLineSegmentSplitPolicy.isUnrelatedLateralJump(current, lastLine, line, lineHeight)) {
             return true;
         }
         double baselineGap = line.baseline - lastLine.baseline;

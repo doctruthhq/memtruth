@@ -233,6 +233,101 @@ class PdfVisualLayoutParserTest {
     }
 
     @Test
+    @DisplayName("non-bold responsibility headings ending with colon split dense work experience blocks")
+    void nonBoldResponsibilityHeadingsSplitDenseWorkExperienceBlocks() throws Exception {
+        var pdfPath = writePositionedPdf(
+                tempDir,
+                List.of(
+                        new PositionedRun("WORK EXPERIENCE", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Process Assistant Engineer at Kaifa Technology", 50f, 708f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("SPI (Solder Paste Inspection) & FPY Management:", 50f, 696f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("- Developed and managed SPI programs.", 65f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("- Improved FPY rates to reduce defects.", 65f, 672f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("Stencil & Printer Parameter Optimization:", 50f, 660f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("- Modified printer parameters.", 65f, 648f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("- Reduced process variation.", 65f, 636f, 10f, Standard14Fonts.FontName.HELVETICA)));
+
+        var doc = PdfDocumentParser.parse(pdfPath);
+        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("SPI (Solder Paste Inspection)")
+                .contains("Developed and managed SPI")
+                .doesNotContain("Stencil & Printer"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("Stencil & Printer")
+                .contains("Modified printer parameters")
+                .doesNotContain("SPI (Solder Paste Inspection)"));
+    }
+
+    @Test
+    @DisplayName("wide sidebar language proficiency rows stay in one language block")
+    void wideSidebarLanguageProficiencyRowsStayTogether() throws Exception {
+        var pdfPath = writePositionedPdf(
+                tempDir,
+                List.of(
+                        new PositionedRun("LANGUAGE", 50f, 720f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Malay", 50f, 700f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Fluent", 285f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("English", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Fluent", 285f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("SKILL & EDUCATION", 50f, 650f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD)));
+
+        var doc = PdfDocumentParser.parse(pdfPath);
+        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("LANGUAGE")
+                .contains("Malay Fluent")
+                .contains("English Fluent")
+                .doesNotContain("SKILL & EDUCATION"));
+        assertThat(texts).noneSatisfy(text -> assertThat(text).isEqualTo("Fluent"));
+    }
+
+    @Test
+    @DisplayName("sidebar contact labels do not attach to nearby main-column work text")
+    void sidebarContactLabelsDoNotAttachToNearbyMainColumnText() throws Exception {
+        var pdfPath = writePositionedPdf(
+                tempDir,
+                List.of(
+                        new PositionedRun("WORK EXPERIENCE", 205f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Email", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Internal Audits & Quality Management System:", 205f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("candidate@example.com", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("Conduct internal audits to verify implementation.", 205f, 688f, 10f, Standard14Fonts.FontName.HELVETICA)));
+
+        var doc = PdfDocumentParser.parse(pdfPath);
+        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+
+        assertThat(texts).noneSatisfy(text -> assertThat(text).contains("Email").contains("Internal Audits"));
+        assertThat(texts).noneSatisfy(text -> assertThat(text).contains("candidate@example.com").contains("Conduct internal audits"));
+    }
+
+    @Test
+    @DisplayName("sidebar phone values do not merge with same-row main column responsibilities")
+    void sidebarPhoneValuesDoNotAttachToSameRowMainColumnText() throws Exception {
+        var pdfPath = writePositionedPdf(
+                tempDir,
+                List.of(
+                        new PositionedRun("WORK EXPERIENCE", 205f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Phone", 50f, 704f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("+601127640924", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Establish and document procedures and specifications.",
+                                205f,
+                                684f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA)));
+
+        var doc = PdfDocumentParser.parse(pdfPath);
+        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+
+        assertThat(texts).noneSatisfy(text -> assertThat(text)
+                .contains("+601127640924")
+                .contains("Establish and document"));
+    }
+
+    @Test
     @DisplayName("overlapping duplicate PDF text is suppressed before block grouping")
     void overlappingDuplicateTextIsSuppressedBeforeBlockGrouping() throws Exception {
         var pdfPath = writePositionedPdf(

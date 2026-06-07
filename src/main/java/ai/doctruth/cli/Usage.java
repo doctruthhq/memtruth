@@ -13,6 +13,7 @@ final class Usage {
                 Usage:
                   doctruth init
                   doctruth parse <document> [--json] [--bboxes] [-o parsed.json]
+                  doctruth ingest-audit <pdf-dir> [--json] [--limit N] [-o audit.json]
                   doctruth schema <schema.json> [--json]
                   doctruth extract <document> -s <schema.json> [-o out/]
                   doctruth audit <audit.json> [--json]
@@ -22,6 +23,7 @@ final class Usage {
 
                 Common:
                   doctruth parse contract.pdf
+                  doctruth ingest-audit ./resumes --json -o ingest-audit.json
                   doctruth schema contract.schema.json
                   doctruth extract contract.pdf -s contract.schema.json
                   doctruth doctor

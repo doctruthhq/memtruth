@@ -33,8 +33,11 @@ final class PdfPageBlockExtractor {
             return List.of();
         }
         double medianHeight = medianHeight(positions);
-        var groups = groupByYGap(positions, estimateLineSpacing(positions, medianHeight));
-        var mediaBox = pdf.getPage(pageNumber - 1).getMediaBox();
+        var page = pdf.getPage(pageNumber - 1);
+        var separators = PdfPageGraphicsExtractor.extractHorizontalSeparators(page);
+        var groups = PdfVisualTextLayout.groupByColumnsAndTypography(
+                positions, estimateLineSpacing(positions, medianHeight), medianHeight, separators);
+        var mediaBox = page.getMediaBox();
         return renderBlocks(pageNumber, positions, groups, medianHeight, mediaBox.getWidth(), mediaBox.getHeight());
     }
 
@@ -42,11 +45,12 @@ final class PdfPageBlockExtractor {
         var positions = new ArrayList<TextPosition>();
         var stripper = new PDFTextStripper() {
             @Override
-            protected void processTextPosition(TextPosition text) {
-                positions.add(text);
-                super.processTextPosition(text);
+            protected void writeString(String text, List<TextPosition> textPositions) {
+                positions.addAll(textPositions);
             }
         };
+        stripper.setSortByPosition(true);
+        stripper.setSuppressDuplicateOverlappingText(true);
         stripper.setStartPage(pageNumber);
         stripper.setEndPage(pageNumber);
         stripper.getText(pdf);
@@ -83,64 +87,9 @@ final class PdfPageBlockExtractor {
         return out;
     }
 
-    private static List<List<TextPosition>> groupByYGap(List<TextPosition> positions, double pageMedianHeight) {
-        var groups = new ArrayList<List<TextPosition>>();
-        float lineHeight = (float) Math.max(pageMedianHeight, MIN_LINE_HEIGHT);
-        float blockGap = lineHeight * BLOCK_GAP_FACTOR;
-        var current = new ArrayList<TextPosition>();
-        float lastBaseline = -1f;
-        for (var tp : positions) {
-            if (isBlank(tp)) {
-                addBlankToOpenGroup(current, tp);
-                continue;
-            }
-            float baseline = tp.getYDirAdj();
-            if (startsNewGroup(current, baseline, lastBaseline, lineHeight, blockGap)) {
-                groups.add(stripTrailingBlanks(current));
-                current = new ArrayList<>();
-            }
-            current.add(tp);
-            lastBaseline = baseline;
-        }
-        addLastGroup(groups, current);
-        return groups;
-    }
-
     private static boolean isBlank(TextPosition text) {
         String u = text.getUnicode();
         return u == null || u.isBlank();
-    }
-
-    private static void addBlankToOpenGroup(List<TextPosition> current, TextPosition text) {
-        if (!current.isEmpty()) {
-            current.add(text);
-        }
-    }
-
-    private static boolean startsNewGroup(
-            List<TextPosition> current, float baseline, float lastBaseline, float lineHeight, float blockGap) {
-        if (current.isEmpty()) {
-            return false;
-        }
-        return baseline - lastBaseline > blockGap || baseline < lastBaseline - lineHeight * 0.5f;
-    }
-
-    private static void addLastGroup(List<List<TextPosition>> groups, List<TextPosition> current) {
-        if (current.isEmpty()) {
-            return;
-        }
-        var stripped = stripTrailingBlanks(current);
-        if (!stripped.isEmpty()) {
-            groups.add(stripped);
-        }
-    }
-
-    private static List<TextPosition> stripTrailingBlanks(List<TextPosition> group) {
-        int end = group.size();
-        while (end > 0 && isBlank(group.get(end - 1))) {
-            end--;
-        }
-        return end == group.size() ? group : new ArrayList<>(group.subList(0, end));
     }
 
     private static String renderAll(List<TextPosition> positions) {
@@ -155,7 +104,7 @@ final class PdfPageBlockExtractor {
     }
 
     private static String renderGroup(List<TextPosition> group) {
-        return renderAll(group).stripTrailing();
+        return PdfVisualTextLayout.renderGroup(group);
     }
 
     private static double estimateLineSpacing(List<TextPosition> positions, double pageMedianHeight) {

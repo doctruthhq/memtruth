@@ -78,6 +78,18 @@ Show that bbox recovery is enabled in the summary:
 doctruth parse contract.pdf --bboxes
 ```
 
+### Ingest Audit
+
+Run a no-LLM PDF corpus audit before extraction:
+
+```bash
+doctruth ingest-audit ./resumes --json -o ingest-audit.json
+```
+
+This walks local PDFs and reports parser-layer gaps only: low/empty text layer,
+oversized blocks, missing headings, missing text bboxes, and parse failures. It
+does not call providers and does not include recovered document text in the JSON.
+
 ### Schema
 
 Check a JSON Schema:

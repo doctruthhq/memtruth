@@ -195,6 +195,7 @@ var local = DocTruth.withProvider(LlmProviders.openAiCompatible(
 ```bash
 doctruth init
 doctruth parse contract.pdf --bboxes
+doctruth ingest-audit ./resumes --json -o ingest-audit.json
 doctruth schema contract.schema.json
 doctruth doctor
 doctruth extract contract.pdf -s contract.schema.json

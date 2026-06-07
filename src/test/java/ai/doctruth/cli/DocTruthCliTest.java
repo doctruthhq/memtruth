@@ -43,6 +43,7 @@ class DocTruthCliTest {
         assertThat(code).isZero();
         assertThat(cli.out())
                 .contains("doctruth parse <document>")
+                .contains("doctruth ingest-audit <pdf-dir>")
                 .contains("doctruth extract <document> -s <schema.json>")
                 .doesNotContain("migrate pydantic");
     }

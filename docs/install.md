@@ -88,6 +88,7 @@ No provider key is required for parser and schema inspection:
 ```bash
 doctruth parse contract.pdf --bboxes
 doctruth parse contract.pdf --json -o parsed.json
+doctruth ingest-audit ./resumes --json -o ingest-audit.json
 doctruth schema contract.schema.json
 ```
 

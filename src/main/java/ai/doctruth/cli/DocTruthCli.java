@@ -58,6 +58,7 @@ public final class DocTruthCli {
         switch (args[0]) {
             case "init" -> new InitCommand(context).run(args);
             case "parse" -> new ParseCommand(context).run(args);
+            case "ingest-audit" -> new IngestAuditCommand(context).run(args);
             case "schema" -> new SchemaCommand(context).run(args);
             case "extract" -> new ExtractCommand(context).run(args);
             case "audit" -> new AuditCommand(context).run(args);

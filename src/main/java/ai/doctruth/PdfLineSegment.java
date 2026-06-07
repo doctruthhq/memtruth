@@ -1,0 +1,140 @@
+package ai.doctruth;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
+import org.apache.pdfbox.text.TextPosition;
+
+final class PdfLineSegment {
+
+    private static final Pattern NUMBERED_ITEM = Pattern.compile("^\\s*\\d{1,2}.{0,2}[.)、]\\s+.*");
+
+    final List<TextPosition> positions;
+    final String text;
+    final double x0;
+    final double x1;
+    final double baseline;
+    final boolean bold;
+    int columnIndex = -1;
+
+    private PdfLineSegment(List<TextPosition> positions, String text, double x0, double x1, double baseline, boolean bold) {
+        this.positions = positions;
+        this.text = text;
+        this.x0 = x0;
+        this.x1 = x1;
+        this.baseline = baseline;
+        this.bold = bold;
+    }
+
+    static PdfLineSegment from(List<TextPosition> positions) {
+        var copy = PdfTextPositionMetrics.sortByX(positions).stream()
+                .filter(p -> !PdfTextPositionMetrics.isBlank(p))
+                .toList();
+        double x0 = copy.stream().mapToDouble(TextPosition::getXDirAdj).min().orElse(0.0);
+        double x1 = copy.stream()
+                .mapToDouble(p -> p.getXDirAdj() + p.getWidthDirAdj())
+                .max()
+                .orElse(x0);
+        double baseline = copy.stream().mapToDouble(TextPosition::getYDirAdj).max().orElse(0.0);
+        long boldCount = copy.stream().filter(PdfTextPositionMetrics::isBold).count();
+        return new PdfLineSegment(
+                new ArrayList<>(copy),
+                PdfTextPositionMetrics.renderWithInferredSpaces(copy),
+                x0,
+                x1,
+                baseline,
+                boldCount > copy.size() / 2);
+    }
+
+    double width() {
+        return Math.max(1.0, x1 - x0);
+    }
+
+    boolean isBoldResponsibilityHeading() {
+        String stripped = text.strip();
+        return bold && stripped.length() >= 8 && stripped.endsWith(":");
+    }
+
+    boolean isResumeSectionHeading() {
+        String stripped = text.strip();
+        if (stripped.length() < 4 || stripped.length() > 48 || containsSentencePunctuation(stripped)) {
+            return false;
+        }
+        if (isKnownResumeSection(stripped)) {
+            return true;
+        }
+        return bold && uppercaseLetterRatio(stripped) >= 0.75;
+    }
+
+    boolean looksLikeInlineDate(Pattern dateRange) {
+        return text.length() <= 40 && dateRange.matcher(text.strip()).matches();
+    }
+
+    boolean startsNumberedListItem() {
+        return NUMBERED_ITEM.matcher(text).matches();
+    }
+
+    boolean looksLikeInlineFieldLabel() {
+        String stripped = text.strip();
+        return !isResumeSectionHeading()
+                && stripped.length() >= 2
+                && stripped.length() <= 32
+                && uppercaseLetterRatio(stripped) < 0.75;
+    }
+
+    boolean looksLikeInlineFieldValue() {
+        String stripped = text.strip();
+        return !isResumeSectionHeading()
+                && stripped.length() >= 2
+                && stripped.length() <= 24
+                && !containsSentencePunctuation(stripped);
+    }
+
+    private static boolean isKnownResumeSection(String text) {
+        return switch (text.toLowerCase(Locale.ROOT).replace("&", "and")) {
+            case "additional information",
+                    "career objective",
+                    "certification",
+                    "certifications",
+                    "contact",
+                    "education",
+                    "experience",
+                    "interests",
+                    "language",
+                    "languages",
+                    "objective",
+                    "professional experience",
+                    "profile",
+                    "quality",
+                    "references",
+                    "skills",
+                    "skill and education",
+                    "summary",
+                    "technical skills",
+                    "work experience" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean containsSentencePunctuation(String text) {
+        return text.indexOf('.') >= 0 || text.indexOf(',') >= 0 || text.indexOf(';') >= 0;
+    }
+
+    private static double uppercaseLetterRatio(String text) {
+        int letters = 0;
+        int uppercase = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (!Character.isLetter(c)) {
+                continue;
+            }
+            letters++;
+            if (Character.isUpperCase(c)) {
+                uppercase++;
+            }
+        }
+        return letters == 0 ? 0.0 : (double) uppercase / letters;
+    }
+}

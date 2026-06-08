@@ -63,6 +63,43 @@ class IngestAuditCommandTest {
     }
 
     @Test
+    void ingestAuditDoesNotFlagLongHeadedResumeSectionsAsBadSegmentation() throws Exception {
+        Path corpus = tempDir.resolve("pdfs");
+        Files.createDirectories(corpus);
+        writePdf(
+                corpus.resolve("resume.pdf"),
+                "WORK EXPERIENCE",
+                "Technician, Advanced Assembly Materials",
+                "Setup AOI and LDI machines for production artwork output.",
+                "Performed inspection of design artwork for defects.",
+                "Prepared NCR reports and calibration reports.",
+                "Technician, ASMPT Sdn. Bhd.",
+                "Installed components on product frames.",
+                "Arranged parts according to machine part lists.",
+                "Performed scale cutting according to set numbers.",
+                "Assistant Admin",
+                "Registered new workers into the system.",
+                "Renewed weekly gate passes and office forms.",
+                "Enhanced communication with other workers.",
+                "Tracked production support requests from team leads.",
+                "Prepared daily summaries for shift supervisors.",
+                "Coordinated incoming materials with warehouse staff.",
+                "Checked customer returns against quality records.",
+                "Maintained traceability notes for production batches.",
+                "Assisted engineers during process improvement reviews.",
+                "Updated work instructions after supervisor approval.",
+                "Verified inspection sheets before handover.",
+                "Filed supporting documents for monthly audit checks.");
+        var cli = cli();
+
+        int code = cli.run(new String[] {"ingest-audit", corpus.toString(), "--json"});
+
+        assertThat(code).isZero();
+        var tree = MAPPER.readTree(cli.out());
+        assertThat(tree.path("issueSummary").path("doctruth_segmentation").asInt()).isZero();
+    }
+
+    @Test
     void ingestAuditLimitBoundsLargeCorpusRuns() throws Exception {
         Path corpus = tempDir.resolve("pdfs");
         Files.createDirectories(corpus);
@@ -146,7 +183,7 @@ class IngestAuditCommandTest {
         return new TestCli(cli, out, err);
     }
 
-    private static void writePdf(Path path, String heading, String body) throws IOException {
+    private static void writePdf(Path path, String heading, String... lines) throws IOException {
         try (var pdf = new PDDocument()) {
             var page = new PDPage();
             pdf.addPage(page);
@@ -156,8 +193,10 @@ class IngestAuditCommandTest {
                 cs.newLineAtOffset(50, 720);
                 cs.showText(heading);
                 cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
-                cs.newLineAtOffset(0, -18);
-                cs.showText(body);
+                for (var line : lines) {
+                    cs.newLineAtOffset(0, -18);
+                    cs.showText(line);
+                }
                 cs.endText();
             }
             pdf.save(path.toFile());

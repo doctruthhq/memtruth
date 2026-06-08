@@ -78,13 +78,13 @@ final class PdfPageBlockExtractor {
             var loc = new SourceLocation(pageNumber, pageNumber, lineCursor, lineCursor + lineCount - 1, charOffset);
             out.add(new PdfTextBlock(
                     text,
-                    classify(text, avgHeight(group), medianHeight),
+                    classify(text, avgHeight(group), medianHeight, mostlyBold(group)),
                     loc,
                     PdfTextPositionBoxes.layoutBox(group, pageWidth, pageHeight)));
             charCursor = charOffset + text.length();
             lineCursor += lineCount;
         }
-        return out;
+        return PdfSemanticSectionCoalescer.coalesce(out);
     }
 
     private static boolean isBlank(TextPosition text) {
@@ -186,6 +186,10 @@ final class PdfPageBlockExtractor {
     }
 
     static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight) {
+        return classify(blockText, avgCharHeight, pageMedianHeight, false);
+    }
+
+    static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight, boolean bold) {
         Objects.requireNonNull(blockText, "blockText");
         String trimmed = blockText.stripLeading();
         if (trimmed.isEmpty()) {
@@ -198,7 +202,25 @@ final class PdfPageBlockExtractor {
         if (pageMedianHeight > 0 && avgCharHeight > pageMedianHeight * HEADING_HEIGHT_FACTOR) {
             return BlockKind.HEADING;
         }
+        if (bold && PdfResumeSectionNames.isKnown(firstLine(trimmed))) {
+            return BlockKind.HEADING;
+        }
         return looksLikeAllCapsHeading(trimmed) ? BlockKind.HEADING : BlockKind.BODY;
+    }
+
+    private static boolean mostlyBold(List<TextPosition> group) {
+        int total = 0;
+        int bold = 0;
+        for (var p : group) {
+            if (PdfTextPositionMetrics.isBlank(p)) {
+                continue;
+            }
+            total++;
+            if (PdfTextPositionMetrics.isBold(p)) {
+                bold++;
+            }
+        }
+        return total > 0 && bold > total / 2;
     }
 
     private static boolean looksLikeAllCapsHeading(String trimmed) {

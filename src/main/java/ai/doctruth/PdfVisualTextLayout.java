@@ -7,7 +7,6 @@ import org.apache.pdfbox.text.TextPosition;
 
 final class PdfVisualTextLayout {
 
-    private static final double SAME_COLUMN_OVERLAP_RATIO = 0.20;
     private static final double COLUMN_PROXIMITY_FACTOR = 8.0;
     private static final double LINE_SEGMENT_GAP_FACTOR = 3.0;
     private static final float BLOCK_GAP_FACTOR = 1.5f;
@@ -177,6 +176,9 @@ final class PdfVisualTextLayout {
                 if (peer == line || !sameBaseline(line, peer) || !peer.looksLikeInlineFieldLabel()) {
                     continue;
                 }
+                if (peer.looksLikeCompletedInlineField()) {
+                    continue;
+                }
                 double gap = line.x0 - peer.x1;
                 if (gap < 0.0 || gap > Math.max(180.0, line.width() * 8.0)) {
                     continue;
@@ -225,11 +227,6 @@ final class PdfVisualTextLayout {
     }
 
     private static boolean sameColumn(PdfLineSegment line, PdfColumnBand column, double medianHeight) {
-        double overlap = Math.max(0.0, Math.min(line.x1, column.x1) - Math.max(line.x0, column.x0));
-        double minWidth = Math.max(1.0, Math.min(line.width(), column.width()));
-        if (overlap / minWidth >= SAME_COLUMN_OVERLAP_RATIO) {
-            return true;
-        }
         return Math.abs(line.x0 - column.x0) <= Math.max(medianHeight * COLUMN_PROXIMITY_FACTOR, 72.0);
     }
 

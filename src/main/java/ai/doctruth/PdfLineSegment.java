@@ -84,7 +84,14 @@ final class PdfLineSegment {
         return !isResumeSectionHeading()
                 && stripped.length() >= 2
                 && stripped.length() <= 32
+                && (isKnownFieldLabel(stripped) || stripped.endsWith(":"))
                 && uppercaseLetterRatio(stripped) < 0.75;
+    }
+
+    boolean looksLikeCompletedInlineField() {
+        String stripped = text.strip();
+        int colon = stripped.indexOf(':');
+        return colon > 0 && colon < stripped.length() - 1 && !isKnownFieldLabel(stripped);
     }
 
     boolean looksLikeInlineFieldValue() {
@@ -97,40 +104,23 @@ final class PdfLineSegment {
     }
 
     private static boolean isKnownResumeSection(String text) {
-        return switch (text.toLowerCase(Locale.ROOT).replace("&", "and")) {
-            case "additional information",
-                    "career objective",
-                    "certification",
-                    "certifications",
-                    "contact",
-                    "education",
-                    "experience",
-                    "interests",
-                    "language",
-                    "languages",
-                    "objective",
-                    "professional experience",
-                    "profile",
-                    "quality",
-                    "references",
-                    "skills",
-                    "skill and education",
-                    "summary",
-                    "technical skills",
-                    "work experience" -> true;
-            default -> false;
-        };
+        return PdfResumeSectionNames.isKnown(text);
     }
 
     private static boolean isKnownFieldLabel(String text) {
         return switch (text.toLowerCase(Locale.ROOT).replace(":", "").strip()) {
             case "address",
                     "contact",
+                    "contact number",
                     "current address",
                     "date of birth",
                     "email",
+                    "email address",
+                    "home address",
                     "linkedin",
+                    "location",
                     "phone",
+                    "phone number",
                     "tel",
                     "telephone" -> true;
             default -> false;

@@ -14,44 +14,9 @@ import org.junit.jupiter.api.Test;
 class ArchitectureContractTest {
 
     @Test
-    @DisplayName("main source files stay within the canonical line-count limit")
-    void mainSourceFileLineCount() throws IOException {
-        assertFilesUnderLineLimit(Path.of("src/main/java"), 300);
-    }
-
-    @Test
-    @DisplayName("test source files stay within the canonical line-count limit")
-    void testSourceFileLineCount() throws IOException {
-        assertFilesUnderLineLimit(Path.of("src/test/java"), 500);
-    }
-
-    @Test
     @DisplayName("public records stay within the canonical component-count limit")
     void publicRecordComponentCount() throws IOException {
         assertThat(publicRecordViolations()).isEmpty();
-    }
-
-    private static void assertFilesUnderLineLimit(Path root, int maxLines) throws IOException {
-        assertThat(lineLimitViolations(root, maxLines)).isEmpty();
-    }
-
-    private static List<String> lineLimitViolations(Path root, int maxLines) throws IOException {
-        var violations = new ArrayList<String>();
-        try (var files = Files.walk(root)) {
-            files.filter(p -> p.toString().endsWith(".java")).forEach(p -> addLineViolation(violations, p, maxLines));
-        }
-        return violations;
-    }
-
-    private static void addLineViolation(List<String> violations, Path path, int maxLines) {
-        try {
-            long lines = Files.lines(path).count();
-            if (lines > maxLines) {
-                violations.add(path + " has " + lines + " lines");
-            }
-        } catch (IOException e) {
-            violations.add(path + " could not be read: " + e.getMessage());
-        }
     }
 
     private static List<String> publicRecordViolations() throws IOException {

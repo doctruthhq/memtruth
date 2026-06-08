@@ -109,8 +109,8 @@ class PdfVisualLayoutParserTest {
     }
 
     @Test
-    @DisplayName("bold responsibility headings inside a dense work experience split oversized blocks")
-    void denseWorkExperienceSplitsAtBoldResponsibilityHeadings() throws Exception {
+    @DisplayName("work experience responsibility headings stay inside one section context block")
+    void denseWorkExperienceStaysInOneSectionContextBlock() throws Exception {
         var pdfPath = writePositionedPdf(
                 tempDir,
                 List.of(
@@ -147,13 +147,11 @@ class PdfVisualLayoutParserTest {
         var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("WORK EXPERIENCE")
                 .contains("SPI (Solder Paste Inspection)")
                 .contains("Developed and managed SPI")
-                .doesNotContain("Stencil & Printer"));
-        assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("Stencil & Printer")
-                .contains("Modified stencil openings")
-                .doesNotContain("SPI (Solder Paste Inspection)"));
+                .contains("Modified stencil openings"));
     }
 
     @Test
@@ -202,14 +200,15 @@ class PdfVisualLayoutParserTest {
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("LANGUAGE")
-                .contains("Malay Fluent")
-                .contains("English Fluent")
+                .contains("Malay")
+                .contains("English")
+                .contains("Fluent")
                 .doesNotContain("SKILL & EDUCATION"));
     }
 
     @Test
-    @DisplayName("dense numbered responsibility items split into separate evidence blocks")
-    void denseNumberedResponsibilityItemsSplitIntoSeparateBlocks() throws Exception {
+    @DisplayName("dense numbered responsibility items stay inside one project context block")
+    void denseNumberedResponsibilityItemsStayInOneContextBlock() throws Exception {
         var pdfPath = writePositionedPdf(
                 tempDir,
                 List.of(
@@ -223,18 +222,16 @@ class PdfVisualLayoutParserTest {
         var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("PROJECT EXPERIENCE")
                 .contains("1. Planned supplier qualification")
                 .contains("Continued contract approval")
-                .doesNotContain("2. Reviewed supplier quotations"));
-        assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("2. Reviewed supplier quotations")
-                .contains("Continued procurement reporting")
-                .doesNotContain("1. Planned supplier qualification"));
+                .contains("Continued procurement reporting"));
     }
 
     @Test
-    @DisplayName("non-bold responsibility headings ending with colon split dense work experience blocks")
-    void nonBoldResponsibilityHeadingsSplitDenseWorkExperienceBlocks() throws Exception {
+    @DisplayName("non-bold responsibility headings ending with colon stay inside one work context block")
+    void nonBoldResponsibilityHeadingsStayInsideWorkContextBlock() throws Exception {
         var pdfPath = writePositionedPdf(
                 tempDir,
                 List.of(
@@ -251,13 +248,11 @@ class PdfVisualLayoutParserTest {
         var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("WORK EXPERIENCE")
                 .contains("SPI (Solder Paste Inspection)")
                 .contains("Developed and managed SPI")
-                .doesNotContain("Stencil & Printer"));
-        assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("Stencil & Printer")
-                .contains("Modified printer parameters")
-                .doesNotContain("SPI (Solder Paste Inspection)"));
+                .contains("Modified printer parameters"));
     }
 
     @Test
@@ -278,10 +273,102 @@ class PdfVisualLayoutParserTest {
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("LANGUAGE")
-                .contains("Malay Fluent")
-                .contains("English Fluent")
+                .contains("Malay")
+                .contains("English")
+                .contains("Fluent")
                 .doesNotContain("SKILL & EDUCATION"));
         assertThat(texts).noneSatisfy(text -> assertThat(text).isEqualTo("Fluent"));
+    }
+
+    @Test
+    @DisplayName("Malay resume headings form section context blocks without merging adjacent sections")
+    void malayResumeHeadingsFormSectionContextBlocks() throws Exception {
+        var pdfPath = writePositionedPdf(
+                tempDir,
+                List.of(
+                        new PositionedRun("PENDIDIKAN", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("SIJIL PELAJARAN MALAYSIA (SPM), 2007", 50f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("SMK Khir Johari, Tanjung Malim, Perak", 50f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("BAHASA", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Bahasa Melayu", 320f, 704f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Fluent", 470f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("Bahasa Inggeris", 320f, 692f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Fluent", 470f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("KEMAHIRAN", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Microsoft Office", 50f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("LAIN-LAIN", 320f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Lesen Memandu Malaysia: D & B2", 320f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("PENGALAMAN PEKERJAAN", 50f, 620f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("1) Logistic Supervisor", 50f, 604f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("TLS Transport Sdn Bhd", 65f, 592f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("2) Production Supervisor", 50f, 576f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("Exterminex Malaysia Sdn Bhd", 65f, 564f, 10f, Standard14Fonts.FontName.HELVETICA)));
+
+        var doc = PdfDocumentParser.parse(pdfPath);
+        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("PENDIDIKAN")
+                .contains("SIJIL PELAJARAN MALAYSIA")
+                .doesNotContain("BAHASA")
+                .doesNotContain("KEMAHIRAN"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("BAHASA")
+                .contains("Bahasa Melayu")
+                .contains("Bahasa Inggeris")
+                .contains("Fluent")
+                .doesNotContain("PENDIDIKAN")
+                .doesNotContain("LAIN-LAIN"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("KEMAHIRAN")
+                .contains("Microsoft Office")
+                .doesNotContain("PENDIDIKAN"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("PENGALAMAN PEKERJAAN")
+                .contains("1) Logistic Supervisor")
+                .contains("TLS Transport")
+                .contains("2) Production Supervisor")
+                .contains("Exterminex Malaysia"));
+    }
+
+    @Test
+    @DisplayName("two-column resume sections coalesce only within their visual column")
+    void twoColumnResumeSectionsCoalesceOnlyWithinTheirVisualColumn() throws Exception {
+        var pdfPath = writePositionedPdf(
+                tempDir,
+                List.of(
+                        new PositionedRun("BUTIRAN DIRI", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Nombor I/C: 900502-08-5555", 50f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("Umur: 34 Tahun", 50f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("PENGALAMAN PEKERJAAN", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("9/2023 - sekarang: Logistic Supervisor", 320f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("TLS Transport Sdn Bhd", 320f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("PENDIDIKAN", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("SIJIL PELAJARAN MALAYSIA (SPM), 2007", 50f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun("LAIN-LAIN", 320f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun("Lesen Memandu Malaysia: D & B2", 320f, 644f, 10f, Standard14Fonts.FontName.HELVETICA)));
+
+        var doc = PdfDocumentParser.parse(pdfPath);
+        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("BUTIRAN DIRI")
+                .contains("Nombor I/C")
+                .doesNotContain("PENGALAMAN PEKERJAAN")
+                .doesNotContain("TLS Transport"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("PENGALAMAN PEKERJAAN")
+                .contains("TLS Transport")
+                .doesNotContain("BUTIRAN DIRI")
+                .doesNotContain("PENDIDIKAN"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("PENDIDIKAN")
+                .contains("SIJIL PELAJARAN")
+                .doesNotContain("LAIN-LAIN"));
+        assertThat(texts).anySatisfy(text -> assertThat(text)
+                .contains("LAIN-LAIN")
+                .contains("Lesen Memandu")
+                .doesNotContain("PENDIDIKAN"));
     }
 
     @Test

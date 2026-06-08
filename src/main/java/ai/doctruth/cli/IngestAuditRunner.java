@@ -23,6 +23,8 @@ final class IngestAuditRunner {
     private static final int LOW_TEXT_CHARS = 50;
     private static final int OVERSIZED_BLOCK_CHARS = 1_800;
     private static final int OVERSIZED_BLOCK_LINES = 18;
+    private static final int OVERSIZED_HEADED_SECTION_CHARS = 8_000;
+    private static final int OVERSIZED_HEADED_SECTION_LINES = 120;
 
     IngestAuditReport run(Path root, int limit) throws CliException {
         if (!Files.isDirectory(root)) {
@@ -92,7 +94,7 @@ final class IngestAuditRunner {
         int maxBlockChars = textSections.stream().mapToInt(section -> section.text().length()).max().orElse(0);
         int maxBlockLines = textSections.stream().mapToInt(section -> (int) section.text().lines().count()).max().orElse(0);
         var kindCounts = kindCounts(textSections);
-        addFindings(findings, textSections, textChars, textWithBbox, maxBlockChars, maxBlockLines, kindCounts);
+        addFindings(findings, textSections, textChars, textWithBbox, kindCounts);
         return new IngestAuditFileResult(
                 file.getFileName().toString(),
                 "parsed",
@@ -125,8 +127,6 @@ final class IngestAuditRunner {
             List<TextSection> textSections,
             int textChars,
             int textWithBbox,
-            int maxBlockChars,
-            int maxBlockLines,
             Map<String, Integer> kindCounts) {
         if (textChars < LOW_TEXT_CHARS || textSections.isEmpty()) {
             out.add(new IngestAuditFinding("doctruth_text", "ocr_route_required", textChars, LOW_TEXT_CHARS));
@@ -134,14 +134,37 @@ final class IngestAuditRunner {
         if (textWithBbox < textSections.size()) {
             out.add(new IngestAuditFinding("evidence_mapping", "missing_text_bboxes", textWithBbox, textSections.size()));
         }
-        if (maxBlockChars > OVERSIZED_BLOCK_CHARS) {
-            out.add(new IngestAuditFinding("doctruth_segmentation", "oversized_text_block_chars", maxBlockChars, OVERSIZED_BLOCK_CHARS));
-        }
-        if (maxBlockLines > OVERSIZED_BLOCK_LINES) {
-            out.add(new IngestAuditFinding("doctruth_segmentation", "oversized_text_block_lines", maxBlockLines, OVERSIZED_BLOCK_LINES));
-        }
+        addOversizedBlockFindings(out, textSections);
         if (!textSections.isEmpty() && kindCounts.getOrDefault(BlockKind.HEADING.name(), 0) == 0) {
             out.add(new IngestAuditFinding("block_labeling", "no_heading_blocks", 0, 1));
+        }
+    }
+
+    private static void addOversizedBlockFindings(List<IngestAuditFinding> out, List<TextSection> sections) {
+        int maxChars = 0;
+        int maxCharThreshold = OVERSIZED_BLOCK_CHARS;
+        int maxLines = 0;
+        int maxLineThreshold = OVERSIZED_BLOCK_LINES;
+        for (var section : sections) {
+            boolean headed = section.kind() == BlockKind.HEADING;
+            int charThreshold = headed ? OVERSIZED_HEADED_SECTION_CHARS : OVERSIZED_BLOCK_CHARS;
+            int lineThreshold = headed ? OVERSIZED_HEADED_SECTION_LINES : OVERSIZED_BLOCK_LINES;
+            int chars = section.text().length();
+            int lines = (int) section.text().lines().count();
+            if (chars > charThreshold && chars > maxChars) {
+                maxChars = chars;
+                maxCharThreshold = charThreshold;
+            }
+            if (lines > lineThreshold && lines > maxLines) {
+                maxLines = lines;
+                maxLineThreshold = lineThreshold;
+            }
+        }
+        if (maxChars > 0) {
+            out.add(new IngestAuditFinding("doctruth_segmentation", "oversized_text_block_chars", maxChars, maxCharThreshold));
+        }
+        if (maxLines > 0) {
+            out.add(new IngestAuditFinding("doctruth_segmentation", "oversized_text_block_lines", maxLines, maxLineThreshold));
         }
     }
 

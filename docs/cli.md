@@ -52,16 +52,15 @@ No provider key required:
 doctruth parse contract.pdf
 ```
 
-Prints a summary:
+Prints a TrustDocument parser summary:
 
 ```text
 contract.pdf
 pages: 3
-sections: 42
-text: 38
+units: 42
 tables: 2
-figures: 0
-bbox coverage: 31/38
+parser backend: rust-sidecar
+audit grade: AUDIT_GRADE
 ```
 
 By default the CLI uses `--backend auto`, which requires the local Rust runtime.
@@ -72,14 +71,19 @@ fallback. Use `--backend pdfbox` only for legacy/oracle comparison.
 
 ```bash
 doctruth parse contract.pdf --format json
+doctruth parse contract.pdf --json -o trust-document.json
+doctruth parse contract.pdf --markdown -o parsed.md
 DOCTRUTH_RUNTIME_COMMAND=./doctruth-runtime doctruth parse contract.pdf --format json
 doctruth parse contract.pdf --backend pdfbox --format json
 ```
 
-Write parsed sections as JSON:
+`--json` and `--markdown` are Rust TrustDocument aliases, not legacy
+ParsedDocument aliases. The old Java/PDFBox `ParsedDocument` shapes are
+available only for explicit compatibility/oracle runs:
 
 ```bash
-doctruth parse contract.pdf --json -o parsed.json
+doctruth parse contract.pdf --backend pdfbox --format legacy-json -o parsed.legacy.json
+doctruth parse contract.pdf --backend pdfbox --format legacy-markdown -o parsed.legacy.md
 ```
 
 Write a clean plain-text consumption view for LLM/RAG cleanup steps:

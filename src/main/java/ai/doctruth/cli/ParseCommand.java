@@ -127,8 +127,8 @@ final class ParseCommand {
             while (cursor.hasNext()) {
                 String arg = cursor.next();
                 switch (arg) {
-                    case "--json" -> format = chooseFormat(format, OutputFormat.LEGACY_JSON, arg);
-                    case "--markdown", "--md" -> format = chooseFormat(format, OutputFormat.LEGACY_MARKDOWN, arg);
+                    case "--json" -> format = chooseFormat(format, OutputFormat.TRUST_JSON, arg);
+                    case "--markdown", "--md" -> format = chooseFormat(format, OutputFormat.TRUST_MARKDOWN, arg);
                     case "--format" -> format = chooseFormat(format, OutputFormat.from(cursor.next()), arg);
                     case "--profile" -> profile = OutputProfile.from(cursor.next());
                     case "--preset" -> preset = parserPreset(cursor.next());
@@ -432,6 +432,11 @@ final class ParseCommand {
             if (runtime != null && backend == ParserBackendChoice.PDFBOX) {
                 throw new UsageException("--runtime cannot be combined with --backend pdfbox");
             }
+            if ((format == OutputFormat.LEGACY_JSON || format == OutputFormat.LEGACY_MARKDOWN)
+                    && backend != ParserBackendChoice.PDFBOX) {
+                throw new UsageException(
+                        "legacy parse output requires --backend pdfbox; use --json/--markdown for Rust TrustDocument output");
+            }
         }
 
         private static Path defaultRuntime(Map<String, String> env) {
@@ -521,6 +526,8 @@ final class ParseCommand {
             return switch (value) {
                 case "json" -> TRUST_JSON;
                 case "markdown", "md" -> TRUST_MARKDOWN;
+                case "legacy-json", "legacy_json" -> LEGACY_JSON;
+                case "legacy-markdown", "legacy_markdown", "legacy-md", "legacy_md" -> LEGACY_MARKDOWN;
                 case "plain", "text", "txt" -> TRUST_PLAIN;
                 case "html" -> TRUST_HTML;
                 case "jsonl" -> TRUST_JSONL;

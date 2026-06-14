@@ -5791,3 +5791,29 @@
   integration tests passing/skipped as expected, recorded PDF corpus
   `383 total / 379 success / 4 malformed trailer failures`, CSV fixture
   `57/57`, and JaCoCo coverage checks passing.
+
+## 2026-06-14 CLI Shorthand Rust-Default Contract
+
+- Found the last visible CLI default gap: `parse --json` and
+  `parse --markdown` were still selecting legacy `ParsedDocument` output,
+  which silently used Java/PDFBox instead of the Rust TrustDocument runtime.
+- Changed shorthand output flags to Rust TrustDocument aliases:
+  `--json` -> `--format json`, `--markdown`/`--md` -> `--format markdown`.
+- Added explicit legacy output names:
+  `legacy-json`, `legacy-markdown`, `legacy-md`.
+- Added validation that legacy output requires `--backend pdfbox`, preserving
+  Java/PDFBox only as an explicit oracle/compatibility mode.
+- Updated CLI docs to state the shorthand behavior and legacy escape hatch.
+- Updated the plan so OpenDataLoader Bench is no longer just positioning:
+  Phase 291 is now the adapter contract, Phase 292 is the external metrics
+  gate, and Phase 293 tracks this CLI shorthand closure.
+- Verification passed:
+  `mvn -q -Dtest=DocTruthCliTest,TrustDocumentCliOutputProfileTest test`;
+  `mvn -q -Dtest=DocTruthCliMcpTest,TrustDocumentParserApiContractTest,TrustDocumentSdkParserContractTest test`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml`;
+  `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true mvn verify -P recorded`
+  with 1046 unit tests passing, recorded integration tests passing/skipped as
+  expected, recorded PDF corpus `383 total / 379 success / 4 malformed trailer
+  failures`, CSV fixture `57/57`, and JaCoCo coverage passing;
+  `git diff --check`.

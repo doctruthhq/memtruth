@@ -963,3 +963,40 @@
 - The W3C dummy real-PDF smoke is now labeled as a text-layer evidence fixture,
   not a fake table fixture. Table quality remains covered by dedicated table
   and TATR/SLANeXT smokes.
+
+## 2026-06-14 CLI Shorthand Rust-Default Gap
+
+- `doctruth parse --json` and `--markdown` still pointed at legacy
+  `ParsedDocument` output even after the rest of the CLI/SDK/MCP paths had
+  moved to Rust TrustDocument by default. That meant a user could request a
+  common parse output and silently bypass the Rust runtime.
+- The shorthand flags now map to `TRUST_JSON` and `TRUST_MARKDOWN`.
+  Legacy `ParsedDocument` output remains available only as an explicit
+  Java/PDFBox oracle/compatibility run:
+  `--backend pdfbox --format legacy-json|legacy-markdown`.
+- Focused verification passed:
+  `mvn -q -Dtest=DocTruthCliTest,TrustDocumentCliOutputProfileTest test`;
+  `mvn -q -Dtest=DocTruthCliMcpTest,TrustDocumentParserApiContractTest,TrustDocumentSdkParserContractTest test`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml`;
+  `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true mvn verify -P recorded`
+  with 1046 unit tests passing, recorded PDF corpus
+  `383 total / 379 success / 4 malformed trailer failures`, CSV fixture
+  `57/57`, and coverage checks passing;
+  `git diff --check`.
+
+## 2026-06-14 OpenDataLoader Bench Adapter Shape
+
+- OpenDataLoader Bench should be consumed as a parser-quality benchmark layer:
+  DocTruth exports Rust-runtime predictions into a compatible artifact shape,
+  imports its `evaluation.json` metrics, and records those metrics under
+  `external_metrics` in DocTruth benchmark reports.
+- The adapter must not replace `TrustDocument`, source maps, replay packages,
+  or DocTruth's own evidence metrics. OpenDataLoader-style NID/TEDS/MHS/speed
+  answers whether the parser substrate is good enough; DocTruth metrics answer
+  whether the resulting evidence is citeable, source-hash-bound, replayable,
+  and audit-grade.
+- Future implementation should avoid running non-permissive benchmark engines
+  in DocTruth CI. Use synthetic local fixtures and checked-in evaluation JSON
+  for RED tests, then optionally compare external published prediction
+  artifacts outside the default OSS gate.

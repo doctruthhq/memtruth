@@ -110,14 +110,50 @@ class DocTruthCliTest {
     }
 
     @Test
-    void parseJsonWritesStructuredSections() throws Exception {
+    void parseJsonWritesRustTrustDocumentByDefault() throws Exception {
         Path pdf = samplePdf();
         Path out = tempDir.resolve("parsed.json");
-        var cli = cliReturning("{}");
+        Path runtime = fakeSidecarRuntime();
+        var cli = cliWithRealProviders(Map.of("DOCTRUTH_RUNTIME_COMMAND", runtime.toString()));
 
         int code = cli.run(new String[] {"parse", pdf.toString(), "--json", "-o", out.toString()});
 
         assertThat(code).isZero();
+        var tree = MAPPER.readTree(Files.readString(out));
+        assertThat(tree.path("docId").asText()).isEqualTo("sha256:cli-sidecar");
+        assertThat(tree.path("parserRun").path("backend").asText()).isEqualTo("sidecar");
+        assertThat(tree.path("body").path("units").get(0).path("text").asText())
+                .isEqualTo("Parsed by CLI sidecar.");
+    }
+
+    @Test
+    void parseMarkdownWritesRustTrustDocumentByDefault() throws Exception {
+        Path pdf = samplePdf();
+        Path out = tempDir.resolve("parsed.md");
+        Path runtime = fakeSidecarRuntime();
+        var cli = cliWithRealProviders(Map.of("DOCTRUTH_RUNTIME_COMMAND", runtime.toString()));
+
+        int code = cli.run(new String[] {"parse", pdf.toString(), "--markdown", "-o", out.toString()});
+
+        assertThat(code).isZero();
+        assertThat(Files.readString(out)).contains("Parsed by CLI sidecar.").doesNotContain("Acme Industrial");
+    }
+
+    @Test
+    void parseLegacyJsonRequiresExplicitPdfboxBackend() throws Exception {
+        Path pdf = samplePdf();
+        var implicit = cliReturning("{}");
+        var explicit = cliReturning("{}");
+        Path out = tempDir.resolve("legacy.json");
+
+        int implicitCode = implicit.run(new String[] {"parse", pdf.toString(), "--format", "legacy-json"});
+        int explicitCode = explicit.run(new String[] {
+            "parse", pdf.toString(), "--backend", "pdfbox", "--format", "legacy-json", "-o", out.toString()
+        });
+
+        assertThat(implicitCode).isEqualTo(2);
+        assertThat(implicit.err()).contains("legacy parse output requires --backend pdfbox");
+        assertThat(explicitCode).isZero();
         var tree = MAPPER.readTree(Files.readString(out));
         assertThat(tree.path("metadata").path("sourceFilename").asText())
                 .isEqualTo(pdf.getFileName().toString());
@@ -125,16 +161,17 @@ class DocTruthCliTest {
     }
 
     @Test
-    void parseMarkdownWritesStableMarkdown() throws Exception {
+    void parseLegacyMarkdownRequiresExplicitPdfboxBackend() throws Exception {
         Path pdf = samplePdf();
-        Path out = tempDir.resolve("parsed.md");
+        Path out = tempDir.resolve("legacy.md");
         var cli = cliReturning("{}");
 
-        int code = cli.run(new String[] {"parse", pdf.toString(), "--markdown", "-o", out.toString()});
+        int code = cli.run(new String[] {
+            "parse", pdf.toString(), "--backend", "pdfbox", "--format", "legacy-markdown", "-o", out.toString()
+        });
 
         assertThat(code).isZero();
         assertThat(Files.readString(out)).contains("Acme Industrial Materials Pty Ltd");
-        assertThat(cli.out()).contains("output: " + out);
     }
 
     @Test
@@ -304,9 +341,10 @@ class DocTruthCliTest {
         Path worker = fakeOcrWorker("""
                 {"ok":true,"engine":"mnn","text":"OCR recovered scanned resume","averageConfidence":0.91,"pages":[],"warnings":[]}
                 """);
+        Path runtime = fakeOcrRuntime(worker, 0.91, "OCR recovered scanned resume");
         var cli = cliReturning("{}");
 
-        withSystemProperty("doctruth.ocr.command", worker.toString(), () -> {
+        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
             int code = cli.run(new String[] {"parse", pdf.toString(), "--markdown", "-o", out.toString()});
 
             assertThat(code).isZero();
@@ -688,6 +726,22 @@ class DocTruthCliTest {
             pdf.save(path.toFile());
         }
         return path;
+    }
+
+    private Path fakeSidecarRuntime() throws IOException {
+        Path runtime = tempDir.resolve("fake-doctruth-runtime");
+        Files.writeString(
+                runtime,
+                """
+                #!/usr/bin/env sh
+                cat >/dev/null
+                cat <<'JSON'
+                {"docId":"sha256:cli-sidecar","source":{"sourceFilename":"contract.pdf","sourceHash":"sha256:cli-sidecar","metadata":{"sourceFilename":"contract.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":true,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"TEXT_BLOCK","page":1,"text":"Parsed by CLI sidecar.","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1},"sourceObjectId":"section-0001","confidence":{"score":1.0,"rationale":"sidecar"},"warnings":[]}],"tables":[]},"parserRun":{"parserVersion":"runtime-test","preset":"lite","backend":"sidecar","models":[],"warnings":[]},"auditGradeStatus":"AUDIT_GRADE"}
+                JSON
+                """,
+                StandardCharsets.UTF_8);
+        assertThat(runtime.toFile().setExecutable(true)).isTrue();
+        return runtime;
     }
 
     private Path fakeOcrWorker(String stdout) throws IOException {

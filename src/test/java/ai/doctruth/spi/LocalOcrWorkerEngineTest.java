@@ -203,6 +203,43 @@ class LocalOcrWorkerEngineTest {
     }
 
     @Test
+    void defaultLocalAcceptsPositiveTimeoutAndBlankOptionalSettings() throws Exception {
+        Path worker = fakeWorker("""
+                {"ok":true,"engine":"mnn","text":"Positive timeout OCR","averageConfidence":0.84,"pages":[],"warnings":[]}
+                """);
+        withSystemProperties(
+                java.util.Map.of(
+                        "doctruth.ocr.command", worker.toString(),
+                        "doctruth.ocr.fallbackCommand", "   ",
+                        "doctruth.ocr.timeoutMs", "2500"),
+                () -> {
+                    var result = OcrEngines.defaultLocal()
+                            .ocr(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), 1);
+
+                    assertThat(result.text()).isEqualTo("Positive timeout OCR");
+                    assertThat(result.confidence()).isEqualTo(0.84);
+                });
+    }
+
+    @Test
+    void defaultLocalIgnoresNonPositiveTimeout() throws Exception {
+        Path worker = fakeWorker("""
+                {"ok":true,"engine":"mnn","text":"Default timeout OCR","averageConfidence":0.85,"pages":[],"warnings":[]}
+                """);
+        withSystemProperties(
+                java.util.Map.of(
+                        "doctruth.ocr.command", worker.toString(),
+                        "doctruth.ocr.timeoutMs", "-1"),
+                () -> {
+                    var result = OcrEngines.defaultLocal()
+                            .ocr(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), 1);
+
+                    assertThat(result.text()).isEqualTo("Default timeout OCR");
+                    assertThat(result.confidence()).isEqualTo(0.85);
+                });
+    }
+
+    @Test
     void defaultLocalFallsBackWhenNoWorkerCommandExists() {
         withSystemProperty("doctruth.ocr.command", tempDir.resolve("missing-worker").toString(), () -> {
             var engine = OcrEngines.defaultLocal();
@@ -215,7 +252,7 @@ class LocalOcrWorkerEngineTest {
     }
 
     @Test
-    void defaultLocalCanBeDisabled() {
+    void defaultLocalCanBeDisabledWithFalse() {
         withSystemProperty("doctruth.ocr.enabled", "false", () -> {
             var engine = OcrEngines.defaultLocal();
 
@@ -223,6 +260,34 @@ class LocalOcrWorkerEngineTest {
 
             assertThat(result.text()).isEmpty();
         });
+    }
+
+    @Test
+    void defaultLocalCanBeDisabledWithZero() {
+        withSystemProperty("doctruth.ocr.enabled", "0", () -> {
+            var engine = OcrEngines.defaultLocal();
+
+            var result = engine.ocr(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), 1);
+
+            assertThat(result.text()).isEmpty();
+        });
+    }
+
+    @Test
+    void defaultLocalTreatsEnabledTrueAsActive() throws Exception {
+        Path worker = fakeWorker("""
+                {"ok":true,"engine":"mnn","text":"Enabled OCR text","averageConfidence":0.86,"pages":[],"warnings":[]}
+                """);
+        withSystemProperties(
+                java.util.Map.of(
+                        "doctruth.ocr.enabled", "true",
+                        "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    var result = OcrEngines.defaultLocal()
+                            .ocr(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), 1);
+
+                    assertThat(result.text()).isEqualTo("Enabled OCR text");
+                });
     }
 
     @Test
@@ -253,6 +318,32 @@ class LocalOcrWorkerEngineTest {
 
                     assertThat(result.text()).isEqualTo("Fallback OCR text");
                     assertThat(result.confidence()).isEqualTo(0.82);
+                });
+    }
+
+    @Test
+    void defaultLocalDoesNotUseFallbackWhenPrimaryReturnsText() throws Exception {
+        Path primary = fakeWorker("""
+                {"ok":true,"engine":"mnn","text":"Primary OCR text","averageConfidence":0.93,"pages":[],"warnings":[]}
+                """);
+        Path fallback = tempDir.resolve("unused-fallback-ocr-worker");
+        Files.writeString(
+                fallback,
+                "#!/usr/bin/env bash\n"
+                        + "echo 'fallback should not run' >&2\n"
+                        + "exit 17\n");
+        fallback.toFile().setExecutable(true);
+
+        withSystemProperties(
+                java.util.Map.of(
+                        "doctruth.ocr.command", primary.toString(),
+                        "doctruth.ocr.fallbackCommand", fallback.toString()),
+                () -> {
+                    var result = OcrEngines.defaultLocal()
+                            .ocr(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), 1);
+
+                    assertThat(result.text()).isEqualTo("Primary OCR text");
+                    assertThat(result.confidence()).isEqualTo(0.93);
                 });
     }
 

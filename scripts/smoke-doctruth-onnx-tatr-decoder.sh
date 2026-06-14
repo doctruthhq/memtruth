@@ -116,7 +116,7 @@ import pathlib
 import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker", doc["parserRun"]
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker", doc["parserRun"]
 assert doc["parserRun"]["models"] == ["tatr-like:smoke"], doc["parserRun"]
 table = doc["body"]["tables"][0]
 cell = table["cells"][0]

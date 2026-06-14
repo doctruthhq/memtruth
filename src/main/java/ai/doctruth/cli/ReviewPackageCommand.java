@@ -3,11 +3,15 @@ package ai.doctruth.cli;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import ai.doctruth.ParseException;
 import ai.doctruth.ParserPreset;
 import ai.doctruth.PdfPageImageRenderer;
 import ai.doctruth.TrustDocument;
+import ai.doctruth.TrustDocumentBody;
 import ai.doctruth.TrustDocumentParser;
 import ai.doctruth.TrustPage;
 
@@ -28,9 +32,10 @@ final class ReviewPackageCommand {
     void run(String[] args) throws CliException {
         var options = Options.parse(args);
         var document = parse(options);
+        var pages = renderPages(options);
+        document = withRenderedPageHashes(document, pages);
         writeDocument(options, document);
         writeLayeredArtifacts(options, document);
-        var pages = renderPages(options);
         writeManifest(options, pages);
         writeReviewHtml(options, document, pages);
         context.out().println("review-package: " + options.out());
@@ -58,6 +63,19 @@ final class ReviewPackageCommand {
                 options.out().resolve("layout-debug.html"), writer -> TrustDocumentCliWriters.writeLayoutDebugHtml(document, writer));
         TrustDocumentCliWriters.writeToFile(
                 options.out().resolve("span-debug.html"), writer -> TrustDocumentCliWriters.writeSpanDebugHtml(document, writer));
+    }
+
+    private static TrustDocument withRenderedPageHashes(TrustDocument document, java.util.List<TrustPage> renderedPages) {
+        Map<Integer, TrustPage> renderedByPage =
+                renderedPages.stream().collect(Collectors.toMap(TrustPage::pageNumber, page -> page));
+        var pages = new ArrayList<TrustPage>();
+        for (var page : document.body().pages()) {
+            var rendered = renderedByPage.get(page.pageNumber());
+            pages.add(rendered == null ? page : rendered);
+        }
+        var body = new TrustDocumentBody(pages, document.body().units(), document.body().tables());
+        return new TrustDocument(
+                document.docId(), document.source(), body, document.parserRun(), document.auditGradeStatus());
     }
 
     private static java.util.List<TrustPage> renderPages(Options options) throws CliException {

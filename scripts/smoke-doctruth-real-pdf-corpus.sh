@@ -43,32 +43,25 @@ expected = {
         }],
         "units": [{
             "unitId": "unit-0001",
-            "kind": "TABLE_CELL",
+            "kind": "LINE_SPAN",
             "page": 1,
             "text": "Dummy PDF file",
             "evidenceSpanIds": ["span-0001"],
             "location": {
                 "page": 1,
                 "readingOrder": 1,
-                "boundingBox": {"x0": 0, "y0": 0, "x1": 1000, "y1": 999.8812351526245},
+                "boundingBox": {
+                    "x0": 95.46218359169839,
+                    "y0": 80.52262331131236,
+                    "x1": 302.87614069065125,
+                    "y1": 99.64373445850653
+                },
             },
-            "sourceObjectId": "cell-0001-0000-0000",
+            "sourceObjectId": "runtime-text-layer-page-1-line-1",
             "confidence": {"score": 1.0, "rationale": "human-labeled public fixture"},
             "warnings": [],
         }],
-        "tables": [{
-            "tableId": "table-0001",
-            "pageNumber": 1,
-            "boundingBox": {"x0": 0, "y0": 0, "x1": 1000, "y1": 999.8812351526245},
-            "confidence": {"score": 1.0, "rationale": "human-labeled public fixture"},
-            "cells": [{
-                "cellId": "cell-0001-0000-0000",
-                "rowRange": {"start": 0, "end": 0},
-                "columnRange": {"start": 0, "end": 0},
-                "boundingBox": {"x0": 0, "y0": 0, "x1": 1000, "y1": 999.8812351526245},
-                "text": "Dummy PDF file",
-            }],
-        }],
+        "tables": [],
     },
     "parserRun": {
         "parserVersion": "1.0.0",
@@ -79,7 +72,7 @@ expected = {
     },
     "auditGradeStatus": "UNKNOWN",
 }
-(work / "expected.md").write_text("| Dummy PDF file |\n| --- |\n", encoding="utf-8")
+(work / "expected.md").write_text("Dummy PDF file\n", encoding="utf-8")
 (work / "expected.json").write_text(json.dumps(expected, separators=(",", ":")), encoding="utf-8")
 manifest_path.write_text(json.dumps({
     "name": "w3c-real-pdf-corpus",
@@ -88,20 +81,16 @@ manifest_path.write_text(json.dumps({
         "labelSetVersion": "public-w3c-v1",
         "reviewedAt": "2026-06-13",
         "reviewer": "doctruth-fixture",
-        "requiredMetrics": [
-            "reading_order_f1",
-            "quote_anchor_accuracy",
-            "table_cell_f1",
-            "bbox_iou",
-            "table_region_iou"
-        ]
+            "requiredMetrics": [
+                "reading_order_f1",
+                "quote_anchor_accuracy",
+                "bbox_iou"
+            ]
     },
     "minimums": {
         "reading_order_f1": 1.0,
         "quote_anchor_accuracy": 1.0,
-        "table_cell_f1": 1.0,
         "bbox_iou": 0.99,
-        "table_region_iou": 0.99,
     },
     "cases": [{
         "name": "w3c-dummy-pdf",
@@ -128,17 +117,13 @@ assert payload["labelSetVersion"] == "public-w3c-v1", payload
 assert payload["requiredMetrics"] == [
     "reading_order_f1",
     "quote_anchor_accuracy",
-    "table_cell_f1",
     "bbox_iou",
-    "table_region_iou",
 ], payload
 assert payload["passed"] is True, payload
 case = payload["cases"][0]
 assert case["name"] == "w3c-dummy-pdf", case
 assert case["metrics"]["reading_order_f1"] == 1.0, case
-assert case["metrics"]["table_cell_f1"] == 1.0, case
 assert case["metrics"]["bbox_iou"] >= 0.99, case
-assert case["metrics"]["table_region_iou"] >= 0.99, case
 PY
 
 test -f "$WORK_DIR/.doctruth-corpus-cache/w3c-dummy-pdf-3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4.pdf"

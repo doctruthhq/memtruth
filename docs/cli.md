@@ -363,7 +363,8 @@ scripts/smoke-doctruth-real-model-artifact.sh
 The smoke skips when `DOCTRUTH_REAL_MODEL_MANIFEST` is not set. When it is set,
 it warms the local cache, checks `doctruth-onnx-model-worker --doctor`, runs
 `doctruth parse` with the configured model worker, and asserts that the returned
-`TrustDocument` came from `pdfbox+model-worker`. This is the acceptance harness
+`TrustDocument` came from `rust-sidecar+model-worker`, with worker-level
+provenance preserved separately when present. This is the acceptance harness
 for real RT-DETR/TATR/SLANeXT-compatible artifacts; the repository still does
 not bundle those model weights.
 

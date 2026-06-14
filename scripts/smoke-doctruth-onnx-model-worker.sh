@@ -117,7 +117,7 @@ import pathlib
 import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker"
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker"
 assert doc["parserRun"]["models"] == ["onnx-identity:smoke"]
 assert doc["body"]["units"][0]["text"] == "ONNX inference succeeded"
 assert doc["body"]["units"][0]["confidence"]["score"] == 1.0

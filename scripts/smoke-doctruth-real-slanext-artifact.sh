@@ -126,7 +126,7 @@ import json
 import pathlib
 import sys
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker", doc["parserRun"]
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker", doc["parserRun"]
 assert doc["parserRun"]["models"] == ["slanext-wired:paddleocr-runtime"], doc["parserRun"]
 assert doc["body"]["tables"], doc["body"]
 assert any(unit["kind"] == "TABLE_CELL" for unit in doc["body"]["units"]), doc["body"]["units"]

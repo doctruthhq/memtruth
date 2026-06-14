@@ -91,7 +91,7 @@ class CliPackagingContractTest {
                 .contains("DOCTRUTH_REAL_MODEL_SOURCE_PDF")
                 .contains("cache warm")
                 .contains("doctruth-onnx-model-worker")
-                .contains("pdfbox+model-worker");
+                .contains("rust-sidecar+model-worker");
         assertThat(realOcrCorpusSmoke)
                 .contains("DOCTRUTH_REAL_OCR_CORPUS_SMOKE")
                 .contains("DOCTRUTH_REAL_OCR_MIN_ACCURACY")

@@ -240,7 +240,7 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert doc["parserRun"]["preset"] == "table-lite"
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker"
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker"
 assert doc["parserRun"]["models"] == ["slanet-plus:local-smoke"]
 assert doc["parserRun"]["warnings"] == []
 assert doc["auditGradeStatus"] == "AUDIT_GRADE"

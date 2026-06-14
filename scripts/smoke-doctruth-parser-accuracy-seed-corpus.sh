@@ -138,8 +138,58 @@ cat > "$WORKER" <<'SH'
 #!/usr/bin/env sh
 python3 -c '
 import json
+import pathlib
 import sys
 request = json.loads(sys.stdin.read())
+if request.get("command") == "parse_pdf":
+    source = pathlib.Path(request["source_path"])
+    source_hash = request["source_hash"]
+    print(json.dumps({
+        "ok": True,
+        "document": {
+            "docId": source_hash,
+            "source": {
+                "sourceFilename": source.name,
+                "sourceHash": source_hash,
+                "metadata": {"sourceFilename": source.name, "pageCount": 1},
+            },
+            "body": {
+                "pages": [{
+                    "pageNumber": 1,
+                    "width": 612,
+                    "height": 792,
+                    "textLayerAvailable": False,
+                    "imageHash": source_hash,
+                }],
+                "units": [{
+                    "unitId": "unit-ocr-0001",
+                    "kind": "OCR_REGION",
+                    "page": 1,
+                    "text": "OCR seed text",
+                    "evidenceSpanIds": ["span-ocr-0001"],
+                    "location": {
+                        "page": 1,
+                        "readingOrder": 1,
+                        "boundingBox": {"x0": 10, "y0": 10, "x1": 230, "y1": 90},
+                    },
+                    "sourceObjectId": "fake-ocr#region-0001",
+                    "confidence": {"score": 0.96, "rationale": "fake runtime OCR worker"},
+                    "warnings": [],
+                }],
+                "tables": [],
+            },
+            "parserRun": {
+                "parserRunId": "fake-ocr-run",
+                "parserVersion": "runtime-smoke",
+                "preset": "ocr",
+                "backend": "rapidocr-worker",
+                "models": ["ocr-router:v1"],
+                "warnings": [],
+            },
+            "auditGradeStatus": "AUDIT_GRADE",
+        },
+    }))
+    sys.exit(0)
 assert request["fileType"] == "png"
 print(json.dumps({
     "ok": True,

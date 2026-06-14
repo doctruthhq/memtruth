@@ -382,6 +382,138 @@ class ParserBenchmarkCorpusCliTest {
     }
 
     @Test
+    void verifyBenchmarkReportRejectsUnsupportedReportFormat() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        recorded.put("reportFormat", "doctruth.parser-benchmark.report.v0");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("unsupported benchmark report format");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsFailedReport() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        recorded.put("passed", false);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("benchmark report did not pass");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsNonObjectCasesPerTag() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        recorded.put("casesPerTag", "multi-layout=1");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("casesPerTag mismatch").contains("expected object");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsNonIntegerCasesPerTag() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var casesPerTag = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("casesPerTag");
+        casesPerTag.put("multi-layout", "one");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("casesPerTag mismatch for multi-layout").contains("expected integer");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsMissingMetricsObject() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        recorded.put("metrics", "missing");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("benchmark report missing metrics");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsMissingCaseMetricForAggregate() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var caseMetrics = (com.fasterxml.jackson.databind.node.ObjectNode)
+                recorded.path("cases").get(0).path("metrics");
+        caseMetrics.remove("parser_latency_ms");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("aggregate metric mismatch").contains("missing case metrics");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsSourceHashMismatch() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var firstCase = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("cases").get(0);
+        firstCase.put("sourceSha256", "sha256:" + "0".repeat(64));
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("sourceSha256 mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsCorpusNameMismatch() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        recorded.put("corpus", "forged-corpus");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("corpus mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsRequiredTagsMismatch() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var requiredTags = (com.fasterxml.jackson.databind.node.ArrayNode) recorded.path("requiredTags");
+        requiredTags.removeAll();
+        requiredTags.add("forged-tag");
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("requiredTags mismatch");
+    }
+
+    @Test
     void verifyBenchmarkReportRejectsChangedManifest() throws Exception {
         Path manifest = writeParserAccuracyManifest();
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
@@ -664,6 +796,16 @@ class ParserBenchmarkCorpusCliTest {
                 }
                 """.formatted(tempDir.relativize(source), sha256(source)));
         return tempDir.resolve("parser-accuracy-report-corpus.json");
+    }
+
+    private Path writeRecordedBenchmarkReport() throws IOException {
+        Path manifest = writeParserAccuracyManifest();
+        Path report = tempDir.resolve("reports/parser-accuracy-report.json");
+        var writer = cli();
+        assertThat(writer.run(new String[] {
+                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+        })).isZero();
+        return report;
     }
 
     private Path writePdf(String... lines) throws IOException {

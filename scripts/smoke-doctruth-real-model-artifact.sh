@@ -94,7 +94,7 @@ preset = sys.argv[2]
 expected_model = sys.argv[3]
 expected_task = sys.argv[4]
 parser = doc["parserRun"]
-assert parser["backend"] == "pdfbox+model-worker", parser
+assert parser["backend"] == "rust-sidecar+model-worker", parser
 assert parser["preset"] == preset, parser
 assert parser["models"], parser
 if expected_model:

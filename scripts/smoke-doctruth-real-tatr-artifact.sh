@@ -161,7 +161,7 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert payload["ok"] is True, payload
 assert payload["metrics"]["inputSource"] == "rendered_page", payload["metrics"]
 doc = payload["document"]
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker", doc["parserRun"]
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker", doc["parserRun"]
 table = doc["body"]["tables"][0]
 cells = table["cells"]
 assert cells, table

@@ -174,6 +174,9 @@ class DocTruthCliTest {
                 .startsWith(new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47});
         var manifest = MAPPER.readTree(Files.readString(out.resolve("pages/page-images.json")));
         assertThat(manifest.path("pages")).hasSize(1);
+        var trust = MAPPER.readTree(Files.readString(out.resolve("trust-document.json")));
+        assertThat(trust.path("body").path("pages").get(0).path("imageHash").asText())
+                .isEqualTo(manifest.path("pages").get(0).path("imageHash").asText());
         assertThat(cli.out()).contains("review-package:").contains("pages: 1");
     }
 

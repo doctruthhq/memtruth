@@ -249,6 +249,38 @@ class TrustDocumentCliOutputProfileTest {
     }
 
     @Test
+    void parseAdditionalTrustFormatsCanWriteToStdout() throws Exception {
+        Path pdf = samplePdf();
+        var contentBlocks = cli();
+        var parseTrace = cli();
+        var html = cli();
+        var jsonEvidence = cli();
+
+        int contentBlocksCode = contentBlocks.run(new String[] {
+            "parse", pdf.toString(), "--format", "content_blocks"
+        });
+        int parseTraceCode = parseTrace.run(new String[] {
+            "parse", pdf.toString(), "--format", "parse_trace"
+        });
+        int htmlCode = html.run(new String[] {"parse", pdf.toString(), "--format", "html"});
+        int jsonEvidenceCode = jsonEvidence.run(new String[] {
+            "parse", pdf.toString(), "--format", "json", "--profile", "evidence"
+        });
+
+        assertThat(contentBlocksCode).isZero();
+        assertThat(contentBlocks.out()).contains("doctruth.content_blocks.v1").contains("sourceUnitIds");
+        assertThat(parseTraceCode).isZero();
+        assertThat(parseTrace.out()).contains("doctruth.parse_trace.v1").contains("readingBlocks");
+        assertThat(htmlCode).isZero();
+        assertThat(html.out())
+                .contains("<article data-trust-doc-id=")
+                .contains("data-trust-unit-id=\"unit-")
+                .contains("Acme Industrial Materials Pty Ltd");
+        assertThat(jsonEvidenceCode).isZero();
+        assertThat(MAPPER.readTree(jsonEvidence.out()).path("units")).isNotEmpty();
+    }
+
+    @Test
     void parseTraceProfileWritesBlockLineSpanEvidenceLayer() throws Exception {
         Path pdf = samplePdf();
         Path out = tempDir.resolve("contract.parse_trace.json");

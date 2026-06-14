@@ -940,3 +940,26 @@
   rendered PNG page image hashes, and no longer depends on `pdf-extract` or a
   default `pdftoppm` renderer. It still uses `lopdf` for table/debug extraction,
   so the backend status is `PARTIAL`, not complete.
+- OpenDataLoader Bench should be treated as DocTruth's parser-quality
+  foundation because evidence quality is capped by parser quality. It should
+  feed external parser-quality metrics such as reading-order NID, table TEDS,
+  heading MHS, and speed into DocTruth benchmark reports. It should not replace
+  DocTruth's evidence/replay benchmark because DocTruth still needs
+  bbox/source-map/evidence-span/audit-grade/replay-integrity checks that
+  OpenDataLoader Bench does not cover.
+- The intended benchmark composition is now:
+  `OpenDataLoader Bench = parser substrate quality` and
+  `DocTruth Bench = evidence, replay, and audit quality`. A parser-quality
+  failure should prevent audit-grade promotion even if DocTruth can still emit
+  reviewable evidence spans.
+- Review packages now use the exported page PNG manifest as the page-image hash
+  source of truth. `trust-document.json`, `page-images.json`, and `review.html`
+  are generated from the same rendered page list so a reviewer can anchor bbox
+  evidence to the exact PNG bytes shipped in the package.
+- Smoke coverage has been reconciled with the Rust-default parser path. CLI
+  model-worker smokes now expect `rust-sidecar+model-worker` as the outer
+  parser backend; worker-native `pdfbox+model-worker` strings remain only as
+  internal worker provenance where applicable.
+- The W3C dummy real-PDF smoke is now labeled as a text-layer evidence fixture,
+  not a fake table fixture. Table quality remains covered by dedicated table
+  and TATR/SLANeXT smokes.

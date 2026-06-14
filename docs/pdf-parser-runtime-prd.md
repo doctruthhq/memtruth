@@ -306,6 +306,68 @@ References:
 - XY-Cut++ sorter: https://github.com/opendataloader-project/opendataloader-pdf/blob/main/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorter.java
 - XY-Cut++ tests: https://github.com/opendataloader-project/opendataloader-pdf/blob/main/java/opendataloader-pdf-core/src/test/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorterTest.java
 
+OpenDataLoader Bench should become DocTruth's parser-quality foundation, not a
+replacement for DocTruth's evidence benchmark. Its public benchmark focuses on
+the substrate quality that evidence depends on:
+
+```text
+reading order
+table fidelity
+heading hierarchy
+parse speed
+```
+
+The integration target is an adapter, not a fork:
+
+```text
+DocTruth Rust runtime
+  -> OpenDataLoader Bench prediction format
+  -> OpenDataLoader metrics and evaluation.json
+  -> DocTruth benchmark report external_metrics
+  -> DocTruth evidence/replay/audit metrics
+```
+
+Use OpenDataLoader Bench metrics as the lower parser-quality gate:
+
+```text
+NID   reading-order/edit-distance quality
+TEDS  table-structure similarity
+MHS   heading hierarchy similarity
+speed parser throughput/latency
+```
+
+Then keep DocTruth-only evidence gates above it:
+
+```text
+bbox_coverage
+bbox_iou
+quote_anchor_accuracy
+evidence_span_accuracy
+source_map_validity
+audit_grade_pass_rate
+replay_integrity
+```
+
+Policy: a parser-quality failure must block audit-grade evidence. If reading
+order, table fidelity, heading hierarchy, or speed/resource gates are below the
+declared threshold for a corpus profile, downstream evidence spans may still be
+emitted for review, but they must not be promoted as audit-grade by default.
+
+Licensing and execution posture:
+
+- OpenDataLoader Bench is Apache-2.0 and can be used as a benchmark/adaptation
+  reference with attribution.
+- Do not vendor or execute AGPL/GPL/commercial engines from the benchmark suite
+  in DocTruth CI. Keep such engines as external published prediction artifacts
+  only when useful for comparison.
+- The DocTruth runner should execute DocTruth's Rust runtime and permissive
+  reference engines only.
+
+References:
+
+- OpenDataLoader Bench: https://github.com/opendataloader-project/opendataloader-bench
+- OpenDataLoader Bench license: https://github.com/opendataloader-project/opendataloader-bench/blob/main/LICENSE
+
 ### Benchmark Learning Status
 
 This table is the source of truth for what has been learned, implemented, and
@@ -333,6 +395,7 @@ open.
 | OpenDataLoader PDF | Tagged-PDF structure tree preference | Planned | Reference pipeline uses native PDF tags when available before heuristic layout guessing | Add Rust capability detection and tests that tagged structure can inform reading order/provenance without hiding poor tag quality |
 | OpenDataLoader PDF | Parser safety/content filters | Planned | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping | Implement Rust filters that emit DocTruth warnings and block audit-grade when safety-critical content is removed or uncertain |
 | OpenDataLoader PDF | Table border/cluster heuristics | Planned | Reference parser combines bordered-table processing, cluster detection, cell normalization, nested depth limits, and adjacent table checks | Port only compatible heuristics into Rust table/debug backend after `lopdf` is removed from default parser-core duties |
+| OpenDataLoader Bench | Parser-quality foundation | Planned | Benchmark supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics | Add a DocTruth adapter that exports Rust runtime predictions into OpenDataLoader Bench shape, imports its parser-quality metrics into DocTruth benchmark reports, and gates audit-grade evidence when parser-quality thresholds fail |
 | RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for adapter/runtime protocol and generated real Rust-route OCR smoke, partial for MNN/labeled quality | Packaged RapidOCR worker, fake readiness tests, isolated RapidOCR + ONNXRuntime smoke, generated OCR corpus gate, Rust runtime OCR worker smoke, and `DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1` through `doctruth-runtime parse_pdf` | MNN backend install path and labeled real-world scanned-PDF OCR corpus |
 | DocTruth-specific | Evidence-grade audit and replay boundary | Complete for v1 contracts | Severe warning taxonomy, audit-grade blocking, source hash, bbox/table-cell evidence, review package, MCP document evidence tools | Parser accuracy still depends on broad labeled corpus and Rust-core migration |
 
@@ -407,7 +470,8 @@ configured, `TrustDocumentParser` sends the preset, source hash, source bytes,
 and required model descriptors to the worker over JSON stdin/stdout. A
 `TABLE_LITE` contract test and CLI smoke prove a configured worker can return a
 full `TrustDocument` with model-produced `TrustTable` and `TABLE_CELL` units,
-`parserRun.backend=pdfbox+model-worker`, and no `model_unavailable_fallback`.
+`parserRun.backend=rust-sidecar+model-worker`, optional worker-level
+provenance such as `workerBackend`, and no `model_unavailable_fallback`.
 This is a runtime boundary and replay contract, not production RT-DETR/TATR/
 SLANeXT accuracy yet. DocTruth now also ships `scripts/doctruth-onnx-model-worker`,
 a local JSON model-worker adapter that imports ONNXRuntime, loads a
@@ -603,6 +667,13 @@ alone.
 Required metrics:
 
 ```text
+external_parser_quality:
+  opendataloader_nid
+  opendataloader_teds
+  opendataloader_mhs
+  opendataloader_speed
+
+doctruth_parser_quality:
 reading_order_f1
 section_boundary_f1
 table_region_iou
@@ -614,6 +685,11 @@ ocr_text_accuracy
 parser_latency_p50/p95
 rss_peak_mb
 model_cache_size_mb
+
+doctruth_evidence_quality:
+  source_map_validity
+  audit_grade_pass_rate
+  replay_integrity
 ```
 
 Current benchmark status: `ParserBenchmarkRunner` now reports

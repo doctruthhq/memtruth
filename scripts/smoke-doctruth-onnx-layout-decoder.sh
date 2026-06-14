@@ -116,7 +116,7 @@ import pathlib
 import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker", doc["parserRun"]
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker", doc["parserRun"]
 assert doc["parserRun"]["models"] == ["layout-rtdetr-like:smoke"], doc["parserRun"]
 units = doc["body"]["units"]
 assert [unit["kind"] for unit in units] == ["TEXT_BLOCK", "TEXT_BLOCK"], units

@@ -19,6 +19,7 @@ export JAVA_TOOL_OPTIONS
 CLI_JAR="$(find target -maxdepth 1 -name 'doctruth-java-*-all.jar' | sort | tail -1)"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/doctruth-benchmark-corpus-smoke.XXXXXX")"
 WORKER="$WORK_DIR/fake-ocr-worker"
+RUNTIME="$WORK_DIR/fake-runtime"
 
 python3 - "$WORK_DIR" <<'PY'
 import hashlib
@@ -196,6 +197,7 @@ manifest = {
         }
     ],
 }
+manifest["cases"][1]["sourceSha256"] = sha256(work / "scanned.pdf")
 (work / "corpus.json").write_text(json.dumps(manifest, separators=(",", ":")), encoding="utf-8")
 human_manifest = {
     "name": "smoke-human-labeled-corpus",
@@ -353,7 +355,84 @@ print(json.dumps({
 SH
 chmod +x "$WORKER"
 
-"$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus.json" --json > "$WORK_DIR/result.json"
+cat > "$RUNTIME" <<'PY'
+#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+request = json.loads(sys.stdin.read())
+assert request["command"] == "parse_pdf"
+source = pathlib.Path(request["source_path"])
+source_name = source.name
+source_hash = request["source_hash"]
+preset = request["preset"]
+
+def bbox(x0, y0, x1, y1):
+    return {"x0": x0, "y0": y0, "x1": x1, "y1": y1}
+
+if preset == "ocr":
+    text = "OCR benchmark text"
+    unit = {
+        "unitId": "ocr-unit-0001",
+        "kind": "OCR_REGION",
+        "page": 1,
+        "text": text,
+        "evidenceSpanIds": ["span-ocr-0001"],
+        "location": {"page": 1, "readingOrder": 1, "boundingBox": bbox(100, 100, 600, 220)},
+        "sourceObjectId": "ocr-page-1",
+        "confidence": {"score": 0.96, "rationale": "runtime OCR fixture"},
+        "warnings": [],
+    }
+    backend = "rust-sidecar+model-worker"
+    text_layer = False
+else:
+    text = "PROFILE\nExperienced operator\nWORK EXPERIENCE\nProduction assistant"
+    unit = {
+        "unitId": "unit-0001",
+        "kind": "TEXT_BLOCK",
+        "page": 1,
+        "text": text,
+        "evidenceSpanIds": ["span-0001"],
+        "location": {"page": 1, "readingOrder": 1, "boundingBox": bbox(100, 100, 500, 200)},
+        "sourceObjectId": "section-0001",
+        "confidence": {"score": 1.0, "rationale": "runtime text fixture"},
+        "warnings": [],
+    }
+    backend = "sidecar"
+    text_layer = True
+
+print(json.dumps({
+    "docId": source_hash,
+    "source": {
+        "sourceFilename": source_name,
+        "sourceHash": source_hash,
+        "metadata": {"sourceFilename": source_name, "pageCount": 1},
+    },
+    "body": {
+        "pages": [{
+            "pageNumber": 1,
+            "width": 1000,
+            "height": 1000,
+            "textLayerAvailable": text_layer,
+            "imageHash": "sha256:" + ("0" * 64),
+        }],
+        "units": [unit],
+        "tables": [],
+    },
+    "parserRun": {
+        "parserVersion": "runtime-smoke",
+        "preset": preset,
+        "backend": backend,
+        "models": [],
+        "warnings": [],
+    },
+    "auditGradeStatus": "AUDIT_GRADE",
+}))
+PY
+chmod +x "$RUNTIME"
+
+"$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus.json" --json > "$WORK_DIR/result.json"
 python3 - "$WORK_DIR/result.json" <<'PY'
 import json
 import pathlib
@@ -376,7 +455,7 @@ assert cases["single-column-smoke"]["metrics"]["ocr_text_accuracy"] == 1.0
 assert cases["ocr-smoke"]["metrics"]["ocr_text_accuracy"] == 1.0
 PY
 
-"$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-human-labeled.json" --json > "$WORK_DIR/human.json"
+"$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-human-labeled.json" --json > "$WORK_DIR/human.json"
 python3 - "$WORK_DIR/human.json" <<'PY'
 import json
 import pathlib
@@ -388,7 +467,7 @@ assert data["passed"] is True
 assert data["cases"][0]["metrics"]["reading_order_f1"] == 1.0
 PY
 
-"$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-parser-accuracy.json" --json --report-out "$WORK_DIR/parser-accuracy-report.json" > "$WORK_DIR/parser-accuracy.json"
+"$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-parser-accuracy.json" --json --report-out "$WORK_DIR/parser-accuracy-report.json" > "$WORK_DIR/parser-accuracy.json"
 python3 - "$WORK_DIR/parser-accuracy.json" "$WORK_DIR/parser-accuracy-report.json" <<'PY'
 import json
 import pathlib
@@ -505,14 +584,14 @@ fi
 grep -q "aggregate metric mismatch" "$WORK_DIR/report-aggregate-tampered.err"
 grep -q "parser_latency_p95" "$WORK_DIR/report-aggregate-tampered.err"
 
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-human-labeled-fail.json" >/dev/null 2>"$WORK_DIR/human-fail.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-human-labeled-fail.json" >/dev/null 2>"$WORK_DIR/human-fail.err"; then
     echo "expected human-labeled corpus metadata failure" >&2
     exit 1
 fi
 grep -q "human-labeled" "$WORK_DIR/human-fail.err"
 grep -q "bbox_coverage" "$WORK_DIR/human-fail.err"
 
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-parser-accuracy-fail.json" >/dev/null 2>"$WORK_DIR/parser-accuracy-fail.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-parser-accuracy-fail.json" >/dev/null 2>"$WORK_DIR/parser-accuracy-fail.err"; then
     echo "expected parser-accuracy coverage failure" >&2
     exit 1
 fi
@@ -521,13 +600,13 @@ grep -q "multi-layout" "$WORK_DIR/parser-accuracy-fail.err"
 grep -q "minimum=2" "$WORK_DIR/parser-accuracy-fail.err"
 grep -q "ocr" "$WORK_DIR/parser-accuracy-fail.err"
 
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-fail.json" >/dev/null 2>"$WORK_DIR/fail.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-fail.json" >/dev/null 2>"$WORK_DIR/fail.err"; then
     echo "expected benchmark-corpus threshold failure" >&2
     exit 1
 fi
 grep -q "parser benchmark thresholds failed" "$WORK_DIR/fail.err"
 
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-ocr-fail.json" >/dev/null 2>"$WORK_DIR/ocr.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-ocr-fail.json" >/dev/null 2>"$WORK_DIR/ocr.err"; then
     echo "expected benchmark-corpus OCR label threshold failure" >&2
     exit 1
 fi
@@ -535,7 +614,7 @@ grep -q "ocr-wrong-label-smoke" "$WORK_DIR/ocr.err"
 grep -q "ocr_text_accuracy" "$WORK_DIR/ocr.err"
 grep -q "minimum=1.0" "$WORK_DIR/ocr.err"
 
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-warning-fail.json" >/dev/null 2>"$WORK_DIR/warning.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-warning-fail.json" >/dev/null 2>"$WORK_DIR/warning.err"; then
     echo "expected benchmark-corpus maximum threshold failure" >&2
     exit 1
 fi
@@ -552,7 +631,7 @@ data = json.loads(path.read_text())
 data["maximums"] = {"parser_latency_p95": 0.0}
 path.with_name("corpus-latency-fail.json").write_text(json.dumps(data, separators=(",", ":")))
 PY
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-latency-fail.json" >/dev/null 2>"$WORK_DIR/latency.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-latency-fail.json" >/dev/null 2>"$WORK_DIR/latency.err"; then
     echo "expected benchmark-corpus latency maximum threshold failure" >&2
     exit 1
 fi
@@ -572,14 +651,14 @@ data["minimums"] = {
 }
 path.with_name("corpus-compact-fail.json").write_text(json.dumps(data, separators=(",", ":")))
 PY
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-compact-fail.json" >/dev/null 2>"$WORK_DIR/compact.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-compact-fail.json" >/dev/null 2>"$WORK_DIR/compact.err"; then
     echo "expected benchmark-corpus compact aggregate threshold failure" >&2
     exit 1
 fi
 grep -q "compact_llm_size_reduction_min" "$WORK_DIR/compact.err"
 grep -q "minimum=1.0" "$WORK_DIR/compact.err"
 
-if "$JAVA_BIN" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-offline-remote.json" --offline >/dev/null 2>"$WORK_DIR/offline.err"; then
+if "$JAVA_BIN" -Ddoctruth.runtime.command="$RUNTIME" -Ddoctruth.ocr.command="$WORKER" -jar "$CLI_JAR" benchmark-corpus "$WORK_DIR/corpus-offline-remote.json" --offline >/dev/null 2>"$WORK_DIR/offline.err"; then
     echo "expected benchmark-corpus offline remote refusal" >&2
     exit 1
 fi

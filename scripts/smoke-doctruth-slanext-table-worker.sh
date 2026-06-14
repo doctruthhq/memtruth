@@ -170,7 +170,7 @@ import json
 import pathlib
 import sys
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert doc["parserRun"]["backend"] == "pdfbox+model-worker", doc["parserRun"]
+assert doc["parserRun"]["backend"] == "rust-sidecar+model-worker", doc["parserRun"]
 assert doc["parserRun"]["models"] == ["slanext-wired:local-smoke"], doc["parserRun"]
 assert doc["body"]["tables"][0]["cells"][0]["rowRange"] == {"start": 0, "end": 0}
 assert doc["body"]["tables"][0]["cells"][3]["columnRange"] == {"start": 1, "end": 1}

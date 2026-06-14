@@ -5728,3 +5728,66 @@
 - Honest boundary: `pdf_oxide` now owns text-layer page extraction, span bbox
   evidence, page geometry, and default rendered page image hashes. `lopdf`
   still owns table/debug extraction, so the backend status remains `PARTIAL`.
+
+## 2026-06-14 OpenDataLoader Bench Positioning
+
+- User clarified that parser quality must be a foundation of evidence quality:
+  if PDF parsing is wrong, DocTruth evidence cannot be trusted.
+- Updated `docs/pdf-parser-runtime-prd.md` to make OpenDataLoader Bench a
+  parser-quality foundation rather than a loose external reference.
+- Added the intended adapter path:
+  `DocTruth Rust runtime -> OpenDataLoader Bench prediction format ->
+  OpenDataLoader metrics/evaluation.json -> DocTruth benchmark report
+  external_metrics -> DocTruth evidence/replay/audit metrics`.
+- Added external parser-quality metrics to the PRD:
+  `opendataloader_nid`, `opendataloader_teds`, `opendataloader_mhs`, and
+  `opendataloader_speed`.
+- Preserved DocTruth's separate evidence metrics:
+  `bbox_coverage`, `bbox_iou`, `quote_anchor_accuracy`,
+  `evidence_span_accuracy`, `source_map_validity`, `audit_grade_pass_rate`,
+  and `replay_integrity`.
+- Updated `task_plan.md` with new follow-up phases for the OpenDataLoader Bench
+  adapter and external metrics gate.
+- Current verification reality before this docs update: the interrupted
+  `mvn verify -P recorded` completed with all unit/integration tests passing,
+  recorded PDF corpus `383 total / 379 success / 4 malformed trailer failures`,
+  CSV fixture `57/57`, but failed JaCoCo only on bundle branch coverage
+  `0.78 < 0.79`.
+- Honest boundary: Goal 1 remains active. The Rust-default parser direction is
+  substantially implemented and committed in `0490498`, but completion still
+  requires resolving the Java coverage gate and rerunning the full Rust/Java
+  verification set.
+
+## 2026-06-14 Rust-Default Smoke Reconciliation
+
+- Fixed `review-package` so exported page PNG hashes are the review-package
+  page hash source of truth. `trust-document.json` now matches
+  `pages/page-images.json`, which prevents auditors from reviewing one PNG while
+  the trust document references another page image hash.
+- Updated benchmark and seed-corpus smokes to simulate the real default path:
+  Java CLI -> configured Rust runtime sidecar -> optional worker. OCR no longer
+  relies on the old Java-only `fileType=png` worker request in these smokes.
+- Re-labeled the W3C dummy PDF smoke as text-layer evidence instead of a fake
+  single-cell table. The current Rust/pdf_oxide output is one `LINE_SPAN` with
+  bbox-backed source evidence.
+- Reconciled model-worker smoke assertions so CLI parse outputs expect
+  `parserRun.backend=rust-sidecar+model-worker`. Direct worker outputs may still
+  report `pdfbox+model-worker` as internal worker provenance.
+- Verification passed:
+  `sh scripts/smoke-doctruth-review-package.sh`;
+  `sh scripts/smoke-doctruth-model-worker.sh`;
+  `sh scripts/smoke-doctruth-benchmark-corpus.sh`;
+  `sh scripts/smoke-doctruth-real-pdf-corpus.sh`;
+  `sh scripts/smoke-doctruth-parser-accuracy-seed-corpus.sh`;
+  `sh scripts/smoke-doctruth-onnx-model-worker.sh`;
+  `sh scripts/smoke-doctruth-onnx-layout-decoder.sh`;
+  `sh scripts/smoke-doctruth-onnx-tatr-decoder.sh`;
+  `sh scripts/smoke-doctruth-slanext-table-worker.sh`;
+  `mvn -q -Dtest=DocTruthCliTest,ParserBenchmarkCorpusCliTest,TrustDocumentCliOutputProfileTest,LocalOcrWorkerEngineTest test`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml`;
+  `git diff --check`;
+  `mvn verify -P recorded` with 1044 unit tests passing, 16 recorded
+  integration tests passing/skipped as expected, recorded PDF corpus
+  `383 total / 379 success / 4 malformed trailer failures`, CSV fixture
+  `57/57`, and JaCoCo coverage checks passing.

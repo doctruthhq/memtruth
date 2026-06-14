@@ -1174,10 +1174,11 @@ counters for full JSON and compact LLM output. `verify-source-map` hashes
 rendered and source files with streaming file reads. CLI parse and SDK path
 parse source hashing also use streaming file reads. SDK input-stream parsing now
 copies input incrementally into a temporary file instead of calling
-`InputStream.readAllBytes()`, then uses the same PDFBox backend path as file
+`InputStream.readAllBytes()`, then uses the same Rust-runtime path as file
 parsing so source hashes and page-image metadata remain consistent. The
 byte-array upload API still necessarily receives bytes already materialized by
-the caller.
+the caller. Java/PDFBox remains available only when a caller explicitly selects
+the legacy/oracle backend.
 
 LLM-facing Markdown must be deterministic: the same parser version, preset,
 model versions, and source hash should produce byte-stable output unless the
@@ -2226,8 +2227,8 @@ Rust Runtime Adapter
   |
   +-- Rust sidecar process
   |
-  +-- Java PDFBox compatibility fallback
-        only for transitional compatibility and differential tests
+  +-- Java PDFBox compatibility/oracle mode
+        only when explicitly selected for migration and differential tests
 
 Rust core
   |
@@ -2516,16 +2517,18 @@ OCR text + bbox reconciliation
 OCR confidence gate
 ```
 
-Current status: Java/PDFBox page image rasterization exists for page metadata,
-review/audit hashes, and persisted page PNG artifacts through
-`PdfPageImageRenderer` / `doctruth render-pages`. `doctruth review-package`
-also bundles review HTML, TrustDocument JSON, and page image artifacts into a
-single local directory. `ParserPreset.OCR` now routes v1 `TrustDocumentParser`
-and CLI TrustDocument outputs through the configured local OCR worker protocol
-(`DOCTRUTH_OCR_COMMAND` / `doctruth.ocr.command`, default engine `mnn`) and
-marks recovered units as `OCR_REGION` with `pdfbox+ocr` parser provenance.
-OCR page confidence is propagated into `TrustUnitEvidence`; confidence below
-`0.85` emits a severe `ocr_low_confidence` warning on the unit and makes the
+Current status: the Rust runtime owns page image hashes through `pdf_oxide`
+rendering by default, while Java page-image helpers remain package/review
+compatibility utilities. `doctruth review-package` bundles review HTML,
+TrustDocument JSON, and page image artifacts into a single local directory.
+`ParserPreset.OCR` now routes v1 `TrustDocumentParser` and CLI TrustDocument
+outputs through the Rust runtime and configured local OCR/model-worker
+protocol (`DOCTRUTH_RUNTIME_MODEL_COMMAND`, `DOCTRUTH_OCR_COMMAND` /
+`doctruth.ocr.command`, default engine `mnn`) and marks recovered units as
+`OCR_REGION` with `rust-sidecar+model-worker` parser provenance when the Rust
+runtime route is used. OCR page confidence is propagated into
+`TrustUnitEvidence`; confidence below `0.85` emits a severe
+`ocr_low_confidence` warning on the unit and makes the
 document `NOT_AUDIT_GRADE` while still preserving the recovered text for
 review/replay.
 The generic jar still does not bundle RapidOCR/MNN models, and the raw local

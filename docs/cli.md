@@ -260,9 +260,10 @@ metrics and exits non-zero when any configured minimum threshold fails.
 
 ### Local OCR
 
-`doctruth parse` keeps normal text-layer PDFs on the PDFBox path. For low-text
-PDF pages, the CLI tries a local OCR worker before DocTruth block assembly. The
-worker protocol is JSON over stdin/stdout. The source install and release
+`doctruth parse` uses the Rust runtime path by default for both normal
+text-layer PDFs and OCR/model-assisted presets. For OCR work, the Rust runtime
+routes through the local OCR worker protocol before DocTruth block assembly.
+The worker protocol is JSON over stdin/stdout. The source install and release
 tarball include `doctruth-rapidocr-mnn-worker`, a thin Python adapter around
 RapidOCR that keeps OCR outside the Java jar.
 
@@ -273,8 +274,9 @@ doctruth parse scanned.pdf --format json --preset ocr -o scanned.trust.json
 doctruth review-package scanned.pdf --preset ocr -o .doctruth/reviews/scanned
 ```
 
-Those commands emit `parserRun.backend=pdfbox+ocr`, include
-`rapidocr-mnn:local` in parser models, and mark recovered text units as
+Those commands emit `parserRun.backend=rust-sidecar+model-worker` when routed
+through the Rust runtime, include `rapidocr-mnn:local` in parser models, and
+mark recovered text units as
 `OCR_REGION`. OCR page confidence is copied into the unit evidence. If the
 worker returns confidence below `0.85`, the unit receives a severe
 `ocr_low_confidence` warning and the document is `NOT_AUDIT_GRADE`; the text is

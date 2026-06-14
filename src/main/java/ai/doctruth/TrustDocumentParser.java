@@ -17,7 +17,7 @@ import ai.doctruth.internal.runtime.DocTruthRuntime;
  * Developer-facing v1 parser entrypoint for evidence-native {@link TrustDocument}s.
  *
  * <p>The implementation requires a configured local Rust runtime. Java/PDFBox
- * remains available through explicit compatibility fallback paths, but it is not
+ * remains available through explicit compatibility/oracle paths, but it is not
  * the default parser core.
  *
  * @since 1.0.0

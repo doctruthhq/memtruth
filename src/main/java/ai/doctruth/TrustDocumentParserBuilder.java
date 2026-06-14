@@ -48,7 +48,7 @@ public final class TrustDocumentParserBuilder {
     public TrustDocumentParserBuilder backend(ParserBackendMode backend) {
         if (sourcePath == null) {
             if (backend != ParserBackendMode.PDFBOX) {
-                throw new IllegalStateException("parsed-document parser path only supports PDFBox fallback mode");
+                throw new IllegalStateException("parsed-document parser path only supports explicit PDFBox legacy/oracle mode");
             }
             return this;
         }

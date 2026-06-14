@@ -5817,3 +5817,35 @@
   expected, recorded PDF corpus `383 total / 379 success / 4 malformed trailer
   failures`, CSV fixture `57/57`, and JaCoCo coverage passing;
   `git diff --check`.
+
+## 2026-06-14 Goal 1 Rust-Default Completion Audit
+
+- Closed the remaining wording gap in the PRD benchmark-learning table:
+  Goal 1 is complete for Rust-default parser ownership, while later
+  parser-quality phases still own broad accuracy, OpenDataLoader-style
+  geometry/filter work, and removing transitional `lopdf` table/debug duties.
+- Confirmed the product default path is Rust-first:
+  CLI `parse --json` and `--markdown` are TrustDocument/Rust aliases, MCP
+  `doctruth.parse_document` calls the TrustDocument parser, and the path-first
+  SDK parser uses the configured Rust runtime in `AUTO`.
+- Confirmed Java/PDFBox is now explicit legacy/oracle compatibility:
+  legacy CLI outputs require `--backend pdfbox`, SDK `ParserBackendMode.PDFBOX`
+  is opt-in, and missing Rust runtime for default TrustDocument parsing fails
+  with `RUST_RUNTIME_NOT_CONFIGURED` instead of silently using Java/PDFBox.
+- Honest boundary: the older document-first extraction API remains a
+  compatibility surface. It is not the developer-facing Rust-first
+  TrustDocument parser path, and it should be migrated only when that extraction
+  API is reworked.
+- Honest boundary: `pdf_oxide` is the default PDF substrate for text-layer page
+  extraction, page geometry, rendered page hashes, and bbox evidence.
+  `lopdf` is still transitional table/debug support and belongs to later
+  parser-quality phases, not Goal 1 defaultization.
+- Completion verification passed:
+  `mvn -q -Dtest=DocTruthCliTest,TrustDocumentCliOutputProfileTest,DocTruthCliMcpTest,TrustDocumentParserApiContractTest,TrustDocumentSdkParserContractTest test`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test library_contract --test protocol_contract`;
+  `git diff --check`;
+  `JAVA_TOOL_OPTIONS=-Djava.awt.headless=true mvn verify -P recorded`
+  with 1046 unit tests passing, recorded integration tests passing/skipped as
+  expected, real-world PDF corpus `383 total / 379 success / 4 malformed
+  trailer failures`, CSV fixture `57/57`, and JaCoCo coverage passing.

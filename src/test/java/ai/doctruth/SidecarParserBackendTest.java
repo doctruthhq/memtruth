@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.StringWriter;
 import java.time.Duration;
 import java.util.List;
 
@@ -92,6 +93,28 @@ class SidecarParserBackendTest {
         assertThat(trust.parserRun().models()).containsExactly("layout-rtdetr:v2");
         assertThat(trust.toMarkdownClean()).contains("Sidecar parsed text.");
         assertThat(trust.body().units().getFirst().location().boundingBox()).isPresent();
+    }
+
+    @Test
+    @DisplayName("sidecar backend preserves Rust layered output observations")
+    void preservesRuntimeLayeredOutputObservations() throws Exception {
+        var runtime = writeRuntime(
+                """
+                #!/usr/bin/env sh
+                cat >/dev/null
+                cat <<'JSON'
+                {"docId":"sha256:sidecar","source":{"sourceFilename":"sidecar.pdf","sourceHash":"sha256:sidecar","metadata":{"sourceFilename":"sidecar.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":true,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"TEXT_BLOCK","page":1,"text":"Sidecar parsed text.","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1,"boundingBox":{"x0":10.0,"y0":20.0,"x1":200.0,"y1":80.0}},"sourceObjectId":"section-0001","confidence":{"score":0.97,"rationale":"sidecar"},"warnings":[]}],"tables":[]},"contentBlocks":[{"blockId":"runtime-block-9999","type":"text","page":1,"readingOrder":1,"text":"Runtime content block","sourceUnitIds":["unit-0001"],"evidenceSpanIds":["span-0001"],"warnings":[]}],"parseTrace":{"traceId":"runtime-trace-9999","parserRunId":"parser-run-runtime","pages":[{"pageIndex":0,"pageNumber":1,"pageSize":{"width":1000,"height":1000},"readingBlocks":[]}],"warnings":[]},"parserRun":{"parserRunId":"parser-run-runtime","parserVersion":"runtime-test","preset":"standard","backend":"rust-sidecar","models":[],"warnings":[]},"auditGradeStatus":"AUDIT_GRADE"}
+                JSON
+                """);
+        var trust = new SidecarParserBackend(runtime).parse(request());
+        var contentBlocks = new StringWriter();
+        var parseTrace = new StringWriter();
+
+        trust.writeContentBlocks(contentBlocks);
+        trust.writeParseTrace(parseTrace);
+
+        assertThat(contentBlocks.toString()).contains("runtime-block-9999");
+        assertThat(parseTrace.toString()).contains("runtime-trace-9999");
     }
 
     @Test

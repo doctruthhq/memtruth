@@ -13,8 +13,6 @@ import ai.doctruth.TrustRenderedDocument;
 import ai.doctruth.TrustUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 final class TrustDocumentCliWriters {
@@ -66,11 +64,11 @@ final class TrustDocumentCliWriters {
     }
 
     static void writeContentBlocks(TrustDocument document, Writer writer) throws IOException {
-        MAPPER.writeValue(new ChunkedWriter(writer), contentBlocksRoot(document));
+        document.writeContentBlocks(writer);
     }
 
     static void writeParseTrace(TrustDocument document, Writer writer) throws IOException {
-        MAPPER.writeValue(new ChunkedWriter(writer), parseTraceRoot(document));
+        document.writeParseTrace(writer);
     }
 
     static void writeLayoutDebugHtml(TrustDocument document, Writer writer) throws IOException {
@@ -130,141 +128,6 @@ final class TrustDocumentCliWriters {
         void write(Writer writer) throws IOException;
     }
 
-    private static ObjectNode contentBlocksRoot(TrustDocument document) {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("format", "doctruth.content_blocks.v1");
-        root.put("docId", document.docId());
-        root.put("sourceHash", document.source().sourceHash());
-        root.set("contentBlocks", contentBlocks(document));
-        return root;
-    }
-
-    private static ObjectNode parseTraceRoot(TrustDocument document) {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("format", "doctruth.parse_trace.v1");
-        root.put("docId", document.docId());
-        root.put("sourceHash", document.source().sourceHash());
-        root.set("parseTrace", parseTrace(document));
-        return root;
-    }
-
-    private static ArrayNode contentBlocks(TrustDocument document) {
-        ArrayNode blocks = MAPPER.createArrayNode();
-        document.body().units().forEach(unit -> blocks.add(contentBlock(unit)));
-        return blocks;
-    }
-
-    private static ObjectNode contentBlock(TrustUnit unit) {
-        int readingOrder = unit.location().readingOrder();
-        ObjectNode block = MAPPER.createObjectNode();
-        block.put("blockId", id("block", readingOrder));
-        block.put("type", blockType(unit));
-        block.put("page", unit.location().page());
-        unit.location().boundingBox().ifPresent(bbox -> block.set("bbox", bboxNode(bbox.x0(), bbox.y0(), bbox.x1(), bbox.y1())));
-        block.put("readingOrder", readingOrder);
-        block.put("text", unit.content().text());
-        block.set("sourceUnitIds", stringArray(unit.unitId()));
-        block.set("evidenceSpanIds", stringArray(unit.evidence().evidenceSpanIds()));
-        block.set("warnings", warningCodes(unit));
-        return block;
-    }
-
-    private static ObjectNode parseTrace(TrustDocument document) {
-        ObjectNode trace = MAPPER.createObjectNode();
-        trace.put("traceId", "trace-0001");
-        trace.put("parserRunId", document.parserRun().parserRunId());
-        ArrayNode pages = MAPPER.createArrayNode();
-        document.body().pages().forEach(page -> {
-            ObjectNode node = MAPPER.createObjectNode();
-            node.put("pageIndex", page.pageNumber() - 1);
-            node.put("pageNumber", page.pageNumber());
-            node.set("pageSize", pageSizeNode(page.width(), page.height()));
-            node.set("preprocBlocks", MAPPER.createArrayNode());
-            ArrayNode readingBlocks = MAPPER.createArrayNode();
-            document.body().units().stream()
-                    .filter(unit -> unit.location().page() == page.pageNumber())
-                    .forEach(unit -> readingBlocks.add(traceBlock(unit)));
-            node.set("readingBlocks", readingBlocks);
-            node.set("discardedBlocks", MAPPER.createArrayNode());
-            node.set("images", MAPPER.createArrayNode());
-            node.set("tables", MAPPER.createArrayNode());
-            node.set("equations", MAPPER.createArrayNode());
-            pages.add(node);
-        });
-        trace.set("pages", pages);
-        trace.set("warnings", MAPPER.createArrayNode());
-        return trace;
-    }
-
-    private static ObjectNode traceBlock(TrustUnit unit) {
-        int readingOrder = unit.location().readingOrder();
-        ObjectNode block = MAPPER.createObjectNode();
-        block.put("blockId", id("block", readingOrder));
-        block.put("type", blockType(unit));
-        unit.location().boundingBox().ifPresent(bbox -> block.set("bbox", bboxNode(bbox.x0(), bbox.y0(), bbox.x1(), bbox.y1())));
-        block.put("readingOrder", readingOrder);
-        block.put("confidence", unit.evidence().confidence().score());
-        block.put("modelRunId", "");
-        block.set("sourceUnitIds", stringArray(unit.unitId()));
-        block.set("evidenceSpanIds", stringArray(unit.evidence().evidenceSpanIds()));
-        block.set("warnings", warningCodes(unit));
-        block.set("lines", traceLines(unit));
-        return block;
-    }
-
-    private static ArrayNode traceLines(TrustUnit unit) {
-        int readingOrder = unit.location().readingOrder();
-        ObjectNode line = MAPPER.createObjectNode();
-        line.put("lineId", id("line", readingOrder));
-        unit.location().boundingBox().ifPresent(bbox -> line.set("bbox", bboxNode(bbox.x0(), bbox.y0(), bbox.x1(), bbox.y1())));
-        line.put("text", unit.content().text());
-        line.set("spans", traceSpans(unit));
-        ArrayNode lines = MAPPER.createArrayNode();
-        lines.add(line);
-        return lines;
-    }
-
-    private static ArrayNode traceSpans(TrustUnit unit) {
-        int readingOrder = unit.location().readingOrder();
-        String evidenceSpanId = unit.evidence().evidenceSpanIds().isEmpty() ? "" : unit.evidence().evidenceSpanIds().get(0);
-        ObjectNode span = MAPPER.createObjectNode();
-        span.put("spanId", id("trace-span", readingOrder));
-        span.put("type", "text");
-        span.put("content", unit.content().text());
-        unit.location().boundingBox().ifPresent(bbox -> span.set("bbox", bboxNode(bbox.x0(), bbox.y0(), bbox.x1(), bbox.y1())));
-        span.put("score", unit.evidence().confidence().score());
-        span.put("sourceObjectId", unit.content().sourceObjectId());
-        span.put("evidenceSpanId", evidenceSpanId);
-        ArrayNode spans = MAPPER.createArrayNode();
-        spans.add(span);
-        return spans;
-    }
-
-    private static String blockType(TrustUnit unit) {
-        return switch (unit.kind()) {
-            case TABLE_CELL -> "table";
-            case FIGURE_CAPTION -> "image";
-            case OCR_REGION -> "text";
-            default -> "text";
-        };
-    }
-
-    private static ObjectNode bboxNode(double x0, double y0, double x1, double y1) {
-        ObjectNode node = MAPPER.createObjectNode();
-        node.put("x0", x0);
-        node.put("y0", y0);
-        node.put("x1", x1);
-        node.put("y1", y1);
-        return node;
-    }
-
-    private static ObjectNode pageSizeNode(double width, double height) {
-        ObjectNode node = MAPPER.createObjectNode();
-        node.put("width", width);
-        node.put("height", height);
-        return node;
-    }
-
     private static String layoutDebugNode(TrustUnit unit) {
         String blockId = id("block", unit.location().readingOrder());
         return "  <section data-trace-block-id=\""
@@ -296,24 +159,6 @@ final class TrustDocumentCliWriters {
                 .replace("\"", "&quot;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
-    }
-
-    private static ArrayNode stringArray(String value) {
-        ArrayNode array = MAPPER.createArrayNode();
-        array.add(value);
-        return array;
-    }
-
-    private static ArrayNode stringArray(java.util.List<String> values) {
-        ArrayNode array = MAPPER.createArrayNode();
-        values.forEach(array::add);
-        return array;
-    }
-
-    private static ArrayNode warningCodes(TrustUnit unit) {
-        ArrayNode array = MAPPER.createArrayNode();
-        unit.evidence().warnings().forEach(warning -> array.add(warning.code()));
-        return array;
     }
 
     private static String id(String prefix, int index) {

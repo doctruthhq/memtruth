@@ -20,12 +20,14 @@ final class TrustDocumentJson {
     static TrustDocument fromJsonFull(String json) {
         try {
             JsonNode root = MAPPER.readTree(json);
-            return new TrustDocument(
+            var document = new TrustDocument(
                     text(root, "docId"),
                     source(root.path("source")),
                     body(root.path("body")),
                     parserRun(root.path("parserRun")),
                     AuditGradeStatus.valueOf(text(root, "auditGradeStatus")));
+            TrustDocumentLayeredOutputs.attach(document, root.path("contentBlocks"), root.path("parseTrace"));
+            return document;
         } catch (IOException | IllegalArgumentException e) {
             throw new IllegalArgumentException("invalid TrustDocument JSON", e);
         }

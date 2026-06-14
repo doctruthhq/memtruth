@@ -67,6 +67,120 @@ final class TrustDocumentRenderers {
         return root;
     }
 
+    private static ObjectNode contentBlocksRoot(TrustDocument doc) {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("format", "doctruth.content_blocks.v1");
+        root.put("docId", doc.docId());
+        root.put("sourceHash", doc.source().sourceHash());
+        root.set("contentBlocks", TrustDocumentLayeredOutputs.contentBlocks(doc).orElseGet(() -> contentBlocks(doc)));
+        return root;
+    }
+
+    private static ObjectNode parseTraceRoot(TrustDocument doc) {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("format", "doctruth.parse_trace.v1");
+        root.put("docId", doc.docId());
+        root.put("sourceHash", doc.source().sourceHash());
+        root.set("parseTrace", TrustDocumentLayeredOutputs.parseTrace(doc).orElseGet(() -> parseTrace(doc)));
+        return root;
+    }
+
+    private static ArrayNode contentBlocks(TrustDocument doc) {
+        ArrayNode blocks = MAPPER.createArrayNode();
+        sortedUnits(doc).forEach(unit -> blocks.add(contentBlock(unit)));
+        return blocks;
+    }
+
+    private static ObjectNode contentBlock(TrustUnit unit) {
+        int readingOrder = unit.location().readingOrder();
+        ObjectNode block = MAPPER.createObjectNode();
+        block.put("blockId", id("block", readingOrder));
+        block.put("type", blockType(unit));
+        block.put("page", unit.location().page());
+        unit.location().boundingBox().ifPresent(box -> block.set("bbox", bboxNode(box)));
+        block.put("readingOrder", readingOrder);
+        block.put("text", unit.content().text());
+        block.set("sourceUnitIds", stringArray(unit.unitId()));
+        block.set("evidenceSpanIds", MAPPER.valueToTree(unit.evidence().evidenceSpanIds()));
+        block.set("warnings", MAPPER.valueToTree(unit.evidence().warnings()));
+        return block;
+    }
+
+    private static ObjectNode parseTrace(TrustDocument doc) {
+        ObjectNode trace = MAPPER.createObjectNode();
+        trace.put("traceId", "trace-0001");
+        trace.put("parserRunId", doc.parserRun().parserRunId());
+        ArrayNode pages = MAPPER.createArrayNode();
+        doc.body().pages().forEach(page -> pages.add(tracePage(page, doc)));
+        trace.set("pages", pages);
+        trace.set("warnings", MAPPER.valueToTree(doc.parserRun().warnings()));
+        return trace;
+    }
+
+    private static ObjectNode tracePage(TrustPage page, TrustDocument doc) {
+        ObjectNode node = MAPPER.createObjectNode();
+        node.put("pageIndex", page.pageNumber() - 1);
+        node.put("pageNumber", page.pageNumber());
+        node.set("pageSize", pageSizeNode(page));
+        node.set("preprocBlocks", MAPPER.createArrayNode());
+        ArrayNode readingBlocks = MAPPER.createArrayNode();
+        sortedUnits(doc).stream()
+                .filter(unit -> unit.location().page() == page.pageNumber())
+                .forEach(unit -> readingBlocks.add(traceBlock(unit)));
+        node.set("readingBlocks", readingBlocks);
+        node.set("discardedBlocks", MAPPER.createArrayNode());
+        node.set("images", MAPPER.createArrayNode());
+        node.set("tables", MAPPER.createArrayNode());
+        node.set("equations", MAPPER.createArrayNode());
+        return node;
+    }
+
+    private static ObjectNode traceBlock(TrustUnit unit) {
+        int readingOrder = unit.location().readingOrder();
+        ObjectNode block = MAPPER.createObjectNode();
+        block.put("blockId", id("block", readingOrder));
+        block.put("type", blockType(unit));
+        unit.location().boundingBox().ifPresent(box -> block.set("bbox", bboxNode(box)));
+        block.put("readingOrder", readingOrder);
+        block.put("confidence", unit.evidence().confidence().score());
+        block.put("modelRunId", "");
+        block.set("sourceUnitIds", stringArray(unit.unitId()));
+        block.set("evidenceSpanIds", MAPPER.valueToTree(unit.evidence().evidenceSpanIds()));
+        block.set("warnings", MAPPER.valueToTree(unit.evidence().warnings()));
+        block.set("lines", traceLines(unit));
+        return block;
+    }
+
+    private static ArrayNode traceLines(TrustUnit unit) {
+        int readingOrder = unit.location().readingOrder();
+        ObjectNode line = MAPPER.createObjectNode();
+        line.put("lineId", id("line", readingOrder));
+        unit.location().boundingBox().ifPresent(box -> line.set("bbox", bboxNode(box)));
+        line.put("text", unit.content().text());
+        line.set("spans", traceSpans(unit));
+        ArrayNode lines = MAPPER.createArrayNode();
+        lines.add(line);
+        return lines;
+    }
+
+    private static ArrayNode traceSpans(TrustUnit unit) {
+        int readingOrder = unit.location().readingOrder();
+        String evidenceSpanId = unit.evidence().evidenceSpanIds().isEmpty()
+                ? ""
+                : unit.evidence().evidenceSpanIds().getFirst();
+        ObjectNode span = MAPPER.createObjectNode();
+        span.put("spanId", id("trace-span", readingOrder));
+        span.put("type", "text");
+        span.put("content", unit.content().text());
+        unit.location().boundingBox().ifPresent(box -> span.set("bbox", bboxNode(box)));
+        span.put("score", unit.evidence().confidence().score());
+        span.put("sourceObjectId", unit.content().sourceObjectId());
+        span.put("evidenceSpanId", evidenceSpanId);
+        ArrayNode spans = MAPPER.createArrayNode();
+        spans.add(span);
+        return spans;
+    }
+
     static String toMarkdownClean(TrustDocument doc) {
         var out = new StringBuilder();
         doc.body().units().stream()
@@ -287,6 +401,14 @@ final class TrustDocumentRenderers {
             node.put("type", "table");
             writeJsonLine(writer, node);
         }
+    }
+
+    static void writeContentBlocks(TrustDocument doc, Writer writer) throws IOException {
+        writeJson(writer, contentBlocksRoot(doc));
+    }
+
+    static void writeParseTrace(TrustDocument doc, Writer writer) throws IOException {
+        writeJson(writer, parseTraceRoot(doc));
     }
 
     static String toAuditJson(TrustDocument doc) {
@@ -510,6 +632,31 @@ final class TrustDocumentRenderers {
         node.put("x1", box.x1());
         node.put("y1", box.y1());
         return node;
+    }
+
+    private static ObjectNode pageSizeNode(TrustPage page) {
+        ObjectNode node = MAPPER.createObjectNode();
+        node.put("width", page.width());
+        node.put("height", page.height());
+        return node;
+    }
+
+    private static ArrayNode stringArray(String value) {
+        ArrayNode values = MAPPER.createArrayNode();
+        values.add(value);
+        return values;
+    }
+
+    private static String id(String prefix, int index) {
+        return "%s-%04d".formatted(prefix, index);
+    }
+
+    private static String blockType(TrustUnit unit) {
+        return switch (unit.kind()) {
+            case TABLE_CELL -> "table";
+            case FIGURE_CAPTION -> "image";
+            default -> "text";
+        };
     }
 
     private static String tableMarkdown(TrustTable table) {

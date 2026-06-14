@@ -769,10 +769,9 @@
   `TrustDocument`s and Rust sidecar-derived `TrustDocument`s:
   `doctruth parse --format content_blocks` writes
   `doctruth.content_blocks.v1`, and `--format parse_trace` writes
-  `doctruth.parse_trace.v1`. The profile is currently a deterministic
-  `TrustDocument` projection, so it is stable and works across backends, but it
-  does not yet preserve extra raw parser observations beyond the current
-  `TrustDocument` units/pages.
+  `doctruth.parse_trace.v1`. The profile uses preserved Rust sidecar layered
+  payloads when the runtime emitted them, and falls back to a deterministic
+  `TrustDocument` projection for legacy/compatibility documents.
 - The first visual trace artifact slice is now package-level rather than a new
   parser command: `doctruth review-package` writes `content_blocks.json`,
   `parse_trace.json`, `layout-debug.html`, and `span-debug.html` alongside
@@ -784,10 +783,11 @@
   multi-layout/parser accuracy.
 - The Java `parse_trace` profile was aligned with Rust's `pageSize` shape
   (`width`/`height`, not bbox fields), and sidecar capabilities now advertise
-  `content_blocks` and `parse_trace`. Raw Rust-sidecar layered products are
-  still not preserved through `TrustDocumentJson`; Java can re-derive stable
-  layered outputs from `TrustDocument`, but extra raw runtime observations remain
-  a future contract gap.
+  `content_blocks` and `parse_trace`. Raw Rust-sidecar layered products are now
+  preserved through `TrustDocumentJson` and can be written through public
+  `TrustDocument.writeContentBlocks(...)` / `writeParseTrace(...)` SDK writers;
+  Java only re-derives stable layered outputs when the source document did not
+  carry runtime layered observations.
 - 2026-06-13 documentation/status audit result:
   - Complete: MinerU-style `content_blocks.json` / `parse_trace.json` contract,
     Rust `parse_pdf` layered output, CLI `--format content_blocks` /

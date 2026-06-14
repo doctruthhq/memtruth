@@ -121,6 +121,14 @@ public record TrustDocument(
         TrustDocumentRenderers.writeJsonLines(this, Objects.requireNonNull(writer, "writer"));
     }
 
+    public void writeContentBlocks(Writer writer) throws IOException {
+        TrustDocumentRenderers.writeContentBlocks(this, Objects.requireNonNull(writer, "writer"));
+    }
+
+    public void writeParseTrace(Writer writer) throws IOException {
+        TrustDocumentRenderers.writeParseTrace(this, Objects.requireNonNull(writer, "writer"));
+    }
+
     public String toAuditJson() {
         return TrustDocumentRenderers.toAuditJson(this);
     }

@@ -5849,3 +5849,40 @@
   with 1046 unit tests passing, recorded integration tests passing/skipped as
   expected, real-world PDF corpus `383 total / 379 success / 4 malformed
   trailer failures`, CSV fixture `57/57`, and JaCoCo coverage passing.
+
+## 2026-06-14 Goal 2 Layered Output Preservation
+
+- Audited the existing Goal 2 implementation and found the remaining contract
+  weakness: Rust `doctruth-runtime parse_pdf` emitted `contentBlocks` and
+  `parseTrace`, but Java `TrustDocumentJson.fromJsonFull(...)` discarded those
+  raw layered observations and CLI writers re-derived equivalent profiles from
+  `TrustDocument` units/pages.
+- Added a RED sidecar contract proving Java must preserve runtime-layered
+  `contentBlocks` and `parseTrace` payloads with runtime-specific ids such as
+  `runtime-block-9999` and `runtime-trace-9999`.
+- Implemented an internal layered-output store attached during
+  `TrustDocumentJson.fromJsonFull(...)`. Public SDK writers
+  `TrustDocument.writeContentBlocks(...)` and `writeParseTrace(...)` now write
+  preserved Rust runtime layers when present, and otherwise fall back to
+  deterministic TrustDocument projections.
+- Routed CLI `content_blocks` and `parse_trace` writers through the new core
+  SDK writer APIs, keeping review-package and parse output profiles on the same
+  contract.
+- Updated `findings.md`, `task_plan.md`, and the public API snapshot to reflect
+  the new layered-output SDK surface and the closed raw-observation preservation
+  gap.
+- Error logged: an attempted Cargo command passed two test filters to
+  `cargo test`, which failed with `unexpected argument`. Re-ran the full
+  `protocol_contract` test target instead.
+- Verification passed:
+  `mvn -q -Dtest=SidecarParserBackendTest#preservesRuntimeLayeredOutputObservations test`;
+  `mvn -q -Ddoctruth.updatePublicApiSnapshot=true -Dtest=PublicApiSnapshotTest test`;
+  `mvn -q -Dtest=SidecarParserBackendTest,TrustDocumentCliWritersTest,TrustDocumentCliOutputProfileTest,DocTruthCliTest,TrustDocumentStreamingRenderContractTest,TrustDocumentSourceMapContractTest,PublicApiSnapshotTest,ArchitectureContractTest test`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`;
+  `git diff --check`.
+- Broader verification passed:
+  `mvn test` with 1047 tests passing;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml`;
+  `sh scripts/smoke-doctruth-cli-sidecar.sh`;
+  `sh scripts/smoke-doctruth-review-package.sh`.

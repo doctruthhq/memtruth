@@ -1,5 +1,5 @@
 /**
- * Public API of DocTruth: auditable LLM extraction for Java.
+ * Public API of DocTruth: Java SDK/CLI wrapper for the Rust-core document evidence runtime.
  *
  * <p>Every type in this package (and only this package) is part of the stable public API.
  * Subpackages under {@code ai.doctruth.internal} are explicitly NOT public API and may

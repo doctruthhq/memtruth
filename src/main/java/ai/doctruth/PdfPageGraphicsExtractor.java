@@ -13,7 +13,9 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 final class PdfPageGraphicsExtractor {
 
     private static final double MIN_SEPARATOR_WIDTH = 72.0;
+    private static final double MIN_SEPARATOR_HEIGHT = 24.0;
     private static final double MAX_HORIZONTAL_SLOPE = 1.5;
+    private static final double MAX_VERTICAL_SLOPE = 1.5;
 
     private PdfPageGraphicsExtractor() {
         throw new AssertionError("no instances");
@@ -22,14 +24,25 @@ final class PdfPageGraphicsExtractor {
     static List<HorizontalSeparator> extractHorizontalSeparators(PDPage page) throws IOException {
         var engine = new SeparatorEngine(page);
         engine.processPage(page);
-        return engine.separators();
+        return engine.horizontalSeparators();
+    }
+
+    static GridLines extractGridLines(PDPage page) throws IOException {
+        var engine = new SeparatorEngine(page);
+        engine.processPage(page);
+        return new GridLines(engine.horizontalSeparators(), engine.verticalSeparators());
     }
 
     record HorizontalSeparator(double x0, double x1, double y) {}
 
+    record VerticalSeparator(double x, double y0, double y1) {}
+
+    record GridLines(List<HorizontalSeparator> horizontal, List<VerticalSeparator> vertical) {}
+
     private static final class SeparatorEngine extends PDFGraphicsStreamEngine {
         private final double pageHeight;
-        private final List<HorizontalSeparator> separators = new ArrayList<>();
+        private final List<HorizontalSeparator> horizontalSeparators = new ArrayList<>();
+        private final List<VerticalSeparator> verticalSeparators = new ArrayList<>();
         private Point2D currentPoint;
         private Point2D pathStart;
 
@@ -38,14 +51,20 @@ final class PdfPageGraphicsExtractor {
             pageHeight = page.getMediaBox().getHeight();
         }
 
-        private List<HorizontalSeparator> separators() {
-            return separators;
+        private List<HorizontalSeparator> horizontalSeparators() {
+            return List.copyOf(horizontalSeparators);
+        }
+
+        private List<VerticalSeparator> verticalSeparators() {
+            return List.copyOf(verticalSeparators);
         }
 
         @Override
         public void appendRectangle(Point2D p0, Point2D p1, Point2D p2, Point2D p3) {
             addHorizontalEdge(p0, p1);
             addHorizontalEdge(p2, p3);
+            addVerticalEdge(p1, p2);
+            addVerticalEdge(p3, p0);
         }
 
         @Override
@@ -68,6 +87,7 @@ final class PdfPageGraphicsExtractor {
         public void lineTo(float x, float y) {
             var next = new Point2D.Double(x, y);
             addHorizontalEdge(currentPoint, next);
+            addVerticalEdge(currentPoint, next);
             currentPoint = next;
         }
 
@@ -84,6 +104,7 @@ final class PdfPageGraphicsExtractor {
         @Override
         public void closePath() {
             addHorizontalEdge(currentPoint, pathStart);
+            addVerticalEdge(currentPoint, pathStart);
             currentPoint = pathStart;
         }
 
@@ -125,7 +146,22 @@ final class PdfPageGraphicsExtractor {
             double x0 = Math.min(left.getX(), right.getX());
             double x1 = Math.max(left.getX(), right.getX());
             double yTopLeft = pageHeight - ((left.getY() + right.getY()) / 2.0);
-            separators.add(new HorizontalSeparator(x0, x1, yTopLeft));
+            horizontalSeparators.add(new HorizontalSeparator(x0, x1, yTopLeft));
+        }
+
+        private void addVerticalEdge(Point2D top, Point2D bottom) {
+            if (top == null || bottom == null) {
+                return;
+            }
+            double width = Math.abs(bottom.getX() - top.getX());
+            double height = Math.abs(bottom.getY() - top.getY());
+            if (height < MIN_SEPARATOR_HEIGHT || width > MAX_VERTICAL_SLOPE) {
+                return;
+            }
+            double x = (top.getX() + bottom.getX()) / 2.0;
+            double y0 = pageHeight - Math.max(top.getY(), bottom.getY());
+            double y1 = pageHeight - Math.min(top.getY(), bottom.getY());
+            verticalSeparators.add(new VerticalSeparator(x, y0, y1));
         }
     }
 }

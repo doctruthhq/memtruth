@@ -50,6 +50,12 @@ jobs:
       - name: Smoke CLI release tarball
         run: scripts/smoke-cli-release.sh --version "${PROJECT_VERSION}"
 
+      - name: Smoke parser accuracy seed corpus
+        run: scripts/smoke-doctruth-parser-accuracy-seed-corpus.sh
+
+      - name: Smoke real model suite skip path
+        run: scripts/smoke-doctruth-real-model-suite.sh
+
       - name: Generate SBOM
         run: mvn -B -ntp -DskipTests cyclonedx:makeAggregateBom
 

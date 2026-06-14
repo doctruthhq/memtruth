@@ -3,6 +3,7 @@ package ai.doctruth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A flat string-cell table recovered from the source document, anchored to a
@@ -17,14 +18,31 @@ import java.util.Objects;
  * return value can mutate the section's state.
  *
  * @param rows     the table cells, row-major.
- * @param location the source-document span this table was recovered from.
+ * @param location    the source-document span this table was recovered from.
+ * @param boundingBox optional normalized source-region box for the table.
+ * @param cellRegions optional normalized source-region boxes for table cells.
  * @since 0.1.0
  */
-public record TableSection(List<List<String>> rows, SourceLocation location) implements ParsedSection {
+public record TableSection(
+        List<List<String>> rows,
+        SourceLocation location,
+        Optional<BoundingBox> boundingBox,
+        List<TableCellRegion> cellRegions)
+        implements ParsedSection {
+
+    public TableSection(List<List<String>> rows, SourceLocation location) {
+        this(rows, location, Optional.empty(), List.of());
+    }
+
+    public TableSection(List<List<String>> rows, SourceLocation location, Optional<BoundingBox> boundingBox) {
+        this(rows, location, boundingBox, List.of());
+    }
 
     public TableSection {
         Objects.requireNonNull(rows, "rows");
         Objects.requireNonNull(location, "location");
+        Objects.requireNonNull(boundingBox, "boundingBox");
+        Objects.requireNonNull(cellRegions, "cellRegions");
         var copied = new ArrayList<List<String>>(rows.size());
         for (int i = 0; i < rows.size(); i++) {
             var row = rows.get(i);
@@ -32,5 +50,6 @@ public record TableSection(List<List<String>> rows, SourceLocation location) imp
             copied.add(List.copyOf(row));
         }
         rows = List.copyOf(copied);
+        cellRegions = List.copyOf(cellRegions);
     }
 }

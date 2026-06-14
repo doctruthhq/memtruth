@@ -69,6 +69,7 @@ class DocTruthHappyPathTest {
 
         assertThat(client.fromPdf(samplePdf())).isNotNull();
         assertThat(client.fromPdf(samplePdf().toString())).isNotNull();
+        assertThat(client.parsePdf(samplePdf().toString())).isNotNull();
         assertThat(client.fromCsv(csv)).isNotNull();
         assertThat(client.fromDocx(sampleDocx())).isNotNull();
         assertThat(client.fromXlsx(sampleXlsx())).isNotNull();
@@ -84,6 +85,21 @@ class DocTruthHappyPathTest {
 
         var document = DocTruth.withProvider(provider(new AtomicInteger()))
                 .fromPdf(blankPdf(), ocr);
+
+        assertThat(calls).hasValue(1);
+        assertThat(document).isNotNull();
+    }
+
+    @Test
+    void clientParsesPdfStringWithOcrEngine() throws Exception {
+        var calls = new AtomicInteger();
+        OcrEngine ocr = (BufferedImage image, int page) -> {
+            calls.incrementAndGet();
+            return new OcrPageResult("Name: Alex Chen", 0.9, List.of(), page);
+        };
+
+        var document = DocTruth.withProvider(provider(new AtomicInteger()))
+                .fromPdf(blankPdf().toString(), ocr);
 
         assertThat(calls).hasValue(1);
         assertThat(document).isNotNull();

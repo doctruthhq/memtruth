@@ -41,7 +41,7 @@ final class PdfPageBlockExtractor {
         return renderBlocks(pageNumber, positions, groups, medianHeight, mediaBox.getWidth(), mediaBox.getHeight());
     }
 
-    private static List<TextPosition> capturePageTextPositions(PDDocument pdf, int pageNumber) throws IOException {
+    static List<TextPosition> capturePageTextPositions(PDDocument pdf, int pageNumber) throws IOException {
         var positions = new ArrayList<TextPosition>();
         var stripper = new PDFTextStripper() {
             @Override

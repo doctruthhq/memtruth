@@ -1,9 +1,9 @@
-# Auditable LLM Extraction for Java
+# Auditable LLM Extraction With The Java Wrapper
 
-DocTruth is for Java teams that need structured LLM extraction results they can
-defend later. It parses business documents, asks a model for schema-bound
-output, validates the result, and attaches source evidence to each extracted
-field.
+DocTruth is for teams that need structured LLM extraction results they can
+defend later. The parser core is Rust; the Java API is the SDK/CLI wrapper for
+Java services that need to call that runtime, ask a model for schema-bound
+output, validate the result, and attach source evidence to each extracted field.
 
 The core use case is simple:
 

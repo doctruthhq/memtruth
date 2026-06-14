@@ -119,7 +119,78 @@ public final class PdfDocumentParser {
                 appendPageSections(pdf, page, sections);
             }
         }
-        return sections;
+        return mergeTableContinuations(sections);
+    }
+
+    private static List<ParsedSection> mergeTableContinuations(List<ParsedSection> sections) {
+        var merged = new ArrayList<ParsedSection>(sections.size());
+        for (var section : sections) {
+            if (section instanceof TableSection current
+                    && !merged.isEmpty()
+                    && merged.getLast() instanceof TableSection previous
+                    && isTableContinuation(previous, current)) {
+                merged.set(merged.size() - 1, mergeTables(previous, current));
+            } else {
+                merged.add(section);
+            }
+        }
+        return List.copyOf(merged);
+    }
+
+    private static boolean isTableContinuation(TableSection previous, TableSection current) {
+        return previous.location().pageEnd() + 1 == current.location().pageStart()
+                && !previous.rows().isEmpty()
+                && !current.rows().isEmpty()
+                && previous.rows().getFirst().size() == current.rows().getFirst().size()
+                && normalizedRow(previous.rows().getFirst()).equals(normalizedRow(current.rows().getFirst()))
+                && alignedTableBoxes(previous, current);
+    }
+
+    private static TableSection mergeTables(TableSection previous, TableSection current) {
+        var rows = new ArrayList<List<String>>();
+        rows.addAll(previous.rows());
+        rows.addAll(current.rows().subList(1, current.rows().size()));
+
+        int rowOffset = previous.rows().size() - 1;
+        var regions = new ArrayList<TableCellRegion>();
+        regions.addAll(previous.cellRegions());
+        for (var region : current.cellRegions()) {
+            if (region.row() == 0) {
+                continue;
+            }
+            regions.add(new TableCellRegion(
+                    region.page(),
+                    region.row() + rowOffset,
+                    region.column(),
+                    region.rowEnd() + rowOffset,
+                    region.columnEnd(),
+                    region.boundingBox()));
+        }
+
+        var location = new SourceLocation(
+                previous.location().pageStart(),
+                current.location().pageEnd(),
+                previous.location().lineStart(),
+                current.location().lineEnd(),
+                previous.location().charOffset());
+        return new TableSection(rows, location, previous.boundingBox().or(current::boundingBox), regions);
+    }
+
+    private static String normalizedRow(List<String> row) {
+        return row.stream()
+                .map(value -> value == null ? "" : value.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT))
+                .toList()
+                .toString();
+    }
+
+    private static boolean alignedTableBoxes(TableSection previous, TableSection current) {
+        if (previous.boundingBox().isEmpty() || current.boundingBox().isEmpty()) {
+            return true;
+        }
+        var left = previous.boundingBox().get();
+        var right = current.boundingBox().get();
+        return Math.abs(left.x0() - right.x0()) <= 20.0
+                && Math.abs(left.x1() - right.x1()) <= 20.0;
     }
 
     private static boolean shouldRouteToOcr(PDDocument pdf, int page, OcrEngine ocrEngine) throws IOException {
@@ -185,11 +256,20 @@ public final class PdfDocumentParser {
             return;
         }
         var counts = new EnumMap<BlockKind, Integer>(BlockKind.class);
+        var tables = PdfPageTableExtractor.detectTableBlocksOnPage(pdf, page);
         for (var block : blocks) {
+            if (insideAnyTable(block, tables)) {
+                continue;
+            }
             sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
             counts.merge(block.kind(), 1, Integer::sum);
         }
-        LOG.debug("page={} blocks={} kinds={}", page, blocks.size(), counts);
+        tables.stream().map(PdfPageTableExtractor.TableBlock::section).forEach(sections::add);
+        LOG.debug("page={} blocks={} tables={} kinds={}", page, blocks.size(), tables.size(), counts);
+    }
+
+    private static boolean insideAnyTable(PdfTextBlock block, List<PdfPageTableExtractor.TableBlock> tables) {
+        return tables.stream().anyMatch(table -> table.contains(block));
     }
 
     static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight) {

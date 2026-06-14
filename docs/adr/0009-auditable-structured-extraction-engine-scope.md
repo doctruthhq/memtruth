@@ -90,7 +90,7 @@ not become generic core behavior.
 | Jurisdiction-specific interpretation | Out of core | Legal/regulatory interpretation changes over time and should be owned by domain packages or applications. |
 | SIEM, key-management, and residency integrations | Out of core | Organization-specific deployment policy. |
 | Dashboard / auditor portal | Out of core | Application surface beyond the library. |
-| OCR engines and form-recognition models | Out of core by default | Heavy model/runtime choices should be pluggable rather than bundled. |
+| OCR model/runtime packages | Out of the generic jar by default | DocTruth core owns the `OcrEngine` SPI and local worker protocol; desktop/deployment packages carry heavy engines and model files. |
 
 ## Consequences
 

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import ai.doctruth.BlockKind;
+import ai.doctruth.BoundingBox;
 import ai.doctruth.DocumentMetadata;
 import ai.doctruth.FigureSection;
 import ai.doctruth.ParsedDocument;
@@ -48,6 +49,78 @@ class CliSupportTest {
         assertThat(tree.path("sections").get(0).path("type").asText()).isEqualTo("text");
         assertThat(tree.path("sections").get(1).path("type").asText()).isEqualTo("table");
         assertThat(tree.path("sections").get(2).path("type").asText()).isEqualTo("figure");
+    }
+
+    @Test
+    void parsedDocumentMarkdownRendersStableSourceFaithfulMarkdown() {
+        var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var doc = new ParsedDocument(
+                "doc",
+                java.util.List.of(
+                        new TextSection("Work Experience", loc, BlockKind.HEADING),
+                        new TextSection("August 2020 to February 2021", loc, BlockKind.HEADING),
+                        new TextSection("1. Built _source_ backed parser\nwith wrapped continuation", loc, BlockKind.LIST),
+                        new TableSection(java.util.List.of(
+                                java.util.List.of("Name", "Role"),
+                                java.util.List.of("Alex", "Parser | QA")),
+                                loc),
+                        new FigureSection("Pipeline diagram", loc)),
+                new DocumentMetadata("sample.pdf", 1, Optional.empty()));
+
+        assertThat(ParsedDocumentMarkdown.toMarkdown(doc))
+                .isEqualTo(
+                        """
+                        ## Work Experience
+
+                        August 2020 to February 2021
+
+                        1. Built \\_source\\_ backed parser with wrapped continuation
+
+                        | Name | Role |
+                        | --- | --- |
+                        | Alex | Parser \\| QA |
+
+                        [Figure: Pipeline diagram]
+                        """);
+    }
+
+    @Test
+    void parsedDocumentMarkdownUsesBboxReadingOrderAndRejoinsListContinuations() {
+        var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var doc = new ParsedDocument(
+                "doc",
+                java.util.List.of(
+                        new TextSection(
+                                "• Lead production planning for day-",
+                                loc,
+                                BlockKind.LIST,
+                                Optional.of(new BoundingBox(180, 420, 850, 440))),
+                        new TextSection(
+                                "Contact: 011-11212633",
+                                loc,
+                                BlockKind.BODY,
+                                Optional.of(new BoundingBox(220, 180, 500, 195))),
+                        new TextSection(
+                                "Candidate Name",
+                                loc,
+                                BlockKind.HEADING,
+                                Optional.of(new BoundingBox(220, 220, 500, 240))),
+                        new TextSection(
+                                "to-day shipment release.",
+                                loc,
+                                BlockKind.BODY,
+                                Optional.of(new BoundingBox(210, 443, 650, 458)))),
+                new DocumentMetadata("sample.pdf", 1, Optional.empty()));
+
+        assertThat(ParsedDocumentMarkdown.toMarkdown(doc))
+                .isEqualTo(
+                        """
+                        Contact: 011-11212633
+
+                        ## Candidate Name
+
+                        • Lead production planning for day-to-day shipment release.
+                        """);
     }
 
     @Test

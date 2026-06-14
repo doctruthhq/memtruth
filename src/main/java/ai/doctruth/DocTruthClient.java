@@ -28,6 +28,11 @@ public final class DocTruthClient {
         return from(PdfDocumentParser.parse(path));
     }
 
+    public TrustDocumentParserBuilder parsePdf(Path path) {
+        Objects.requireNonNull(path, "path");
+        return new TrustDocumentParserBuilder(path, ParserPreset.LITE);
+    }
+
     public DocTruthDocument fromPdf(Path path, OcrEngine ocrEngine) throws ParseException {
         return from(PdfDocumentParser.parse(path, ocrEngine));
     }
@@ -35,6 +40,11 @@ public final class DocTruthClient {
     public DocTruthDocument fromPdf(String path) throws ParseException {
         Objects.requireNonNull(path, "path");
         return fromPdf(Path.of(path));
+    }
+
+    public TrustDocumentParserBuilder parsePdf(String path) {
+        Objects.requireNonNull(path, "path");
+        return parsePdf(Path.of(path));
     }
 
     public DocTruthDocument fromPdf(String path, OcrEngine ocrEngine) throws ParseException {

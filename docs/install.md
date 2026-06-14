@@ -1,8 +1,7 @@
 # Install DocTruth CLI
 
-The Java SDK is the primary production integration path. The CLI is the
-try/debug/inspect path: it lets a Java team verify the core promise before
-writing integration code:
+DocTruth's parser core is the Rust runtime. The Java SDK and CLI are wrappers
+for application integration, packaging, and first-run inspection:
 
 ```text
 document -> parsed sections with source locations -> schema check -> audit output
@@ -10,7 +9,7 @@ document -> parsed sections with source locations -> schema check -> audit outpu
 
 ## SDK Install
 
-Use the SDK when adding DocTruth to an application:
+Use the Java wrapper SDK when adding DocTruth to an application:
 
 ```xml
 <dependency>
@@ -20,14 +19,19 @@ Use the SDK when adding DocTruth to an application:
 </dependency>
 ```
 
-Minimal application flow:
+Set the Rust runtime command for direct Maven/JAR usage:
+
+```bash
+export DOCTRUTH_RUNTIME_COMMAND=/path/to/doctruth-runtime
+```
+
+Minimal TrustDocument parser flow:
 
 ```java
-var result = DocTruth.withOpenAi(System.getenv("OPENAI_API_KEY"))
-        .fromPdf(Path.of("contract.pdf"))
-        .extract("Extract contract terms", Contract.class)
-        .withEvidence()
-        .run();
+var trustDoc = DocTruth.withOpenAi(System.getenv("OPENAI_API_KEY"))
+        .parsePdf(Path.of("contract.pdf"))
+        .withParser(ParserPreset.STANDARD)
+        .parse();
 ```
 
 ## CLI From Source
@@ -46,9 +50,11 @@ Run it directly:
 java -jar target/doctruth-java-0.2.0-alpha-all.jar --help
 ```
 
-Install a `doctruth` launcher:
+Install a `doctruth` launcher, the Rust parser runtime, and the optional local
+worker adapters:
 
 ```bash
+cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --release
 scripts/install-cli.sh --prefix "$HOME/.local"
 ```
 
@@ -63,8 +69,17 @@ Check the install:
 ```bash
 doctruth version
 doctruth doctor
-doctruth parse fixtures/pdf/ResumeAFIQDANISH.pdf --bboxes
+doctruth-runtime --doctor
+doctruth-rapidocr-mnn-worker < request.json
+DOCTRUTH_RAPIDOCR_BACKEND=mnn doctruth-rapidocr-mnn-worker --doctor
+doctruth-onnx-model-worker --doctor
+doctruth parse fixtures/pdf/ResumeAFIQDANISH.pdf --format json
 ```
+
+The installed `doctruth` launcher discovers `bin/doctruth-runtime` and exports
+`DOCTRUTH_RUNTIME_COMMAND` automatically. TrustDocument parse formats use the
+Rust runtime by default after install. Use `--backend pdfbox` only for
+legacy/oracle comparison during migration or regression debugging.
 
 If `java` is not on `PATH`, point the launcher at your Java 25 runtime:
 
@@ -86,8 +101,8 @@ java -version
 No provider key is required for parser and schema inspection:
 
 ```bash
-doctruth parse contract.pdf --bboxes
-doctruth parse contract.pdf --json -o parsed.json
+doctruth parse contract.pdf
+doctruth parse contract.pdf --format json -o trust-document.json
 doctruth ingest-audit ./resumes --json -o ingest-audit.json
 doctruth schema contract.schema.json
 ```
@@ -121,11 +136,36 @@ checksums.txt
 doctruth.rb
 ```
 
-Use the tarball when you want a `bin/doctruth` launcher plus the bundled jar:
+Use the tarball when you want a `bin/doctruth` launcher, `bin/doctruth-runtime`,
+optional worker adapters, and the bundled jar:
 
 ```bash
 tar -xzf doctruth-0.2.0-alpha.tar.gz
 JAVA=/path/to/java ./doctruth-0.2.0-alpha/bin/doctruth version
+```
+
+The RapidOCR and ONNX adapters are Python worker scripts. The ONNX adapter also
+ships a same-directory `doctruth_onnx_worker_lib.py` support module used by the
+`doctruth-onnx-model-worker` shim. They are only used when the relevant
+preset/worker command is configured and Python can import their runtime packages
+(`rapidocr` or `onnxruntime`). OCR/model files and Python packages are not
+bundled inside the Java jar. Set
+`DOCTRUTH_RAPIDOCR_BACKEND=mnn` when you want the RapidOCR worker doctor to
+verify that the local MNN Python backend module is importable instead of only
+checking RapidOCR initialization.
+
+The release launcher also discovers its same-directory `doctruth-runtime` and
+sets `DOCTRUTH_RUNTIME_COMMAND` automatically, so packaged CLI parsing is
+Rust-first without extra environment setup.
+
+Real layout/table model artifacts are not bundled. Use a manifest and the
+opt-in real model smoke to validate a local artifact before relying on it:
+
+```bash
+DOCTRUTH_REAL_MODEL_MANIFEST=models.json \
+DOCTRUTH_REAL_MODEL_PRESET=standard \
+DOCTRUTH_REAL_MODEL_EXPECTED_TASK=layout-detection \
+scripts/smoke-doctruth-real-model-artifact.sh
 ```
 
 Use the all-jar when you want the simplest direct invocation:

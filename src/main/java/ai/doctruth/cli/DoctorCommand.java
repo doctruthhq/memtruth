@@ -2,7 +2,11 @@ package ai.doctruth.cli;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+
+import ai.doctruth.SidecarParserBackend;
+import ai.doctruth.internal.runtime.DocTruthRuntime;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,11 +32,14 @@ final class DoctorCommand {
 
     void run(String[] args) throws CliException {
         boolean json = false;
+        boolean modelsOnly = false;
         var cursor = new ArgCursor(args, 1);
         while (cursor.hasNext()) {
             String arg = cursor.next();
             if ("--json".equals(arg)) {
                 json = true;
+            } else if ("models".equals(arg)) {
+                modelsOnly = true;
             } else {
                 throw new UsageException("unknown doctor option: " + arg);
             }
@@ -41,6 +48,8 @@ final class DoctorCommand {
         var report = DoctorReport.create(context.env());
         if (json) {
             context.out().println(report.toJson());
+        } else if (modelsOnly) {
+            context.out().print(report.toModelText());
         } else {
             context.out().print(report.toText());
         }
@@ -52,6 +61,10 @@ final class DoctorCommand {
             boolean javaSupported,
             boolean projectConfig,
             boolean outputDir,
+            ParserDoctor parser,
+            ModelDoctor models,
+            OcrDoctor ocr,
+            MemoryDoctor memory,
             Map<String, Boolean> env,
             boolean ready) {
 
@@ -64,8 +77,22 @@ final class DoctorCommand {
             boolean config = Files.exists(Path.of("doctruth.yml"));
             boolean output = Files.exists(Path.of(".doctruth/runs"));
             boolean hasProvider = keys.values().stream().anyMatch(Boolean::booleanValue);
+            var parser = ParserDoctor.from(env);
+            var models = ModelDoctor.local(env);
+            var ocr = OcrDoctor.local(env);
+            var memory = MemoryDoctor.current();
             return new DoctorReport(
-                    System.getProperty("java.version"), feature, javaOk, config, output, keys, javaOk && hasProvider);
+                    System.getProperty("java.version"),
+                    feature,
+                    javaOk,
+                    config,
+                    output,
+                    parser,
+                    models,
+                    ocr,
+                    memory,
+                    keys,
+                    javaOk && hasProvider && parser.available());
         }
 
         String toText() {
@@ -80,6 +107,33 @@ final class DoctorCommand {
                     .append('\n')
                     .append("runs: ")
                     .append(outputDir ? ".doctruth/runs found" : "created by `doctruth init` or first extraction")
+                    .append('\n')
+                    .append("parser backend: ")
+                    .append(parser.backend())
+                    .append(parser.available() ? " ok" : " unavailable")
+                    .append('\n')
+                    .append("model cache: ")
+                    .append(models.cacheDirectory())
+                    .append('\n')
+                    .append("model worker: ")
+                    .append(models.worker().summary())
+                    .append(" (timeoutMs=")
+                    .append(models.worker().timeoutMs())
+                    .append(")")
+                    .append('\n')
+                    .append("ocr worker: ")
+                    .append(ocr.summary())
+                    .append(" (engine=")
+                    .append(ocr.engine())
+                    .append(", fallback=")
+                    .append(ocr.fallbackEngine())
+                    .append(", timeoutMs=")
+                    .append(ocr.timeoutMs())
+                    .append(")")
+                    .append('\n')
+                    .append("memory max: ")
+                    .append(memory.maxMb())
+                    .append(" MB")
                     .append('\n');
             env.forEach((key, set) -> text.append(key)
                     .append(": ")
@@ -91,6 +145,35 @@ final class DoctorCommand {
                     .toString();
         }
 
+        String toModelText() {
+            return new StringBuilder()
+                    .append("DocTruth model doctor\n")
+                    .append("model cache: ")
+                    .append(models.cacheDirectory())
+                    .append(models.cacheExists() ? " found" : " missing")
+                    .append('\n')
+                    .append("required models: ")
+                    .append(models.requiredModels())
+                    .append('\n')
+                    .append("network access required: ")
+                    .append(models.networkAccessRequired() ? "yes" : "no")
+                    .append('\n')
+                    .append("model cache ready: ")
+                    .append(models.allReady() ? "yes" : "no")
+                    .append('\n')
+                    .append("estimated model cache size: ")
+                    .append(models.estimatedCacheMb())
+                    .append(" MB")
+                    .append('\n')
+                    .append("model worker: ")
+                    .append(models.worker().summary())
+                    .append(" (timeoutMs=")
+                    .append(models.worker().timeoutMs())
+                    .append(")")
+                    .append('\n')
+                    .toString();
+        }
+
         String toJson() throws CliException {
             try {
                 return MAPPER.writeValueAsString(Map.of(
@@ -98,6 +181,72 @@ final class DoctorCommand {
                         Map.of("version", javaVersion, "feature", javaFeature, "supported", javaSupported),
                         "project",
                         Map.of("config", projectConfig, "runsDirectory", outputDir),
+                        "parser",
+                        Map.of(
+                                "backend",
+                                parser.backend(),
+                                "available",
+                                parser.available(),
+                                "outputProfiles",
+                                parser.outputProfiles()),
+                        "models",
+                        Map.of(
+                                "cacheDirectory",
+                                models.cacheDirectory().toString(),
+                                "cacheExists",
+                                models.cacheExists(),
+                                "requiredModels",
+                                models.requiredModels(),
+                                "networkAccessRequired",
+                                models.networkAccessRequired(),
+                                "allReady",
+                                models.allReady(),
+                                "estimatedCacheMb",
+                                models.estimatedCacheMb(),
+                                "artifacts",
+                                models.artifactSummaries(),
+                                "worker",
+                                Map.of(
+                                        "command",
+                                        models.worker().command(),
+                                        "available",
+                                        models.worker().available(),
+                                        "ready",
+                                        models.worker().ready(),
+                                        "timeoutMs",
+                                        models.worker().timeoutMs(),
+                                        "statusCode",
+                                        models.worker().statusCode(),
+                                        "message",
+                                        models.worker().message(),
+                                        "rssMb",
+                                        models.worker().rssMb(),
+                                        "peakMemoryMb",
+                                        models.worker().peakMemoryMb(),
+                                        "loadedModels",
+                                        models.worker().loadedModels())),
+                        "ocr",
+                        Map.of(
+                                "command",
+                                ocr.command(),
+                                "available",
+                                ocr.available(),
+                                "ready",
+                                ocr.ready(),
+                                "disabled",
+                                ocr.disabled(),
+                                "engine",
+                                ocr.engine(),
+                                "fallbackEngine",
+                                ocr.fallbackEngine(),
+                                "timeoutMs",
+                                ocr.timeoutMs(),
+                                "statusCode",
+                                ocr.statusCode(),
+                                "message",
+                                ocr.message()),
+                        "memory",
+                        Map.of("maxMb", memory.maxMb(), "freeMb", memory.freeMb(), "totalMb", memory.totalMb()),
                         "env",
                         env,
                         "ready",
@@ -109,6 +258,33 @@ final class DoctorCommand {
 
         private static boolean isSet(String value) {
             return value != null && !value.isBlank();
+        }
+    }
+
+    private record ParserDoctor(String backend, boolean available, List<String> outputProfiles) {
+        static ParserDoctor from(Map<String, String> env) {
+            var runtime = DocTruthRuntime.configuredCommand(env);
+            if (runtime.isEmpty()) {
+                return new ParserDoctor("sidecar", false, List.of());
+            }
+            if (!Files.isRegularFile(runtime.get())) {
+                return new ParserDoctor("sidecar", false, List.of());
+            }
+            var backend = new SidecarParserBackend(runtime.get());
+            var capabilities = backend.capabilities();
+            var health = backend.doctor();
+            return new ParserDoctor("sidecar", health.available(), capabilities.outputProfiles());
+        }
+    }
+
+    private record MemoryDoctor(long maxMb, long totalMb, long freeMb) {
+        static MemoryDoctor current() {
+            Runtime runtime = Runtime.getRuntime();
+            return new MemoryDoctor(toMb(runtime.maxMemory()), toMb(runtime.totalMemory()), toMb(runtime.freeMemory()));
+        }
+
+        private static long toMb(long bytes) {
+            return Math.max(1, bytes / (1024 * 1024));
         }
     }
 }

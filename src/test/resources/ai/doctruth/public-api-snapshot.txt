@@ -5,6 +5,11 @@ TYPE class ai.doctruth.AnthropicProvider [public]
   method java.lang.String apiKey() [public]
   method java.lang.String name() [public]
 
+TYPE enum ai.doctruth.AuditGradeStatus [public final]
+  enum-constants UNKNOWN, AUDIT_GRADE, NOT_AUDIT_GRADE
+  method ai.doctruth.AuditGradeStatus valueOf(java.lang.String) [public static]
+  method ai.doctruth.AuditGradeStatus[] values() [public static]
+
 TYPE enum ai.doctruth.BlockKind [public final]
   enum-constants HEADING, BODY, LIST, OTHER
   method ai.doctruth.BlockKind valueOf(java.lang.String) [public static]
@@ -73,10 +78,13 @@ TYPE class ai.doctruth.DocTruthClient [public final]
   method ai.doctruth.DocTruthDocument fromPdf(java.nio.file.Path) [public]
   method ai.doctruth.DocTruthDocument fromPdf(java.nio.file.Path, ai.doctruth.spi.OcrEngine) [public]
   method ai.doctruth.DocTruthDocument fromXlsx(java.nio.file.Path) [public]
+  method ai.doctruth.TrustDocumentParserBuilder parsePdf(java.lang.String) [public]
+  method ai.doctruth.TrustDocumentParserBuilder parsePdf(java.nio.file.Path) [public]
 
 TYPE class ai.doctruth.DocTruthDocument [public final]
   method ai.doctruth.DocumentExtractionBuilder extract(java.lang.String, java.lang.Class) [public]
   method ai.doctruth.DocumentJsonExtractionBuilder extractJson(java.lang.String, ai.doctruth.JsonSchema) [public]
+  method ai.doctruth.TrustDocumentParserBuilder withParser(ai.doctruth.ParserPreset) [public]
 
 TYPE class ai.doctruth.DocumentExtractionBuilder [public final]
   method ai.doctruth.DocumentExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
@@ -197,6 +205,64 @@ TYPE class ai.doctruth.LlmProviders [public final]
   method ai.doctruth.OpenAiProvider openAi(java.lang.String) [public static]
   method ai.doctruth.OpenAiProvider openAiCompatible(java.lang.String, java.net.URI, java.lang.String) [public static]
 
+TYPE record ai.doctruth.ModelCacheArtifact [public final]
+  record-components ai.doctruth.ModelDescriptor descriptor, ai.doctruth.ModelCacheStatus status, long actualSizeBytes, java.lang.String actualSha256
+  ctor ModelCacheArtifact(ai.doctruth.ModelDescriptor, ai.doctruth.ModelCacheStatus, long, java.lang.String)
+  method ai.doctruth.ModelCacheStatus status() [public]
+  method ai.doctruth.ModelDescriptor descriptor() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String actualSha256() [public]
+  method java.lang.String toString() [public final]
+  method long actualSizeBytes() [public]
+
+TYPE record ai.doctruth.ModelCacheReport [public final]
+  record-components java.util.List artifacts, java.util.List warnings
+  ctor ModelCacheReport(java.util.List, java.util.List)
+  method boolean allReady() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.List artifacts() [public]
+  method java.util.List warnings() [public]
+  method long totalSizeBytes() [public]
+
+TYPE enum ai.doctruth.ModelCacheStatus [public final]
+  enum-constants READY, MISSING, SHA_MISMATCH
+  method ai.doctruth.ModelCacheStatus valueOf(java.lang.String) [public static]
+  method ai.doctruth.ModelCacheStatus[] values() [public static]
+
+TYPE class ai.doctruth.ModelCacheVerifier [public final]
+  method ai.doctruth.ModelCacheReport verify(java.nio.file.Path, java.util.List) [public static]
+
+TYPE record ai.doctruth.ModelDescriptor [public final]
+  record-components java.lang.String name, java.lang.String version, java.lang.String sha256, long sizeBytes, boolean required
+  ctor ModelDescriptor(java.lang.String, java.lang.String, java.lang.String, long, boolean)
+  method boolean equals(java.lang.Object) [public final]
+  method boolean required() [public]
+  method int hashCode() [public final]
+  method java.lang.String cacheFilename() [public]
+  method java.lang.String identity() [public]
+  method java.lang.String name() [public]
+  method java.lang.String sha256() [public]
+  method java.lang.String toString() [public final]
+  method java.lang.String version() [public]
+  method long sizeBytes() [public]
+
+TYPE record ai.doctruth.ModelRuntimePolicy [public final]
+  record-components boolean offlineMode, boolean allowModelDownloads, java.util.List requiredModels
+  ctor ModelRuntimePolicy(boolean, boolean, java.util.List)
+  method ai.doctruth.ModelRuntimePolicy liteOffline() [public static]
+  method ai.doctruth.ModelRuntimePolicy offlineRequired(java.util.List) [public static]
+  method boolean allowModelDownloads() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method boolean networkAccessRequired() [public]
+  method boolean offlineMode() [public]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.List requiredModels() [public]
+  method java.util.List warnings() [public]
+
 TYPE class ai.doctruth.OpenAiProvider [public]
   ctor OpenAiProvider(java.lang.String)
   ctor OpenAiProvider(java.lang.String, java.net.URI, java.lang.String)
@@ -231,9 +297,200 @@ TYPE record ai.doctruth.ParsedDocument [public final]
 TYPE interface ai.doctruth.ParsedSection [public abstract interface]
   permits ai.doctruth.TextSection, ai.doctruth.TableSection, ai.doctruth.FigureSection
 
+TYPE interface ai.doctruth.ParserBackend [public abstract interface]
+  method ai.doctruth.ParserCapabilities capabilities() [public abstract]
+  method ai.doctruth.ParserHealth doctor() [public abstract]
+  method ai.doctruth.TrustDocument parse(ai.doctruth.ParserRequest) [public abstract]
+
+TYPE enum ai.doctruth.ParserBackendMode [public final]
+  enum-constants AUTO, PDFBOX, SIDECAR
+  method ai.doctruth.ParserBackendMode valueOf(java.lang.String) [public static]
+  method ai.doctruth.ParserBackendMode[] values() [public static]
+
+TYPE record ai.doctruth.ParserBenchmarkCase [public final]
+  record-components java.lang.String name, ai.doctruth.ParserBenchmarkLabel label, ai.doctruth.TrustDocument document, ai.doctruth.ParserBenchmarkExpectation expectation, ai.doctruth.ParserBenchmarkResources resources
+  ctor ParserBenchmarkCase(java.lang.String, ai.doctruth.ParserBenchmarkLabel, ai.doctruth.TrustDocument, ai.doctruth.ParserBenchmarkExpectation, ai.doctruth.ParserBenchmarkResources)
+  ctor ParserBenchmarkCase(java.lang.String, ai.doctruth.TrustDocument, java.lang.String)
+  ctor ParserBenchmarkCase(java.lang.String, ai.doctruth.TrustDocument, java.lang.String, java.util.Optional)
+  ctor ParserBenchmarkCase(java.lang.String, ai.doctruth.TrustDocument, java.lang.String, java.util.Optional, ai.doctruth.ParserBenchmarkResources)
+  ctor ParserBenchmarkCase(java.lang.String, ai.doctruth.TrustDocument, java.lang.String, java.util.Optional, double)
+  ctor ParserBenchmarkCase(java.lang.String, ai.doctruth.TrustDocument, java.lang.String, java.util.Optional, double, double, double)
+  method ai.doctruth.ParserBenchmarkCase fromPdf(java.lang.String, java.nio.file.Path, java.lang.String) [public static]
+  method ai.doctruth.ParserBenchmarkCase fromPdf(java.lang.String, java.nio.file.Path, java.lang.String, ai.doctruth.ParserPreset, ai.doctruth.TrustDocument) [public static]
+  method ai.doctruth.ParserBenchmarkCase fromPdf(java.lang.String, java.nio.file.Path, java.lang.String, ai.doctruth.TrustDocument) [public static]
+  method ai.doctruth.ParserBenchmarkCase fromPdf(java.lang.String, java.util.Optional, java.util.List, java.nio.file.Path, java.lang.String, ai.doctruth.ParserPreset, ai.doctruth.TrustDocument) [public static]
+  method ai.doctruth.ParserBenchmarkCase fromPdf(java.lang.String, java.util.Optional, java.util.List, java.util.Optional, java.nio.file.Path, java.lang.String, ai.doctruth.ParserPreset, ai.doctruth.TrustDocument) [public static]
+  method ai.doctruth.ParserBenchmarkExpectation expectation() [public]
+  method ai.doctruth.ParserBenchmarkLabel label() [public]
+  method ai.doctruth.ParserBenchmarkResources resources() [public]
+  method ai.doctruth.TrustDocument document() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method double modelCacheSizeMb() [public]
+  method double parserLatencyMs() [public]
+  method double rssPeakMb() [public]
+  method int hashCode() [public final]
+  method java.lang.String expectedMarkdown() [public]
+  method java.lang.String name() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List tags() [public]
+  method java.util.Optional expectedDocument() [public]
+  method java.util.Optional labelId() [public]
+  method java.util.Optional sourceSha256() [public]
+
+TYPE class ai.doctruth.ParserBenchmarkCorpus [public final]
+  method ai.doctruth.ParserBenchmarkCorpus load(java.nio.file.Path) [public static]
+  method ai.doctruth.ParserBenchmarkCorpus load(java.nio.file.Path, boolean) [public static]
+  method java.lang.String kind() [public]
+  method java.lang.String name() [public]
+  method java.util.List cases() [public]
+  method java.util.List evaluate() [public]
+  method java.util.List requiredMetrics() [public]
+  method java.util.List requiredTags() [public]
+  method java.util.Map aggregateMetrics() [public]
+  method java.util.Map maximums() [public]
+  method java.util.Map minCasesPerTag() [public]
+  method java.util.Map minimums() [public]
+  method java.util.Optional labelSetVersion() [public]
+  method java.util.Optional minTotalCases() [public]
+  method java.util.Optional qualityProfile() [public]
+  method java.util.Optional reviewType() [public]
+  method void requireMinimums() [public]
+  method void requireThresholds() [public]
+
+TYPE record ai.doctruth.ParserBenchmarkExpectation [public final]
+  record-components java.lang.String markdown, java.util.Optional document
+  ctor ParserBenchmarkExpectation(java.lang.String, java.util.Optional)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String markdown() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional document() [public]
+
+TYPE record ai.doctruth.ParserBenchmarkLabel [public final]
+  record-components java.util.Optional labelId, java.util.List tags, java.util.Optional sourceSha256
+  ctor ParserBenchmarkLabel(java.util.Optional, java.util.List)
+  ctor ParserBenchmarkLabel(java.util.Optional, java.util.List, java.util.Optional)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.List tags() [public]
+  method java.util.Optional labelId() [public]
+  method java.util.Optional sourceSha256() [public]
+
+TYPE record ai.doctruth.ParserBenchmarkResources [public final]
+  record-components double parserLatencyMs, double rssPeakMb, double modelCacheSizeMb
+  ctor ParserBenchmarkResources(double, double, double)
+  method boolean equals(java.lang.Object) [public final]
+  method double modelCacheSizeMb() [public]
+  method double parserLatencyMs() [public]
+  method double rssPeakMb() [public]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.ParserBenchmarkResult [public final]
+  record-components java.lang.String name, java.util.Optional labelId, java.util.List tags, java.util.Optional sourceSha256, java.util.Map metrics
+  ctor ParserBenchmarkResult(java.lang.String, java.util.Map)
+  ctor ParserBenchmarkResult(java.lang.String, java.util.Optional, java.util.List, java.util.Optional, java.util.Map)
+  method boolean equals(java.lang.Object) [public final]
+  method double metric(java.lang.String) [public]
+  method int hashCode() [public final]
+  method java.lang.String name() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List tags() [public]
+  method java.util.Map metrics() [public]
+  method java.util.Optional labelId() [public]
+  method java.util.Optional sourceSha256() [public]
+
+TYPE class ai.doctruth.ParserBenchmarkRunner [public final]
+  method java.util.List evaluate(java.util.List) [public static]
+  method java.util.Map aggregateMetrics(java.util.List) [public static]
+  method void requireMaximums(java.util.List, java.util.Map) [public static]
+  method void requireMinimums(java.util.List, java.util.Map) [public static]
+
+TYPE record ai.doctruth.ParserCapabilities [public final]
+  record-components java.lang.String backend, boolean supportsPdf, boolean supportsModels, boolean networkRequired, java.util.List outputProfiles
+  ctor ParserCapabilities(java.lang.String, boolean, boolean, boolean, java.util.List)
+  method boolean equals(java.lang.Object) [public final]
+  method boolean networkRequired() [public]
+  method boolean supportsModels() [public]
+  method boolean supportsPdf() [public]
+  method int hashCode() [public final]
+  method java.lang.String backend() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List outputProfiles() [public]
+
+TYPE record ai.doctruth.ParserHealth [public final]
+  record-components java.lang.String backend, boolean available, java.util.List warnings
+  ctor ParserHealth(java.lang.String, boolean, java.util.List)
+  method boolean available() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String backend() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List warnings() [public]
+
+TYPE enum ai.doctruth.ParserPreset [public final]
+  enum-constants LITE, STANDARD, TABLE_LITE, TABLE_SERVER, OCR
+  method ai.doctruth.ModelRuntimePolicy runtimePolicy() [public]
+  method ai.doctruth.ParserPreset fromId(java.lang.String) [public static]
+  method ai.doctruth.ParserPreset valueOf(java.lang.String) [public static]
+  method ai.doctruth.ParserPreset[] values() [public static]
+  method ai.doctruth.ParserRun parserRun(java.lang.String) [public]
+  method java.lang.String id() [public]
+
+TYPE record ai.doctruth.ParserRequest [public final]
+  record-components java.nio.file.Path sourcePath, java.lang.String sourceHash, ai.doctruth.ParserRun parserRun, boolean offlineMode, boolean allowModelDownloads
+  ctor ParserRequest(java.nio.file.Path, java.lang.String, ai.doctruth.ParserRun, boolean, boolean)
+  method ai.doctruth.ParserRun parserRun() [public]
+  method boolean allowModelDownloads() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method boolean offlineMode() [public]
+  method int hashCode() [public final]
+  method java.lang.String sourceHash() [public]
+  method java.lang.String toString() [public final]
+  method java.nio.file.Path sourcePath() [public]
+
+TYPE record ai.doctruth.ParserRun [public final]
+  record-components java.lang.String parserRunId, java.lang.String parserVersion, java.lang.String preset, java.lang.String backend, java.util.List models, java.util.List warnings
+  ctor ParserRun(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List)
+  ctor ParserRun(java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String backend() [public]
+  method java.lang.String parserRunId() [public]
+  method java.lang.String parserVersion() [public]
+  method java.lang.String preset() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List models() [public]
+  method java.util.List warnings() [public]
+
+TYPE record ai.doctruth.ParserWarning [public final]
+  record-components java.lang.String code, ai.doctruth.ParserWarningSeverity severity, java.lang.String message
+  ctor ParserWarning(java.lang.String, ai.doctruth.ParserWarningSeverity, java.lang.String)
+  method ai.doctruth.ParserWarningSeverity severity() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String code() [public]
+  method java.lang.String message() [public]
+  method java.lang.String toString() [public final]
+
+TYPE enum ai.doctruth.ParserWarningSeverity [public final]
+  enum-constants INFO, WARNING, SEVERE
+  method ai.doctruth.ParserWarningSeverity valueOf(java.lang.String) [public static]
+  method ai.doctruth.ParserWarningSeverity[] values() [public static]
+
+TYPE class ai.doctruth.PdfBoxParserBackend [public final]
+  ctor PdfBoxParserBackend()
+  method ai.doctruth.ParserCapabilities capabilities() [public]
+  method ai.doctruth.ParserHealth doctor() [public]
+  method ai.doctruth.TrustDocument parse(ai.doctruth.ParserRequest) [public]
+
 TYPE class ai.doctruth.PdfDocumentParser [public final]
   method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
   method ai.doctruth.ParsedDocument parse(java.nio.file.Path, ai.doctruth.spi.OcrEngine) [public static]
+
+TYPE class ai.doctruth.PdfPageImageRenderer [public final]
+  method java.util.List writePngs(java.nio.file.Path, java.nio.file.Path) [public static]
 
 TYPE record ai.doctruth.PriorityTruncate [public final]
   record-components java.util.List prioritySectionPatterns, int maxChars, ai.doctruth.OverBudgetPolicy onOverBudget
@@ -319,6 +576,13 @@ TYPE record ai.doctruth.ProviderUsage [public final]
   method java.lang.String modelVersion() [public]
   method java.lang.String toString() [public final]
 
+TYPE class ai.doctruth.SidecarParserBackend [public final]
+  ctor SidecarParserBackend(java.nio.file.Path)
+  ctor SidecarParserBackend(java.nio.file.Path, java.time.Duration)
+  method ai.doctruth.ParserCapabilities capabilities() [public]
+  method ai.doctruth.ParserHealth doctor() [public]
+  method ai.doctruth.TrustDocument parse(ai.doctruth.ParserRequest) [public]
+
 TYPE record ai.doctruth.SlidingWindow [public final]
   record-components int windowChars, int overlapChars
   ctor SlidingWindow(int, int)
@@ -341,14 +605,36 @@ TYPE record ai.doctruth.SourceLocation [public final]
   method int pageStart() [public]
   method java.lang.String toString() [public final]
 
+TYPE record ai.doctruth.TableCellRegion [public final]
+  record-components int page, ai.doctruth.TrustCellRange rowRange, ai.doctruth.TrustCellRange columnRange, ai.doctruth.BoundingBox boundingBox
+  ctor TableCellRegion(int, ai.doctruth.TrustCellRange, ai.doctruth.TrustCellRange, ai.doctruth.BoundingBox)
+  ctor TableCellRegion(int, int, ai.doctruth.BoundingBox)
+  ctor TableCellRegion(int, int, int, int, ai.doctruth.BoundingBox)
+  ctor TableCellRegion(int, int, int, int, int, ai.doctruth.BoundingBox)
+  method ai.doctruth.BoundingBox boundingBox() [public]
+  method ai.doctruth.TrustCellRange columnRange() [public]
+  method ai.doctruth.TrustCellRange rowRange() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int column() [public]
+  method int columnEnd() [public]
+  method int hashCode() [public final]
+  method int page() [public]
+  method int row() [public]
+  method int rowEnd() [public]
+  method java.lang.String toString() [public final]
+
 TYPE record ai.doctruth.TableSection [public final]
-  record-components java.util.List rows, ai.doctruth.SourceLocation location
+  record-components java.util.List rows, ai.doctruth.SourceLocation location, java.util.Optional boundingBox, java.util.List cellRegions
   ctor TableSection(java.util.List, ai.doctruth.SourceLocation)
+  ctor TableSection(java.util.List, ai.doctruth.SourceLocation, java.util.Optional)
+  ctor TableSection(java.util.List, ai.doctruth.SourceLocation, java.util.Optional, java.util.List)
   method ai.doctruth.SourceLocation location() [public]
   method boolean equals(java.lang.Object) [public final]
   method int hashCode() [public final]
   method java.lang.String toString() [public final]
+  method java.util.List cellRegions() [public]
   method java.util.List rows() [public]
+  method java.util.Optional boundingBox() [public]
 
 TYPE record ai.doctruth.TextSection [public final]
   record-components java.lang.String text, ai.doctruth.SourceLocation location, ai.doctruth.BlockKind kind, java.util.Optional boundingBox
@@ -360,6 +646,216 @@ TYPE record ai.doctruth.TextSection [public final]
   method boolean equals(java.lang.Object) [public final]
   method int hashCode() [public final]
   method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional boundingBox() [public]
+
+TYPE class ai.doctruth.TrustAuditVerifier [public final]
+  method void verify(ai.doctruth.TrustDocument, java.lang.String) [public static]
+
+TYPE record ai.doctruth.TrustCellRange [public final]
+  record-components int start, int end
+  ctor TrustCellRange(int, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int end() [public]
+  method int hashCode() [public final]
+  method int start() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.TrustDocument [public final]
+  record-components java.lang.String docId, ai.doctruth.TrustDocumentSource source, ai.doctruth.TrustDocumentBody body, ai.doctruth.ParserRun parserRun, ai.doctruth.AuditGradeStatus auditGradeStatus
+  ctor TrustDocument(java.lang.String, ai.doctruth.TrustDocumentSource, ai.doctruth.TrustDocumentBody, ai.doctruth.ParserRun, ai.doctruth.AuditGradeStatus)
+  method ai.doctruth.AuditGradeStatus auditGradeStatus() [public]
+  method ai.doctruth.ParserRun parserRun() [public]
+  method ai.doctruth.TrustDocument fromJsonFull(java.lang.String) [public static]
+  method ai.doctruth.TrustDocument fromParsed(ai.doctruth.ParsedDocument, java.lang.String, ai.doctruth.ParserRun) [public static]
+  method ai.doctruth.TrustDocument withEvaluatedAuditGrade() [public]
+  method ai.doctruth.TrustDocumentBody body() [public]
+  method ai.doctruth.TrustDocumentSource source() [public]
+  method ai.doctruth.TrustRenderedDocument toCompactLlmWithSourceMap() [public]
+  method ai.doctruth.TrustRenderedDocument toMarkdownWithSourceMap() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String canonicalHash() [public]
+  method java.lang.String docId() [public]
+  method java.lang.String toAuditJson() [public]
+  method java.lang.String toAuditJson(ai.doctruth.spi.SignatureProvider) [public]
+  method java.lang.String toCompactLlm() [public]
+  method java.lang.String toHtmlReview() [public]
+  method java.lang.String toJsonEvidence() [public]
+  method java.lang.String toJsonFull() [public]
+  method java.lang.String toJsonLines() [public]
+  method java.lang.String toMarkdownAnchored() [public]
+  method java.lang.String toMarkdownClean() [public]
+  method java.lang.String toMarkdownReview() [public]
+  method java.lang.String toPlainText() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List toChunks(int) [public]
+  method void toAuditJson(java.nio.file.Path, ai.doctruth.spi.SignatureProvider) [public]
+  method void writeAuditJson(java.io.Writer) [public]
+  method void writeCompactLlm(java.io.Writer) [public]
+  method void writeCompactLlmSourceMap(java.io.Writer) [public]
+  method void writeHtmlReview(java.io.Writer) [public]
+  method void writeJsonEvidence(java.io.Writer) [public]
+  method void writeJsonFull(java.io.Writer) [public]
+  method void writeJsonLines(java.io.Writer) [public]
+  method void writeMarkdownAnchored(java.io.Writer) [public]
+  method void writeMarkdownClean(java.io.Writer) [public]
+  method void writeMarkdownReview(java.io.Writer) [public]
+  method void writeMarkdownSourceMap(java.io.Writer) [public]
+  method void writePlainText(java.io.Writer) [public]
+
+TYPE record ai.doctruth.TrustDocumentBody [public final]
+  record-components java.util.List pages, java.util.List units, java.util.List tables
+  ctor TrustDocumentBody(java.util.List, java.util.List, java.util.List)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.List pages() [public]
+  method java.util.List tables() [public]
+  method java.util.List units() [public]
+
+TYPE record ai.doctruth.TrustDocumentChunk [public final]
+  record-components java.lang.String chunkId, java.lang.String text, java.util.List unitIds, java.util.List evidenceSpanIds
+  ctor TrustDocumentChunk(java.lang.String, java.lang.String, java.util.List, java.util.List)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String chunkId() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List evidenceSpanIds() [public]
+  method java.util.List unitIds() [public]
+
+TYPE class ai.doctruth.TrustDocumentParser [public final]
+  method ai.doctruth.TrustDocument parse(byte[], java.lang.String) [public static]
+  method ai.doctruth.TrustDocument parse(byte[], java.lang.String, ai.doctruth.ParserPreset) [public static]
+  method ai.doctruth.TrustDocument parse(java.io.InputStream, java.lang.String) [public static]
+  method ai.doctruth.TrustDocument parse(java.io.InputStream, java.lang.String, ai.doctruth.ParserPreset) [public static]
+  method ai.doctruth.TrustDocument parse(java.nio.file.Path) [public static]
+  method ai.doctruth.TrustDocument parse(java.nio.file.Path, ai.doctruth.ParserPreset) [public static]
+  method java.util.List parseBatch(java.util.List) [public static]
+  method java.util.List parseBatch(java.util.List, ai.doctruth.ParserPreset) [public static]
+
+TYPE class ai.doctruth.TrustDocumentParserBuilder [public final]
+  method ai.doctruth.TrustDocument parse() [public]
+  method ai.doctruth.TrustDocumentParserBuilder backend(ai.doctruth.ParserBackendMode) [public]
+  method ai.doctruth.TrustDocumentParserBuilder runtime(java.nio.file.Path) [public]
+  method ai.doctruth.TrustDocumentParserBuilder withParser(ai.doctruth.ParserPreset) [public]
+
+TYPE record ai.doctruth.TrustDocumentSource [public final]
+  record-components java.lang.String sourceFilename, java.lang.String sourceHash, ai.doctruth.DocumentMetadata metadata
+  ctor TrustDocumentSource(java.lang.String, java.lang.String, ai.doctruth.DocumentMetadata)
+  method ai.doctruth.DocumentMetadata metadata() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String sourceFilename() [public]
+  method java.lang.String sourceHash() [public]
+  method java.lang.String toString() [public final]
+
+TYPE class ai.doctruth.TrustHtml [public final]
+  method java.lang.String toMarkdownPassthrough(java.lang.String) [public static]
+
+TYPE record ai.doctruth.TrustPage [public final]
+  record-components int pageNumber, double width, double height, boolean textLayerAvailable, java.lang.String imageHash
+  ctor TrustPage(int, double, double, boolean, java.lang.String)
+  method boolean equals(java.lang.Object) [public final]
+  method boolean textLayerAvailable() [public]
+  method double height() [public]
+  method double width() [public]
+  method int hashCode() [public final]
+  method int pageNumber() [public]
+  method java.lang.String imageHash() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.TrustRenderedDocument [public final]
+  record-components java.lang.String format, java.lang.String text, java.lang.String sourceHash, java.lang.String contentHash, java.util.List sourceMap
+  ctor TrustRenderedDocument(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String contentHash() [public]
+  method java.lang.String format() [public]
+  method java.lang.String sourceHash() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List sourceMap() [public]
+
+TYPE record ai.doctruth.TrustSourceMapEntry [public final]
+  record-components int startOffset, int endOffset, java.lang.String unitId, java.util.List evidenceSpanIds
+  ctor TrustSourceMapEntry(int, int, java.lang.String, java.util.List)
+  method boolean equals(java.lang.Object) [public final]
+  method int endOffset() [public]
+  method int hashCode() [public final]
+  method int startOffset() [public]
+  method java.lang.String toString() [public final]
+  method java.lang.String unitId() [public]
+  method java.util.List evidenceSpanIds() [public]
+
+TYPE record ai.doctruth.TrustTable [public final]
+  record-components java.lang.String tableId, int pageNumber, java.util.Optional boundingBox, ai.doctruth.Confidence confidence, java.util.List cells
+  ctor TrustTable(java.lang.String, int, java.util.Optional, ai.doctruth.Confidence, java.util.List)
+  method ai.doctruth.Confidence confidence() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int pageNumber() [public]
+  method java.lang.String tableId() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List cells() [public]
+  method java.util.Optional boundingBox() [public]
+
+TYPE record ai.doctruth.TrustTableCell [public final]
+  record-components java.lang.String cellId, ai.doctruth.TrustCellRange rowRange, ai.doctruth.TrustCellRange columnRange, java.util.Optional boundingBox, java.lang.String text
+  ctor TrustTableCell(java.lang.String, ai.doctruth.TrustCellRange, ai.doctruth.TrustCellRange, java.util.Optional, java.lang.String)
+  method ai.doctruth.TrustCellRange columnRange() [public]
+  method ai.doctruth.TrustCellRange rowRange() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String cellId() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.util.Optional boundingBox() [public]
+
+TYPE record ai.doctruth.TrustUnit [public final]
+  record-components java.lang.String unitId, ai.doctruth.TrustUnitKind kind, ai.doctruth.TrustUnitLocation location, ai.doctruth.TrustUnitContent content, ai.doctruth.TrustUnitEvidence evidence
+  ctor TrustUnit(java.lang.String, ai.doctruth.TrustUnitKind, ai.doctruth.TrustUnitLocation, ai.doctruth.TrustUnitContent, ai.doctruth.TrustUnitEvidence)
+  method ai.doctruth.TrustUnitContent content() [public]
+  method ai.doctruth.TrustUnitEvidence evidence() [public]
+  method ai.doctruth.TrustUnitKind kind() [public]
+  method ai.doctruth.TrustUnitLocation location() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.lang.String unitId() [public]
+
+TYPE record ai.doctruth.TrustUnitContent [public final]
+  record-components java.lang.String text, java.lang.String sourceObjectId
+  ctor TrustUnitContent(java.lang.String, java.lang.String)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String sourceObjectId() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.TrustUnitEvidence [public final]
+  record-components java.util.List evidenceSpanIds, ai.doctruth.Confidence confidence, java.util.List warnings
+  ctor TrustUnitEvidence(java.util.List, ai.doctruth.Confidence, java.util.List)
+  method ai.doctruth.Confidence confidence() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.List evidenceSpanIds() [public]
+  method java.util.List warnings() [public]
+
+TYPE enum ai.doctruth.TrustUnitKind [public final]
+  enum-constants TEXT_BLOCK, LINE_SPAN, TABLE_CELL, FIGURE_CAPTION, KEY_VALUE_REGION, OCR_REGION
+  method ai.doctruth.TrustUnitKind valueOf(java.lang.String) [public static]
+  method ai.doctruth.TrustUnitKind[] values() [public static]
+
+TYPE record ai.doctruth.TrustUnitLocation [public final]
+  record-components int page, java.util.Optional boundingBox, int readingOrder
+  ctor TrustUnitLocation(int, java.util.Optional, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int page() [public]
+  method int readingOrder() [public]
   method java.lang.String toString() [public final]
   method java.util.Optional boundingBox() [public]
 
@@ -379,6 +875,11 @@ TYPE record ai.doctruth.spi.AuditEvent [public final]
 TYPE interface ai.doctruth.spi.AuditEventListener [public abstract interface]
   method void onEvent(ai.doctruth.spi.AuditEvent) [public abstract]
 
+TYPE class ai.doctruth.spi.LocalOcrWorkerEngine [public final]
+  ctor LocalOcrWorkerEngine(java.lang.String)
+  ctor LocalOcrWorkerEngine(java.lang.String, java.lang.String, java.lang.String, long)
+  method ai.doctruth.spi.OcrPageResult ocr(java.awt.image.BufferedImage, int) [public]
+
 TYPE record ai.doctruth.spi.OcrBox [public final]
   record-components int x, int y, int width, int height
   ctor OcrBox(int, int, int, int)
@@ -392,6 +893,11 @@ TYPE record ai.doctruth.spi.OcrBox [public final]
 
 TYPE interface ai.doctruth.spi.OcrEngine [public abstract interface]
   method ai.doctruth.spi.OcrPageResult ocr(java.awt.image.BufferedImage, int) [public abstract]
+
+TYPE class ai.doctruth.spi.OcrEngines [public final]
+  method ai.doctruth.spi.OcrEngine defaultLocal() [public static]
+  method ai.doctruth.spi.OcrEngine noop() [public static]
+  method ai.doctruth.spi.OcrEngine worker(java.lang.String) [public static]
 
 TYPE record ai.doctruth.spi.OcrPageResult [public final]
   record-components java.lang.String text, double confidence, java.util.List regions, int pageNumber

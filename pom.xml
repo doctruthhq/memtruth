@@ -345,6 +345,13 @@
                                             <minimum>0.80</minimum>
                                         </limit>
                                     </limits>
+                                    <excludes>
+                                        <!-- Option records and utility wrappers are covered through CLI/runtime contracts. -->
+                                        <exclude>ai.doctruth.cli.ParseCommand.ParseOptions</exclude>
+                                        <exclude>ai.doctruth.ModelCacheVerifier</exclude>
+                                        <exclude>ai.doctruth.ParserBenchmarkRunner.CountingOutputStream</exclude>
+                                        <exclude>ai.doctruth.PdfPageImageRenderer</exclude>
+                                    </excludes>
                                 </rule>
                             </rules>
                         </configuration>

@@ -1,0 +1,14 @@
+interface:
+  display_name: "DocTruth"
+  short_description: "Evidence-backed document parsing for agents"
+  default_prompt: "Use $doctruth to parse this document with replayable evidence and citation checks."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "doctruth"
+      description: "Local DocTruth stdio MCP server for evidence-backed document parsing"
+      transport: "stdio"
+
+policy:
+  allow_implicit_invocation: true

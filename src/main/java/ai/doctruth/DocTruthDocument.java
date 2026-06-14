@@ -25,4 +25,8 @@ public final class DocTruthDocument {
     public DocumentJsonExtractionBuilder extractJson(String prompt, JsonSchema schema) {
         return new DocumentJsonExtractionBuilder(DocTruth.from(provider).extractJson(prompt, schema), document);
     }
+
+    public TrustDocumentParserBuilder withParser(ParserPreset preset) {
+        return new TrustDocumentParserBuilder(document, preset);
+    }
 }

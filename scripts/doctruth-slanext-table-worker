@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""DocTruth JSON worker adapter for local PaddleOCR SLANeXT table runtimes."""
+
+import base64
+import json
+import pathlib
+import subprocess
+import sys
+import tempfile
+import time
+
+
+def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--doctor":
+        return doctor()
+    started = time.perf_counter()
+    try:
+        request = json.loads(sys.stdin.read())
+    except Exception as exc:
+        return emit_failure("worker_protocol_error", f"invalid request JSON: {exc}")
+    try:
+        image = page_image(request)
+        raw = run_slanext(image)
+        document = trust_document(request, normalize_cells(raw), started)
+    except Exception as exc:
+        return emit_failure("slanext_failed", str(exc))
+    print(json.dumps({"ok": True, "document": document, "metrics": metrics(started)}, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+def doctor() -> int:
+    try:
+        import paddleocr  # type: ignore
+    except Exception as exc:
+        return emit_doctor(False, "paddleocr_unavailable", str(exc))
+    engine = "paddleocr"
+    version = str(getattr(paddleocr, "__version__", ""))
+    if not hasattr(paddleocr, "TableStructureRecognition") and not hasattr(paddleocr, "PaddleOCR"):
+        return emit_doctor(False, "slanext_unavailable", "PaddleOCR table recognition API not found", engine, version)
+    return emit_doctor(True, "ready", "paddleocr table runtime importable", engine, version)
+
+
+def page_image(request: dict) -> pathlib.Path:
+    source = pathlib.Path(str(request.get("sourcePath") or ""))
+    if source.is_file() and source.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+        return source
+    if source.is_file() and source.suffix.lower() == ".pdf":
+        rendered = render_pdf(source)
+        if rendered is not None:
+            return rendered
+    encoded = str(request.get("bytesBase64") or "")
+    suffix = ".pdf" if str(request.get("sourceFilename") or "").lower().endswith(".pdf") else ".png"
+    handle = tempfile.NamedTemporaryFile(prefix="doctruth-slanext-source-", suffix=suffix, delete=False)
+    with handle:
+        handle.write(base64.b64decode(encoded))
+    source = pathlib.Path(handle.name)
+    if source.suffix.lower() == ".pdf":
+        rendered = render_pdf(source)
+        if rendered is not None:
+            return rendered
+    return source
+
+
+def render_pdf(source: pathlib.Path) -> pathlib.Path | None:
+    with tempfile.TemporaryDirectory(prefix="doctruth-slanext-page-") as tmp:
+        prefix = pathlib.Path(tmp) / "page"
+        try:
+            subprocess.run(
+                ["pdftoppm", "-singlefile", "-png", "-r", "144", str(source), str(prefix)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            return None
+        rendered = prefix.with_suffix(".png")
+        if not rendered.exists():
+            return None
+        stable = pathlib.Path(tempfile.mkstemp(prefix="doctruth-slanext-page-", suffix=".png")[1])
+        stable.write_bytes(rendered.read_bytes())
+        return stable
+
+
+def run_slanext(image: pathlib.Path):
+    import paddleocr  # type: ignore
+    model_name = "SLANeXt_wired"
+    if hasattr(paddleocr, "TableStructureRecognition"):
+        predictor = paddleocr.TableStructureRecognition(model_name=model_name)
+        result = predictor.predict(str(image))
+        return first_result(result)
+    ocr = paddleocr.PaddleOCR()
+    result = ocr.ocr(str(image))
+    return first_result(result)
+
+
+def first_result(result):
+    if hasattr(result, "json"):
+        result = result.json
+    if isinstance(result, (list, tuple)):
+        return result[0] if result else {}
+    return result
+
+
+def normalize_cells(result) -> list[dict]:
+    if hasattr(result, "to_dict"):
+        result = result.to_dict()
+    if isinstance(result, dict) and isinstance(result.get("res"), dict):
+        result = result["res"]
+    if not isinstance(result, dict):
+        return []
+    structured = cells_from_structure(result)
+    if structured:
+        return structured
+    cells = result.get("cells") or result.get("table_cells") or result.get("cell_bbox") or []
+    if isinstance(cells, dict):
+        cells = cells.get("cells") or []
+    normalized = []
+    for index, item in enumerate(cells):
+        cell = normalize_cell(index, item)
+        if cell is not None:
+            normalized.append(cell)
+    return normalized
+
+
+def cells_from_structure(result: dict) -> list[dict]:
+    boxes = result.get("bbox") or []
+    structure = result.get("structure") or []
+    if not isinstance(boxes, list) or not isinstance(structure, list):
+        return []
+    positions = table_positions(structure)
+    normalized = []
+    for index, box in enumerate(boxes):
+        if index >= len(positions):
+            break
+        bbox = bbox_from_any(box)
+        if bbox is None:
+            continue
+        row, column = positions[index]
+        normalized.append({
+            "text": "",
+            "row": row,
+            "column": column,
+            "bbox": bbox,
+            "confidence": score(result.get("structure_score", 0.9)),
+        })
+    return normalized
+
+
+def table_positions(structure: list) -> list[tuple[int, int]]:
+    positions = []
+    row = -1
+    column = 0
+    for token in structure:
+        value = str(token).strip().lower()
+        if value.startswith("<tr"):
+            row += 1
+            column = 0
+        elif value.startswith("<td"):
+            positions.append((max(0, row), column))
+            column += 1
+    return positions
+
+
+def normalize_cell(index: int, item) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    box = item.get("bbox") or item.get("box") or item.get("cell_box")
+    bbox = bbox_from_any(box)
+    if bbox is None:
+        return None
+    row = int(item.get("row") if item.get("row") is not None else item.get("row_start", index))
+    column = int(item.get("column") if item.get("column") is not None else item.get("col_start", 0))
+    return {
+        "text": str(item.get("text") or item.get("content") or ""),
+        "row": max(0, row),
+        "column": max(0, column),
+        "bbox": bbox,
+        "confidence": score(item.get("confidence", item.get("score", 0.9))),
+    }
+
+
+def bbox_from_any(value):
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, dict) and {"x0", "y0", "x1", "y1"}.issubset(value):
+        return {"x0": float(value["x0"]), "y0": float(value["y0"]), "x1": float(value["x1"]), "y1": float(value["y1"])}
+    if isinstance(value, (list, tuple)) and len(value) == 4 and all(isinstance(item, (int, float)) for item in value):
+        x0, y0, x1, y1 = [float(item) for item in value]
+        return {"x0": x0, "y0": y0, "x1": x1, "y1": y1}
+    if isinstance(value, (list, tuple)) and len(value) >= 8 and len(value) % 2 == 0:
+        if all(isinstance(item, (int, float)) for item in value):
+            xs = [float(value[index]) for index in range(0, len(value), 2)]
+            ys = [float(value[index]) for index in range(1, len(value), 2)]
+            return {"x0": min(xs), "y0": min(ys), "x1": max(xs), "y1": max(ys)}
+    if isinstance(value, (list, tuple)):
+        points = [point for point in value if isinstance(point, (list, tuple)) and len(point) >= 2]
+        if points:
+            xs = [float(point[0]) for point in points]
+            ys = [float(point[1]) for point in points]
+            return {"x0": min(xs), "y0": min(ys), "x1": max(xs), "y1": max(ys)}
+    return None
+
+
+def trust_document(request: dict, cells: list[dict], started: float) -> dict:
+    source_name = pathlib.Path(request.get("sourcePath") or request.get("sourceFilename") or "source.pdf").name
+    source_hash = str(request.get("sourceHash") or "sha256:unknown")
+    model_id = model_identity(request)
+    units = []
+    table_cells = []
+    for index, cell in enumerate(cells, start=1):
+        cell_id = f"cell-{index:04d}"
+        bbox = normalize_bbox(cell["bbox"])
+        text = cell["text"] or f"cell {cell['row'] + 1},{cell['column'] + 1}"
+        table_cells.append({
+            "cellId": cell_id,
+            "rowRange": {"start": cell["row"], "end": cell["row"]},
+            "columnRange": {"start": cell["column"], "end": cell["column"]},
+            "boundingBox": bbox,
+            "text": text,
+        })
+        units.append(unit(index, cell_id, text, bbox, model_id, cell["confidence"]))
+    warnings = [] if cells else [warning("table_structure_low_confidence", "SLANeXT returned no table cells")]
+    status = "NOT_AUDIT_GRADE" if warnings else "AUDIT_GRADE"
+    return {
+        "docId": source_hash,
+        "source": {"sourceFilename": source_name, "sourceHash": source_hash,
+                   "metadata": {"sourceFilename": source_name, "pageCount": 1}},
+        "body": {
+            "pages": [{"pageNumber": 1, "width": 612, "height": 792,
+                       "textLayerAvailable": True, "imageHash": "sha256:slanext-page"}],
+            "units": units,
+            "tables": [{
+                "tableId": "table-0001",
+                "pageNumber": 1,
+                "boundingBox": union_bbox([cell["boundingBox"] for cell in table_cells]) if table_cells else None,
+                "confidence": {"score": min((cell["confidence"] for cell in cells), default=0.0),
+                               "rationale": "paddleocr slanext table"},
+                "cells": table_cells,
+            }] if table_cells else [],
+        },
+        "parserRun": {"parserVersion": "1.0.0", "preset": request.get("preset") or "table-server",
+                      "backend": "pdfbox+model-worker", "models": [model_id], "warnings": warnings},
+        "auditGradeStatus": status,
+    }
+
+
+def unit(index: int, cell_id: str, text: str, bbox: dict, model_id: str, confidence: float) -> dict:
+    return {
+        "unitId": f"unit-{index:04d}",
+        "kind": "TABLE_CELL",
+        "page": 1,
+        "text": text,
+        "evidenceSpanIds": [f"span-{index:04d}"],
+        "location": {"page": 1, "readingOrder": index, "boundingBox": bbox},
+        "sourceObjectId": f"paddleocr:{model_id}#{cell_id}",
+        "confidence": {"score": confidence, "rationale": "paddleocr slanext table cell"},
+        "warnings": [],
+    }
+
+
+def model_identity(request: dict) -> str:
+    models = request.get("models")
+    if isinstance(models, list) and models:
+        model = models[0]
+        return f"{model.get('name', 'slanext')}:{model.get('version', 'local')}"
+    return "slanext:local"
+
+
+def normalize_bbox(box: dict) -> dict:
+    return {key: round(max(0.0, min(1000.0, float(value))), 3) for key, value in box.items()}
+
+
+def union_bbox(boxes: list[dict]) -> dict:
+    return {
+        "x0": min(box["x0"] for box in boxes),
+        "y0": min(box["y0"] for box in boxes),
+        "x1": max(box["x1"] for box in boxes),
+        "y1": max(box["y1"] for box in boxes),
+    }
+
+
+def score(value) -> float:
+    try:
+        return round(max(0.0, min(1.0, float(value))), 6)
+    except Exception:
+        return 0.0
+
+
+def warning(code: str, message: str) -> dict:
+    return {"code": code, "severity": "SEVERE", "message": message}
+
+
+def metrics(started: float) -> dict:
+    return {"wallMs": round((time.perf_counter() - started) * 1000.0, 3), "runtime": "paddleocr-slanext"}
+
+
+def emit_failure(code: str, message: str) -> int:
+    print(json.dumps({"ok": False, "code": code, "message": message}, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+def emit_doctor(ok: bool, code: str, message: str, engine: str = "paddleocr", version: str = "") -> int:
+    print(json.dumps({
+        "ok": ok,
+        "code": code,
+        "runtime": "paddleocr-slanext",
+        "engine": engine,
+        "version": version,
+        "message": message,
+        "loadedModels": [],
+        "rssMb": 0,
+        "peakMemoryMb": 0,
+    }, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

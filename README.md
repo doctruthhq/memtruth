@@ -1,4 +1,4 @@
-# DocTruth - Auditable LLM Extraction for Java
+# DocTruth - Rust-Core Document Evidence Runtime
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -14,9 +14,13 @@
 [![CI](https://github.com/doctruthhq/DocTruth/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/DocTruth/actions)
 [![Maven Central](https://img.shields.io/maven-central/v/ai.doctruth/doctruth-java.svg?label=Maven%20Central)](#installation)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
+[![Rust Core](https://img.shields.io/badge/parser%20core-Rust-b7410e?logo=rust)](runtime/doctruth-runtime)
+[![Java Wrapper](https://img.shields.io/badge/Java%20wrapper-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**Auditable LLM extraction for Java.** DocTruth turns PDFs, DOCX, XLSX, and CSV files into schema-bound structured output with field-level source citations, optional PDF bounding boxes, confidence scores, provenance, and PROV-O audit JSON.
+**DocTruth is a Rust-core document evidence runtime with Java SDK/CLI wrappers.**
+It turns PDFs and other documents into schema-bound structured output with
+field-level source citations, optional PDF bounding boxes, confidence scores,
+provenance, and PROV-O audit JSON.
 
 DocTruth is for teams that need to answer one question reliably:
 
@@ -24,7 +28,14 @@ DocTruth is for teams that need to answer one question reliably:
 
 The core boundary is simple: source document in, validated structured output plus evidence trail out.
 
-It is framework-agnostic and fits into plain Java, Spring Boot, LangChain4j, Spring AI, Quarkus, Micronaut, or any Java service that already calls OpenAI, Anthropic, Gemini, DeepSeek, or an OpenAI-compatible model endpoint.
+The parser/runtime core lives in [`runtime/doctruth-runtime`](runtime/doctruth-runtime).
+Java is the integration wrapper: SDK, CLI, API compatibility, packaging, and
+enterprise lifecycle. Java/PDFBox is legacy/oracle only and is not the default
+parser path.
+
+DocTruth is framework-agnostic and fits into plain Java, Spring Boot,
+LangChain4j, Spring AI, Quarkus, Micronaut, or any service that already calls
+OpenAI, Anthropic, Gemini, DeepSeek, or an OpenAI-compatible model endpoint.
 
 ```text
 contract.pdf
@@ -36,7 +47,15 @@ contract.pdf
 
 ## Installation
 
-Requires Java 25+. Use in a Maven project:
+The main parser path requires the Rust runtime. Release tarballs and the
+installed CLI include `doctruth-runtime` and set `DOCTRUTH_RUNTIME_COMMAND`
+automatically. Direct Maven/JAR usage should set it explicitly:
+
+```bash
+export DOCTRUTH_RUNTIME_COMMAND=/path/to/doctruth-runtime
+```
+
+The Java wrapper requires Java 25+. Use in a Maven project:
 
 ```xml
 <dependency>
@@ -73,6 +92,19 @@ import java.time.LocalDate;
 
 record Contract(String partyA, String partyB, LocalDate effectiveDate, BigDecimal totalValue) {}
 
+var trustDoc = DocTruth.withOpenAi(System.getenv("OPENAI_API_KEY"))
+        .parsePdf(Path.of("contract.pdf"))
+        .withParser(ParserPreset.STANDARD)
+        .parse();
+
+System.out.println(trustDoc.toMarkdownClean());
+System.out.println(trustDoc.toJsonEvidence());
+```
+
+The legacy extraction wrapper can still bind a parsed document to an LLM schema
+while the TrustDocument-native extraction API converges:
+
+```java
 var result = DocTruth.withOpenAi(System.getenv("OPENAI_API_KEY"))
         .fromPdf(Path.of("contract.pdf"))
         .extract("Extract the contract terms", Contract.class)
@@ -101,9 +133,11 @@ The CLI is for first-run inspection, parser debugging, schema checks, and CI
 smoke tests. Parser and schema inspection do not require an LLM key.
 
 ```bash
+cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --release
 mvn package -DskipTests
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf --bboxes
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf --json -o parsed.json
+export DOCTRUTH_RUNTIME_COMMAND="$PWD/runtime/doctruth-runtime/target/release/doctruth-runtime"
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf --format json -o trust-document.json
 java -jar target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
 ```
 
@@ -125,8 +159,8 @@ doctruth version
   <img src="docs/assets/capabilities.png" alt="DocTruth capabilities: parse, assemble context, extract with LLM providers, validate schema, attach evidence, and export audit JSON">
 </p>
 
-- Parses PDF, DOCX, XLSX, and CSV into sections with source locations; PDF text sections include page-normalized bounding boxes when layout data is available.
-- Extracts Java records or JSON Schema-bound objects through LLM providers.
+- Parses documents through the Rust runtime into source-grounded evidence units; PDF text sections include page-normalized bounding boxes when layout data is available.
+- Extracts Java records or JSON Schema-bound objects through LLM providers via the Java wrapper.
 - Validates structured output locally and retries repairable failures.
 - Matches extracted fields back to exact source quotes.
 - Returns per-field `Citation`, including source location and optional PDF bounding box, plus `Confidence` and `Provenance`.
@@ -194,7 +228,8 @@ var local = DocTruth.withProvider(LlmProviders.openAiCompatible(
 
 ```bash
 doctruth init
-doctruth parse contract.pdf --bboxes
+doctruth parse contract.pdf
+doctruth parse contract.pdf --format json -o trust-document.json
 doctruth ingest-audit ./resumes --json -o ingest-audit.json
 doctruth schema contract.schema.json
 doctruth doctor
@@ -223,7 +258,7 @@ doctruth audit .doctruth/runs/<run-id>/audit.json
   - [OSS PMF gap](docs/oss-pmf-gap.md)
   - [Release process](docs/release.md)
 - Use cases:
-  - [Auditable LLM extraction for Java](docs/use-cases/auditable-llm-extraction-java.md)
+  - [Auditable LLM extraction with the Java wrapper](docs/use-cases/auditable-llm-extraction-java.md)
   - [Source citations for LLM output](docs/use-cases/source-citations-for-llm-output.md)
   - [PDF extraction with bounding boxes](docs/use-cases/pdf-extraction-with-bounding-boxes.md)
 - [Contributing](CONTRIBUTING.md)

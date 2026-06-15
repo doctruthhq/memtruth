@@ -78,6 +78,8 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
 
 pub fn doctor_json() -> Value {
     let memory = process_memory_usage();
+    let models = model_doctor_json();
+    let capabilities = runtime_capabilities_json(&models);
     json!({
         "runtime": RUNTIME,
         "protocol_version": PROTOCOL_VERSION,
@@ -86,13 +88,9 @@ pub fn doctor_json() -> Value {
         "peakMemoryMb": memory.peak_memory_mb,
         "parser_backends": ["rust-sidecar"],
         "pdfBackend": pdf_backend_json(),
-        "model_execution": "not-enabled",
-        "capabilities": {
-            "parse_pdf": true,
-            "layout_models": false,
-            "table_models": false,
-            "ocr_models": false
-        }
+        "model_execution": model_execution_status(&models),
+        "models": models,
+        "capabilities": capabilities
     })
 }
 
@@ -103,6 +101,68 @@ fn pdf_backend_json() -> Value {
         "status": PDF_BACKEND_STATUS,
         "features": ["legacy-crypto", "rendering"]
     })
+}
+
+fn runtime_capabilities_json(models: &Value) -> Value {
+    json!({
+        "parse_pdf": true,
+        "native_text": {
+            "available": true,
+            "backend": "pdf_oxide"
+        },
+        "document_structure": {
+            "available": true,
+            "backend": "pdf_oxide-column-aware",
+            "slots": ["structure-tree", "xy-cut"]
+        },
+        "layout": capability_slot_json(models, "standard", "layout-detection"),
+        "tables": table_capability_json(models),
+        "ocr": capability_slot_json(models, "ocr", "ocr")
+    })
+}
+
+fn table_capability_json(models: &Value) -> Value {
+    let lite = capability_slot_json(models, "table-lite", "table-structure-recognition");
+    let server = capability_slot_json(models, "table-server", "table-structure-recognition");
+    json!({
+        "available": lite["available"].as_bool().unwrap_or(false)
+            || server["available"].as_bool().unwrap_or(false),
+        "slots": ["table-lite", "table-server"],
+        "tableLite": lite,
+        "tableServer": server
+    })
+}
+
+fn capability_slot_json(models: &Value, preset: &str, task: &str) -> Value {
+    let artifacts = models
+        .pointer(&format!("/presets/{preset}/models"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let matching = artifacts
+        .iter()
+        .filter(|model| model.get("task").and_then(Value::as_str) == Some(task))
+        .cloned()
+        .collect::<Vec<_>>();
+    json!({
+        "available": !matching.is_empty()
+            && matching.iter().all(|model| model.get("cacheStatus").and_then(Value::as_str) == Some("READY")),
+        "preset": preset,
+        "task": task,
+        "models": matching
+    })
+}
+
+fn model_execution_status(models: &Value) -> &'static str {
+    if models
+        .pointer("/worker/configured")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        "local-worker"
+    } else {
+        "not-enabled"
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -480,7 +540,133 @@ fn model_cache_directory() -> String {
         .unwrap_or_else(|| ".doctruth/models".to_string())
 }
 
+fn model_doctor_json() -> Value {
+    let cache_dir = model_cache_directory();
+    let manifest = model_manifest_doctor_json();
+    let presets = ["lite", "standard", "table-lite", "table-server", "ocr"]
+        .iter()
+        .map(|preset| {
+            (
+                (*preset).to_string(),
+                preset_doctor_json(preset, &cache_dir),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    json!({
+        "cache": {
+            "directory": cache_dir,
+            "exists": Path::new(&cache_dir).is_dir()
+        },
+        "manifest": manifest,
+        "worker": model_worker_doctor_json(),
+        "presets": presets
+    })
+}
+
+fn model_manifest_doctor_json() -> Value {
+    match configured_model_manifest_path() {
+        Some(path) => {
+            let valid = read_json_file(Path::new(&path), "MODEL_MANIFEST_INVALID").is_ok();
+            json!({
+                "path": path,
+                "configured": true,
+                "valid": valid
+            })
+        }
+        None => json!({
+            "path": Value::Null,
+            "configured": false,
+            "valid": false
+        }),
+    }
+}
+
+fn preset_doctor_json(preset: &str, cache_dir: &str) -> Value {
+    let required_models = required_model_descriptors(preset);
+    let models = worker_model_artifacts_with_cache_dir(preset, &required_models, cache_dir);
+    let all_ready = !models.is_empty()
+        && models
+            .iter()
+            .all(|model| model.get("cacheStatus").and_then(Value::as_str) == Some("READY"));
+    json!({
+        "required": !required_models.is_empty(),
+        "allReady": all_ready || required_models.is_empty(),
+        "models": models
+    })
+}
+
+fn model_worker_doctor_json() -> Value {
+    let Some(command) = configured_model_worker_command() else {
+        return json!({
+            "configured": false,
+            "available": false,
+            "ready": false,
+            "command": Value::Null,
+            "statusCode": "NOT_CONFIGURED",
+            "message": "no local model worker configured"
+        });
+    };
+    let output = Command::new(&command)
+        .arg("--doctor")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+    match output {
+        Ok(output) if output.status.success() => {
+            let text = String::from_utf8_lossy(&output.stdout);
+            let parsed: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({}));
+            let ok = parsed.get("ok").and_then(Value::as_bool);
+            let ready = parsed
+                .get("ready")
+                .and_then(Value::as_bool)
+                .unwrap_or_else(|| ok.unwrap_or(true));
+            json!({
+                "configured": true,
+                "available": true,
+                "ready": ready,
+                "command": command,
+                "statusCode": parsed
+                    .get("statusCode")
+                    .or_else(|| parsed.get("code"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(if ready { "READY" } else { "WORKER_NOT_READY" }),
+                "message": parsed.get("message").and_then(Value::as_str).unwrap_or("worker doctor passed"),
+                "rssMb": parsed.get("rssMb").cloned().unwrap_or(Value::Null),
+                "peakMemoryMb": parsed.get("peakMemoryMb").cloned().unwrap_or(Value::Null),
+                "loadedModels": parsed.get("loadedModels").cloned().unwrap_or_else(|| json!([]))
+            })
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            json!({
+                "configured": true,
+                "available": true,
+                "ready": false,
+                "command": command,
+                "statusCode": "WORKER_DOCTOR_FAILED",
+                "message": stderr.trim()
+            })
+        }
+        Err(error) => json!({
+            "configured": true,
+            "available": false,
+            "ready": false,
+            "command": command,
+            "statusCode": "WORKER_UNAVAILABLE",
+            "message": error.to_string()
+        }),
+    }
+}
+
 fn worker_model_artifacts(preset: &str, required_models: &[RequiredModel]) -> Vec<Value> {
+    worker_model_artifacts_with_cache_dir(preset, required_models, &model_cache_directory())
+}
+
+fn worker_model_artifacts_with_cache_dir(
+    preset: &str,
+    required_models: &[RequiredModel],
+    cache_dir: &str,
+) -> Vec<Value> {
     let manifest_models = model_manifest_artifacts(preset);
     let models = if manifest_models.is_empty() {
         required_models.iter().map(RequiredModel::json).collect()
@@ -489,15 +675,12 @@ fn worker_model_artifacts(preset: &str, required_models: &[RequiredModel]) -> Ve
     };
     models
         .into_iter()
-        .map(|model| model_with_cache_status(model, &model_cache_directory()))
+        .map(|model| model_with_cache_status(model, cache_dir))
         .collect()
 }
 
 fn model_manifest_artifacts(preset: &str) -> Vec<Value> {
-    let Some(manifest_path) = env::var("DOCTRUTH_MODEL_MANIFEST")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    else {
+    let Some(manifest_path) = configured_model_manifest_path() else {
         return Vec::new();
     };
     let Ok(manifest) = read_json_file(Path::new(&manifest_path), "MODEL_MANIFEST_INVALID") else {
@@ -508,6 +691,12 @@ fn model_manifest_artifacts(preset: &str) -> Vec<Value> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
+}
+
+fn configured_model_manifest_path() -> Option<String> {
+    env::var("DOCTRUTH_MODEL_MANIFEST")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn model_with_cache_status(mut model: Value, cache_dir: &str) -> Value {

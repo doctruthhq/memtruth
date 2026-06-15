@@ -136,6 +136,55 @@ fn parse_pdf_marks_model_assisted_preset_fallback_as_not_audit_grade() {
 }
 
 #[test]
+fn parse_pdf_gracefully_falls_back_for_missing_layout_table_and_ocr_models() {
+    for (preset, model_identity) in [
+        ("standard", "layout-rtdetr:v2"),
+        ("table-server", "slanext-auto:v1"),
+        ("ocr", "ocr-router:v1"),
+    ] {
+        let pdf = write_pdf_fixture(&format!("Missing {preset} model fallback evidence."));
+        let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+        let output = cmd
+            .write_stdin(parse_request_with_hash_and_preset(
+                &pdf,
+                "sha256:model-missing",
+                preset,
+            ))
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).unwrap();
+        let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+        assert_eq!(json["parserRun"]["preset"], preset);
+        assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
+        assert!(json["body"]["units"][0]["text"].as_str().unwrap().contains(preset));
+        assert!(
+            json["parserRun"]["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|model| model == model_identity),
+            "expected {model_identity} in parserRun.models for {preset}: {json}"
+        );
+        assert!(
+            warnings.iter().any(|warning| {
+                warning["code"] == "model_unavailable_fallback"
+                    && warning["severity"] == "SEVERE"
+                    && warning["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains(model_identity))
+            }),
+            "expected severe missing-model warning for {preset}/{model_identity}, got {warnings:?}"
+        );
+    }
+}
+
+#[test]
 fn parse_pdf_keeps_page_level_units_for_multi_page_text_layer_pdf() {
     let pdf = write_pdf_fixture_with_pages(&["First page evidence.", "Second page evidence."]);
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

@@ -162,7 +162,12 @@ fn parse_pdf_gracefully_falls_back_for_missing_layout_table_and_ocr_models() {
 
         assert_eq!(json["parserRun"]["preset"], preset);
         assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
-        assert!(json["body"]["units"][0]["text"].as_str().unwrap().contains(preset));
+        assert!(
+            json["body"]["units"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains(preset)
+        );
         assert!(
             json["parserRun"]["models"]
                 .as_array()

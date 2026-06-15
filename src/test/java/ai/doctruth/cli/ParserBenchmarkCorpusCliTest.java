@@ -242,6 +242,15 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(recorded.path("caseCount").asInt()).isEqualTo(1);
         assertThat(recorded.path("casesPerTag").path("multi-layout").asInt()).isEqualTo(1);
         assertThat(recorded.path("casesPerTag").path("source-map").asInt()).isEqualTo(1);
+        assertThat(recorded.path("coverageRequired").path("source-map").asInt()).isEqualTo(1);
+        assertThat(recorded.path("coverageSatisfied").path("source-map").asBoolean()).isTrue();
+        assertThat(recorded.path("validityInputs").path("sourceHashes").asBoolean()).isTrue();
+        assertThat(recorded.path("validityInputs").path("manifestHash").asBoolean()).isTrue();
+        assertThat(recorded.path("validityInputs").path("parserConfig").asText()).isEqualTo("TrustDocument");
+        assertThat(recorded.path("validityInputs").path("modelCacheManifest").asText()).isEqualTo("not-required");
+        assertThat(recorded.path("validityInputs").path("thresholds").asBoolean()).isTrue();
+        assertThat(recorded.path("validityInputs").path("expectedLabels").asBoolean()).isTrue();
+        assertThat(recorded.path("validityInputs").path("actualTrustDocument").asBoolean()).isTrue();
         assertThat(recorded.path("minimums").path("reading_order_f1").asDouble()).isEqualTo(1.0);
         assertThat(recorded.path("maximums").isObject()).isTrue();
         assertThat(recorded.path("corpus").asText()).isEqualTo(stdout.path("corpus").asText());
@@ -251,6 +260,9 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(recorded.path("metrics").path("parser_latency_p95").asDouble()).isGreaterThanOrEqualTo(0.0);
         assertThat(recorded.path("cases").get(0).path("labelId").asText()).isEqualTo("layout-v1-report-0001");
         assertThat(recorded.path("cases").get(0).path("sourceSha256").asText()).startsWith("sha256:");
+        assertThat(recorded.path("cases").get(0).path("replay").path("sourceRefReplayable").asBoolean()).isTrue();
+        assertThat(recorded.path("cases").get(0).path("replay").path("quoteReplayable").asBoolean()).isTrue();
+        assertThat(recorded.path("cases").get(0).path("replay").path("evidenceSpanReplayable").asBoolean()).isTrue();
         assertThat(recorded.path("cases").get(0).path("tags"))
                 .extracting(node -> node.asText())
                 .contains("multi-layout", "table", "ocr", "bbox", "source-map");
@@ -339,6 +351,51 @@ class ParserBenchmarkCorpusCliTest {
 
         assertThat(code).isEqualTo(1);
         assertThat(verifier.err()).contains("minCasesPerTag mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsTamperedCoverageSatisfaction() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var coverage = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("coverageSatisfied");
+        coverage.put("source-map", false);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("coverageSatisfied mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsTamperedReplayValidityInputs() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var validity = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("validityInputs");
+        validity.put("actualTrustDocument", false);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("validityInputs mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsTamperedCaseReplayEvidence() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var replay = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("cases").get(0).path("replay");
+        replay.put("evidenceSpanReplayable", false);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("case replay mismatch").contains("evidenceSpanReplayable");
     }
 
     @Test

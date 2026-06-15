@@ -30,7 +30,9 @@ final class VerifyBenchmarkReportCommand {
         var manifest = Path.of(requiredText(report, "manifest"));
         verifyManifestHash(report, manifest);
         verifyManifestEcho(report, readJson(manifest, "benchmark manifest"));
+        verifyValidityInputs(report);
         verifyCoverageCounts(report);
+        verifyCaseReplay(report);
         verifyAggregateMetrics(report);
         verifyMetricThresholds(report);
         context.out().println("benchmark report verified");
@@ -101,6 +103,14 @@ final class VerifyBenchmarkReportCommand {
             throw new CliException(
                     "casesPerTag mismatch: expected " + recordedCounts + " actual " + actualCasesPerTag);
         }
+        var coverageRequired = integerObject(report.path("coverageRequired"));
+        if (!coverageRequired.equals(integerObject(report.path("minCasesPerTag")))) {
+            throw new CliException("coverageRequired mismatch");
+        }
+        var expectedSatisfied = coverageSatisfied(coverageRequired, actualCasesPerTag);
+        if (!expectedSatisfied.equals(booleanObject(report.path("coverageSatisfied"), "coverageSatisfied"))) {
+            throw new CliException("coverageSatisfied mismatch");
+        }
         verifyCoverageThresholds(report, actualCaseCount, actualCasesPerTag);
     }
 
@@ -133,6 +143,13 @@ final class VerifyBenchmarkReportCommand {
         return counts;
     }
 
+    private static Map<String, Boolean> coverageSatisfied(
+            Map<String, Integer> minimums, Map<String, Integer> actualCasesPerTag) {
+        var values = new LinkedHashMap<String, Boolean>();
+        minimums.forEach((tag, minimum) -> values.put(tag, actualCasesPerTag.getOrDefault(tag, 0) >= minimum));
+        return values;
+    }
+
     private static Map<String, Integer> integerObject(JsonNode node) throws CliException {
         if (!node.isObject()) {
             throw new CliException("casesPerTag mismatch: expected object actual " + node.getNodeType());
@@ -146,6 +163,73 @@ final class VerifyBenchmarkReportCommand {
             values.put(entry.getKey(), value.asInt());
         }
         return values;
+    }
+
+    private static Map<String, Boolean> booleanObject(JsonNode node, String field) throws CliException {
+        if (!node.isObject()) {
+            throw new CliException(field + " mismatch: expected object actual " + node.getNodeType());
+        }
+        var values = new LinkedHashMap<String, Boolean>();
+        for (var entry : node.properties()) {
+            JsonNode value = entry.getValue();
+            if (!value.isBoolean()) {
+                throw new CliException(field + " mismatch for " + entry.getKey() + ": expected boolean");
+            }
+            values.put(entry.getKey(), value.asBoolean());
+        }
+        return values;
+    }
+
+    private static void verifyValidityInputs(JsonNode report) throws CliException {
+        var expected = new LinkedHashMap<String, Object>();
+        expected.put("sourceHashes", true);
+        expected.put("manifestHash", true);
+        expected.put("parserConfig", "TrustDocument");
+        expected.put("modelCacheManifest", "not-required");
+        expected.put("thresholds", true);
+        expected.put("expectedLabels", true);
+        expected.put("actualTrustDocument", true);
+        if (!objectEquals(report.path("validityInputs"), expected)) {
+            throw new CliException("validityInputs mismatch");
+        }
+    }
+
+    private static boolean objectEquals(JsonNode node, Map<String, Object> expected) {
+        if (!node.isObject() || node.size() != expected.size()) {
+            return false;
+        }
+        for (var entry : expected.entrySet()) {
+            JsonNode actual = node.path(entry.getKey());
+            Object value = entry.getValue();
+            if (value instanceof Boolean bool && (!actual.isBoolean() || actual.asBoolean() != bool)) {
+                return false;
+            }
+            if (value instanceof String text && !actual.asText().equals(text)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void verifyCaseReplay(JsonNode report) throws CliException {
+        for (JsonNode caseNode : report.path("cases")) {
+            verifyReplayFlag(caseNode, "sourceRefReplayable", !caseNode.path("sourceSha256").asText().isBlank());
+            verifyReplayFlag(
+                    caseNode,
+                    "quoteReplayable",
+                    caseNode.path("metrics").path("quote_anchor_accuracy").asDouble(0.0) >= 1.0);
+            verifyReplayFlag(
+                    caseNode,
+                    "evidenceSpanReplayable",
+                    caseNode.path("metrics").path("evidence_span_accuracy").asDouble(0.0) >= 1.0);
+        }
+    }
+
+    private static void verifyReplayFlag(JsonNode caseNode, String field, boolean expected) throws CliException {
+        JsonNode replay = caseNode.path("replay");
+        if (!replay.isObject() || !replay.path(field).isBoolean() || replay.path(field).asBoolean() != expected) {
+            throw new CliException("case replay mismatch for " + caseNode.path("name").asText() + ": " + field);
+        }
     }
 
     private static void verifyAggregateMetrics(JsonNode report) throws CliException {

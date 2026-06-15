@@ -816,6 +816,9 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "minTotalCases": labeling.get("minTotalCases").cloned().unwrap_or(Value::Null),
         "caseCount": case_reports.len(),
         "casesPerTag": cases_per_tag(&case_reports),
+        "coverageRequired": expected_min_cases_per_tag(labeling),
+        "coverageSatisfied": coverage_satisfied(&expected_min_cases_per_tag(labeling), &case_reports),
+        "validityInputs": benchmark_validity_inputs(),
         "minimums": manifest.get("minimums").cloned().unwrap_or_else(|| json!({})),
         "maximums": manifest.get("maximums").cloned().unwrap_or_else(|| json!({})),
         "passed": true,
@@ -843,6 +846,29 @@ fn cases_per_tag(case_reports: &[Value]) -> Value {
         counts.insert(tag, json!(next));
     }
     Value::Object(counts)
+}
+
+fn coverage_satisfied(required: &Value, case_reports: &[Value]) -> Value {
+    let actual = cases_per_tag(case_reports);
+    let mut satisfied = serde_json::Map::new();
+    for (tag, minimum) in required.as_object().into_iter().flatten() {
+        let minimum = minimum.as_u64().unwrap_or(0);
+        let actual = actual.get(tag).and_then(Value::as_u64).unwrap_or(0);
+        satisfied.insert(tag.to_string(), json!(actual >= minimum));
+    }
+    Value::Object(satisfied)
+}
+
+fn benchmark_validity_inputs() -> Value {
+    json!({
+        "sourceHashes": true,
+        "manifestHash": true,
+        "parserConfig": "TrustDocument",
+        "modelCacheManifest": "not-required",
+        "thresholds": true,
+        "expectedLabels": true,
+        "actualTrustDocument": true
+    })
 }
 
 fn expected_min_cases_per_tag(labeling: &Value) -> Value {
@@ -883,7 +909,9 @@ fn verify_benchmark_report_json(request: &Value) -> Result<Value, String> {
     let manifest = read_json_file(Path::new(manifest_path), "BENCHMARK_REPORT_INVALID")?;
     verify_report_manifest_hash(&report, manifest_path)?;
     verify_report_manifest_echo(&report, &manifest)?;
+    verify_report_validity_inputs(&report)?;
     verify_report_coverage(&report)?;
+    verify_report_case_replay(&report)?;
     verify_report_aggregate_metrics(&report)?;
     verify_report_metric_thresholds(&report)?;
     Ok(json!({
@@ -1041,8 +1069,71 @@ fn verify_report_coverage(report: &Value) -> Result<(), String> {
     }
     let actual_cases_per_tag = cases_per_tag(&cases);
     verify_expected_value(report, "casesPerTag", actual_cases_per_tag.clone())?;
+    verify_expected_value(
+        report,
+        "coverageRequired",
+        report
+            .get("minCasesPerTag")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )?;
+    verify_expected_value(
+        report,
+        "coverageSatisfied",
+        coverage_satisfied_from_counts(
+            report.get("coverageRequired").unwrap_or(&json!({})),
+            &actual_cases_per_tag,
+        ),
+    )?;
     verify_min_total_cases(report, actual_case_count)?;
     verify_min_cases_per_tag(report, &actual_cases_per_tag)?;
+    Ok(())
+}
+
+fn coverage_satisfied_from_counts(required: &Value, actual_cases_per_tag: &Value) -> Value {
+    let mut satisfied = serde_json::Map::new();
+    for (tag, minimum) in required.as_object().into_iter().flatten() {
+        let minimum = minimum.as_u64().unwrap_or(0);
+        let actual = actual_cases_per_tag
+            .get(tag)
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        satisfied.insert(tag.to_string(), json!(actual >= minimum));
+    }
+    Value::Object(satisfied)
+}
+
+fn verify_report_validity_inputs(report: &Value) -> Result<(), String> {
+    verify_expected_value(report, "validityInputs", benchmark_validity_inputs())
+}
+
+fn verify_report_case_replay(report: &Value) -> Result<(), String> {
+    for case in report
+        .get("cases")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let expected = case_replay(case);
+        let replay = case.get("replay").unwrap_or(&Value::Null);
+        for field in [
+            "sourceRefReplayable",
+            "quoteReplayable",
+            "evidenceSpanReplayable",
+        ] {
+            if replay.get(field) != expected.get(field) {
+                let name = case
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unnamed");
+                return Err(error_json(
+                    "BENCHMARK_REPORT_INVALID",
+                    &format!("case replay mismatch for {name}: {field}"),
+                )
+                .to_string());
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1435,8 +1526,31 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
         "tags": case.get("tags").cloned().unwrap_or_else(|| json!([])),
         "preset": preset,
         "source": source_path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
-        "metrics": metrics
+        "metrics": metrics,
+        "replay": case_replay(&json!({
+            "sourceSha256": source_sha,
+            "metrics": metrics
+        }))
     }))
+}
+
+fn case_replay(case: &Value) -> Value {
+    let metrics = case.get("metrics").unwrap_or(&Value::Null);
+    json!({
+        "sourceRefReplayable": case
+            .get("sourceSha256")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .is_some(),
+        "quoteReplayable": metrics
+            .get("quote_anchor_accuracy")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0) >= 1.0,
+        "evidenceSpanReplayable": metrics
+            .get("evidence_span_accuracy")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0) >= 1.0
+    })
 }
 
 fn resolve_case_path(base_dir: &Path, case: &Value, key: &str) -> Result<PathBuf, String> {

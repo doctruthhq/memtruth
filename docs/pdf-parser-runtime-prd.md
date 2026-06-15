@@ -2206,14 +2206,22 @@ mode refuses uncached remote fixtures before any network request. Parser-accurac
 runs should write a recorded report artifact with
 `reportFormat: doctruth.parser-benchmark.report.v1`, the resolved manifest path,
 `manifestSha256`, label/review metadata, copied `minimums`/`maximums`, actual
-`caseCount` and `casesPerTag` coverage, metrics, and per-case
-label/tag/source-hash evidence.
+`caseCount` and `casesPerTag` coverage, copied `coverageRequired`, computed
+`coverageSatisfied`, replay `validityInputs`, metrics, and per-case
+label/tag/source-hash/replay evidence. `validityInputs` must state whether the
+recorded report can be replayed from source hashes, manifest hash, parser
+configuration, model/cache manifest state, thresholds, expected labels, and the
+actual `TrustDocument` output. Each case must include a `replay` object for
+`sourceRefReplayable`, `quoteReplayable`, and `evidenceSpanReplayable`.
 The CLI must also verify a recorded report without rerunning the parser, so CI
 can prove that an archived parser-quality report still matches its manifest,
 thresholds, coverage counts, copied coverage requirements, metric values, and
 source pins. Recorded reports must also prove that aggregate metrics are
-consistent with the per-case metrics they summarize, so a report cannot be
-altered by changing only the aggregate or only the case-level metric evidence.
+consistent with the per-case metrics they summarize, that coverage satisfaction
+matches actual case tags, that replay validity inputs remain present, and that
+case replay fields match the metrics/source hashes they summarize, so a report
+cannot be altered by changing only the aggregate, only coverage fields, or only
+case-level replay evidence.
 Cached remote
 fixtures remain usable offline after SHA-256 verification.
 `scripts/smoke-doctruth-real-ocr-corpus.sh` is an opt-in runtime corpus smoke:

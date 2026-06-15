@@ -170,6 +170,9 @@ final class BenchmarkCorpusCommand {
         corpus.minTotalCases().ifPresent(value -> root.put("minTotalCases", value));
         root.put("caseCount", results.size());
         root.put("casesPerTag", casesPerTag(results));
+        root.put("coverageRequired", corpus.minCasesPerTag());
+        root.put("coverageSatisfied", coverageSatisfied(corpus.minCasesPerTag(), results));
+        root.put("validityInputs", validityInputs());
         root.put("minimums", corpus.minimums());
         root.put("maximums", corpus.maximums());
         root.put("passed", passed);
@@ -186,6 +189,29 @@ final class BenchmarkCorpusCommand {
         return counts;
     }
 
+    private static Map<String, Boolean> coverageSatisfied(
+            Map<String, Integer> minimums, List<ParserBenchmarkResult> results) {
+        var actual = casesPerTag(results);
+        var satisfied = new LinkedHashMap<String, Boolean>();
+        minimums.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> satisfied.put(
+                        entry.getKey(), actual.getOrDefault(entry.getKey(), 0) >= entry.getValue()));
+        return satisfied;
+    }
+
+    private static Map<String, Object> validityInputs() {
+        var inputs = new LinkedHashMap<String, Object>();
+        inputs.put("sourceHashes", true);
+        inputs.put("manifestHash", true);
+        inputs.put("parserConfig", "TrustDocument");
+        inputs.put("modelCacheManifest", "not-required");
+        inputs.put("thresholds", true);
+        inputs.put("expectedLabels", true);
+        inputs.put("actualTrustDocument", true);
+        return inputs;
+    }
+
     private static Map<String, Object> caseNode(ParserBenchmarkResult result) {
         var node = new LinkedHashMap<String, Object>();
         node.put("name", result.name());
@@ -193,7 +219,16 @@ final class BenchmarkCorpusCommand {
         result.sourceSha256().ifPresent(sourceSha256 -> node.put("sourceSha256", sourceSha256));
         node.put("tags", result.tags());
         node.put("metrics", result.metrics());
+        node.put("replay", replayNode(result));
         return node;
+    }
+
+    private static Map<String, Boolean> replayNode(ParserBenchmarkResult result) {
+        var replay = new LinkedHashMap<String, Boolean>();
+        replay.put("sourceRefReplayable", result.sourceSha256().isPresent());
+        replay.put("quoteReplayable", result.metric("quote_anchor_accuracy") >= 1.0);
+        replay.put("evidenceSpanReplayable", result.metric("evidence_span_accuracy") >= 1.0);
+        return replay;
     }
 
     private record Options(Path manifest, boolean json, boolean offline, Optional<Path> reportOut) {

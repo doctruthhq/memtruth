@@ -30,6 +30,7 @@ final class VerifyBenchmarkReportCommand {
         var manifest = Path.of(requiredText(report, "manifest"));
         verifyManifestHash(report, manifest);
         verifyManifestEcho(report, readJson(manifest, "benchmark manifest"));
+        verifyExternalMetrics(report, manifest);
         verifyValidityInputs(report);
         verifyCoverageCounts(report);
         verifyCaseReplay(report);
@@ -60,6 +61,7 @@ final class VerifyBenchmarkReportCommand {
         compareText(report, manifest, "corpus", "name");
         compareObject(report, manifest, "minimums");
         compareObject(report, manifest, "maximums");
+        compareObject(report, manifest, "externalEvaluations");
         compareArray(report, manifest.path("labeling"), "requiredMetrics");
         compareArray(report, manifest.path("labeling"), "requiredTags");
         compareArray(report, manifest.path("labeling"), "requiredFixtureTypes");
@@ -338,6 +340,67 @@ final class VerifyBenchmarkReportCommand {
         }
     }
 
+    private static void verifyExternalMetrics(JsonNode report, Path manifestPath) throws CliException {
+        var manifest = readJson(manifestPath, "benchmark manifest");
+        JsonNode externalEvaluations = manifest.path("externalEvaluations");
+        if (externalEvaluations.isMissingNode() || externalEvaluations.isNull()) {
+            return;
+        }
+        if (!externalEvaluations.isObject()) {
+            throw new CliException("externalEvaluations mismatch");
+        }
+        if (!report.path("metrics").isObject()) {
+            throw new CliException("benchmark report missing metrics");
+        }
+        Path base = manifestPath.toAbsolutePath().getParent();
+        for (var entry : externalEvaluations.properties()) {
+            String name = entry.getKey();
+            if (!"opendataloader".equals(name)) {
+                throw new CliException("unsupported external evaluation: " + name);
+            }
+            Path evaluation = base.resolve(entry.getValue().asText()).normalize();
+            var expected = openDataLoaderExternalMetrics(evaluation);
+            if (!report.path("externalMetrics").path(name).equals(expected.node())) {
+                throw new CliException("external metrics mismatch for " + name);
+            }
+            for (var metric : expected.values().entrySet()) {
+                double actual = report.path("metrics").path(metric.getKey()).asDouble(Double.NaN);
+                if (!Double.isFinite(actual) || Math.abs(actual - metric.getValue()) > 0.000001) {
+                    throw new CliException("external metrics mismatch for " + metric.getKey());
+                }
+            }
+        }
+    }
+
+    private static ExternalMetricSet openDataLoaderExternalMetrics(Path path) throws CliException {
+        JsonNode root = readJson(path, "OpenDataLoader evaluation");
+        var node = MAPPER.createObjectNode();
+        var values = new LinkedHashMap<String, Double>();
+        putExternalMetric(node, values, "nid", "opendataloader_nid", root.path("metrics").path("score").path("nid_mean"));
+        putExternalMetric(
+                node, values, "teds", "opendataloader_teds", root.path("metrics").path("score").path("teds_mean"));
+        putExternalMetric(node, values, "mhs", "opendataloader_mhs", root.path("metrics").path("score").path("mhs_mean"));
+        JsonNode speed = root.path("speed").path("elapsed_per_doc");
+        putExternalMetric(node, values, "speed", "opendataloader_speed",
+                speed.isNumber() ? speed : root.path("summary").path("elapsed_per_doc"));
+        node.put("evaluationSha256", sha256(path, "OpenDataLoader evaluation"));
+        return new ExternalMetricSet(node, values);
+    }
+
+    private static void putExternalMetric(
+            com.fasterxml.jackson.databind.node.ObjectNode node,
+            Map<String, Double> values,
+            String field,
+            String key,
+            JsonNode metric) {
+        if (!metric.isNumber()) {
+            return;
+        }
+        double value = metric.asDouble();
+        node.put(field, value);
+        values.put(key, value);
+    }
+
     private static java.util.List<Double> metricValues(JsonNode report, String name) {
         JsonNode aggregate = report.path("metrics").path(name);
         if (aggregate.isNumber()) {
@@ -476,4 +539,6 @@ final class VerifyBenchmarkReportCommand {
             return new Options(Path.of(args[1]));
         }
     }
+
+    private record ExternalMetricSet(JsonNode node, Map<String, Double> values) {}
 }

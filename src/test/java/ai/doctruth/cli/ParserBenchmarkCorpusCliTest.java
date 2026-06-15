@@ -264,6 +264,12 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(recorded.path("reviewType").asText()).isEqualTo("human-reviewed");
         assertThat(recorded.path("passed").asBoolean()).isTrue();
         assertThat(recorded.path("metrics").path("parser_latency_p95").asDouble()).isGreaterThanOrEqualTo(0.0);
+        assertThat(recorded.path("metrics").path("opendataloader_nid").asDouble()).isEqualTo(0.91);
+        assertThat(recorded.path("metrics").path("opendataloader_teds").asDouble()).isEqualTo(0.52);
+        assertThat(recorded.path("metrics").path("opendataloader_mhs").asDouble()).isEqualTo(0.76);
+        assertThat(recorded.path("metrics").path("opendataloader_speed").asDouble()).isEqualTo(0.015);
+        assertThat(recorded.path("externalMetrics").path("opendataloader").path("evaluationSha256").asText())
+                .startsWith("sha256:");
         assertThat(recorded.path("cases").get(0).path("labelId").asText()).isEqualTo("layout-v1-report-0001");
         assertThat(recorded.path("cases").get(0).path("sourceSha256").asText()).startsWith("sha256:");
         assertThat(recorded.path("cases").get(0).path("fixtureTypes"))
@@ -478,6 +484,21 @@ class ParserBenchmarkCorpusCliTest {
 
         assertThat(code).isEqualTo(1);
         assertThat(verifier.err()).contains("aggregate metric mismatch").contains("parser_latency_p95");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsTamperedExternalMetrics() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var metrics = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("metrics");
+        metrics.put("opendataloader_nid", 0.0);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("external metrics mismatch").contains("opendataloader_nid");
     }
 
     @Test
@@ -848,6 +869,25 @@ class ParserBenchmarkCorpusCliTest {
         Files.writeString(tempDir.resolve("expected.md"), "PROFILE\nExperienced operator\n");
         Files.writeString(tempDir.resolve("expected.json"), expectedDocument("PROFILE\nExperienced operator").toJsonFull());
         Files.writeString(
+                tempDir.resolve("opendataloader-evaluation.json"),
+                """
+                {
+                  "summary": {
+                    "engine_name": "doctruth-runtime",
+                    "engine_version": "test",
+                    "document_count": 1,
+                    "elapsed_per_doc": 0.015
+                  },
+                  "metrics": {
+                    "score": {
+                      "nid_mean": 0.91,
+                      "teds_mean": 0.52,
+                      "mhs_mean": 0.76
+                    }
+                  }
+                }
+                """);
+        Files.writeString(
                 tempDir.resolve("parser-accuracy-report-corpus.json"),
                 """
                 {
@@ -897,7 +937,16 @@ class ParserBenchmarkCorpusCliTest {
                     "bbox_iou": 0.0,
                     "evidence_span_accuracy": 1.0,
                     "table_cell_f1": 1.0,
-                    "ocr_text_accuracy": 1.0
+                    "ocr_text_accuracy": 1.0,
+                    "opendataloader_nid": 0.90,
+                    "opendataloader_teds": 0.50,
+                    "opendataloader_mhs": 0.74
+                  },
+                  "maximums": {
+                    "opendataloader_speed": 0.02
+                  },
+                  "externalEvaluations": {
+                    "opendataloader": "opendataloader-evaluation.json"
                   },
                   "cases": [
                     {

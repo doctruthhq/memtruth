@@ -59,7 +59,7 @@ final class BenchmarkCorpusCommand {
         appendLabeling(out, corpus);
         out.append("cases: ").append(results.size()).append('\n');
         out.append("metrics:\n");
-        ParserBenchmarkRunner.aggregateMetrics(results).entrySet().stream()
+        mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues()).entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> out.append("  ")
                         .append(entry.getKey())
@@ -195,9 +195,17 @@ final class BenchmarkCorpusCommand {
         root.put("validityInputs", validityInputs());
         root.put("minimums", corpus.minimums());
         root.put("maximums", corpus.maximums());
+        root.put("externalEvaluations", corpus.externalEvaluations());
         root.put("passed", passed);
-        root.put("metrics", ParserBenchmarkRunner.aggregateMetrics(results));
+        root.put("externalMetrics", corpus.externalMetrics());
+        root.put("metrics", mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues()));
         root.put("cases", results.stream().map(BenchmarkCorpusCommand::caseNode).toList());
+    }
+
+    private static Map<String, Double> mergedMetrics(Map<String, Double> base, Map<String, Double> external) {
+        var merged = new LinkedHashMap<String, Double>(base);
+        merged.putAll(external);
+        return merged;
     }
 
     private static Map<String, Integer> casesPerTag(List<ParserBenchmarkResult> results) {

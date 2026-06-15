@@ -53,6 +53,9 @@ public final class ParserBenchmarkCorpus {
     private final List<ParserBenchmarkCase> cases;
     private final Map<String, Double> minimums;
     private final Map<String, Double> maximums;
+    private final Map<String, String> externalEvaluations;
+    private final Map<String, Map<String, Object>> externalMetrics;
+    private final Map<String, Double> externalMetricValues;
 
     private ParserBenchmarkCorpus(
             String name,
@@ -70,7 +73,10 @@ public final class ParserBenchmarkCorpus {
             Optional<Integer> minTotalCases,
             List<ParserBenchmarkCase> cases,
             Map<String, Double> minimums,
-            Map<String, Double> maximums) {
+            Map<String, Double> maximums,
+            Map<String, String> externalEvaluations,
+            Map<String, Map<String, Object>> externalMetrics,
+            Map<String, Double> externalMetricValues) {
         this.name = name;
         this.kind = kind;
         this.qualityProfile = qualityProfile;
@@ -87,6 +93,9 @@ public final class ParserBenchmarkCorpus {
         this.cases = List.copyOf(cases);
         this.minimums = Map.copyOf(minimums);
         this.maximums = Map.copyOf(maximums);
+        this.externalEvaluations = Map.copyOf(externalEvaluations);
+        this.externalMetrics = Map.copyOf(externalMetrics);
+        this.externalMetricValues = Map.copyOf(externalMetricValues);
     }
 
     public static ParserBenchmarkCorpus load(Path manifestPath) {
@@ -100,6 +109,7 @@ public final class ParserBenchmarkCorpus {
             var base = manifestPath.toAbsolutePath().getParent();
             var minimums = thresholds(root, "minimums");
             var maximums = thresholds(root, "maximums");
+            var external = externalMetrics(base, root);
             var nodes = root.path("cases");
             var qualityProfile = optionalText(root, "qualityProfile");
             var labeling = labeling(root, qualityProfile, nodes, minimums, maximums);
@@ -119,7 +129,10 @@ public final class ParserBenchmarkCorpus {
                     labeling.minTotalCases(),
                     cases(base, nodes, offline),
                     minimums,
-                    maximums);
+                    maximums,
+                    external.evaluations(),
+                    external.metrics(),
+                    external.values());
         } catch (IOException e) {
             throw new IllegalArgumentException("invalid parser benchmark corpus manifest: " + manifestPath, e);
         }
@@ -189,12 +202,24 @@ public final class ParserBenchmarkCorpus {
         return maximums;
     }
 
+    public Map<String, String> externalEvaluations() {
+        return externalEvaluations;
+    }
+
+    public Map<String, Map<String, Object>> externalMetrics() {
+        return externalMetrics;
+    }
+
+    public Map<String, Double> externalMetricValues() {
+        return externalMetricValues;
+    }
+
     public List<ParserBenchmarkResult> evaluate() {
         return ParserBenchmarkRunner.evaluate(cases);
     }
 
     public Map<String, Double> aggregateMetrics() {
-        return ParserBenchmarkRunner.aggregateMetrics(evaluate());
+        return mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(evaluate()), externalMetricValues);
     }
 
     public void requireMinimums() {
@@ -203,7 +228,7 @@ public final class ParserBenchmarkCorpus {
 
     public void requireThresholds() {
         var results = evaluate();
-        var aggregate = ParserBenchmarkRunner.aggregateMetrics(results);
+        var aggregate = mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), externalMetricValues);
         var aggregateMinimums = selectAggregateThresholds(minimums, aggregate);
         requireAggregateMinimums(aggregate, aggregateMinimums);
         ParserBenchmarkRunner.requireMinimums(results, withoutKeys(minimums, aggregateMinimums));
@@ -249,6 +274,69 @@ public final class ParserBenchmarkCorpus {
             }
         });
         return remaining;
+    }
+
+    private static Map<String, Double> mergedMetrics(Map<String, Double> base, Map<String, Double> external) {
+        var merged = new LinkedHashMap<String, Double>(base);
+        merged.putAll(external);
+        return merged;
+    }
+
+    private static ExternalMetrics externalMetrics(Path base, JsonNode root) {
+        JsonNode node = root.path("externalEvaluations");
+        if (node.isMissingNode() || node.isNull()) {
+            return new ExternalMetrics(Map.of(), Map.of(), Map.of());
+        }
+        if (!node.isObject()) {
+            throw new IllegalArgumentException("externalEvaluations must be an object");
+        }
+        var metrics = new LinkedHashMap<String, Map<String, Object>>();
+        var values = new LinkedHashMap<String, Double>();
+        var evaluations = new LinkedHashMap<String, String>();
+        node.properties().forEach(entry -> {
+            String name = entry.getKey();
+            if (!"opendataloader".equals(name)) {
+                throw new IllegalArgumentException("unsupported external evaluation: " + name);
+            }
+            evaluations.put(name, entry.getValue().asText());
+            Path path = base.resolve(entry.getValue().asText()).normalize();
+            var imported = openDataLoaderMetrics(path);
+            metrics.put(name, imported.metrics());
+            values.putAll(imported.values());
+        });
+        return new ExternalMetrics(evaluations, metrics, values);
+    }
+
+    private static ExternalMetricSet openDataLoaderMetrics(Path path) {
+        try {
+            JsonNode root = MAPPER.readTree(Files.readString(path));
+            var metrics = new LinkedHashMap<String, Object>();
+            var values = new LinkedHashMap<String, Double>();
+            putMetric(metrics, values, "nid", "opendataloader_nid", root.path("metrics").path("score").path("nid_mean"));
+            putMetric(
+                    metrics, values, "teds", "opendataloader_teds", root.path("metrics").path("score").path("teds_mean"));
+            putMetric(metrics, values, "mhs", "opendataloader_mhs", root.path("metrics").path("score").path("mhs_mean"));
+            putMetric(metrics, values, "speed", "opendataloader_speed", openDataLoaderSpeed(root));
+            metrics.put("evaluationSha256", sha256(path));
+            return new ExternalMetricSet(metrics, values);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("invalid OpenDataLoader evaluation: " + path, e);
+        }
+    }
+
+    private static JsonNode openDataLoaderSpeed(JsonNode root) {
+        JsonNode speed = root.path("speed").path("elapsed_per_doc");
+        return speed.isNumber() ? speed : root.path("summary").path("elapsed_per_doc");
+    }
+
+    private static void putMetric(
+            Map<String, Object> metrics, Map<String, Double> values, String field, String key, JsonNode node) {
+        if (!node.isNumber()) {
+            return;
+        }
+        double value = node.asDouble();
+        metrics.put(field, value);
+        values.put(key, value);
     }
 
     private static List<ParserBenchmarkCase> cases(Path base, JsonNode nodes, boolean offline) {
@@ -750,4 +838,9 @@ public final class ParserBenchmarkCorpus {
             List<String> requiredBehaviors,
             Map<String, Integer> minCasesPerBehavior,
             Optional<Integer> minTotalCases) {}
+
+    private record ExternalMetrics(
+            Map<String, String> evaluations, Map<String, Map<String, Object>> metrics, Map<String, Double> values) {}
+
+    private record ExternalMetricSet(Map<String, Object> metrics, Map<String, Double> values) {}
 }

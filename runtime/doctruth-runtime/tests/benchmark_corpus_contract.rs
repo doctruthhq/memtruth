@@ -24,7 +24,8 @@ fn benchmark_corpus_runs_labeled_manifest_and_reports_metrics() {
         json!({"docId": "expected", "body": {"units": []}}).to_string(),
     )
     .unwrap();
-    fs::write(&manifest, benchmark_manifest()).unwrap();
+    write_opendataloader_evaluation(&root);
+    fs::write(&manifest, benchmark_manifest_with_external()).unwrap();
 
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd
@@ -74,7 +75,8 @@ fn benchmark_corpus_writes_recorded_report_artifact() {
         json!({"docId": "expected", "body": {"units": []}}).to_string(),
     )
     .unwrap();
-    fs::write(&manifest, benchmark_manifest()).unwrap();
+    write_opendataloader_evaluation(&root);
+    fs::write(&manifest, benchmark_manifest_with_external()).unwrap();
 
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd
@@ -140,6 +142,16 @@ fn benchmark_corpus_writes_recorded_report_artifact() {
     assert_eq!(recorded["validityInputs"]["actualTrustDocument"], true);
     assert_eq!(recorded["minimums"]["reading_order_f1"], 1.0);
     assert!(recorded["maximums"].is_object());
+    assert_eq!(recorded["metrics"]["opendataloader_nid"], 0.91);
+    assert_eq!(recorded["metrics"]["opendataloader_teds"], 0.52);
+    assert_eq!(recorded["metrics"]["opendataloader_mhs"], 0.76);
+    assert_eq!(recorded["metrics"]["opendataloader_speed"], 0.015);
+    assert!(
+        recorded["externalMetrics"]["opendataloader"]["evaluationSha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
     assert_eq!(recorded["runtime"], "doctruth-runtime");
     assert_eq!(recorded["corpus"], stdout_report["corpus"]);
     assert_eq!(recorded["qualityProfile"], "parser-accuracy");
@@ -531,6 +543,58 @@ fn verify_benchmark_report_rejects_tampered_metrics_below_minimum() {
         .failure()
         .stderr(predicate::str::contains("aggregate metric mismatch"))
         .stderr(predicate::str::contains("reading_order_f1"));
+}
+
+#[test]
+fn verify_benchmark_report_rejects_tampered_external_metrics() {
+    let root = temp_dir("doctruth-runtime-report-verify-external-tampered");
+    fs::create_dir_all(&root).unwrap();
+    let pdf = root.join("fixture.pdf");
+    let expected_markdown = root.join("expected.md");
+    let expected_document = root.join("expected.json");
+    let manifest = root.join("corpus.json");
+    let report_path = root.join("reports/parser-accuracy-report.json");
+    fs::write(&pdf, minimal_pdf("Rust corpus evidence.")).unwrap();
+    fs::write(&expected_markdown, "Rust corpus evidence.\n").unwrap();
+    fs::write(
+        &expected_document,
+        json!({"docId": "expected", "body": {"units": []}}).to_string(),
+    )
+    .unwrap();
+    write_opendataloader_evaluation(&root);
+    fs::write(&manifest, benchmark_manifest_with_external()).unwrap();
+
+    let mut writer = Command::cargo_bin("doctruth-runtime").unwrap();
+    writer
+        .write_stdin(
+            json!({
+                "command": "benchmark_corpus",
+                "manifest_path": manifest,
+                "offline": true,
+                "report_path": report_path
+            })
+            .to_string(),
+        )
+        .assert()
+        .success();
+    let mut recorded: Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).unwrap()).unwrap();
+    recorded["metrics"]["opendataloader_nid"] = json!(0.0);
+    fs::write(&report_path, serde_json::to_string(&recorded).unwrap()).unwrap();
+
+    let mut verifier = Command::cargo_bin("doctruth-runtime").unwrap();
+    verifier
+        .write_stdin(
+            json!({
+                "command": "verify_benchmark_report",
+                "report_path": report_path
+            })
+            .to_string(),
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("external metrics mismatch"))
+        .stderr(predicate::str::contains("opendataloader_nid"));
 }
 
 #[test]
@@ -1074,6 +1138,39 @@ fn benchmark_manifest() -> String {
         ]
     })
     .to_string()
+}
+
+fn benchmark_manifest_with_external() -> String {
+    let mut manifest: Value = serde_json::from_str(&benchmark_manifest()).unwrap();
+    manifest["minimums"]["opendataloader_nid"] = json!(0.90);
+    manifest["minimums"]["opendataloader_teds"] = json!(0.50);
+    manifest["minimums"]["opendataloader_mhs"] = json!(0.74);
+    manifest["maximums"] = json!({"opendataloader_speed": 0.02});
+    manifest["externalEvaluations"] = json!({"opendataloader": "opendataloader-evaluation.json"});
+    manifest.to_string()
+}
+
+fn write_opendataloader_evaluation(root: &std::path::Path) {
+    fs::write(
+        root.join("opendataloader-evaluation.json"),
+        json!({
+            "summary": {
+                "engine_name": "doctruth-runtime",
+                "engine_version": "test",
+                "document_count": 1,
+                "elapsed_per_doc": 0.015
+            },
+            "metrics": {
+                "score": {
+                    "nid_mean": 0.91,
+                    "teds_mean": 0.52,
+                    "mhs_mean": 0.76
+                }
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
 }
 
 fn write_fake_model_worker() -> PathBuf {

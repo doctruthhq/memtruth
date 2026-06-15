@@ -2209,7 +2209,16 @@ runs should write a recorded report artifact with
 `caseCount` and `casesPerTag` coverage, copied `coverageRequired`, computed
 `coverageSatisfied`, fixture-type coverage, OpenDataLoader-inspired behavior
 coverage, replay `validityInputs`, metrics, and per-case
-label/tag/fixture/behavior/source-hash/replay evidence. Fixture taxonomy is
+label/tag/fixture/behavior/source-hash/replay evidence. Manifests may also
+declare `externalEvaluations.opendataloader` pointing at an OpenDataLoader-style
+`evaluation.json`; reports then copy the evaluation reference under
+`externalEvaluations`, persist its SHA-256 and imported values under
+`externalMetrics.opendataloader`, and flatten NID, TEDS, MHS, and speed into
+`metrics.opendataloader_nid`, `metrics.opendataloader_teds`,
+`metrics.opendataloader_mhs`, and `metrics.opendataloader_speed` for normal
+threshold gates. This is an imported parser-quality signal only: OpenDataLoader
+schemas are not canonical, and TrustDocument remains the evidence/replay
+contract. Fixture taxonomy is
 declared with `requiredFixtureTypes`, `minCasesPerFixtureType`, case
 `fixtureTypes`, `casesPerFixtureType`, `fixtureCoverageRequired`, and
 `fixtureCoverageSatisfied`; it covers simple single-column, two-column,
@@ -2230,9 +2239,11 @@ thresholds, coverage counts, copied coverage requirements, metric values, and
 source pins. Recorded reports must also prove that aggregate metrics are
 consistent with the per-case metrics they summarize, that coverage satisfaction
 matches actual case tags, fixture types, and behavior tags, that replay validity
-inputs remain present, and that case replay fields match the metrics/source
-hashes they summarize, so a report cannot be altered by changing only the
-aggregate, only coverage fields, or only case-level replay evidence.
+inputs remain present, that imported OpenDataLoader metrics still match the
+referenced `evaluation.json` and its hash, and that case replay fields match the
+metrics/source hashes they summarize, so a report cannot be altered by changing
+only the aggregate, only external metrics, only coverage fields, or only
+case-level replay evidence.
 Cached remote
 fixtures remain usable offline after SHA-256 verification.
 `scripts/smoke-doctruth-real-ocr-corpus.sh` is an opt-in runtime corpus smoke:

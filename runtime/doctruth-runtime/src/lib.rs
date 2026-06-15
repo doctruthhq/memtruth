@@ -793,12 +793,14 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
             )
             .to_string()
         })?;
+    let external = external_metrics(base_dir, &manifest)?;
     let mut case_reports = Vec::new();
     for case in cases {
         case_reports.push(run_benchmark_case(base_dir, case)?);
     }
     require_tag_coverage(&manifest, &case_reports)?;
-    let metrics = aggregate_case_metrics(&case_reports);
+    let mut metrics = aggregate_case_metrics(&case_reports);
+    merge_object_metrics(&mut metrics, &external.values);
     require_dimension_coverage(
         &manifest,
         &case_reports,
@@ -846,6 +848,8 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "validityInputs": benchmark_validity_inputs(),
         "minimums": manifest.get("minimums").cloned().unwrap_or_else(|| json!({})),
         "maximums": manifest.get("maximums").cloned().unwrap_or_else(|| json!({})),
+        "externalEvaluations": manifest.get("externalEvaluations").cloned().unwrap_or_else(|| json!({})),
+        "externalMetrics": external.report,
         "passed": true,
         "metrics": metrics,
         "cases": case_reports
@@ -886,6 +890,122 @@ fn coverage_satisfied(required: &Value, case_reports: &[Value], field: &str) -> 
         satisfied.insert(tag.to_string(), json!(actual >= minimum));
     }
     Value::Object(satisfied)
+}
+
+struct ExternalMetrics {
+    report: Value,
+    values: Value,
+}
+
+fn external_metrics(base_dir: &Path, manifest: &Value) -> Result<ExternalMetrics, String> {
+    let Some(evaluations) = manifest.get("externalEvaluations") else {
+        return Ok(ExternalMetrics {
+            report: json!({}),
+            values: json!({}),
+        });
+    };
+    let Some(object) = evaluations.as_object() else {
+        return Err(error_json(
+            "BENCHMARK_CORPUS_INVALID",
+            "externalEvaluations must be an object",
+        )
+        .to_string());
+    };
+    let mut report = serde_json::Map::new();
+    let mut values = serde_json::Map::new();
+    for (name, path_value) in object {
+        if name != "opendataloader" {
+            return Err(error_json(
+                "BENCHMARK_CORPUS_INVALID",
+                &format!("unsupported external evaluation: {name}"),
+            )
+            .to_string());
+        }
+        let relative = path_value.as_str().unwrap_or("");
+        let path = base_dir.join(relative);
+        let imported = opendataloader_external_metrics(&path)?;
+        if let Some(imported_report) = imported.report.as_object() {
+            report.insert(name.clone(), Value::Object(imported_report.clone()));
+        }
+        if let Some(imported_values) = imported.values.as_object() {
+            for (metric, value) in imported_values {
+                values.insert(metric.clone(), value.clone());
+            }
+        }
+    }
+    Ok(ExternalMetrics {
+        report: Value::Object(report),
+        values: Value::Object(values),
+    })
+}
+
+fn opendataloader_external_metrics(path: &Path) -> Result<ExternalMetrics, String> {
+    let root = read_json_file(path, "BENCHMARK_CORPUS_INVALID")?;
+    let mut report = serde_json::Map::new();
+    let mut values = serde_json::Map::new();
+    put_external_metric(
+        &mut report,
+        &mut values,
+        "nid",
+        "opendataloader_nid",
+        root.pointer("/metrics/score/nid_mean"),
+    );
+    put_external_metric(
+        &mut report,
+        &mut values,
+        "teds",
+        "opendataloader_teds",
+        root.pointer("/metrics/score/teds_mean"),
+    );
+    put_external_metric(
+        &mut report,
+        &mut values,
+        "mhs",
+        "opendataloader_mhs",
+        root.pointer("/metrics/score/mhs_mean"),
+    );
+    let speed = root
+        .pointer("/speed/elapsed_per_doc")
+        .filter(|value| value.is_number())
+        .or_else(|| root.pointer("/summary/elapsed_per_doc"));
+    put_external_metric(
+        &mut report,
+        &mut values,
+        "speed",
+        "opendataloader_speed",
+        speed,
+    );
+    report.insert("evaluationSha256".to_string(), json!(sha256_file(path)?));
+    Ok(ExternalMetrics {
+        report: Value::Object(report),
+        values: Value::Object(values),
+    })
+}
+
+fn put_external_metric(
+    report: &mut serde_json::Map<String, Value>,
+    values: &mut serde_json::Map<String, Value>,
+    field: &str,
+    key: &str,
+    value: Option<&Value>,
+) {
+    let Some(metric) = value.and_then(Value::as_f64) else {
+        return;
+    };
+    report.insert(field.to_string(), json!(metric));
+    values.insert(key.to_string(), json!(metric));
+}
+
+fn merge_object_metrics(metrics: &mut Value, external: &Value) {
+    let Some(target) = metrics.as_object_mut() else {
+        return;
+    };
+    let Some(source) = external.as_object() else {
+        return;
+    };
+    for (name, value) in source {
+        target.insert(name.clone(), value.clone());
+    }
 }
 
 fn benchmark_validity_inputs() -> Value {
@@ -946,6 +1066,7 @@ fn verify_benchmark_report_json(request: &Value) -> Result<Value, String> {
     let manifest = read_json_file(Path::new(manifest_path), "BENCHMARK_REPORT_INVALID")?;
     verify_report_manifest_hash(&report, manifest_path)?;
     verify_report_manifest_echo(&report, &manifest)?;
+    verify_report_external_metrics(&report, Path::new(manifest_path), &manifest)?;
     verify_report_validity_inputs(&report)?;
     verify_report_coverage(&report)?;
     verify_report_case_replay(&report)?;
@@ -994,6 +1115,7 @@ fn verify_report_manifest_echo(report: &Value, manifest: &Value) -> Result<(), S
     verify_report_text(report, manifest, "corpus", "name")?;
     verify_report_value(report, manifest, "minimums", json!({}))?;
     verify_report_value(report, manifest, "maximums", json!({}))?;
+    verify_report_value(report, manifest, "externalEvaluations", json!({}))?;
     let labeling = manifest.get("labeling").unwrap_or(&Value::Null);
     verify_report_value(report, labeling, "requiredMetrics", json!([]))?;
     verify_report_value(report, labeling, "requiredTags", json!([]))?;
@@ -1016,6 +1138,56 @@ fn verify_report_manifest_echo(report: &Value, manifest: &Value) -> Result<(), S
     )?;
     verify_report_value(report, labeling, "minTotalCases", Value::Null)?;
     verify_report_source_pins(report, manifest)?;
+    Ok(())
+}
+
+fn verify_report_external_metrics(
+    report: &Value,
+    manifest_path: &Path,
+    manifest: &Value,
+) -> Result<(), String> {
+    let Some(evaluations) = manifest.get("externalEvaluations") else {
+        return Ok(());
+    };
+    let Some(object) = evaluations.as_object() else {
+        return Err(
+            error_json("BENCHMARK_REPORT_INVALID", "externalEvaluations mismatch").to_string(),
+        );
+    };
+    let base_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    for (name, path_value) in object {
+        if name != "opendataloader" {
+            return Err(error_json(
+                "BENCHMARK_REPORT_INVALID",
+                &format!("unsupported external evaluation: {name}"),
+            )
+            .to_string());
+        }
+        let path = base_dir.join(path_value.as_str().unwrap_or(""));
+        let expected = opendataloader_external_metrics(&path)?;
+        if report
+            .get("externalMetrics")
+            .and_then(|metrics| metrics.get(name))
+            != Some(&expected.report)
+        {
+            return Err(error_json(
+                "BENCHMARK_REPORT_INVALID",
+                &format!("external metrics mismatch for {name}"),
+            )
+            .to_string());
+        }
+        if let Some(values) = expected.values.as_object() {
+            for (metric, value) in values {
+                if report.pointer(&format!("/metrics/{metric}")) != Some(value) {
+                    return Err(error_json(
+                        "BENCHMARK_REPORT_INVALID",
+                        &format!("external metrics mismatch for {metric}"),
+                    )
+                    .to_string());
+                }
+            }
+        }
+    }
     Ok(())
 }
 

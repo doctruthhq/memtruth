@@ -74,6 +74,13 @@ class DocTruthCliDoctorCompletionTest {
         assertThat(parser.path("backend").asText()).isEqualTo("sidecar");
         assertThat(parser.path("available").asBoolean()).isTrue();
         assertThat(parser.path("outputProfiles").toString()).contains("json_full", "parse_trace");
+        assertThat(parser.path("runtimeDoctor").path("capabilities").path("native_text").path("available").asBoolean())
+                .isTrue();
+        assertThat(parser.path("runtimeDoctor").path("capabilities").path("layout").path("available").asBoolean())
+                .isFalse();
+        assertThat(parser.path("runtimeDoctor").path("models").path("presets").path("lite").path("allReady").asBoolean())
+                .isTrue();
+        assertThat(parser.path("runtimeDoctor").path("models").path("worker").path("ready").asBoolean()).isFalse();
     }
 
     @Test
@@ -627,7 +634,7 @@ class DocTruthCliDoctorCompletionTest {
                 """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
-                  printf '{"runtime":"doctruth-runtime","capabilities":{"parse_pdf":true}}'
+                  printf '{"runtime":"doctruth-runtime","capabilities":{"parse_pdf":true,"native_text":{"available":true,"backend":"pdf_oxide"},"layout":{"available":false},"tables":{"available":false},"ocr":{"available":false}},"models":{"worker":{"configured":false,"available":false,"ready":false},"presets":{"lite":{"allReady":true}}}}'
                   exit 0
                 fi
                 cat >/dev/null

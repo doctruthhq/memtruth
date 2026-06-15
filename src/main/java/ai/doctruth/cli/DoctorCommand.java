@@ -1,14 +1,18 @@
 package ai.doctruth.cli;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import ai.doctruth.SidecarParserBackend;
 import ai.doctruth.internal.runtime.DocTruthRuntime;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 final class DoctorCommand {
@@ -188,7 +192,9 @@ final class DoctorCommand {
                                 "available",
                                 parser.available(),
                                 "outputProfiles",
-                                parser.outputProfiles()),
+                                parser.outputProfiles(),
+                                "runtimeDoctor",
+                                parser.runtimeDoctor()),
                         "models",
                         Map.of(
                                 "cacheDirectory",
@@ -261,19 +267,45 @@ final class DoctorCommand {
         }
     }
 
-    private record ParserDoctor(String backend, boolean available, List<String> outputProfiles) {
+    private record ParserDoctor(String backend, boolean available, List<String> outputProfiles, JsonNode runtimeDoctor) {
         static ParserDoctor from(Map<String, String> env) {
             var runtime = DocTruthRuntime.configuredCommand(env);
             if (runtime.isEmpty()) {
-                return new ParserDoctor("sidecar", false, List.of());
+                return unavailable();
             }
             if (!Files.isRegularFile(runtime.get())) {
-                return new ParserDoctor("sidecar", false, List.of());
+                return unavailable();
             }
             var backend = new SidecarParserBackend(runtime.get());
             var capabilities = backend.capabilities();
             var health = backend.doctor();
-            return new ParserDoctor("sidecar", health.available(), capabilities.outputProfiles());
+            return new ParserDoctor("sidecar", health.available(), capabilities.outputProfiles(), runtimeDoctor(runtime.get(), env));
+        }
+
+        private static ParserDoctor unavailable() {
+            return new ParserDoctor("sidecar", false, List.of(), MAPPER.createObjectNode());
+        }
+
+        private static JsonNode runtimeDoctor(Path runtime, Map<String, String> env) {
+            try {
+                var process = new ProcessBuilder(runtime.toString(), "--doctor");
+                process.environment().putAll(env);
+                var child = process.start();
+                if (!child.waitFor(5, TimeUnit.SECONDS)) {
+                    child.destroyForcibly();
+                    return MAPPER.createObjectNode();
+                }
+                if (child.exitValue() != 0) {
+                    return MAPPER.createObjectNode();
+                }
+                var stdout = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                return MAPPER.readTree(stdout);
+            } catch (IOException | InterruptedException | RuntimeException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                return MAPPER.createObjectNode();
+            }
         }
     }
 

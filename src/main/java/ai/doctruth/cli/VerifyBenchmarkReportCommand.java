@@ -62,7 +62,11 @@ final class VerifyBenchmarkReportCommand {
         compareObject(report, manifest, "maximums");
         compareArray(report, manifest.path("labeling"), "requiredMetrics");
         compareArray(report, manifest.path("labeling"), "requiredTags");
+        compareArray(report, manifest.path("labeling"), "requiredFixtureTypes");
+        compareArray(report, manifest.path("labeling"), "requiredBehaviors");
         compareMinCasesPerTag(report, manifest.path("labeling"));
+        compareExpandedMinimum(report, manifest.path("labeling"), "minCasesPerFixtureType", "requiredFixtureTypes");
+        compareExpandedMinimum(report, manifest.path("labeling"), "minCasesPerBehavior", "requiredBehaviors");
         compareOptionalValue(report, manifest.path("labeling"), "minTotalCases");
         verifyCaseSourcePins(report, manifest);
     }
@@ -111,7 +115,23 @@ final class VerifyBenchmarkReportCommand {
         if (!expectedSatisfied.equals(booleanObject(report.path("coverageSatisfied"), "coverageSatisfied"))) {
             throw new CliException("coverageSatisfied mismatch");
         }
+        verifyCoverageMap(report, "fixtureTypes", "casesPerFixtureType", "fixtureCoverageRequired", "fixtureCoverageSatisfied");
+        verifyCoverageMap(report, "behaviors", "casesPerBehavior", "behaviorCoverageRequired", "behaviorCoverageSatisfied");
         verifyCoverageThresholds(report, actualCaseCount, actualCasesPerTag);
+    }
+
+    private static void verifyCoverageMap(
+            JsonNode report, String caseField, String countField, String requiredField, String satisfiedField)
+            throws CliException {
+        var actual = casesPerField(report, caseField);
+        if (!integerObject(report.path(countField)).equals(actual)) {
+            throw new CliException(countField + " mismatch");
+        }
+        var required = integerObject(report.path(requiredField));
+        var expectedSatisfied = coverageSatisfied(required, actual);
+        if (!expectedSatisfied.equals(booleanObject(report.path(satisfiedField), satisfiedField))) {
+            throw new CliException(satisfiedField + " mismatch");
+        }
     }
 
     private static void verifyCoverageThresholds(
@@ -133,9 +153,13 @@ final class VerifyBenchmarkReportCommand {
     }
 
     private static Map<String, Integer> casesPerTag(JsonNode report) {
+        return casesPerField(report, "tags");
+    }
+
+    private static Map<String, Integer> casesPerField(JsonNode report, String field) {
         var counts = new LinkedHashMap<String, Integer>();
         for (JsonNode caseNode : report.path("cases")) {
-            for (JsonNode tagNode : caseNode.path("tags")) {
+            for (JsonNode tagNode : caseNode.path(field)) {
                 String tag = tagNode.asText();
                 counts.merge(tag, 1, Integer::sum);
             }
@@ -369,7 +393,26 @@ final class VerifyBenchmarkReportCommand {
         }
     }
 
+    private static void compareExpandedMinimum(
+            JsonNode report, JsonNode manifestLabeling, String minimumField, String requiredField)
+            throws CliException {
+        JsonNode manifestMinimum = manifestLabeling.path(minimumField);
+        if (manifestMinimum.isMissingNode()) {
+            return;
+        }
+        JsonNode expected = expectedMinimums(manifestLabeling, manifestMinimum, requiredField);
+        JsonNode actual = report.path(minimumField);
+        if (!actual.isObject() || !actual.equals(expected)) {
+            throw new CliException(minimumField + " mismatch");
+        }
+    }
+
     private static JsonNode expectedMinCasesPerTag(JsonNode manifestLabeling, JsonNode manifestMinimum) {
+        return expectedMinimums(manifestLabeling, manifestMinimum, "requiredTags");
+    }
+
+    private static JsonNode expectedMinimums(
+            JsonNode manifestLabeling, JsonNode manifestMinimum, String requiredField) {
         if (manifestMinimum.isObject()) {
             return manifestMinimum;
         }
@@ -377,7 +420,7 @@ final class VerifyBenchmarkReportCommand {
         if (!manifestMinimum.isInt()) {
             return expected;
         }
-        for (JsonNode tag : manifestLabeling.path("requiredTags")) {
+        for (JsonNode tag : manifestLabeling.path(requiredField)) {
             String name = tag.asText();
             if (!name.isBlank()) {
                 expected.put(name, manifestMinimum.asInt());

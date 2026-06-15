@@ -111,6 +111,8 @@ public final class ParserBenchmarkRunner {
                 benchmarkCase.labelId(),
                 benchmarkCase.tags(),
                 benchmarkCase.sourceSha256(),
+                benchmarkCase.fixtureTypes(),
+                benchmarkCase.behaviors(),
                 metrics);
     }
 

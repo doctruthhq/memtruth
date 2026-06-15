@@ -799,6 +799,13 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
     }
     require_tag_coverage(&manifest, &case_reports)?;
     let metrics = aggregate_case_metrics(&case_reports);
+    require_dimension_coverage(
+        &manifest,
+        &case_reports,
+        "fixtureTypes",
+        "minCasesPerFixtureType",
+    )?;
+    require_dimension_coverage(&manifest, &case_reports, "behaviors", "minCasesPerBehavior")?;
     require_minimums(&manifest, &metrics)?;
     require_maximums(&manifest, &metrics)?;
     let labeling = &manifest["labeling"];
@@ -813,11 +820,29 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "requiredMetrics": labeling.get("requiredMetrics").cloned().unwrap_or_else(|| json!([])),
         "requiredTags": labeling.get("requiredTags").cloned().unwrap_or_else(|| json!([])),
         "minCasesPerTag": expected_min_cases_per_tag(labeling),
+        "requiredFixtureTypes": labeling.get("requiredFixtureTypes").cloned().unwrap_or_else(|| json!([])),
+        "minCasesPerFixtureType": expected_min_cases_per_field(labeling, "requiredFixtureTypes", "minCasesPerFixtureType"),
+        "requiredBehaviors": labeling.get("requiredBehaviors").cloned().unwrap_or_else(|| json!([])),
+        "minCasesPerBehavior": expected_min_cases_per_field(labeling, "requiredBehaviors", "minCasesPerBehavior"),
         "minTotalCases": labeling.get("minTotalCases").cloned().unwrap_or(Value::Null),
         "caseCount": case_reports.len(),
         "casesPerTag": cases_per_tag(&case_reports),
+        "casesPerFixtureType": cases_per_field(&case_reports, "fixtureTypes"),
+        "fixtureCoverageRequired": expected_min_cases_per_field(labeling, "requiredFixtureTypes", "minCasesPerFixtureType"),
+        "fixtureCoverageSatisfied": coverage_satisfied(
+            &expected_min_cases_per_field(labeling, "requiredFixtureTypes", "minCasesPerFixtureType"),
+            &case_reports,
+            "fixtureTypes"
+        ),
+        "casesPerBehavior": cases_per_field(&case_reports, "behaviors"),
+        "behaviorCoverageRequired": expected_min_cases_per_field(labeling, "requiredBehaviors", "minCasesPerBehavior"),
+        "behaviorCoverageSatisfied": coverage_satisfied(
+            &expected_min_cases_per_field(labeling, "requiredBehaviors", "minCasesPerBehavior"),
+            &case_reports,
+            "behaviors"
+        ),
         "coverageRequired": expected_min_cases_per_tag(labeling),
-        "coverageSatisfied": coverage_satisfied(&expected_min_cases_per_tag(labeling), &case_reports),
+        "coverageSatisfied": coverage_satisfied(&expected_min_cases_per_tag(labeling), &case_reports, "tags"),
         "validityInputs": benchmark_validity_inputs(),
         "minimums": manifest.get("minimums").cloned().unwrap_or_else(|| json!({})),
         "maximums": manifest.get("maximums").cloned().unwrap_or_else(|| json!({})),
@@ -830,10 +855,14 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
 }
 
 fn cases_per_tag(case_reports: &[Value]) -> Value {
+    cases_per_field(case_reports, "tags")
+}
+
+fn cases_per_field(case_reports: &[Value], field: &str) -> Value {
     let mut counts = serde_json::Map::new();
     let mut tags = Vec::new();
     for report in case_reports {
-        let Some(case_tags) = report.get("tags").and_then(Value::as_array) else {
+        let Some(case_tags) = report.get(field).and_then(Value::as_array) else {
             continue;
         };
         for tag in case_tags.iter().filter_map(Value::as_str) {
@@ -848,8 +877,8 @@ fn cases_per_tag(case_reports: &[Value]) -> Value {
     Value::Object(counts)
 }
 
-fn coverage_satisfied(required: &Value, case_reports: &[Value]) -> Value {
-    let actual = cases_per_tag(case_reports);
+fn coverage_satisfied(required: &Value, case_reports: &[Value], field: &str) -> Value {
+    let actual = cases_per_field(case_reports, field);
     let mut satisfied = serde_json::Map::new();
     for (tag, minimum) in required.as_object().into_iter().flatten() {
         let minimum = minimum.as_u64().unwrap_or(0);
@@ -872,7 +901,15 @@ fn benchmark_validity_inputs() -> Value {
 }
 
 fn expected_min_cases_per_tag(labeling: &Value) -> Value {
-    let minimum = labeling.get("minCasesPerTag").unwrap_or(&Value::Null);
+    expected_min_cases_per_field(labeling, "requiredTags", "minCasesPerTag")
+}
+
+fn expected_min_cases_per_field(
+    labeling: &Value,
+    required_field: &str,
+    minimum_field: &str,
+) -> Value {
+    let minimum = labeling.get(minimum_field).unwrap_or(&Value::Null);
     if minimum.is_object() {
         return minimum.clone();
     }
@@ -881,7 +918,7 @@ fn expected_min_cases_per_tag(labeling: &Value) -> Value {
     };
     let mut expected = serde_json::Map::new();
     for tag in labeling
-        .get("requiredTags")
+        .get(required_field)
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -960,10 +997,22 @@ fn verify_report_manifest_echo(report: &Value, manifest: &Value) -> Result<(), S
     let labeling = manifest.get("labeling").unwrap_or(&Value::Null);
     verify_report_value(report, labeling, "requiredMetrics", json!([]))?;
     verify_report_value(report, labeling, "requiredTags", json!([]))?;
+    verify_report_value(report, labeling, "requiredFixtureTypes", json!([]))?;
+    verify_report_value(report, labeling, "requiredBehaviors", json!([]))?;
     verify_expected_value(
         report,
         "minCasesPerTag",
         expected_min_cases_per_tag(labeling),
+    )?;
+    verify_expected_value(
+        report,
+        "minCasesPerFixtureType",
+        expected_min_cases_per_field(labeling, "requiredFixtureTypes", "minCasesPerFixtureType"),
+    )?;
+    verify_expected_value(
+        report,
+        "minCasesPerBehavior",
+        expected_min_cases_per_field(labeling, "requiredBehaviors", "minCasesPerBehavior"),
     )?;
     verify_report_value(report, labeling, "minTotalCases", Value::Null)?;
     verify_report_source_pins(report, manifest)?;
@@ -1085,9 +1134,48 @@ fn verify_report_coverage(report: &Value) -> Result<(), String> {
             &actual_cases_per_tag,
         ),
     )?;
+    verify_coverage_dimension(
+        report,
+        "fixtureTypes",
+        "casesPerFixtureType",
+        "fixtureCoverageRequired",
+        "fixtureCoverageSatisfied",
+    )?;
+    verify_coverage_dimension(
+        report,
+        "behaviors",
+        "casesPerBehavior",
+        "behaviorCoverageRequired",
+        "behaviorCoverageSatisfied",
+    )?;
     verify_min_total_cases(report, actual_case_count)?;
     verify_min_cases_per_tag(report, &actual_cases_per_tag)?;
     Ok(())
+}
+
+fn verify_coverage_dimension(
+    report: &Value,
+    case_field: &str,
+    count_field: &str,
+    required_field: &str,
+    satisfied_field: &str,
+) -> Result<(), String> {
+    let cases = report
+        .get("cases")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let actual = cases_per_field(&cases, case_field);
+    verify_expected_value(report, count_field, actual.clone())?;
+    let required = report
+        .get(required_field)
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    verify_expected_value(
+        report,
+        satisfied_field,
+        coverage_satisfied_from_counts(&required, &actual),
+    )
 }
 
 fn coverage_satisfied_from_counts(required: &Value, actual_cases_per_tag: &Value) -> Value {
@@ -1524,6 +1612,8 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
         "labelId": required_nested_str(case, "labelId")?,
         "sourceSha256": source_sha,
         "tags": case.get("tags").cloned().unwrap_or_else(|| json!([])),
+        "fixtureTypes": case.get("fixtureTypes").cloned().unwrap_or_else(|| json!([])),
+        "behaviors": case.get("behaviors").cloned().unwrap_or_else(|| json!([])),
         "preset": preset,
         "source": source_path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
         "metrics": metrics,
@@ -1932,9 +2022,52 @@ fn require_tag_coverage(manifest: &Value, cases: &[Value]) -> Result<(), String>
 }
 
 fn case_has_tag(case: &Value, tag: &str) -> bool {
-    case.get("tags")
+    case_has_value(case, "tags", tag)
+}
+
+fn require_dimension_coverage(
+    manifest: &Value,
+    cases: &[Value],
+    case_field: &str,
+    minimum_field: &str,
+) -> Result<(), String> {
+    let Some(labeling) = manifest.get("labeling") else {
+        return Ok(());
+    };
+    let required_field = match case_field {
+        "fixtureTypes" => "requiredFixtureTypes",
+        "behaviors" => "requiredBehaviors",
+        _ => return Ok(()),
+    };
+    let required_values = labeling
+        .get(required_field)
         .and_then(Value::as_array)
-        .is_some_and(|tags| tags.iter().any(|value| value.as_str() == Some(tag)))
+        .cloned()
+        .unwrap_or_default();
+    let min_count = labeling
+        .get(minimum_field)
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    for value in required_values.iter().filter_map(Value::as_str) {
+        let count = cases
+            .iter()
+            .filter(|case| case_has_value(case, case_field, value))
+            .count() as u64;
+        if count < min_count {
+            return Err(error_json(
+                "PARSER_ACCURACY_LABELING_INVALID",
+                &format!("{case_field} {value} has {count} cases; expected at least {min_count}"),
+            )
+            .to_string());
+        }
+    }
+    Ok(())
+}
+
+fn case_has_value(case: &Value, field: &str, expected: &str) -> bool {
+    case.get(field)
+        .and_then(Value::as_array)
+        .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(expected)))
 }
 
 fn round_metric(value: f64) -> f64 {

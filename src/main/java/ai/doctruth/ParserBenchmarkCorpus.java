@@ -45,6 +45,10 @@ public final class ParserBenchmarkCorpus {
     private final List<String> requiredMetrics;
     private final List<String> requiredTags;
     private final Map<String, Integer> minCasesPerTag;
+    private final List<String> requiredFixtureTypes;
+    private final Map<String, Integer> minCasesPerFixtureType;
+    private final List<String> requiredBehaviors;
+    private final Map<String, Integer> minCasesPerBehavior;
     private final Optional<Integer> minTotalCases;
     private final List<ParserBenchmarkCase> cases;
     private final Map<String, Double> minimums;
@@ -59,6 +63,10 @@ public final class ParserBenchmarkCorpus {
             List<String> requiredMetrics,
             List<String> requiredTags,
             Map<String, Integer> minCasesPerTag,
+            List<String> requiredFixtureTypes,
+            Map<String, Integer> minCasesPerFixtureType,
+            List<String> requiredBehaviors,
+            Map<String, Integer> minCasesPerBehavior,
             Optional<Integer> minTotalCases,
             List<ParserBenchmarkCase> cases,
             Map<String, Double> minimums,
@@ -71,6 +79,10 @@ public final class ParserBenchmarkCorpus {
         this.requiredMetrics = List.copyOf(requiredMetrics);
         this.requiredTags = List.copyOf(requiredTags);
         this.minCasesPerTag = Map.copyOf(minCasesPerTag);
+        this.requiredFixtureTypes = List.copyOf(requiredFixtureTypes);
+        this.minCasesPerFixtureType = Map.copyOf(minCasesPerFixtureType);
+        this.requiredBehaviors = List.copyOf(requiredBehaviors);
+        this.minCasesPerBehavior = Map.copyOf(minCasesPerBehavior);
         this.minTotalCases = Objects.requireNonNull(minTotalCases, "minTotalCases");
         this.cases = List.copyOf(cases);
         this.minimums = Map.copyOf(minimums);
@@ -100,6 +112,10 @@ public final class ParserBenchmarkCorpus {
                     labeling.requiredMetrics(),
                     labeling.requiredTags(),
                     labeling.minCasesPerTag(),
+                    labeling.requiredFixtureTypes(),
+                    labeling.minCasesPerFixtureType(),
+                    labeling.requiredBehaviors(),
+                    labeling.minCasesPerBehavior(),
                     labeling.minTotalCases(),
                     cases(base, nodes, offline),
                     minimums,
@@ -139,6 +155,22 @@ public final class ParserBenchmarkCorpus {
 
     public Map<String, Integer> minCasesPerTag() {
         return minCasesPerTag;
+    }
+
+    public List<String> requiredFixtureTypes() {
+        return requiredFixtureTypes;
+    }
+
+    public Map<String, Integer> minCasesPerFixtureType() {
+        return minCasesPerFixtureType;
+    }
+
+    public List<String> requiredBehaviors() {
+        return requiredBehaviors;
+    }
+
+    public Map<String, Integer> minCasesPerBehavior() {
+        return minCasesPerBehavior;
     }
 
     public Optional<Integer> minTotalCases() {
@@ -240,6 +272,8 @@ public final class ParserBenchmarkCorpus {
                     optionalText(node, "labelId"),
                     tags(node),
                     optionalText(node, "sourceSha256"),
+                    optionalValues(node, "fixtureTypes"),
+                    optionalValues(node, "behaviors"),
                     source,
                     Files.readString(expectedMarkdown),
                     preset(node),
@@ -257,7 +291,18 @@ public final class ParserBenchmarkCorpus {
             Map<String, Double> maximums) {
         String kind = optionalText(root, "kind").orElse("generated");
         if (!kind.equals("human-labeled")) {
-            return new Labeling(kind, Optional.empty(), Optional.empty(), List.of(), List.of(), Map.of(), Optional.empty());
+            return new Labeling(
+                    kind,
+                    Optional.empty(),
+                    Optional.empty(),
+                    List.of(),
+                    List.of(),
+                    Map.of(),
+                    List.of(),
+                    Map.of(),
+                    List.of(),
+                    Map.of(),
+                    Optional.empty());
         }
         JsonNode node = root.path("labeling");
         String version = requiredNestedText(node, "labelSetVersion", kind);
@@ -275,11 +320,28 @@ public final class ParserBenchmarkCorpus {
         var requiredTags = requiredTags(node, qualityProfile);
         var coverage = minCasesPerTag(requiredTags, node, qualityProfile);
         requireCoverage(caseNodes, requiredTags, coverage, qualityProfile);
+        var requiredFixtureTypes = optionalValues(node, "requiredFixtureTypes");
+        var fixtureCoverage = minCasesPerField(requiredFixtureTypes, node, "minCasesPerFixtureType");
+        requireFieldCoverage(caseNodes, "fixtureTypes", requiredFixtureTypes, fixtureCoverage);
+        var requiredBehaviors = optionalValues(node, "requiredBehaviors");
+        var behaviorCoverage = minCasesPerField(requiredBehaviors, node, "minCasesPerBehavior");
+        requireFieldCoverage(caseNodes, "behaviors", requiredBehaviors, behaviorCoverage);
         var totalCases = minTotalCases(node, caseNodes, qualityProfile, reviewType);
         requireSourceHashes(caseNodes, qualityProfile, reviewType);
         requireCoreParserAccuracyMetrics(metrics, qualityProfile, reviewType);
         requireCoreParserAccuracyTags(requiredTags, qualityProfile, reviewType);
-        return new Labeling(kind, Optional.of(version), reviewType, metrics, requiredTags, coverage, totalCases);
+        return new Labeling(
+                kind,
+                Optional.of(version),
+                reviewType,
+                metrics,
+                requiredTags,
+                coverage,
+                requiredFixtureTypes,
+                fixtureCoverage,
+                requiredBehaviors,
+                behaviorCoverage,
+                totalCases);
     }
 
     private static void requireCoreParserAccuracyTags(
@@ -461,11 +523,62 @@ public final class ParserBenchmarkCorpus {
     }
 
     private static Map<String, Integer> tagCounts(JsonNode caseNodes) {
+        return fieldCounts(caseNodes, "tags");
+    }
+
+    private static List<String> optionalValues(JsonNode node, String field) {
+        if (!node.path(field).isArray()) {
+            return List.of();
+        }
+        var values = new ArrayList<String>();
+        node.path(field).forEach(item -> {
+            String value = item.asText();
+            if (!value.isBlank()) {
+                values.add(value);
+            }
+        });
+        return values;
+    }
+
+    private static Map<String, Integer> minCasesPerField(List<String> required, JsonNode labeling, String field) {
+        if (required.isEmpty()) {
+            return Map.of();
+        }
+        int minimum = labeling.path(field).asInt(0);
+        if (minimum < 1) {
+            throw new IllegalArgumentException("parser-accuracy human-labeled corpus requires labeling." + field + " >= 1");
+        }
+        var coverage = new LinkedHashMap<String, Integer>();
+        required.forEach(value -> coverage.put(value, minimum));
+        return coverage;
+    }
+
+    private static void requireFieldCoverage(
+            JsonNode caseNodes, String field, List<String> required, Map<String, Integer> minimums) {
+        if (required.isEmpty()) {
+            return;
+        }
+        var counts = fieldCounts(caseNodes, field);
+        var failures = new ArrayList<String>();
+        required.forEach(value -> {
+            int actual = counts.getOrDefault(value, 0);
+            int minimum = minimums.getOrDefault(value, 1);
+            if (actual < minimum) {
+                failures.add(value + " minimum=" + minimum + " actual=" + actual);
+            }
+        });
+        if (!failures.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "parser-accuracy human-labeled corpus " + field + " coverage failed: " + String.join("; ", failures));
+        }
+    }
+
+    private static Map<String, Integer> fieldCounts(JsonNode caseNodes, String field) {
         var counts = new LinkedHashMap<String, Integer>();
         if (!caseNodes.isArray()) {
             return counts;
         }
-        caseNodes.forEach(node -> node.path("tags").forEach(tag -> {
+        caseNodes.forEach(node -> node.path(field).forEach(tag -> {
             String value = tag.asText();
             if (!value.isBlank()) {
                 counts.merge(value, 1, Integer::sum);
@@ -632,5 +745,9 @@ public final class ParserBenchmarkCorpus {
             List<String> requiredMetrics,
             List<String> requiredTags,
             Map<String, Integer> minCasesPerTag,
+            List<String> requiredFixtureTypes,
+            Map<String, Integer> minCasesPerFixtureType,
+            List<String> requiredBehaviors,
+            Map<String, Integer> minCasesPerBehavior,
             Optional<Integer> minTotalCases) {}
 }

@@ -114,6 +114,18 @@ fn benchmark_corpus_writes_recorded_report_artifact() {
     assert_eq!(recorded["caseCount"], 1);
     assert_eq!(recorded["casesPerTag"]["multi-layout"], 1);
     assert_eq!(recorded["minCasesPerTag"]["multi-layout"], 1);
+    assert_eq!(recorded["casesPerFixtureType"]["two-column"], 1);
+    assert_eq!(recorded["fixtureCoverageRequired"]["scanned-ocr"], 1);
+    assert_eq!(recorded["fixtureCoverageSatisfied"]["invoice"], true);
+    assert_eq!(recorded["casesPerBehavior"]["xy-cut-edge"], 1);
+    assert_eq!(
+        recorded["behaviorCoverageRequired"]["structure-tree-preference"],
+        1
+    );
+    assert_eq!(
+        recorded["behaviorCoverageSatisfied"]["table-cluster-heuristics"],
+        true
+    );
     assert_eq!(recorded["coverageRequired"]["multi-layout"], 1);
     assert_eq!(recorded["coverageSatisfied"]["multi-layout"], true);
     assert_eq!(recorded["validityInputs"]["sourceHashes"], true);
@@ -140,6 +152,28 @@ fn benchmark_corpus_writes_recorded_report_artifact() {
             .starts_with("sha256:")
     );
     assert_eq!(recorded["cases"][0]["replay"]["sourceRefReplayable"], true);
+    assert_eq!(
+        recorded["cases"][0]["fixtureTypes"],
+        json!([
+            "simple-single-column",
+            "two-column",
+            "sidebar-resume",
+            "table",
+            "borderless-table",
+            "scanned-ocr",
+            "invoice",
+            "mixed-layout"
+        ])
+    );
+    assert_eq!(
+        recorded["cases"][0]["behaviors"],
+        json!([
+            "xy-cut-edge",
+            "safety-filter",
+            "structure-tree-preference",
+            "table-cluster-heuristics"
+        ])
+    );
     assert_eq!(recorded["cases"][0]["replay"]["quoteReplayable"], true);
     assert_eq!(
         recorded["cases"][0]["replay"]["evidenceSpanReplayable"],
@@ -289,6 +323,86 @@ fn verify_benchmark_report_rejects_tampered_coverage_satisfaction() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("coverageSatisfied mismatch"));
+}
+
+#[test]
+fn verify_benchmark_report_rejects_tampered_fixture_coverage() {
+    let root = temp_dir("doctruth-runtime-report-fixture-coverage");
+    fs::create_dir_all(&root).unwrap();
+    let pdf = root.join("fixture.pdf");
+    let expected_markdown = root.join("expected.md");
+    let expected_document = root.join("expected.json");
+    let manifest = root.join("corpus.json");
+    let report_path = root.join("reports/parser-accuracy-report.json");
+    fs::write(&pdf, minimal_pdf("Rust corpus evidence.")).unwrap();
+    fs::write(&expected_markdown, "Rust corpus evidence.\n").unwrap();
+    fs::write(
+        &expected_document,
+        json!({"docId": "expected", "body": {"units": []}}).to_string(),
+    )
+    .unwrap();
+    fs::write(&manifest, benchmark_manifest()).unwrap();
+
+    write_recorded_report(&manifest, &report_path);
+    let mut recorded: Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).unwrap()).unwrap();
+    recorded["fixtureCoverageSatisfied"]["invoice"] = json!(false);
+    fs::write(&report_path, serde_json::to_string(&recorded).unwrap()).unwrap();
+
+    let mut verifier = Command::cargo_bin("doctruth-runtime").unwrap();
+    verifier
+        .write_stdin(
+            json!({
+                "command": "verify_benchmark_report",
+                "report_path": report_path
+            })
+            .to_string(),
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "fixtureCoverageSatisfied mismatch",
+        ));
+}
+
+#[test]
+fn verify_benchmark_report_rejects_tampered_behavior_coverage() {
+    let root = temp_dir("doctruth-runtime-report-behavior-coverage");
+    fs::create_dir_all(&root).unwrap();
+    let pdf = root.join("fixture.pdf");
+    let expected_markdown = root.join("expected.md");
+    let expected_document = root.join("expected.json");
+    let manifest = root.join("corpus.json");
+    let report_path = root.join("reports/parser-accuracy-report.json");
+    fs::write(&pdf, minimal_pdf("Rust corpus evidence.")).unwrap();
+    fs::write(&expected_markdown, "Rust corpus evidence.\n").unwrap();
+    fs::write(
+        &expected_document,
+        json!({"docId": "expected", "body": {"units": []}}).to_string(),
+    )
+    .unwrap();
+    fs::write(&manifest, benchmark_manifest()).unwrap();
+
+    write_recorded_report(&manifest, &report_path);
+    let mut recorded: Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).unwrap()).unwrap();
+    recorded["behaviorCoverageSatisfied"]["xy-cut-edge"] = json!(false);
+    fs::write(&report_path, serde_json::to_string(&recorded).unwrap()).unwrap();
+
+    let mut verifier = Command::cargo_bin("doctruth-runtime").unwrap();
+    verifier
+        .write_stdin(
+            json!({
+                "command": "verify_benchmark_report",
+                "report_path": report_path
+            })
+            .to_string(),
+        )
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "behaviorCoverageSatisfied mismatch",
+        ));
 }
 
 #[test]
@@ -907,7 +1021,25 @@ fn benchmark_manifest() -> String {
                 "bbox_coverage"
             ],
             "requiredTags": ["multi-layout"],
-            "minCasesPerTag": 1
+            "minCasesPerTag": 1,
+            "requiredFixtureTypes": [
+                "simple-single-column",
+                "two-column",
+                "sidebar-resume",
+                "table",
+                "borderless-table",
+                "scanned-ocr",
+                "invoice",
+                "mixed-layout"
+            ],
+            "minCasesPerFixtureType": 1,
+            "requiredBehaviors": [
+                "xy-cut-edge",
+                "safety-filter",
+                "structure-tree-preference",
+                "table-cluster-heuristics"
+            ],
+            "minCasesPerBehavior": 1
         },
         "minimums": {
             "reading_order_f1": 1.0,
@@ -919,6 +1051,22 @@ fn benchmark_manifest() -> String {
                 "name": "rust-multi-layout",
                 "labelId": "rust-seed-v1-0001",
                 "tags": ["multi-layout"],
+                "fixtureTypes": [
+                    "simple-single-column",
+                    "two-column",
+                    "sidebar-resume",
+                    "table",
+                    "borderless-table",
+                    "scanned-ocr",
+                    "invoice",
+                    "mixed-layout"
+                ],
+                "behaviors": [
+                    "xy-cut-edge",
+                    "safety-filter",
+                    "structure-tree-preference",
+                    "table-cluster-heuristics"
+                ],
                 "source": "fixture.pdf",
                 "expectedMarkdown": "expected.md",
                 "expectedDocument": "expected.json"

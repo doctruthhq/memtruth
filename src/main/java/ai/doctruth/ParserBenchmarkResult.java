@@ -15,10 +15,12 @@ public record ParserBenchmarkResult(
         Optional<String> labelId,
         List<String> tags,
         Optional<String> sourceSha256,
+        List<String> fixtureTypes,
+        List<String> behaviors,
         Map<String, Double> metrics) {
 
     public ParserBenchmarkResult(String name, Map<String, Double> metrics) {
-        this(name, Optional.empty(), List.of(), Optional.empty(), metrics);
+        this(name, Optional.empty(), List.of(), Optional.empty(), List.of(), List.of(), metrics);
     }
 
     public ParserBenchmarkResult {
@@ -26,11 +28,15 @@ public record ParserBenchmarkResult(
         Objects.requireNonNull(labelId, "labelId");
         Objects.requireNonNull(tags, "tags");
         Objects.requireNonNull(sourceSha256, "sourceSha256");
+        Objects.requireNonNull(fixtureTypes, "fixtureTypes");
+        Objects.requireNonNull(behaviors, "behaviors");
         Objects.requireNonNull(metrics, "metrics");
         if (name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
         tags = List.copyOf(tags);
+        fixtureTypes = List.copyOf(fixtureTypes);
+        behaviors = List.copyOf(behaviors);
         metrics = Map.copyOf(metrics);
     }
 

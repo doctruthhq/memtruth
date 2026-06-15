@@ -99,6 +99,16 @@ final class BenchmarkCorpusCommand {
             out.append("minCasesPerTag: ");
             out.append(joinEntries(corpus.minCasesPerTag())).append('\n');
         }
+        if (!corpus.requiredFixtureTypes().isEmpty()) {
+            out.append("requiredFixtureTypes: ").append(String.join(", ", corpus.requiredFixtureTypes())).append('\n');
+            out.append("minCasesPerFixtureType: ");
+            out.append(joinEntries(corpus.minCasesPerFixtureType())).append('\n');
+        }
+        if (!corpus.requiredBehaviors().isEmpty()) {
+            out.append("requiredBehaviors: ").append(String.join(", ", corpus.requiredBehaviors())).append('\n');
+            out.append("minCasesPerBehavior: ");
+            out.append(joinEntries(corpus.minCasesPerBehavior())).append('\n');
+        }
         corpus.minTotalCases().ifPresent(value -> out.append("minTotalCases: ").append(value).append('\n'));
     }
 
@@ -167,11 +177,21 @@ final class BenchmarkCorpusCommand {
         root.put("requiredMetrics", corpus.requiredMetrics());
         root.put("requiredTags", corpus.requiredTags());
         root.put("minCasesPerTag", corpus.minCasesPerTag());
+        root.put("requiredFixtureTypes", corpus.requiredFixtureTypes());
+        root.put("minCasesPerFixtureType", corpus.minCasesPerFixtureType());
+        root.put("requiredBehaviors", corpus.requiredBehaviors());
+        root.put("minCasesPerBehavior", corpus.minCasesPerBehavior());
         corpus.minTotalCases().ifPresent(value -> root.put("minTotalCases", value));
         root.put("caseCount", results.size());
         root.put("casesPerTag", casesPerTag(results));
         root.put("coverageRequired", corpus.minCasesPerTag());
         root.put("coverageSatisfied", coverageSatisfied(corpus.minCasesPerTag(), results));
+        root.put("casesPerFixtureType", counts(results, ParserBenchmarkResult::fixtureTypes));
+        root.put("fixtureCoverageRequired", corpus.minCasesPerFixtureType());
+        root.put("fixtureCoverageSatisfied", coverageSatisfied(corpus.minCasesPerFixtureType(), results, ParserBenchmarkResult::fixtureTypes));
+        root.put("casesPerBehavior", counts(results, ParserBenchmarkResult::behaviors));
+        root.put("behaviorCoverageRequired", corpus.minCasesPerBehavior());
+        root.put("behaviorCoverageSatisfied", coverageSatisfied(corpus.minCasesPerBehavior(), results, ParserBenchmarkResult::behaviors));
         root.put("validityInputs", validityInputs());
         root.put("minimums", corpus.minimums());
         root.put("maximums", corpus.maximums());
@@ -191,7 +211,24 @@ final class BenchmarkCorpusCommand {
 
     private static Map<String, Boolean> coverageSatisfied(
             Map<String, Integer> minimums, List<ParserBenchmarkResult> results) {
-        var actual = casesPerTag(results);
+        return coverageSatisfied(minimums, results, ParserBenchmarkResult::tags);
+    }
+
+    private static Map<String, Integer> counts(
+            List<ParserBenchmarkResult> results, java.util.function.Function<ParserBenchmarkResult, List<String>> values) {
+        var counts = new LinkedHashMap<String, Integer>();
+        results.stream()
+                .flatMap(result -> values.apply(result).stream())
+                .sorted()
+                .forEach(value -> counts.merge(value, 1, Integer::sum));
+        return counts;
+    }
+
+    private static Map<String, Boolean> coverageSatisfied(
+            Map<String, Integer> minimums,
+            List<ParserBenchmarkResult> results,
+            java.util.function.Function<ParserBenchmarkResult, List<String>> values) {
+        var actual = counts(results, values);
         var satisfied = new LinkedHashMap<String, Boolean>();
         minimums.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -218,6 +255,8 @@ final class BenchmarkCorpusCommand {
         result.labelId().ifPresent(labelId -> node.put("labelId", labelId));
         result.sourceSha256().ifPresent(sourceSha256 -> node.put("sourceSha256", sourceSha256));
         node.put("tags", result.tags());
+        node.put("fixtureTypes", result.fixtureTypes());
+        node.put("behaviors", result.behaviors());
         node.put("metrics", result.metrics());
         node.put("replay", replayNode(result));
         return node;

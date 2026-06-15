@@ -125,6 +125,8 @@ public record ParserBenchmarkCase(
                 labelId,
                 tags,
                 Optional.empty(),
+                List.of(),
+                List.of(),
                 sourcePath,
                 expectedMarkdown,
                 preset,
@@ -136,6 +138,8 @@ public record ParserBenchmarkCase(
             Optional<String> labelId,
             List<String> tags,
             Optional<String> sourceSha256,
+            List<String> fixtureTypes,
+            List<String> behaviors,
             Path sourcePath,
             String expectedMarkdown,
             ParserPreset preset,
@@ -145,13 +149,15 @@ public record ParserBenchmarkCase(
         Objects.requireNonNull(labelId, "labelId");
         Objects.requireNonNull(tags, "tags");
         Objects.requireNonNull(sourceSha256, "sourceSha256");
+        Objects.requireNonNull(fixtureTypes, "fixtureTypes");
+        Objects.requireNonNull(behaviors, "behaviors");
         Objects.requireNonNull(preset, "preset");
         Objects.requireNonNull(expectedDocument, "expectedDocument");
         long start = System.nanoTime();
         var document = TrustDocumentParser.parse(sourcePath, preset);
         return new ParserBenchmarkCase(
                 name,
-                new ParserBenchmarkLabel(labelId, tags, sourceSha256),
+                new ParserBenchmarkLabel(labelId, tags, sourceSha256, fixtureTypes, behaviors),
                 document,
                 new ParserBenchmarkExpectation(expectedMarkdown, Optional.of(expectedDocument)),
                 resourceMetrics(start));
@@ -178,6 +184,14 @@ public record ParserBenchmarkCase(
 
     public Optional<String> sourceSha256() {
         return label.sourceSha256();
+    }
+
+    public List<String> fixtureTypes() {
+        return label.fixtureTypes();
+    }
+
+    public List<String> behaviors() {
+        return label.behaviors();
     }
 
     public String expectedMarkdown() {

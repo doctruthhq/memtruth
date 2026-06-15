@@ -244,6 +244,12 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(recorded.path("casesPerTag").path("source-map").asInt()).isEqualTo(1);
         assertThat(recorded.path("coverageRequired").path("source-map").asInt()).isEqualTo(1);
         assertThat(recorded.path("coverageSatisfied").path("source-map").asBoolean()).isTrue();
+        assertThat(recorded.path("casesPerFixtureType").path("two-column").asInt()).isEqualTo(1);
+        assertThat(recorded.path("fixtureCoverageRequired").path("scanned-ocr").asInt()).isEqualTo(1);
+        assertThat(recorded.path("fixtureCoverageSatisfied").path("invoice").asBoolean()).isTrue();
+        assertThat(recorded.path("casesPerBehavior").path("xy-cut-edge").asInt()).isEqualTo(1);
+        assertThat(recorded.path("behaviorCoverageRequired").path("structure-tree-preference").asInt()).isEqualTo(1);
+        assertThat(recorded.path("behaviorCoverageSatisfied").path("table-cluster-heuristics").asBoolean()).isTrue();
         assertThat(recorded.path("validityInputs").path("sourceHashes").asBoolean()).isTrue();
         assertThat(recorded.path("validityInputs").path("manifestHash").asBoolean()).isTrue();
         assertThat(recorded.path("validityInputs").path("parserConfig").asText()).isEqualTo("TrustDocument");
@@ -260,6 +266,12 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(recorded.path("metrics").path("parser_latency_p95").asDouble()).isGreaterThanOrEqualTo(0.0);
         assertThat(recorded.path("cases").get(0).path("labelId").asText()).isEqualTo("layout-v1-report-0001");
         assertThat(recorded.path("cases").get(0).path("sourceSha256").asText()).startsWith("sha256:");
+        assertThat(recorded.path("cases").get(0).path("fixtureTypes"))
+                .extracting(node -> node.asText())
+                .contains("simple-single-column", "two-column", "sidebar-resume", "invoice", "mixed-layout");
+        assertThat(recorded.path("cases").get(0).path("behaviors"))
+                .extracting(node -> node.asText())
+                .contains("xy-cut-edge", "safety-filter", "structure-tree-preference", "table-cluster-heuristics");
         assertThat(recorded.path("cases").get(0).path("replay").path("sourceRefReplayable").asBoolean()).isTrue();
         assertThat(recorded.path("cases").get(0).path("replay").path("quoteReplayable").asBoolean()).isTrue();
         assertThat(recorded.path("cases").get(0).path("replay").path("evidenceSpanReplayable").asBoolean()).isTrue();
@@ -366,6 +378,36 @@ class ParserBenchmarkCorpusCliTest {
 
         assertThat(code).isEqualTo(1);
         assertThat(verifier.err()).contains("coverageSatisfied mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsTamperedFixtureCoverage() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var coverage = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("fixtureCoverageSatisfied");
+        coverage.put("invoice", false);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("fixtureCoverageSatisfied mismatch");
+    }
+
+    @Test
+    void verifyBenchmarkReportRejectsTamperedBehaviorCoverage() throws Exception {
+        Path report = writeRecordedBenchmarkReport();
+        var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
+        var coverage = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("behaviorCoverageSatisfied");
+        coverage.put("xy-cut-edge", false);
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
+        var verifier = cli();
+
+        int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
+
+        assertThat(code).isEqualTo(1);
+        assertThat(verifier.err()).contains("behaviorCoverageSatisfied mismatch");
     }
 
     @Test
@@ -828,6 +870,24 @@ class ParserBenchmarkCorpusCliTest {
                     ],
                     "requiredTags": ["multi-layout", "table", "ocr", "bbox", "source-map"],
                     "minCasesPerTag": 1,
+                    "requiredFixtureTypes": [
+                      "simple-single-column",
+                      "two-column",
+                      "sidebar-resume",
+                      "table",
+                      "borderless-table",
+                      "scanned-ocr",
+                      "invoice",
+                      "mixed-layout"
+                    ],
+                    "minCasesPerFixtureType": 1,
+                    "requiredBehaviors": [
+                      "xy-cut-edge",
+                      "safety-filter",
+                      "structure-tree-preference",
+                      "table-cluster-heuristics"
+                    ],
+                    "minCasesPerBehavior": 1,
                     "minTotalCases": 1
                   },
                   "minimums": {
@@ -844,6 +904,22 @@ class ParserBenchmarkCorpusCliTest {
                       "name": "multi-layout-report-case",
                       "labelId": "layout-v1-report-0001",
                       "tags": ["multi-layout", "table", "ocr", "bbox", "source-map"],
+                      "fixtureTypes": [
+                        "simple-single-column",
+                        "two-column",
+                        "sidebar-resume",
+                        "table",
+                        "borderless-table",
+                        "scanned-ocr",
+                        "invoice",
+                        "mixed-layout"
+                      ],
+                      "behaviors": [
+                        "xy-cut-edge",
+                        "safety-filter",
+                        "structure-tree-preference",
+                        "table-cluster-heuristics"
+                      ],
                       "source": "%s",
                       "sourceSha256": "%s",
                       "expectedMarkdown": "expected.md",

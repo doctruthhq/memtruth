@@ -37,9 +37,10 @@ final class BenchmarkCorpusCommand {
         } catch (IllegalStateException e) {
             throw new CliException(e.getMessage(), e);
         }
-        writeReport(options, corpus, results);
+        var externalArtifacts = writeOpenDataLoaderPrediction(options, corpus);
+        writeReport(options, corpus, results, externalArtifacts);
         if (options.json()) {
-            context.out().println(json(corpus, results, true));
+            context.out().println(json(corpus, results, true, externalArtifacts));
         } else {
             context.out().print(text(corpus, results));
         }
@@ -119,10 +120,14 @@ final class BenchmarkCorpusCommand {
                 .collect(java.util.stream.Collectors.joining(", "));
     }
 
-    private static String json(ParserBenchmarkCorpus corpus, List<ParserBenchmarkResult> results, boolean passed)
+    private static String json(
+            ParserBenchmarkCorpus corpus,
+            List<ParserBenchmarkResult> results,
+            boolean passed,
+            Map<String, Object> externalArtifacts)
             throws CliException {
         var root = new LinkedHashMap<String, Object>();
-        populateReport(root, corpus, results, passed);
+        populateReport(root, corpus, results, passed, externalArtifacts);
         try {
             return MAPPER.writeValueAsString(root);
         } catch (JsonProcessingException e) {
@@ -131,7 +136,10 @@ final class BenchmarkCorpusCommand {
     }
 
     private static void writeReport(
-            Options options, ParserBenchmarkCorpus corpus, List<ParserBenchmarkResult> results) throws CliException {
+            Options options,
+            ParserBenchmarkCorpus corpus,
+            List<ParserBenchmarkResult> results,
+            Map<String, Object> externalArtifacts) throws CliException {
         if (options.reportOut().isEmpty()) {
             return;
         }
@@ -139,7 +147,7 @@ final class BenchmarkCorpusCommand {
         root.put("reportFormat", "doctruth.parser-benchmark.report.v1");
         root.put("manifest", options.manifest().toAbsolutePath().normalize().toString());
         root.put("manifestSha256", sha256(options.manifest()));
-        populateReport(root, corpus, results, true);
+        populateReport(root, corpus, results, true, externalArtifacts);
         try {
             Path report = options.reportOut().get();
             Path parent = report.toAbsolutePath().getParent();
@@ -168,7 +176,11 @@ final class BenchmarkCorpusCommand {
     }
 
     private static void populateReport(
-            Map<String, Object> root, ParserBenchmarkCorpus corpus, List<ParserBenchmarkResult> results, boolean passed) {
+            Map<String, Object> root,
+            ParserBenchmarkCorpus corpus,
+            List<ParserBenchmarkResult> results,
+            boolean passed,
+            Map<String, Object> externalArtifacts) {
         root.put("corpus", corpus.name());
         root.put("kind", corpus.kind());
         corpus.labelSetVersion().ifPresent(version -> root.put("labelSetVersion", version));
@@ -196,6 +208,7 @@ final class BenchmarkCorpusCommand {
         root.put("minimums", corpus.minimums());
         root.put("maximums", corpus.maximums());
         root.put("externalEvaluations", corpus.externalEvaluations());
+        root.put("externalArtifacts", externalArtifacts);
         root.put("passed", passed);
         root.put("externalMetrics", corpus.externalMetrics());
         root.put("metrics", mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues()));
@@ -206,6 +219,40 @@ final class BenchmarkCorpusCommand {
         var merged = new LinkedHashMap<String, Double>(base);
         merged.putAll(external);
         return merged;
+    }
+
+    private static Map<String, Object> writeOpenDataLoaderPrediction(
+            Options options, ParserBenchmarkCorpus corpus) throws CliException {
+        if (options.openDataLoaderPredictionOut().isEmpty()) {
+            return Map.of();
+        }
+        Path root = options.openDataLoaderPredictionOut().get();
+        Path markdownDir = root.resolve("markdown");
+        try {
+            Files.createDirectories(markdownDir);
+            for (var benchmarkCase : corpus.cases()) {
+                String documentId = benchmarkCase.labelId().orElse(benchmarkCase.name());
+                Files.writeString(markdownDir.resolve(safeDocumentId(documentId) + ".md"),
+                        benchmarkCase.document().toMarkdownClean());
+            }
+            var summary = new LinkedHashMap<String, Object>();
+            summary.put("engine_name", "doctruth");
+            summary.put("engine_version", "local");
+            summary.put("document_count", corpus.cases().size());
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(root.resolve("summary.json").toFile(), summary);
+            var artifact = new LinkedHashMap<String, Object>();
+            artifact.put("engine", "doctruth");
+            artifact.put("path", root.toAbsolutePath().normalize().toString());
+            artifact.put("markdownPath", markdownDir.toAbsolutePath().normalize().toString());
+            artifact.put("documentCount", corpus.cases().size());
+            return Map.of("opendataloaderPrediction", artifact);
+        } catch (IOException e) {
+            throw new CliException("failed to write OpenDataLoader prediction artifacts: " + e.getMessage(), e);
+        }
+    }
+
+    private static String safeDocumentId(String value) {
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
     private static Map<String, Integer> casesPerTag(List<ParserBenchmarkResult> results) {
@@ -278,16 +325,22 @@ final class BenchmarkCorpusCommand {
         return replay;
     }
 
-    private record Options(Path manifest, boolean json, boolean offline, Optional<Path> reportOut) {
+    private record Options(
+            Path manifest,
+            boolean json,
+            boolean offline,
+            Optional<Path> reportOut,
+            Optional<Path> openDataLoaderPredictionOut) {
         static Options parse(String[] args) {
             if (args.length < 2) {
                 throw new UsageException(
-                        "usage: doctruth benchmark-corpus <manifest.json> [--json] [--offline] [--report-out <report.json>]");
+                        "usage: doctruth benchmark-corpus <manifest.json> [--json] [--offline] [--report-out <report.json>] [--opendataloader-prediction-out <dir>]");
             }
             Path manifest = Path.of(args[1]);
             boolean json = false;
             boolean offline = false;
             Optional<Path> reportOut = Optional.empty();
+            Optional<Path> openDataLoaderPredictionOut = Optional.empty();
             var tail = Arrays.copyOfRange(args, 2, args.length);
             for (int index = 0; index < tail.length; index++) {
                 String arg = tail[index];
@@ -300,10 +353,16 @@ final class BenchmarkCorpusCommand {
                         }
                         reportOut = Optional.of(Path.of(tail[++index]));
                     }
+                    case "--opendataloader-prediction-out" -> {
+                        if (index + 1 >= tail.length) {
+                            throw new UsageException("--opendataloader-prediction-out requires a directory");
+                        }
+                        openDataLoaderPredictionOut = Optional.of(Path.of(tail[++index]));
+                    }
                     default -> throw new UsageException("unknown benchmark-corpus option: " + arg);
                 }
             }
-            return new Options(manifest, json, offline, reportOut);
+            return new Options(manifest, json, offline, reportOut, openDataLoaderPredictionOut);
         }
     }
 }

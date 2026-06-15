@@ -502,6 +502,33 @@ class ParserBenchmarkCorpusCliTest {
     }
 
     @Test
+    void benchmarkCorpusExportsOpenDataLoaderPredictionArtifacts() throws Exception {
+        Path manifest = writeParserAccuracyManifest();
+        Path prediction = tempDir.resolve("prediction/doctruth");
+        var cli = cli();
+
+        int code = cli.run(new String[] {
+                "benchmark-corpus",
+                manifest.toString(),
+                "--json",
+                "--opendataloader-prediction-out",
+                prediction.toString()
+        });
+
+        assertThat(code).isZero();
+        assertThat(prediction.resolve("markdown/layout-v1-report-0001.md")).exists();
+        assertThat(Files.readString(prediction.resolve("markdown/layout-v1-report-0001.md")))
+                .contains("PROFILE")
+                .contains("Experienced operator");
+        var summary = MAPPER.readTree(Files.readString(prediction.resolve("summary.json")));
+        assertThat(summary.path("engine_name").asText()).isEqualTo("doctruth");
+        assertThat(summary.path("document_count").asInt()).isEqualTo(1);
+        var stdout = MAPPER.readTree(cli.out());
+        assertThat(stdout.path("externalArtifacts").path("opendataloaderPrediction").path("engine").asText())
+                .isEqualTo("doctruth");
+    }
+
+    @Test
     void verifyBenchmarkReportRejectsUnsupportedReportFormat() throws Exception {
         Path report = writeRecordedBenchmarkReport();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));

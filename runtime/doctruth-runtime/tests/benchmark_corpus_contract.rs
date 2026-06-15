@@ -250,6 +250,60 @@ fn verify_benchmark_report_accepts_recorded_report_artifact() {
 }
 
 #[test]
+fn benchmark_corpus_exports_opendataloader_prediction_artifacts() {
+    let root = temp_dir("doctruth-runtime-opendataloader-prediction");
+    fs::create_dir_all(&root).unwrap();
+    let pdf = root.join("fixture.pdf");
+    let expected_markdown = root.join("expected.md");
+    let expected_document = root.join("expected.json");
+    let manifest = root.join("corpus.json");
+    let prediction = root.join("prediction/doctruth");
+    fs::write(&pdf, minimal_pdf("Rust corpus evidence.")).unwrap();
+    fs::write(&expected_markdown, "Rust corpus evidence.\n").unwrap();
+    fs::write(
+        &expected_document,
+        json!({"docId": "expected", "body": {"units": []}}).to_string(),
+    )
+    .unwrap();
+    fs::write(&manifest, benchmark_manifest()).unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "benchmark_corpus",
+                "manifest_path": manifest,
+                "offline": true,
+                "opendataloader_prediction_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output).unwrap();
+
+    let markdown = prediction.join("markdown/rust-seed-v1-0001.md");
+    assert!(markdown.is_file());
+    assert!(
+        fs::read_to_string(markdown)
+            .unwrap()
+            .contains("Rust corpus evidence.")
+    );
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["engine_name"], "doctruth");
+    assert_eq!(summary["document_count"], 1);
+    assert_eq!(
+        report["externalArtifacts"]["opendataloaderPrediction"]["engine"],
+        "doctruth"
+    );
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

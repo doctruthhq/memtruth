@@ -810,6 +810,8 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
     require_dimension_coverage(&manifest, &case_reports, "behaviors", "minCasesPerBehavior")?;
     require_minimums(&manifest, &metrics)?;
     require_maximums(&manifest, &metrics)?;
+    let external_artifacts = write_opendataloader_prediction_if_requested(request, &case_reports)?;
+    let public_case_reports = public_case_reports(&case_reports);
     let labeling = &manifest["labeling"];
 
     let report = json!({
@@ -849,10 +851,11 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "minimums": manifest.get("minimums").cloned().unwrap_or_else(|| json!({})),
         "maximums": manifest.get("maximums").cloned().unwrap_or_else(|| json!({})),
         "externalEvaluations": manifest.get("externalEvaluations").cloned().unwrap_or_else(|| json!({})),
+        "externalArtifacts": external_artifacts,
         "externalMetrics": external.report,
         "passed": true,
         "metrics": metrics,
-        "cases": case_reports
+        "cases": public_case_reports
     });
     write_benchmark_report_if_requested(request, manifest_path, &report)?;
     Ok(report)
@@ -1006,6 +1009,90 @@ fn merge_object_metrics(metrics: &mut Value, external: &Value) {
     for (name, value) in source {
         target.insert(name.clone(), value.clone());
     }
+}
+
+fn write_opendataloader_prediction_if_requested(
+    request: &Value,
+    case_reports: &[Value],
+) -> Result<Value, String> {
+    let Some(output_dir) = request
+        .get("opendataloader_prediction_dir")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(json!({}));
+    };
+    let root = Path::new(output_dir);
+    let markdown_dir = root.join("markdown");
+    fs::create_dir_all(&markdown_dir).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
+    for case in case_reports {
+        let id = case
+            .get("labelId")
+            .and_then(Value::as_str)
+            .or_else(|| case.get("name").and_then(Value::as_str))
+            .unwrap_or("document");
+        let markdown = case
+            .get("_actualMarkdown")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        fs::write(
+            markdown_dir.join(format!("{}.md", safe_document_id(id))),
+            markdown,
+        )
+        .map_err(|error| {
+            error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+        })?;
+    }
+    let summary = json!({
+        "engine_name": "doctruth",
+        "engine_version": env!("CARGO_PKG_VERSION"),
+        "document_count": case_reports.len()
+    });
+    fs::write(root.join("summary.json"), pretty_json(&summary)?).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
+    Ok(json!({
+        "opendataloaderPrediction": {
+            "engine": "doctruth",
+            "path": root.to_string_lossy(),
+            "markdownPath": markdown_dir.to_string_lossy(),
+            "documentCount": case_reports.len()
+        }
+    }))
+}
+
+fn public_case_reports(case_reports: &[Value]) -> Vec<Value> {
+    case_reports
+        .iter()
+        .map(|case| {
+            let mut public = case.clone();
+            if let Some(object) = public.as_object_mut() {
+                object.remove("_actualMarkdown");
+            }
+            public
+        })
+        .collect()
+}
+
+fn safe_document_id(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn pretty_json(value: &Value) -> Result<String, String> {
+    serde_json::to_string_pretty(value).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })
 }
 
 fn benchmark_validity_inputs() -> Value {
@@ -1788,6 +1875,7 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
         "behaviors": case.get("behaviors").cloned().unwrap_or_else(|| json!([])),
         "preset": preset,
         "source": source_path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
+        "_actualMarkdown": actual_markdown,
         "metrics": metrics,
         "replay": case_replay(&json!({
             "sourceSha256": source_sha,

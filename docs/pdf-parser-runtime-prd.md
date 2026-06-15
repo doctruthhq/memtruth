@@ -2218,7 +2218,12 @@ declare `externalEvaluations.opendataloader` pointing at an OpenDataLoader-style
 `metrics.opendataloader_mhs`, and `metrics.opendataloader_speed` for normal
 threshold gates. This is an imported parser-quality signal only: OpenDataLoader
 schemas are not canonical, and TrustDocument remains the evidence/replay
-contract. Fixture taxonomy is
+contract. The adapter can also export OpenDataLoader Bench-style prediction
+artifacts to an explicit output directory: `markdown/<document_id>.md` files
+and `summary.json`, with `externalArtifacts.opendataloaderPrediction` recording
+the artifact path, engine, and document count. These artifacts are for external
+evaluator compatibility only; they do not replace TrustDocument or parser trace
+evidence. Fixture taxonomy is
 declared with `requiredFixtureTypes`, `minCasesPerFixtureType`, case
 `fixtureTypes`, `casesPerFixtureType`, `fixtureCoverageRequired`, and
 `fixtureCoverageSatisfied`; it covers simple single-column, two-column,

@@ -5886,3 +5886,60 @@
   `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml`;
   `sh scripts/smoke-doctruth-cli-sidecar.sh`;
   `sh scripts/smoke-doctruth-review-package.sh`.
+
+## 2026-06-15 Goal 3 Rust Runtime Capability Doctor
+
+- Started Goal 3 from the local parser model pipeline objective. The strongest
+  uncovered gap was that `doctruth-runtime --doctor` only reported coarse model
+  booleans, while Goal 3 requires Rust runtime ownership of capability reporting,
+  manifest/cache validation, worker readiness, memory observations, and
+  missing/SHA-mismatched model diagnostics.
+- Added RED Rust library contract tests proving `doctor_json()` must report:
+  native text extraction, document-structure/reading-order slots, layout/table/OCR
+  model capability slots, model manifest path, model cache directory,
+  per-preset model identities, `READY`, `MISSING`, and `SHA_MISMATCH` cache
+  states, actual SHA-256/size, worker configured/available/ready separation, and
+  runtime memory.
+- Implemented Rust runtime doctor output under `models` and expanded
+  `capabilities` from flat booleans into slot-level availability derived from
+  verified local cache state. The doctor path remains local-first: it does not
+  download models or run inference.
+- Added a RED worker-doctor test for a configured worker returning
+  `{"ok":false,"code":"model_runtime_unavailable"}`. Fixed Rust readiness
+  parsing so configured and executable workers are not treated as ready when
+  their own doctor reports a runtime failure.
+- Added explicit Rust protocol coverage for missing layout/table/OCR models.
+  `standard`, `table-server`, and `ocr` presets now have tests proving they
+  fall back through the lightweight local path, remain `NOT_AUDIT_GRADE`, and
+  emit severe `model_unavailable_fallback` warnings carrying the missing model
+  identity.
+- Updated `docs/pdf-parser-runtime-prd.md` and `task_plan.md` to record Phase
+  296 and 297 as complete while keeping parser-quality phases 284-292 open.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test library_contract`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_gracefully_falls_back_for_missing_layout_table_and_ocr_models`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test library_contract --test protocol_contract --test model_worker_contract`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+
+## 2026-06-15 OpenDataLoader Bench Vendored Import
+
+- Corrected the parser-quality blocker framing: OpenDataLoader Bench already
+  provides a public external parser-quality corpus, ground-truth Markdown,
+  evaluator code, and published engine prediction/evaluation artifacts. The
+  current gap is the DocTruth adapter and external metric gate, not the absence
+  of any usable corpus.
+- Vendored OpenDataLoader Bench under `third_party/opendataloader-bench/`,
+  excluding only repository metadata such as `.git` and `.vscode`. Imported
+  content includes PDFs, thumbnails, ground-truth Markdown, `reference.json`,
+  predictions, `evaluation.json` / CSV files, evaluator source, tests, charts,
+  license, and third-party notices.
+- Added `third_party/opendataloader-bench/SOURCE.md` with source URL, imported
+  commit `7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109`, license posture, and
+  DocTruth integration boundary.
+- Updated `AGENTS.md` to require future parser-quality work to use
+  OpenDataLoader Bench as the first external parser-quality gate before claiming
+  blocker on DocTruth-owned human-reviewed corpus.
+- Updated `NOTICE`, `docs/pdf-parser-runtime-prd.md`, and `task_plan.md` to
+  record the vendored benchmark and the next adapter/gate work.

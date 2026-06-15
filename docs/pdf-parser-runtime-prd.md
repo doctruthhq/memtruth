@@ -306,9 +306,10 @@ References:
 - XY-Cut++ sorter: https://github.com/opendataloader-project/opendataloader-pdf/blob/main/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorter.java
 - XY-Cut++ tests: https://github.com/opendataloader-project/opendataloader-pdf/blob/main/java/opendataloader-pdf-core/src/test/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorterTest.java
 
-OpenDataLoader Bench should become DocTruth's parser-quality foundation, not a
-replacement for DocTruth's evidence benchmark. Its public benchmark focuses on
-the substrate quality that evidence depends on:
+OpenDataLoader Bench is vendored in
+`third_party/opendataloader-bench/` and should become DocTruth's
+parser-quality foundation, not a replacement for DocTruth's evidence benchmark.
+Its public benchmark focuses on the substrate quality that evidence depends on:
 
 ```text
 reading order
@@ -355,8 +356,9 @@ emitted for review, but they must not be promoted as audit-grade by default.
 
 Licensing and execution posture:
 
-- OpenDataLoader Bench is Apache-2.0 and can be used as a benchmark/adaptation
-  reference with attribution.
+- OpenDataLoader Bench is Apache-2.0 and is vendored with its license,
+  third-party notices, PDFs, ground-truth Markdown, prediction artifacts,
+  evaluator code, and charts.
 - Do not vendor or execute AGPL/GPL/commercial engines from the benchmark suite
   in DocTruth CI. Keep such engines as external published prediction artifacts
   only when useful for comparison.
@@ -380,7 +382,7 @@ open.
 | --- | --- | --- | --- | --- |
 | Kreuzberg | Rust parser/runtime as the product core | Complete for Goal 1 defaultization, partial for later parser-quality depth | `runtime/doctruth-runtime` has `parse_pdf`, `benchmark_corpus`, model-worker handoff, packaged sidecar, Java CLI/MCP/SDK sidecar wiring, OCR runtime-first selection, path-first SDK backend selection, Rust-default CLI shorthand output, missing-runtime failures for default TrustDocument parsing, and `pdf_oxide` text-layer extraction, page geometry, rendered image hashes, and bbox-backed line units | Future parser-quality phases must reduce remaining `lopdf` duties to explicit table/debug compatibility support and broaden labeled accuracy coverage |
 | Kreuzberg | `pdf_oxide`-style Rust PDF backend | Complete for default PDF substrate, partial for table/debug completion | Current Rust runtime uses `pdf_oxide` for text-layer page extraction, span bbox evidence, column-order post-processing, page MediaBox geometry, and default rendered PNG page hashes, and declares `parserRun.pdfBackend`; `lopdf` still provides transitional table/debug extraction | Move table/debug extraction behind the Rust PDF backend boundary in the later parser-quality phase; keep `lopdf` only where it is explicitly needed as low-level/debug support |
-| Kreuzberg | Local model cache and manifest-driven model handoff | Complete for cache/manifest/handoff, partial for production execution | Cache warm, SHA verification, model descriptors, runtime hints, doctor output, Java and Rust worker request metadata, Rust runtime real RT-DETR/TATR artifact entrypoint, and Rust SLANeXT/OCR worker protocol smokes | Production model execution is still through external Python workers, not in-process Rust, and broad accuracy/release artifact evidence is still pending |
+| Kreuzberg | Local model cache and manifest-driven model handoff | Complete for cache/manifest/handoff, partial for production execution | Cache warm, SHA verification, model descriptors, runtime hints, Java and Rust doctor output, Java and Rust worker request metadata, Rust runtime real RT-DETR/TATR artifact entrypoint, and Rust SLANeXT/OCR worker protocol smokes | Production model execution is still through external Python workers, not in-process Rust, and broad accuracy/release artifact evidence is still pending |
 | Kreuzberg | RT-DETR-style layout detection | Complete for adapter/smoke and Rust runtime real-artifact entrypoint, partial for accuracy | Synthetic ONNX RT-DETR decoder smokes, opt-in public `Kreuzberg/layout-models` RT-DETR smoke, and `DOCTRUTH_RUNTIME_REAL_MODEL_ARTIFACTS=1` Rust runtime smoke | Broad labeled multi-layout corpus and calibrated layout-quality targets |
 | Kreuzberg | TATR-style table structure recognition | Complete for adapter/smoke and Rust runtime real-artifact entrypoint, partial for accuracy | Synthetic TATR decoder smokes, opt-in public Xenova TATR ONNX smoke with rendered-page input and row/column post-processing, and `DOCTRUTH_RUNTIME_REAL_MODEL_ARTIFACTS=1` Rust runtime smoke | Calibrated table normalization and labeled real-world table corpus |
 | Kreuzberg | SLANeXT/PaddleOCR-style server table recognition | Complete for adapter/runtime protocol, opt-in Java-side real smoke, and generated Rust-route real smoke; partial for accuracy | Packaged `doctruth-slanext-table-worker`, Java and Rust runtime worker smokes, fake worker smoke, opt-in real PaddleOCR/SLANeXT smoke, and `DOCTRUTH_RUNTIME_REAL_SLANEXT_SMOKE=1` through `doctruth-runtime parse_pdf` in an isolated `paddleocr+paddlepaddle` environment | Broad borderless/mixed-table corpus and calibrated SLANeXT/PaddleOCR table accuracy |
@@ -395,7 +397,7 @@ open.
 | OpenDataLoader PDF | Tagged-PDF structure tree preference | Planned | Reference pipeline uses native PDF tags when available before heuristic layout guessing | Add Rust capability detection and tests that tagged structure can inform reading order/provenance without hiding poor tag quality |
 | OpenDataLoader PDF | Parser safety/content filters | Planned | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping | Implement Rust filters that emit DocTruth warnings and block audit-grade when safety-critical content is removed or uncertain |
 | OpenDataLoader PDF | Table border/cluster heuristics | Planned | Reference parser combines bordered-table processing, cluster detection, cell normalization, nested depth limits, and adjacent table checks | Port only compatible heuristics into Rust table/debug backend after `lopdf` is removed from default parser-core duties |
-| OpenDataLoader Bench | Parser-quality foundation | Planned | Benchmark supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics | Add a DocTruth adapter that exports Rust runtime predictions into OpenDataLoader Bench shape, imports its parser-quality metrics into DocTruth benchmark reports, and gates audit-grade evidence when parser-quality thresholds fail |
+| OpenDataLoader Bench | Parser-quality foundation | Vendored, adapter planned | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics | Add a DocTruth adapter that exports Rust runtime predictions into OpenDataLoader Bench shape, imports its parser-quality metrics into DocTruth benchmark reports, and gates audit-grade evidence when parser-quality thresholds fail |
 | RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for adapter/runtime protocol and generated real Rust-route OCR smoke, partial for MNN/labeled quality | Packaged RapidOCR worker, fake readiness tests, isolated RapidOCR + ONNXRuntime smoke, generated OCR corpus gate, Rust runtime OCR worker smoke, and `DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1` through `doctruth-runtime parse_pdf` | MNN backend install path and labeled real-world scanned-PDF OCR corpus |
 | DocTruth-specific | Evidence-grade audit and replay boundary | Complete for v1 contracts | Severe warning taxonomy, audit-grade blocking, source hash, bbox/table-cell evidence, review package, MCP document evidence tools | Parser accuracy still depends on broad labeled corpus and Rust-core migration |
 
@@ -658,6 +660,16 @@ hints (`task`, `backend`, `format`, `precision`, `license`) through
 worker request. That keeps model identity/SHA verification separate from model
 execution hints while giving future real ONNX/TATR/SLANeXT workers enough
 metadata to route the correct runtime path.
+
+Current Rust runtime status: `doctruth-runtime --doctor` also reports the local
+model pipeline directly, not only through the Java CLI wrapper. It includes
+native text extraction, document-structure/reading-order slots, layout/table/OCR
+capability slots, the configured model manifest path, model cache directory,
+per-preset model identities, `READY` / `MISSING` / `SHA_MISMATCH` cache status,
+actual SHA-256 and size, worker configured/available/ready separation,
+worker-reported memory fields, and runtime RSS/peak memory. This doctor path
+does not download models or run inference, so it remains safe for local-first
+install checks and CI capability reporting.
 
 ### G5. Measurable Parser Quality
 

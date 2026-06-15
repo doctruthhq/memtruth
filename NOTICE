@@ -36,6 +36,16 @@ This software has runtime dependencies on the following open-source libraries
 - Failsafe (dev.failsafe:failsafe)               — Apache License 2.0
 - Apache Commons Text (org.apache.commons:*)     — Apache License 2.0
 
+Bundled third-party benchmark material:
+
+- OpenDataLoader Bench
+  Source: https://github.com/opendataloader-project/opendataloader-bench
+  Imported commit: 7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109
+  Location: third_party/opendataloader-bench/
+  License: Apache License 2.0
+  Dataset notice: DP-Bench is listed by OpenDataLoader Bench as MIT in
+  third_party/opendataloader-bench/THIRD_PARTY_NOTICES.md.
+
 Test-scope dependencies (not bundled in published artifacts):
 
 - JUnit Jupiter, AssertJ, Mockito, WireMock, slf4j-simple — see their respective

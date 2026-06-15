@@ -1000,3 +1000,38 @@
   in DocTruth CI. Use synthetic local fixtures and checked-in evaluation JSON
   for RED tests, then optionally compare external published prediction
   artifacts outside the default OSS gate.
+
+## 2026-06-15 Goal 3 Runtime Capability Doctor
+
+- Before this slice, Rust `doctruth-runtime --doctor` exposed runtime memory and
+  coarse model booleans only. Java CLI doctor could report richer model cache
+  state, but the Goal 3 ownership boundary says Rust runtime owns orchestration,
+  manifest/cache validation, capability reporting, and audit propagation for
+  parser models.
+- Rust runtime doctor now reports native text, document-structure/reading-order,
+  layout, table, and OCR capability slots. Model availability is derived from
+  local cache verification instead of optimistic preset names.
+- Rust runtime doctor now validates configured manifest/cache state without
+  inference: per-preset model identities, cache path, status, actual SHA-256,
+  actual size, and configured manifest path are visible in the runtime report.
+- Worker readiness is now separated from worker configuration and executability.
+  A worker that responds to `--doctor` with `ok:false` or a failure code is
+  reported as not ready even if the process exits successfully.
+- Remaining Goal 3 gaps are not erased by this doctor work: parser-quality
+  phases still need the OpenDataLoader-style geometry/filter/table work,
+  tagged-structure preference, and later OpenDataLoader Bench adapter/gates.
+
+## 2026-06-15 OpenDataLoader Bench Corpus Correction
+
+- The previous "broad human-reviewed corpus" blocker was too broad for current
+  parser-quality work. OpenDataLoader Bench already provides an external corpus,
+  ground-truth Markdown, evaluator code, and published `evaluation.json`
+  artifacts for parser-quality metrics.
+- The correct immediate gap is adapter work: export DocTruth Rust runtime output
+  to OpenDataLoader Bench prediction artifacts, run or consume its evaluator,
+  import NID/TEDS/MHS/speed metrics into DocTruth benchmark reports, and gate
+  audit-grade promotion on those parser-quality thresholds.
+- DocTruth-owned human-reviewed corpus work remains useful for evidence-specific
+  labels such as source maps, bbox anchoring, quote spans, and replay integrity,
+  but it should not block adoption of OpenDataLoader Bench as the first external
+  parser-quality gate.

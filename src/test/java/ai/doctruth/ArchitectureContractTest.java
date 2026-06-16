@@ -31,6 +31,24 @@ class ArchitectureContractTest {
                 .contains("In-process Rust model execution remains a future optimization");
     }
 
+    @Test
+    void referenceCompositionKeepsTrustDocumentCanonical() throws IOException {
+        String prd = Files.readString(Path.of("docs/pdf-parser-runtime-prd.md"));
+
+        assertThat(prd)
+                .contains("| PDF substrate | `pdf_oxide` |")
+                .contains("| Runtime packaging | Kreuzberg |")
+                .contains("| Reading-order edge cases | `pdf_oxide` + OpenDataLoader PDF |")
+                .contains("| Parser safety filters | OpenDataLoader PDF |")
+                .contains("| Unified document contract | Docling |")
+                .contains("| Layered output products | MinerU |")
+                .contains("| Evidence/trust | DocTruth |")
+                .contains("No external parser output is canonical.")
+                .contains("No external schema is canonical.")
+                .contains("No Java parser path is canonical.")
+                .contains("TrustDocument is canonical.");
+    }
+
     private static List<String> publicRecordViolations() throws IOException {
         var violations = new ArrayList<String>();
         try (var files = Files.walk(Path.of("src/main/java"))) {
@@ -58,7 +76,8 @@ class ArchitectureContractTest {
     }
 
     private static boolean allowedPublicRecordException(Path path, int count) {
-        return path.endsWith(Path.of("ai/doctruth/ParserRun.java")) && count == 6;
+        return (path.endsWith(Path.of("ai/doctruth/ParserRun.java")) && count == 6)
+                || (path.endsWith(Path.of("ai/doctruth/ParserBenchmarkResult.java")) && count == 7);
     }
 
     private static List<Integer> findPublicRecordComponentCounts(String source) {

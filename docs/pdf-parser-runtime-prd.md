@@ -188,6 +188,11 @@ No Java parser path is canonical.
 TrustDocument is canonical.
 ```
 
+Current guardrail status: `ArchitectureContractTest` asserts this composition
+table and conflict rule so future docs changes cannot quietly promote
+Kreuzberg, Docling, MinerU, OpenDataLoader, or Java/PDFBox into the canonical
+DocTruth contract.
+
 If `pdf_oxide`, an OpenDataLoader-style rule, a model worker, and a tagged-PDF
 structure tree disagree, DocTruth should not silently pick a winner in strict
 mode. It should record parser provenance, emit a warning when the disagreement

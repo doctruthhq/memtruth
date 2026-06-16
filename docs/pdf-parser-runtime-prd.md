@@ -2239,7 +2239,10 @@ must state whether the recorded report can be replayed from source hashes,
 manifest hash, parser configuration, model/cache manifest state, thresholds,
 expected labels, and the actual `TrustDocument` output. Each case must include a
 `replay` object for `sourceRefReplayable`, `quoteReplayable`, and
-`evidenceSpanReplayable`.
+`evidenceSpanReplayable`, plus the actual `TrustDocument` output and
+`actualTrustDocumentSha256` so the recorded report can prove its parser-quality
+and replay claims are bound to the real parsed document, not only copied
+metrics.
 
 Current structure-tree preference status: the Rust runtime now asks `pdf_oxide`
 for canonical page reading order, which prefers a trustworthy Tagged-PDF
@@ -2277,9 +2280,11 @@ consistent with the per-case metrics they summarize, that coverage satisfaction
 matches actual case tags, fixture types, and behavior tags, that replay validity
 inputs remain present, that imported OpenDataLoader metrics still match the
 referenced `evaluation.json` and its hash, and that case replay fields match the
-metrics/source hashes they summarize, so a report cannot be altered by changing
-only the aggregate, only external metrics, only coverage fields, or only
-case-level replay evidence.
+metrics/source hashes they summarize. They must also recompute each case's
+`actualTrustDocumentSha256` from the embedded `actualTrustDocument`, so a report
+cannot be altered by changing only the aggregate, only external metrics, only
+coverage fields, only case-level replay evidence, or only the parser output
+hash.
 Cached remote
 fixtures remain usable offline after SHA-256 verification.
 `scripts/smoke-doctruth-real-ocr-corpus.sh` is an opt-in runtime corpus smoke:

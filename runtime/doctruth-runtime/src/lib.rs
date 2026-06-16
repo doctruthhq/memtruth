@@ -1773,6 +1773,7 @@ fn verify_benchmark_report_json(request: &Value) -> Result<Value, String> {
     verify_report_validity_inputs(&report)?;
     verify_report_coverage(&report)?;
     verify_report_case_replay(&report)?;
+    verify_report_actual_trust_documents(&report)?;
     verify_report_aggregate_metrics(&report)?;
     verify_report_metric_thresholds(&report)?;
     Ok(json!({
@@ -2095,6 +2096,40 @@ fn verify_report_case_replay(report: &Value) -> Result<(), String> {
                 )
                 .to_string());
             }
+        }
+    }
+    Ok(())
+}
+
+fn verify_report_actual_trust_documents(report: &Value) -> Result<(), String> {
+    for case in report
+        .get("cases")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let name = case
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("unnamed");
+        let document = case.get("actualTrustDocument").ok_or_else(|| {
+            error_json(
+                "BENCHMARK_REPORT_INVALID",
+                &format!("case {name} missing actualTrustDocument"),
+            )
+            .to_string()
+        })?;
+        let expected = case
+            .get("actualTrustDocumentSha256")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let actual = trust_document_sha256(document)?;
+        if expected != actual {
+            return Err(error_json(
+                "BENCHMARK_REPORT_INVALID",
+                &format!("case {name} actualTrustDocumentSha256 mismatch"),
+            )
+            .to_string());
         }
     }
     Ok(())
@@ -2481,6 +2516,7 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
         &actual_markdown,
         &expected_markdown,
     );
+    let actual_document_sha = trust_document_sha256(&document)?;
 
     Ok(json!({
         "name": case.get("name").and_then(Value::as_str).unwrap_or("unnamed"),
@@ -2491,6 +2527,8 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
         "behaviors": case.get("behaviors").cloned().unwrap_or_else(|| json!([])),
         "preset": preset,
         "source": source_path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
+        "actualTrustDocument": document,
+        "actualTrustDocumentSha256": actual_document_sha,
         "_actualMarkdown": actual_markdown,
         "metrics": metrics,
         "replay": case_replay(&json!({
@@ -2498,6 +2536,12 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
             "metrics": metrics
         }))
     }))
+}
+
+fn trust_document_sha256(document: &Value) -> Result<String, String> {
+    let bytes = serde_json::to_vec(document)
+        .map_err(|error| error_json("BENCHMARK_REPORT_INVALID", &error.to_string()).to_string())?;
+    Ok(sha256_hex(&bytes))
 }
 
 fn case_replay(case: &Value) -> Value {

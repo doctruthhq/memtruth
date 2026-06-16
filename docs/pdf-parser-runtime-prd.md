@@ -400,7 +400,7 @@ open.
 | Docling | Parser backend/pipeline separation | Complete for Goal 1 defaultization, partial for later legacy-API migration | Parser presets, explicit Java oracle mode, sidecar backend, local worker protocols, Rust runtime commands, SDK backend modes, path-first Rust SDK parsing, MCP Rust parsing, and Rust-default CLI shorthand output | Java/PDFBox is not a primary parser core. Legacy document-first extraction remains compatibility-only until that older extraction API is reworked around the Rust runtime. |
 | OpenDataLoader PDF | XY-Cut++ reading order | Complete for Rust MVP, partial for broad corpus | Rust runtime has an attributed OpenDataLoader-style XY-Cut++ sorter covering cross-layout elements, adaptive horizontal/vertical cuts, narrow-outlier gap retry, two-column layouts, row-section preference, and sidebars | Broaden against labeled real-world PDF corpus and keep Java out of parser ownership |
 | OpenDataLoader PDF | Tagged-PDF structure tree preference | Planned | Reference pipeline uses native PDF tags when available before heuristic layout guessing | Add Rust capability detection and tests that tagged structure can inform reading order/provenance without hiding poor tag quality |
-| OpenDataLoader PDF | Parser safety/content filters | Partial | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters near-overlaid duplicate positioned text, emits a severe `duplicate_text_filtered` warning, and blocks audit-grade output | Complete hidden/off-page/tiny/background/whitespace filters, warning taxonomy, and benchmark assertions in Rust |
+| OpenDataLoader PDF | Parser safety/content filters | Partial | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters duplicate, whitespace-only, off-page, tiny, and near-white/background-like text-layer spans, emits severe parser-safety warnings, and blocks audit-grade output | Complete true hidden-text detection, robust render/graphics-state background filtering, broader warning taxonomy, and benchmark assertions in Rust |
 | OpenDataLoader PDF | Table border/cluster heuristics | Planned | Reference parser combines bordered-table processing, cluster detection, cell normalization, nested depth limits, and adjacent table checks | Port only compatible heuristics into Rust table/debug backend after `lopdf` is removed from default parser-core duties |
 | OpenDataLoader Bench | Parser-quality foundation | Vendored, adapter planned | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics | Add a DocTruth adapter that exports Rust runtime predictions into OpenDataLoader Bench shape, imports its parser-quality metrics into DocTruth benchmark reports, and gates audit-grade evidence when parser-quality thresholds fail |
 | RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for adapter/runtime protocol and generated real Rust-route OCR smoke, partial for MNN/labeled quality | Packaged RapidOCR worker, fake readiness tests, isolated RapidOCR + ONNXRuntime smoke, generated OCR corpus gate, Rust runtime OCR worker smoke, and `DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1` through `doctruth-runtime parse_pdf` | MNN backend install path and labeled real-world scanned-PDF OCR corpus |
@@ -2244,12 +2244,14 @@ expected labels, and the actual `TrustDocument` output. Each case must include a
 `replay` object for `sourceRefReplayable`, `quoteReplayable`, and
 `evidenceSpanReplayable`.
 
-Current parser-safety status: the Rust runtime has a first OpenDataLoader-style
-content-safety filter for near-overlaid duplicate positioned text. When this
-filter removes a duplicate line, it emits a severe `duplicate_text_filtered`
-warning and marks the parse `NOT_AUDIT_GRADE`. This is only the duplicate-text
-slice of parser safety; hidden text, off-page text, tiny text, background text,
-and whitespace-artifact filters remain pending.
+Current parser-safety status: the Rust runtime has OpenDataLoader-style
+content-safety filters for duplicate positioned text, whitespace-only spans,
+off-page spans, tiny spans, and near-white/background-like spans. These filters
+emit severe warnings such as `duplicate_text_filtered`,
+`whitespace_text_filtered`, `off_page_text_filtered`, `tiny_text_filtered`, and
+`background_text_filtered`, then mark the parse `NOT_AUDIT_GRADE`. This is
+still not the full hidden-text system: true hidden text and robust background
+detection based on graphics state or rendered-page comparison remain pending.
 The CLI must also verify a recorded report without rerunning the parser, so CI
 can prove that an archived parser-quality report still matches its manifest,
 thresholds, coverage counts, copied coverage requirements, metric values, and

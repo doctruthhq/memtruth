@@ -341,10 +341,16 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
                             .spans
                             .iter()
                             .flat_map(|span| {
-                                normalize_lines(&span.text)
+                                filterable_lines(&span.text)
                                     .into_iter()
                                     .map(|text| PositionedLine {
                                         text,
+                                        raw_bbox: RawPdfBox {
+                                            x0: span.bbox.x as f64,
+                                            y0: span.bbox.y as f64,
+                                            x1: (span.bbox.x + span.bbox.width) as f64,
+                                            y1: (span.bbox.y + span.bbox.height) as f64,
+                                        },
                                         bbox: normalize_pdf_rect(
                                             page_text.page_width,
                                             page_text.page_height,
@@ -353,6 +359,14 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
                                             span.bbox.x + span.bbox.width,
                                             span.bbox.y + span.bbox.height,
                                         ),
+                                        page_width: page_text.page_width as f64,
+                                        page_height: page_text.page_height as f64,
+                                        font_size: span.font_size as f64,
+                                        color: RuntimeColor {
+                                            r: span.color.r as f64,
+                                            g: span.color.g as f64,
+                                            b: span.color.b as f64,
+                                        },
                                     })
                                     .collect::<Vec<_>>()
                             })
@@ -714,6 +728,34 @@ fn filter_positioned_lines(lines: Vec<PositionedLine>) -> (Vec<PositionedLine>, 
     let mut warnings = Vec::new();
     for line in lines {
         if line.text.trim().is_empty() {
+            warnings.push(parser_safety_warning(
+                "whitespace_text_filtered",
+                "Filtered whitespace-only text-layer span",
+            ));
+            continue;
+        }
+        if off_page_positioned_line(&line) {
+            warnings.push(parser_safety_warning(
+                "off_page_text_filtered",
+                &format!("Filtered off-page text-layer span: {}", line.text),
+            ));
+            continue;
+        }
+        if tiny_positioned_line(&line) {
+            warnings.push(parser_safety_warning(
+                "tiny_text_filtered",
+                &format!("Filtered tiny text-layer span: {}", line.text),
+            ));
+            continue;
+        }
+        if near_white_positioned_line(&line) {
+            warnings.push(parser_safety_warning(
+                "background_text_filtered",
+                &format!(
+                    "Filtered near-white/background-like text-layer span: {}",
+                    line.text
+                ),
+            ));
             continue;
         }
         if kept
@@ -732,6 +774,21 @@ fn filter_positioned_lines(lines: Vec<PositionedLine>) -> (Vec<PositionedLine>, 
         kept.push(line);
     }
     (kept, warnings)
+}
+
+fn off_page_positioned_line(line: &PositionedLine) -> bool {
+    line.raw_bbox.x1 <= 0.0
+        || line.raw_bbox.y1 <= 0.0
+        || line.raw_bbox.x0 >= line.page_width
+        || line.raw_bbox.y0 >= line.page_height
+}
+
+fn tiny_positioned_line(line: &PositionedLine) -> bool {
+    line.font_size <= 2.0 || bbox_width(&line.bbox) <= 2.0 || bbox_height(&line.bbox) <= 2.0
+}
+
+fn near_white_positioned_line(line: &PositionedLine) -> bool {
+    line.color.r >= 0.98 && line.color.g >= 0.98 && line.color.b >= 0.98
 }
 
 fn duplicate_positioned_line(left: &PositionedLine, right: &PositionedLine) -> bool {
@@ -3260,7 +3317,27 @@ struct TextPoint {
 #[derive(Debug, Clone)]
 struct PositionedLine {
     text: String,
+    raw_bbox: RawPdfBox,
     bbox: RuntimeBox,
+    page_width: f64,
+    page_height: f64,
+    font_size: f64,
+    color: RuntimeColor,
+}
+
+#[derive(Debug, Clone)]
+struct RawPdfBox {
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeColor {
+    r: f64,
+    g: f64,
+    b: f64,
 }
 
 fn extract_tables(source_path: &str) -> Result<Vec<TableExtraction>, String> {
@@ -3841,6 +3918,14 @@ fn normalize_lines(text: &str) -> Vec<String> {
         .collect()
 }
 
+fn filterable_lines(text: &str) -> Vec<String> {
+    let lines = text.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return vec![normalize_text(text)];
+    }
+    lines.iter().map(|line| normalize_text(line)).collect()
+}
+
 fn normalize_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -3950,7 +4035,16 @@ mod tests {
     fn line(text: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> PositionedLine {
         PositionedLine {
             text: text.to_string(),
+            raw_bbox: RawPdfBox { x0, y0, x1, y1 },
             bbox: RuntimeBox { x0, y0, x1, y1 },
+            page_width: 1000.0,
+            page_height: 1000.0,
+            font_size: 12.0,
+            color: RuntimeColor {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+            },
         }
     }
 

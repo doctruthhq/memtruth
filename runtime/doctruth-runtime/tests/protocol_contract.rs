@@ -525,6 +525,36 @@ fn parse_pdf_filters_duplicate_positioned_text_and_marks_not_audit_grade() {
 }
 
 #[test]
+fn parse_pdf_filters_off_page_tiny_whitespace_and_background_text() {
+    let pdf = write_safety_filter_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let units = json["body"]["units"].as_array().unwrap();
+    let texts: Vec<&str> = units
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .map(|unit| unit["text"].as_str().unwrap())
+        .collect();
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+    assert_eq!(texts, vec!["Visible evidence."]);
+    assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
+    assert_warning(warnings, "off_page_text_filtered", "Off page evidence");
+    assert_warning(warnings, "tiny_text_filtered", "Tiny evidence");
+    assert_warning(warnings, "background_text_filtered", "Background evidence");
+    assert_warning(warnings, "whitespace_text_filtered", "whitespace-only");
+}
+
+#[test]
 fn parse_pdf_emits_table_cells_for_bordered_grid_pdf() {
     let pdf = write_bordered_table_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -827,6 +857,23 @@ fn write_duplicate_text_pdf_fixture() -> PathBuf {
     let path = temp_pdf_path("doctruth-runtime-duplicate-text-fixture");
     fs::write(&path, minimal_duplicate_text_pdf()).unwrap();
     path
+}
+
+fn write_safety_filter_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-safety-filter-fixture");
+    fs::write(&path, minimal_safety_filter_pdf()).unwrap();
+    path
+}
+
+fn assert_warning(warnings: &[Value], code: &str, message_part: &str) {
+    assert!(
+        warnings.iter().any(|warning| {
+            warning["code"] == code
+                && warning["severity"] == "SEVERE"
+                && warning["message"].as_str().unwrap().contains(message_part)
+        }),
+        "missing warning {code} containing {message_part}; got {warnings:?}"
+    );
 }
 
 fn write_fake_page_renderer() -> PathBuf {
@@ -1318,6 +1365,61 @@ BT
 (Unique evidence.) Tj
 ET
 ";
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
+    ];
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{}\nendobj\n", index + 1, object).as_bytes());
+    }
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            objects.len() + 1,
+            xref_offset
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+fn minimal_safety_filter_pdf() -> Vec<u8> {
+    let stream = "\
+BT
+/F1 16 Tf
+72 720 Td
+(Visible evidence.) Tj
+-500 0 Td
+(Off page evidence.) Tj
+500 -30 Td
+/F1 1 Tf
+(Tiny evidence.) Tj
+/F1 16 Tf
+0 -30 Td
+1 1 1 rg
+(Background evidence.) Tj
+0 0 0 rg
+0 -30 Td
+(      ) Tj
+ET
+";
+    minimal_single_stream_pdf(stream)
+}
+
+fn minimal_single_stream_pdf(stream: &str) -> Vec<u8> {
     let objects = [
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),

@@ -11,6 +11,9 @@ use pdf_oxide::document::PdfDocument;
 use pdf_oxide::layout::TextSpan;
 use pdf_oxide::pipeline::page_reading_order;
 use pdf_oxide::rendering::{RenderOptions, render_page};
+use pdf_oxide::structure::{
+    Table as PdfOxideTable, TableDetectionConfig, detect_tables_from_spans,
+};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -3522,6 +3525,22 @@ struct RuntimeColor {
 }
 
 fn extract_tables(source_path: &str) -> Result<Vec<TableExtraction>, String> {
+    let lopdf_tables = extract_tables_with_lopdf(source_path)?;
+    if lopdf_tables
+        .iter()
+        .any(|table| table.rationale == "bordered-grid table extraction")
+    {
+        return Ok(lopdf_tables);
+    }
+    let pdf_oxide_tables = extract_tables_with_pdf_oxide_spatial(source_path).unwrap_or_default();
+    if pdf_oxide_tables.is_empty() {
+        Ok(lopdf_tables)
+    } else {
+        Ok(pdf_oxide_tables)
+    }
+}
+
+fn extract_tables_with_lopdf(source_path: &str) -> Result<Vec<TableExtraction>, String> {
     let document = Document::load(source_path).map_err(|error| error.to_string())?;
     let mut tables = Vec::new();
     for (page_number, page_id) in document.get_pages() {
@@ -3536,6 +3555,106 @@ fn extract_tables(source_path: &str) -> Result<Vec<TableExtraction>, String> {
         }
     }
     Ok(merge_table_continuations(tables))
+}
+
+fn extract_tables_with_pdf_oxide_spatial(
+    source_path: &str,
+) -> Result<Vec<TableExtraction>, String> {
+    let document = PdfDocument::open(source_path).map_err(|error| error.to_string())?;
+    let page_count = document.page_count().map_err(|error| error.to_string())?;
+    let mut tables = Vec::new();
+    for page_index in 0..page_count {
+        let spans = document
+            .extract_spans(page_index)
+            .map_err(|error| error.to_string())?;
+        let config = TableDetectionConfig::default();
+        let (page_width, page_height) =
+            pdf_oxide_page_dimensions(&document, page_index).unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
+        for table in detect_tables_from_spans(&spans, &config) {
+            if let Some(extracted) = pdf_oxide_table_to_extraction(
+                page_index + 1,
+                page_width,
+                page_height,
+                tables.len() + 1,
+                table,
+            ) {
+                tables.push(extracted);
+            }
+        }
+    }
+    Ok(merge_table_continuations(tables))
+}
+
+fn pdf_oxide_table_to_extraction(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    table_index: usize,
+    table: PdfOxideTable,
+) -> Option<TableExtraction> {
+    let mut cells = Vec::new();
+    for (row_index, row) in table.rows.iter().enumerate() {
+        for (column_index, cell) in row.cells.iter().enumerate() {
+            let bbox = cell
+                .bbox
+                .as_ref()
+                .map(|bbox| rect_to_runtime_box(page_width, page_height, bbox))
+                .unwrap_or_else(|| {
+                    fallback_cell_bbox(page_width, page_height, row_index, column_index)
+                });
+            cells.push(TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row_index:04}-{column_index:04}"),
+                row: row_index,
+                column: column_index,
+                row_end: row_index + cell.rowspan.saturating_sub(1) as usize,
+                column_end: column_index + cell.colspan.saturating_sub(1) as usize,
+                bbox,
+                text: normalize_text(&cell.text),
+            });
+        }
+    }
+    if cells.is_empty() {
+        return None;
+    }
+    let bbox = table
+        .bbox
+        .as_ref()
+        .map(|bbox| rect_to_runtime_box(page_width, page_height, bbox))
+        .unwrap_or_else(|| combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()));
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox,
+        rationale: "pdf_oxide text-spatial table extraction".to_string(),
+        cells,
+    })
+}
+
+fn rect_to_runtime_box(
+    page_width: f64,
+    page_height: f64,
+    rect: &pdf_oxide::geometry::Rect,
+) -> RuntimeBox {
+    normalize_pdf_rect(
+        page_width as f32,
+        page_height as f32,
+        rect.x,
+        rect.y,
+        rect.x + rect.width,
+        rect.y + rect.height,
+    )
+}
+
+fn fallback_cell_bbox(
+    page_width: f64,
+    page_height: f64,
+    row_index: usize,
+    column_index: usize,
+) -> RuntimeBox {
+    let left = 40.0 + (column_index as f64 * 120.0);
+    let top = 80.0 + (row_index as f64 * 28.0);
+    normalize_bbox_for_page(page_width, page_height, left, top, left + 100.0, top + 20.0)
 }
 
 fn table_from_operations(

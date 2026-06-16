@@ -401,7 +401,7 @@ open.
 | OpenDataLoader PDF | XY-Cut++ reading order | Complete for Rust MVP, partial for broad corpus | Rust runtime has an attributed OpenDataLoader-style XY-Cut++ sorter covering cross-layout elements, adaptive horizontal/vertical cuts, narrow-outlier gap retry, two-column layouts, row-section preference, and sidebars | Broaden against labeled real-world PDF corpus and keep Java out of parser ownership |
 | OpenDataLoader PDF | Tagged-PDF structure tree preference | Complete for Rust MVP, partial for broad semantic tag export | Rust runtime uses `pdf_oxide` canonical page reading order so trustworthy Tagged-PDF structure trees beat geometric ordering, emits `parserRun.readingOrder` and `parseTrace.readingOrder`, and falls back to XY-Cut with a structured warning when `/MarkInfo /Suspects true` marks the tree unreliable | Broaden against real tagged PDFs and expose richer role/heading/list/table semantics through `TrustDocument` without making external parser schemas canonical |
 | OpenDataLoader PDF | Parser safety/content filters | Partial | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters duplicate, whitespace-only, off-page, tiny, and near-white/background-like text-layer spans, emits severe parser-safety warnings, and blocks audit-grade output | Complete true hidden-text detection, robust render/graphics-state background filtering, broader warning taxonomy, and benchmark assertions in Rust |
-| OpenDataLoader PDF | Table border/cluster heuristics | Planned | Reference parser combines bordered-table processing, cluster detection, cell normalization, nested depth limits, and adjacent table checks | Port only compatible heuristics into Rust table/debug backend after `lopdf` is removed from default parser-core duties |
+| OpenDataLoader PDF | Table border/cluster heuristics | Partial | Rust runtime now normalizes `pdf_oxide` text-spatial borderless table detection into `TrustDocument` tables before falling back to the transitional `lopdf` path; reference parser also combines bordered-table processing, cluster detection, cell normalization, nested depth limits, and adjacent table checks | Port compatible bordered/line-table heuristics into the Rust backend, remove default parser-core reliance on `lopdf`, and broaden table metrics against labeled fixtures |
 | OpenDataLoader Bench | Parser-quality foundation | Vendored, adapter planned | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics | Add a DocTruth adapter that exports Rust runtime predictions into OpenDataLoader Bench shape, imports its parser-quality metrics into DocTruth benchmark reports, and gates audit-grade evidence when parser-quality thresholds fail |
 | RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for adapter/runtime protocol and generated real Rust-route OCR smoke, partial for MNN/labeled quality | Packaged RapidOCR worker, fake readiness tests, isolated RapidOCR + ONNXRuntime smoke, generated OCR corpus gate, Rust runtime OCR worker smoke, and `DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1` through `doctruth-runtime parse_pdf` | MNN backend install path and labeled real-world scanned-PDF OCR corpus |
 | DocTruth-specific | Evidence-grade audit and replay boundary | Complete for v1 contracts | Severe warning taxonomy, audit-grade blocking, source hash, bbox/table-cell evidence, review package, MCP document evidence tools | Parser accuracy still depends on broad labeled corpus and Rust-core migration |
@@ -2253,6 +2253,14 @@ runtime falls back to XY-Cut and emits a non-severe
 `structure_tree_suspect_fallback` warning. This proves the reading-order
 preference and replay trace boundary; richer role/heading/list/table semantic
 export from tags remains a later parser-quality expansion.
+
+Current table-migration status: borderless/text-spatial table extraction now
+uses `pdf_oxide` `detect_tables_from_spans` and normalizes the result through
+DocTruth `TrustDocument` table cells. The transitional `lopdf` path is still
+used for bordered-grid line extraction and low-level content-stream safety
+checks. This starts the Rust backend table migration but does not complete
+OpenDataLoader-style bordered/cluster heuristics or remove `lopdf` from the
+default parser-core dependency set.
 
 Current parser-safety status: the Rust runtime has OpenDataLoader-style
 content-safety filters for duplicate positioned text, whitespace-only spans,

@@ -666,6 +666,34 @@ fn parse_pdf_emits_table_cells_for_bordered_grid_pdf() {
 }
 
 #[test]
+fn parse_pdf_uses_pdf_oxide_text_spatial_table_detection_for_borderless_table() {
+    let pdf = write_borderless_table_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let cells = tables[0]["cells"].as_array().unwrap();
+
+    assert_eq!(tables.len(), 1);
+    assert_eq!(
+        tables[0]["confidence"]["rationale"],
+        "pdf_oxide text-spatial table extraction"
+    );
+    assert!(cells.iter().any(|cell| cell["text"] == "Name"));
+    assert!(cells.iter().any(|cell| cell["text"] == "Score"));
+    assert!(cells.iter().any(|cell| cell["text"] == "Alex"));
+    assert!(cells.iter().any(|cell| cell["text"] == "98"));
+}
+
+#[test]
 fn parse_pdf_preserves_horizontal_merged_cell_column_span() {
     let pdf = write_merged_table_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -935,6 +963,12 @@ fn write_safety_filter_pdf_fixture() -> PathBuf {
     path
 }
 
+fn write_borderless_table_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-borderless-table-fixture");
+    fs::write(&path, minimal_borderless_table_pdf()).unwrap();
+    path
+}
+
 fn write_tagged_structure_order_pdf_fixture() -> PathBuf {
     let path = temp_pdf_path("doctruth-runtime-tagged-structure-order-fixture");
     fs::write(&path, minimal_tagged_structure_order_pdf(false)).unwrap();
@@ -1201,6 +1235,33 @@ Q
         .as_bytes(),
     );
     pdf
+}
+
+fn minimal_borderless_table_pdf() -> Vec<u8> {
+    let stream = "\
+BT
+/F1 16 Tf
+72 720 Td
+(Name) Tj
+120 0 Td
+(Score) Tj
+120 0 Td
+(Team) Tj
+-240 -40 Td
+(Alex) Tj
+120 0 Td
+(98) Tj
+120 0 Td
+(Red) Tj
+-240 -40 Td
+(Blair) Tj
+120 0 Td
+(87) Tj
+120 0 Td
+(Blue) Tj
+ET
+";
+    minimal_single_stream_pdf(stream)
 }
 
 fn minimal_merged_table_pdf() -> Vec<u8> {

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use lopdf::{Document, Object, content::Content};
+use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
 use pdf_oxide::document::PdfDocument;
 use pdf_oxide::layout::TextSpan;
 use pdf_oxide::pipeline::page_reading_order;
@@ -20,8 +20,8 @@ use sha2::{Digest, Sha256};
 const RUNTIME: &str = "doctruth-runtime";
 const PROTOCOL_VERSION: &str = "1";
 const PDF_BACKEND_TARGET: &str = "pdf_oxide";
-const PDF_BACKEND_CURRENT: &str = "pdf_oxide+lopdf";
-const PDF_BACKEND_STATUS: &str = "PARTIAL";
+const PDF_BACKEND_CURRENT: &str = "pdf_oxide";
+const PDF_BACKEND_STATUS: &str = "DEFAULT";
 const PAGE_WIDTH: f64 = 612.0;
 const PAGE_HEIGHT: f64 = 792.0;
 const GRID_EPSILON: f64 = 1.0;
@@ -280,7 +280,6 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .flat_map(|page| page.warnings.clone())
         .collect::<Vec<_>>();
     warnings.extend(extracted.warnings.clone());
-    warnings.extend(off_page_text_warnings_from_content(source_path));
     warnings.extend(model_unavailable_warnings(preset, &required_models));
     let audit_grade_status = if warnings.iter().any(is_severe_warning) {
         "NOT_AUDIT_GRADE"
@@ -342,6 +341,12 @@ struct ExtractedPage {
     warnings: Vec<Value>,
 }
 
+#[derive(Debug, Default)]
+struct RawContentSafety {
+    warnings: Vec<Value>,
+    hidden_texts: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 struct ReadingOrderDecision {
     source: &'static str,
@@ -394,18 +399,21 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<ExtractedDocument, 
                 .unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
             page_reading_order(&document, page_index)
                 .map(|ordered_spans| {
+                    let raw_safety = raw_content_safety(&document, page_index);
                     let canonical_lines = positioned_lines_from_spans(
                         ordered_spans.iter().map(|ordered_span| &ordered_span.span),
                         page_width,
                         page_height,
                     );
-                    let (positioned_lines, mut warnings) = filter_positioned_lines(canonical_lines);
+                    let (positioned_lines, mut warnings) =
+                        filter_positioned_lines(canonical_lines, &raw_safety.hidden_texts);
                     warnings.extend(raw_span_safety_warnings(
                         &document,
                         page_index,
                         page_width,
                         page_height,
                     ));
+                    warnings.extend(raw_safety.warnings);
                     let positioned_lines = if use_structure_order {
                         positioned_lines
                     } else {
@@ -475,32 +483,27 @@ fn raw_span_safety_warnings(
         .collect()
 }
 
-fn off_page_text_warnings_from_content(source_path: &str) -> Vec<Value> {
-    let Ok(document) = Document::load(source_path) else {
-        return Vec::new();
+fn raw_content_safety(document: &PdfDocument, page_index: usize) -> RawContentSafety {
+    let Ok(content) = document.get_page_content_data(page_index) else {
+        return RawContentSafety::default();
     };
-    let mut warnings = Vec::new();
-    for (_page_number, page_id) in document.get_pages() {
-        let Ok(content) = document.get_page_content(page_id) else {
-            continue;
-        };
-        let Ok(decoded) = Content::decode(&content) else {
-            continue;
-        };
-        let (_segments, text_points) = page_graphics_and_text(&decoded.operations);
-        warnings.extend(
-            text_points
-                .into_iter()
-                .filter(off_page_text_point)
-                .map(|point| {
-                    parser_safety_warning(
-                        "off_page_text_filtered",
-                        &format!("Filtered off-page text-layer span: {}", point.text),
-                    )
-                }),
-        );
+    let Ok(operations) = parse_content_stream(&content) else {
+        return RawContentSafety::default();
+    };
+    let (_segments, text_points) = page_graphics_and_text(&operations);
+    let mut safety = RawContentSafety::default();
+    for point in text_points {
+        if off_page_text_point(&point) {
+            safety.warnings.push(parser_safety_warning(
+                "off_page_text_filtered",
+                &format!("Filtered off-page text-layer span: {}", point.text),
+            ));
+        }
+        if point.hidden {
+            safety.hidden_texts.push(point.text.clone());
+        }
     }
-    warnings
+    safety
 }
 
 fn off_page_text_point(point: &TextPoint) -> bool {
@@ -893,7 +896,10 @@ fn bbox_center_y(bbox: &RuntimeBox) -> f64 {
     (bbox.y0 + bbox.y1) / 2.0
 }
 
-fn filter_positioned_lines(lines: Vec<PositionedLine>) -> (Vec<PositionedLine>, Vec<Value>) {
+fn filter_positioned_lines(
+    lines: Vec<PositionedLine>,
+    hidden_texts: &[String],
+) -> (Vec<PositionedLine>, Vec<Value>) {
     let mut kept: Vec<PositionedLine> = Vec::new();
     let mut warnings = Vec::new();
     for line in lines {
@@ -928,6 +934,13 @@ fn filter_positioned_lines(lines: Vec<PositionedLine>) -> (Vec<PositionedLine>, 
             ));
             continue;
         }
+        if hidden_positioned_line(&line, hidden_texts) {
+            warnings.push(parser_safety_warning(
+                "hidden_text_filtered",
+                &format!("Filtered hidden text-layer span: {}", line.text),
+            ));
+            continue;
+        }
         if kept
             .iter()
             .any(|candidate| duplicate_positioned_line(candidate, &line))
@@ -959,6 +972,13 @@ fn tiny_positioned_line(line: &PositionedLine) -> bool {
 
 fn near_white_positioned_line(line: &PositionedLine) -> bool {
     line.color.r >= 0.98 && line.color.g >= 0.98 && line.color.b >= 0.98
+}
+
+fn hidden_positioned_line(line: &PositionedLine, hidden_texts: &[String]) -> bool {
+    let normalized = normalize_text_for_filter(&line.text);
+    hidden_texts
+        .iter()
+        .any(|hidden| normalize_text_for_filter(hidden) == normalized)
 }
 
 fn duplicate_positioned_line(left: &PositionedLine, right: &PositionedLine) -> bool {
@@ -3496,6 +3516,7 @@ struct TextPoint {
     y: f64,
     font_size: f64,
     text: String,
+    hidden: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3525,32 +3546,24 @@ struct RuntimeColor {
 }
 
 fn extract_tables(source_path: &str) -> Result<Vec<TableExtraction>, String> {
-    let lopdf_tables = extract_tables_with_lopdf(source_path)?;
-    if lopdf_tables
-        .iter()
-        .any(|table| table.rationale == "bordered-grid table extraction")
-    {
-        return Ok(lopdf_tables);
+    let line_tables = extract_tables_with_pdf_oxide_lines(source_path)?;
+    if !line_tables.is_empty() {
+        return Ok(line_tables);
     }
     let pdf_oxide_tables = extract_tables_with_pdf_oxide_spatial(source_path).unwrap_or_default();
     if pdf_oxide_tables.is_empty() {
-        Ok(lopdf_tables)
+        Ok(Vec::new())
     } else {
         Ok(pdf_oxide_tables)
     }
 }
 
-fn extract_tables_with_lopdf(source_path: &str) -> Result<Vec<TableExtraction>, String> {
-    let document = Document::load(source_path).map_err(|error| error.to_string())?;
+fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExtraction>, String> {
+    let document = PdfDocument::open(source_path).map_err(|error| error.to_string())?;
+    let page_count = document.page_count().map_err(|error| error.to_string())?;
     let mut tables = Vec::new();
-    for (page_number, page_id) in document.get_pages() {
-        let content = document
-            .get_page_content(page_id)
-            .map_err(|error| error.to_string())?;
-        let decoded = Content::decode(&content).map_err(|error| error.to_string())?;
-        if let Some(table) =
-            table_from_operations(page_number as usize, &decoded.operations, tables.len() + 1)
-        {
+    for page_index in 0..page_count {
+        if let Some(table) = table_from_pdf_oxide_page(&document, page_index, tables.len() + 1)? {
             tables.push(table);
         }
     }
@@ -3657,20 +3670,26 @@ fn fallback_cell_bbox(
     normalize_bbox_for_page(page_width, page_height, left, top, left + 100.0, top + 20.0)
 }
 
-fn table_from_operations(
-    page_number: usize,
-    operations: &[lopdf::content::Operation],
+fn table_from_pdf_oxide_page(
+    document: &PdfDocument,
+    page_index: usize,
     table_index: usize,
-) -> Option<TableExtraction> {
-    let (segments, text_points) = page_graphics_and_text(operations);
-    table_from_primitives(
-        page_number,
-        PAGE_WIDTH,
-        PAGE_HEIGHT,
+) -> Result<Option<TableExtraction>, String> {
+    let content = document
+        .get_page_content_data(page_index)
+        .map_err(|error| error.to_string())?;
+    let operations = parse_content_stream(&content).map_err(|error| error.to_string())?;
+    let (segments, text_points) = page_graphics_and_text(&operations);
+    let (page_width, page_height) =
+        pdf_oxide_page_dimensions(document, page_index).unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
+    Ok(table_from_primitives(
+        page_index + 1,
+        page_width,
+        page_height,
         &segments,
         &text_points,
         table_index,
-    )
+    ))
 }
 
 fn merge_table_continuations(tables: Vec<TableExtraction>) -> Vec<TableExtraction> {
@@ -3818,7 +3837,7 @@ fn table_from_primitives(
         page_number,
         table_id: format!("table-{table_index:04}"),
         bbox: normalize_bbox_for_page(page_width, page_height, left, top, right, bottom),
-        rationale: "bordered-grid table extraction".to_string(),
+        rationale: "pdf_oxide line-table extraction".to_string(),
         cells,
     })
 }
@@ -3941,30 +3960,62 @@ fn estimate_text_bbox(page_width: f64, page_height: f64, point: &TextPoint) -> R
     )
 }
 
-fn page_graphics_and_text(
-    operations: &[lopdf::content::Operation],
-) -> (Vec<Segment>, Vec<TextPoint>) {
+fn page_graphics_and_text(operations: &[Operator]) -> (Vec<Segment>, Vec<TextPoint>) {
     let mut segments = Vec::new();
     let mut path_points: Vec<(f64, f64)> = Vec::new();
     let mut text_points = Vec::new();
     let mut text_x = 0.0;
     let mut text_y = 0.0;
     let mut font_size = 12.0;
+    let mut hidden = false;
 
     for operation in operations {
-        match operation.operator.as_str() {
-            "m" => {
-                if let Some((x, y)) = two_numbers(&operation.operands) {
-                    path_points.clear();
-                    path_points.push((x, y));
-                }
+        match operation {
+            Operator::MoveTo { x, y } => {
+                path_points.clear();
+                path_points.push((f64::from(*x), f64::from(*y)));
             }
-            "l" => {
-                if let Some((x, y)) = two_numbers(&operation.operands) {
-                    path_points.push((x, y));
-                }
+            Operator::LineTo { x, y } => {
+                path_points.push((f64::from(*x), f64::from(*y)));
             }
-            "S" | "s" => {
+            Operator::Rectangle {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                let left = f64::from(*x);
+                let bottom = f64::from(*y);
+                let right = left + f64::from(*width);
+                let top = bottom + f64::from(*height);
+                segments.extend([
+                    Segment {
+                        x0: left,
+                        y0: bottom,
+                        x1: right,
+                        y1: bottom,
+                    },
+                    Segment {
+                        x0: right,
+                        y0: bottom,
+                        x1: right,
+                        y1: top,
+                    },
+                    Segment {
+                        x0: right,
+                        y0: top,
+                        x1: left,
+                        y1: top,
+                    },
+                    Segment {
+                        x0: left,
+                        y0: top,
+                        x1: left,
+                        y1: bottom,
+                    },
+                ]);
+            }
+            Operator::Stroke | Operator::CloseFillStroke => {
                 for pair in path_points.windows(2) {
                     let (x0, y0) = pair[0];
                     let (x1, y1) = pair[1];
@@ -3972,32 +4023,41 @@ fn page_graphics_and_text(
                 }
                 path_points.clear();
             }
-            "BT" => {
+            Operator::BeginText => {
                 text_x = 0.0;
                 text_y = 0.0;
+                hidden = false;
             }
-            "Td" | "TD" => {
-                if let Some((dx, dy)) = two_numbers(&operation.operands) {
-                    text_x += dx;
-                    text_y += dy;
-                }
+            Operator::Td { tx, ty } | Operator::TD { tx, ty } => {
+                text_x += f64::from(*tx);
+                text_y += f64::from(*ty);
             }
-            "Tf" => {
-                if operation.operands.len() >= 2 {
-                    if let Some(size) = number(&operation.operands[1]) {
-                        font_size = size.max(1.0);
-                    }
-                }
+            Operator::Tm { e, f, .. } => {
+                text_x = f64::from(*e);
+                text_y = f64::from(*f);
             }
-            "Tj" => {
-                if let Some(text) = text_operand(&operation.operands) {
-                    text_points.push(TextPoint {
-                        x: text_x,
-                        y: text_y,
-                        font_size,
-                        text: normalize_text(&text),
-                    });
-                }
+            Operator::Tf { size, .. } => {
+                font_size = f64::from(*size).max(1.0);
+            }
+            Operator::Tr { render } => {
+                hidden = *render == 3;
+            }
+            Operator::Tj { text } => {
+                push_text_point(&mut text_points, text_x, text_y, font_size, hidden, text);
+            }
+            Operator::TJ { array } => {
+                let text = text_element_string(array);
+                push_text_point(
+                    &mut text_points,
+                    text_x,
+                    text_y,
+                    font_size,
+                    hidden,
+                    text.as_bytes(),
+                );
+            }
+            Operator::Quote { text } | Operator::DoubleQuote { text, .. } => {
+                push_text_point(&mut text_points, text_x, text_y, font_size, hidden, text);
             }
             _ => {}
         }
@@ -4006,22 +4066,36 @@ fn page_graphics_and_text(
     (segments, text_points)
 }
 
-fn two_numbers(operands: &[Object]) -> Option<(f64, f64)> {
-    if operands.len() < 2 {
-        return None;
+fn push_text_point(
+    text_points: &mut Vec<TextPoint>,
+    x: f64,
+    y: f64,
+    font_size: f64,
+    hidden: bool,
+    text: &[u8],
+) {
+    let text = normalize_text(&String::from_utf8_lossy(text));
+    if text.is_empty() {
+        return;
     }
-    Some((number(&operands[0])?, number(&operands[1])?))
+    text_points.push(TextPoint {
+        x,
+        y,
+        font_size,
+        text,
+        hidden,
+    });
 }
 
-fn number(object: &Object) -> Option<f64> {
-    object.as_float().ok().map(f64::from)
-}
-
-fn text_operand(operands: &[Object]) -> Option<String> {
-    operands
-        .first()
-        .and_then(|object| object.as_str().ok())
-        .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+fn text_element_string(array: &[TextElement]) -> String {
+    array
+        .iter()
+        .filter_map(|element| match element {
+            TextElement::String(bytes) => Some(String::from_utf8_lossy(bytes).to_string()),
+            TextElement::Offset(_) => None,
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn vertical_x(segment: &Segment) -> Option<f64> {

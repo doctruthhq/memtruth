@@ -45,7 +45,7 @@ fn doctor_reports_local_runtime_readiness() {
         .stdout(predicate::str::contains("\"rssMb\":"))
         .stdout(predicate::str::contains("\"peakMemoryMb\":"))
         .stdout(predicate::str::contains("\"target\":\"pdf_oxide\""))
-        .stdout(predicate::str::contains("\"status\":\"PARTIAL\""));
+        .stdout(predicate::str::contains("\"status\":\"DEFAULT\""));
 }
 
 #[test]
@@ -72,11 +72,8 @@ fn parse_pdf_reads_stdin_and_writes_trust_document_json() {
     assert_eq!(json["source"]["sourceHash"], "sha256:test");
     assert_eq!(json["parserRun"]["backend"], "rust-sidecar");
     assert_eq!(json["parserRun"]["pdfBackend"]["target"], "pdf_oxide");
-    assert_eq!(
-        json["parserRun"]["pdfBackend"]["current"],
-        "pdf_oxide+lopdf"
-    );
-    assert_eq!(json["parserRun"]["pdfBackend"]["status"], "PARTIAL");
+    assert_eq!(json["parserRun"]["pdfBackend"]["current"], "pdf_oxide");
+    assert_eq!(json["parserRun"]["pdfBackend"]["status"], "DEFAULT");
     assert_eq!(json["parserRun"]["preset"], "lite");
     assert_eq!(json["auditGradeStatus"], "AUDIT_GRADE");
     assert_eq!(json["body"]["pages"][0]["pageNumber"], 1);
@@ -660,9 +657,42 @@ fn parse_pdf_emits_table_cells_for_bordered_grid_pdf() {
         assert!(unit["location"]["boundingBox"].is_object());
         assert_eq!(
             unit["confidence"]["rationale"],
-            "bordered-grid table extraction"
+            "pdf_oxide line-table extraction"
         );
     }
+}
+
+#[test]
+fn parse_pdf_filters_invisible_render_mode_text() {
+    let pdf = write_invisible_text_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let line_texts: Vec<&str> = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .map(|unit| unit["text"].as_str().unwrap())
+        .collect();
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+    assert_eq!(line_texts, vec!["Visible evidence."]);
+    assert_warning_with_severity(
+        warnings,
+        "hidden_text_filtered",
+        "Invisible evidence",
+        "SEVERE",
+    );
+    assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
 }
 
 #[test]
@@ -954,6 +984,12 @@ fn write_two_column_pdf_fixture() -> PathBuf {
 fn write_duplicate_text_pdf_fixture() -> PathBuf {
     let path = temp_pdf_path("doctruth-runtime-duplicate-text-fixture");
     fs::write(&path, minimal_duplicate_text_pdf()).unwrap();
+    path
+}
+
+fn write_invisible_text_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-invisible-text-fixture");
+    fs::write(&path, minimal_invisible_text_pdf()).unwrap();
     path
 }
 
@@ -1546,6 +1582,20 @@ ET
         .as_bytes(),
     );
     pdf
+}
+
+fn minimal_invisible_text_pdf() -> Vec<u8> {
+    let stream = "\
+BT
+/F1 16 Tf
+72 720 Td
+(Visible evidence.) Tj
+3 Tr
+0 -30 Td
+(Invisible evidence.) Tj
+ET
+";
+    minimal_single_stream_pdf(stream)
 }
 
 fn minimal_safety_filter_pdf() -> Vec<u8> {

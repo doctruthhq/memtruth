@@ -33,10 +33,11 @@ TrustDocument emission
 
 The default Rust PDF substrate is `pdf_oxide`, not a Java/PDFBox rewrite in
 Java and not a parallel parser core. Treat `pdf_oxide` as the replacement for
-PDFBox's low-level duties: PDF bytes, text-layer extraction, structure-tree and
-column-aware reading order entrypoints, page geometry, rendering, and bbox
-evidence. `lopdf` is transitional low-level/debug support only and should not
-grow into the long-term parser core.
+PDFBox's low-level duties: PDF bytes, object and content-stream parsing,
+text-layer extraction, structure-tree and column-aware reading order
+entrypoints, page geometry, rendering, table-line primitives, parser-safety
+checks, and bbox evidence. `lopdf` is not a DocTruth runtime dependency or
+default parser-core component.
 
 Java remains only the stable enterprise-facing SDK, CLI, API, packaging,
 lifecycle, and compatibility wrapper around the Rust core. Java/PDFBox is not a

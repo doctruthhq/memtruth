@@ -21,8 +21,8 @@ fn library_api_reports_doctor_readiness_without_spawning_binary() {
     assert_eq!(doctor["local_first"], true);
     assert_eq!(doctor["capabilities"]["parse_pdf"], true);
     assert_eq!(doctor["pdfBackend"]["target"], "pdf_oxide");
-    assert_eq!(doctor["pdfBackend"]["current"], "pdf_oxide+lopdf");
-    assert_eq!(doctor["pdfBackend"]["status"], "PARTIAL");
+    assert_eq!(doctor["pdfBackend"]["current"], "pdf_oxide");
+    assert_eq!(doctor["pdfBackend"]["status"], "DEFAULT");
     assert_eq!(doctor["models"]["cache"]["directory"], ".doctruth/models");
     assert_eq!(doctor["models"]["worker"]["configured"], false);
     assert_eq!(doctor["models"]["presets"]["lite"]["required"], false);

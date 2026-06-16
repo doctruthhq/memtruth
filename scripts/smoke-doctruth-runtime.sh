@@ -295,8 +295,8 @@ assert data["local_first"] is True
 assert data["rssMb"] > 0
 assert data["peakMemoryMb"] >= data["rssMb"]
 assert data["pdfBackend"]["target"] == "pdf_oxide"
-assert data["pdfBackend"]["current"] == "pdf_oxide+lopdf"
-assert data["pdfBackend"]["status"] == "PARTIAL"
+assert data["pdfBackend"]["current"] == "pdf_oxide"
+assert data["pdfBackend"]["status"] == "DEFAULT"
 '
 
 printf '%s' "{\"command\":\"parse_pdf\",\"source_path\":\"$PDF\",\"source_hash\":\"sha256:smoke\",\"preset\":\"lite\",\"offline_mode\":true,\"allow_model_downloads\":false}" \
@@ -309,8 +309,8 @@ assert data["docId"] == "sha256:smoke"
 assert data["source"]["sourceFilename"] == "doctruth-runtime-smoke.pdf"
 assert data["parserRun"]["backend"] == "rust-sidecar"
 assert data["parserRun"]["pdfBackend"]["target"] == "pdf_oxide"
-assert data["parserRun"]["pdfBackend"]["current"] == "pdf_oxide+lopdf"
-assert data["parserRun"]["pdfBackend"]["status"] == "PARTIAL"
+assert data["parserRun"]["pdfBackend"]["current"] == "pdf_oxide"
+assert data["parserRun"]["pdfBackend"]["status"] == "DEFAULT"
 assert data["auditGradeStatus"] == "AUDIT_GRADE"
 page = data["body"]["pages"][0]
 assert page["textLayerAvailable"] is True

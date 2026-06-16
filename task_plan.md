@@ -76,9 +76,9 @@ DocTruth       -> evidence, citations, warnings, audit gates, replay contracts
 
 The current PDFBox replacement is not "one Rust crate that equals PDFBox." The
 default Rust PDF substrate is `pdf_oxide` for text-layer extraction, page
-geometry, rendering, page-image hashes, and bbox evidence. `lopdf` is
-transitional low-level/debug support only and should be removed from default
-parser-core duties as the Rust backend matures.
+geometry, rendering, page-image hashes, content-stream safety checks, line-table
+heuristics, and bbox evidence. `lopdf` is no longer a `doctruth-runtime`
+dependency or default parser-core component.
 
 Do not mark the PRD goal complete while any of these are still Java-only or
 while Java/PDFBox is still described as a normal default/fallback path:
@@ -351,7 +351,7 @@ real parser-quality corpus gates
 | Real PDF bordered-table benchmark could not score `table_region_iou` because table region bboxes were not preserved in `TableSection`/`TrustTable` | Red phase for table-region quality gate | Added optional `TableSection.boundingBox`, propagated it to `TrustTable`, and implemented `table_region_iou` |
 | Real PDF bordered-table cells had no cell-level bboxes in `TrustTableCell` or `TABLE_CELL` units | Red phase for evidence-grade table-cell anchors | Added `TableCellRegion`, carried detected grid cell bboxes through `TableSection`, and propagated them into `TrustTableCell` plus table-cell units |
 | Markdown table output was not valid GFM and source-map Markdown rendered each table cell as a separate paragraph | Red phase for LLM/RAG-friendly Markdown table output | Added GFM pipe-table rendering and source-map entries for each rendered table cell |
-| Rust runtime emitted no `TrustTable`/`TABLE_CELL` output for a bordered-grid PDF | Red phase for Rust sidecar table parity | Added direct `lopdf` content-operation parsing with default features disabled, simple bordered-grid detection, table/cell bbox JSON output, and table-aware runtime/CLI smoke coverage |
+| Rust runtime emitted no `TrustTable`/`TABLE_CELL` output for a bordered-grid PDF | Red phase for Rust sidecar table parity | Added `pdf_oxide` content-stream parsing, simple bordered-grid detection, table/cell bbox JSON output, and table-aware runtime/CLI smoke coverage |
 | Rust runtime `LINE_SPAN` units still used page-level bbox fallback even when `Td/Tj` text positions were available | Red phase for precise text bbox progress | Reused content-stream parsing to estimate positioned text bboxes and suppress fallback warnings for simple positioned text |
 | Rust runtime emitted no `TrustTable`/`TABLE_CELL` output for borderless aligned text matrices | Red phase for Rust borderless table parity | Added a conservative borderless table fallback over content-stream `TextPoint`s and explicit runtime smoke coverage |
 | `compact_llm` emitted only document/unit records and dropped table ids plus parser/unit warnings | Red phase for compact evidence wire coverage | Added deterministic `t|` table records and `w|` parser/unit warning records |
@@ -536,14 +536,14 @@ real parser-quality corpus gates
 | `sh scripts/smoke-doctruth-runtime.sh` | pass; now also validates bordered-table JSON/cell bboxes |
 | `sh scripts/smoke-doctruth-cli-sidecar.sh` | pass; now also validates sidecar table JSON and clean Markdown GFM table output |
 | `mvn test` | pass: 834 tests, 0 failures, 0 errors |
-| `cargo tree --manifest-path runtime/doctruth-runtime/Cargo.toml -e normal \| rg "chrono\|jiff\|rayon\|time v" \|\| true` | pass: no unnecessary `lopdf` default-feature dependencies reported |
+| `cargo tree --manifest-path runtime/doctruth-runtime/Cargo.toml -e normal \| rg "chrono\|jiff\|rayon\|time v" \|\| true` | pass: no unnecessary PDF backend default-feature dependencies reported |
 | `git diff --check` | pass |
 | `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml parse_pdf_emits_positioned_text_bboxes_when_content_stream_positions_are_available -- --nocapture` | red at first: text bbox was still page fallback with x0=0.0, then pass after content-stream text-position bbox extraction |
 | `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml` | pass: 9 tests |
 | `sh scripts/smoke-doctruth-runtime.sh` | pass |
 | `sh scripts/smoke-doctruth-cli-sidecar.sh` | pass |
 | `mvn test` | pass: 834 tests, 0 failures, 0 errors |
-| `cargo tree --manifest-path runtime/doctruth-runtime/Cargo.toml -e normal \| rg "chrono\|jiff\|rayon\|time v" \|\| true` | pass: no unnecessary `lopdf` default-feature dependencies reported |
+| `cargo tree --manifest-path runtime/doctruth-runtime/Cargo.toml -e normal \| rg "chrono\|jiff\|rayon\|time v" \|\| true` | pass: no unnecessary PDF backend default-feature dependencies reported |
 | `git diff --check` | pass |
 | `mvn -q -Dtest=TrustDocumentRenderedOutputTest,TrustDocumentSourceMapContractTest test` | red at first: clean Markdown lacked GFM table separators and source-map Markdown rendered each cell as its own paragraph; then pass |
 | `mvn -q -Dtest=TrustDocumentRenderedOutputTest,TrustDocumentSourceMapContractTest,TrustDocumentStreamingRenderContractTest,TrustDocumentChunkingContractTest,TrustDocumentCliOutputProfileTest,TableExtractionContractTest,ParserBenchmarkRunnerTest,PublicApiSnapshotTest,ArchitectureContractTest test` | pass |
@@ -980,11 +980,12 @@ recorded-corpus regression safety.
 
 Full PRD status remains open until these are done:
 
-- Rust runtime becomes the parser core, not only a sidecar MVP.
+- Rust runtime is the parser core for the current v1 runtime slice, not only a
+  sidecar MVP.
 - Rust runtime uses a `pdf_oxide`-backed PDF backend for text, page geometry,
-  rendering, and bbox evidence. Current status: text-layer page extraction,
-  text-span bbox evidence, page geometry, and rendered page hashes have moved
-  to `pdf_oxide`; `lopdf` remains transitional for table/debug extraction.
+  rendering, bbox evidence, content-stream safety checks, and line-table/debug
+  extraction. Current status: `doctruth-runtime` reports `pdf_oxide` as the
+  default backend and no longer depends on `lopdf`.
 - Java/PDFBox is wrapper/legacy/oracle only, not a primary parser core or
   hidden default.
 - Real RT-DETR/TATR/SLANeXT release workflow has been run remotely and produced
@@ -1078,13 +1079,13 @@ Full PRD status remains open until these are done:
 | 279. Runtime status docs reconciliation | complete | Runtime README and parser capability matrix now describe current Rust runtime capabilities honestly while preserving limits around unconditional default status, external-worker heavy models, and broad accuracy proof | docs-only worker patch, `git diff --check` |
 | 280. Path-first SDK backend selection RED/MVP | complete | SDK now has a path-first `parsePdf(...).withParser(...).backend(AUTO|PDFBOX|SIDECAR)` TrustDocument parser path, so Rust auto mode and explicit Java/PDFBox legacy/oracle mode are both developer-visible contracts | Java RED SDK tests for auto runtime, explicit PDFBox legacy/oracle mode, and sidecar missing-runtime failure |
 | 281. Rust PDF backend decision correction | complete | PRD and planning files now define Rust runtime + Kreuzberg-style `pdf_oxide` as the parser-core direction, with Java/PDFBox limited to wrapper/legacy/oracle and old `pdf-extract` removed from the runtime dependency path | docs/planning update, `cargo info pdf_oxide`, `git diff --check` |
-| 282. Rust `pdf_oxide` backend RED/MVP | complete | `doctruth-runtime` now depends on `pdf_oxide`, uses it for column-aware text-layer page extraction, text-span bbox-backed line units, page geometry, and default rendered PNG page hashes, emits `parserRun.pdfBackend`, and keeps `lopdf` as explicitly partial transitional support for table/debug extraction | `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test library_contract --test protocol_contract`, `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`, `sh scripts/smoke-doctruth-runtime.sh` |
+| 282. Rust `pdf_oxide` backend RED/MVP | complete | `doctruth-runtime` depends on `pdf_oxide`, uses it for column-aware text-layer page extraction, text-span bbox-backed line units, page geometry, default rendered PNG page hashes, content-stream safety checks, and line-table extraction, emits `parserRun.pdfBackend`, and no longer depends on `lopdf` | `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test library_contract --test protocol_contract`, `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`, `sh scripts/smoke-doctruth-runtime.sh` |
 | 283. Rust `pdf_oxide` render migration | complete | Page geometry and default page render hashes now come from `pdf_oxide`; `pdftoppm` is no longer a default runtime dependency and only remains possible through explicit configured renderer override | Rust protocol test, runtime smoke, dependency tree |
-| 284. Rust table/debug backend completion | pending | Move table/debug extraction behind the Rust PDF backend boundary so `lopdf` is no longer a default parser-core dependency | Rust RED tests, runtime smoke |
+| 284. Rust table/debug backend completion | complete | Bordered/merged/continued table extraction now reads content streams through `pdf_oxide`, `parserRun.pdfBackend.current` reports `pdf_oxide`, `status` reports `DEFAULT`, and `lopdf` is removed from `doctruth-runtime` dependencies | Rust RED tests, dependency tree, runtime protocol contract |
 | 285. OpenDataLoader XY-Cut++ Rust port RED/MVP | complete | Ported an attributed OpenDataLoader-style XY-Cut++ reading-order sorter into `runtime/doctruth-runtime`, covering cross-layout elements, adaptive horizontal/vertical cuts, narrow-outlier gap retry, two-column layouts, row-section preference, and sidebars while preserving `TrustDocument` as canonical output | Rust RED unit tests adapted from OpenDataLoader-style scenarios, protocol contract |
-| 286. OpenDataLoader parser-safety filters RED/MVP | pending | Add Rust content filters for hidden/off-page/tiny/duplicate/background text and whitespace artifacts, with DocTruth warnings and audit-grade blocking where parser safety is uncertain | Rust safety-filter tests, runtime smoke, benchmark corpus warning assertions |
+| 286. OpenDataLoader parser-safety filters RED/MVP | complete | Rust runtime filters whitespace-only, off-page, tiny, duplicate, near-white/background-like, and invisible render-mode text; severe parser-safety warnings block audit-grade output while broader rendered-page background comparison remains a later accuracy expansion | Rust safety-filter tests, runtime protocol contract, benchmark corpus contract |
 | 287. OpenDataLoader tagged-structure preference RED/MVP | complete | Rust runtime now uses `pdf_oxide` canonical page reading order so trustworthy Tagged-PDF structure trees beat geometric ordering, emits `parserRun.readingOrder` and `parseTrace.readingOrder`, and falls back to XY-Cut with a structured warning when `/MarkInfo /Suspects true` marks the tree unreliable | Rust tagged-PDF fixture tests, parse trace assertions |
-| 288. OpenDataLoader table heuristic migration RED/MVP | pending | Move compatible bordered/cluster table heuristics into the Rust backend after the `pdf_oxide` boundary is stable, including cell normalization, nested-depth protection, and adjacent table continuation checks | Rust table fixtures, benchmark corpus table metrics |
+| 288. OpenDataLoader table heuristic migration RED/MVP | complete | Compatible bordered/line-table, merged-cell, row-span, borderless text-spatial, and adjacent-page continuation checks now run through the Rust `pdf_oxide` backend and normalize into `TrustDocument` table cells | Rust table fixtures, benchmark corpus table metrics |
 | 289. Reference-composition guardrails | complete | Added PRD/test guardrails proving Kreuzberg, Docling, MinerU, and OpenDataLoader roles are layered references and do not create competing canonical outputs; `TrustDocument` remains the only truth contract and Java/PDFBox is not canonical | `ArchitectureContractTest`, PRD guardrail checks |
 | 290. OpenDataLoader Bench adapter plan | complete | Treat OpenDataLoader Bench as the parser-quality foundation and DocTruth Bench as the evidence/replay layer; map DocTruth Rust runtime output to prediction/evaluation artifacts without replacing TrustDocument | PRD/planning docs updated; implementation RED tests remain Phase 291+ |
 | 291. OpenDataLoader Bench adapter contract RED/MVP | complete | Add an adapter that exports DocTruth Rust runtime output into OpenDataLoader Bench-style prediction artifacts and imports `evaluation.json` into DocTruth benchmark reports under `external_metrics` | Java/Rust RED tests export `markdown/<document_id>.md` + `summary.json`, import synthetic `evaluation.json`, and do not execute GPL/AGPL engines |
@@ -1101,5 +1102,5 @@ Full PRD status remains open until these are done:
 | 302. OpenDataLoader-inspired behavior taxonomy RED/MVP | complete | Java CLI and Rust runtime benchmark reports support `requiredBehaviors`, case `behaviors`, behavior coverage counts, required behavior coverage, and satisfied behavior coverage for XY-Cut edge, safety-filter, structure-tree preference, and table-cluster heuristic cases | Java/Rust RED report assertions and behavior coverage tamper-verifier tests |
 | 303. OpenDataLoader evaluation import RED/MVP | complete | Parser benchmark manifests can declare `externalEvaluations.opendataloader`, import checked-in OpenDataLoader-style `evaluation.json`, flatten NID/TEDS/MHS/speed into `opendataloader_*` metrics, and persist source hashes under `externalMetrics` | Java/Rust RED report assertions, threshold gates, and tamper-verifier tests |
 | 304. Rust duplicate text safety filter RED/MVP | complete | Rust runtime filters near-overlaid duplicate positioned text before reading-order grouping, emits a severe `duplicate_text_filtered` warning, and marks output `NOT_AUDIT_GRADE`; this is a partial safety-filter slice and does not complete Phase 286 | Rust protocol contract, benchmark corpus contract |
-| 305. Rust geometric and near-white parser-safety filters RED/MVP | complete | Rust runtime filters whitespace-only, off-page, tiny, near-white/background-like, and duplicate text-layer spans with severe warnings and audit-grade blocking; true hidden text and robust render/graphics-state background detection remain pending under Phase 286 | Rust protocol contract, benchmark corpus contract |
-| 306. Rust text-spatial table detector slice | complete | Borderless/text-spatial table extraction now uses `pdf_oxide` `detect_tables_from_spans` before falling back to the transitional `lopdf` table path; bordered-grid line extraction remains on the pending Rust backend/table heuristic migration path | Rust protocol contract |
+| 305. Rust geometric and near-white parser-safety filters RED/MVP | complete | Rust runtime filters whitespace-only, off-page, tiny, near-white/background-like, duplicate, and invisible render-mode text-layer spans with severe warnings and audit-grade blocking; robust rendered-page background comparison remains a later accuracy expansion | Rust protocol contract, benchmark corpus contract |
+| 306. Rust text-spatial table detector slice | complete | Borderless/text-spatial table extraction uses `pdf_oxide` `detect_tables_from_spans`; bordered-grid, merged-cell, row-span, and adjacent-page continuation extraction now use `pdf_oxide` content-stream primitives rather than `lopdf` | Rust protocol contract |

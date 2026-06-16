@@ -7,7 +7,9 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use lopdf::{Document, Object, content::Content};
-use pdf_oxide::document::{PdfDocument, ReadingOrder};
+use pdf_oxide::document::PdfDocument;
+use pdf_oxide::layout::TextSpan;
+use pdf_oxide::pipeline::page_reading_order;
 use pdf_oxide::rendering::{RenderOptions, render_page};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -247,7 +249,8 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .unwrap_or("document.pdf");
-    let extracted_pages = extract_pages_with_pdf_oxide(source_path)?;
+    let extracted = extract_pages_with_pdf_oxide(source_path)?;
+    let extracted_pages = extracted.pages;
     let page_lines = extracted_pages
         .iter()
         .map(|page| page.lines.clone())
@@ -273,6 +276,8 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .iter()
         .flat_map(|page| page.warnings.clone())
         .collect::<Vec<_>>();
+    warnings.extend(extracted.warnings.clone());
+    warnings.extend(off_page_text_warnings_from_content(source_path));
     warnings.extend(model_unavailable_warnings(preset, &required_models));
     let audit_grade_status = if warnings.iter().any(is_severe_warning) {
         "NOT_AUDIT_GRADE"
@@ -286,7 +291,8 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
     let pages_json = page_json(&page_lines, &page_metadata);
     let parser_run_id = "parser-run-0001";
     let content_blocks = content_blocks_json(&units);
-    let parse_trace = parse_trace_json(&pages_json, &units, parser_run_id);
+    let reading_order = extracted.reading_order.to_json();
+    let parse_trace = parse_trace_json(&pages_json, &units, parser_run_id, &reading_order);
 
     Ok(json!({
         "docId": source_hash,
@@ -311,11 +317,19 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
             "preset": preset,
             "backend": "rust-sidecar",
             "pdfBackend": pdf_backend_json(),
+            "readingOrder": reading_order,
             "models": model_identities,
             "warnings": warnings
         },
         "auditGradeStatus": audit_grade_status
     }))
+}
+
+#[derive(Debug, Clone)]
+struct ExtractedDocument {
+    pages: Vec<ExtractedPage>,
+    reading_order: ReadingOrderDecision,
+    warnings: Vec<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -325,54 +339,75 @@ struct ExtractedPage {
     warnings: Vec<Value>,
 }
 
-fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>, String> {
+#[derive(Debug, Clone)]
+struct ReadingOrderDecision {
+    source: &'static str,
+    fallback: bool,
+    confidence: f64,
+}
+
+impl ReadingOrderDecision {
+    fn structure_tree() -> Self {
+        Self {
+            source: "structure-tree",
+            fallback: false,
+            confidence: 1.0,
+        }
+    }
+
+    fn xy_cut_fallback() -> Self {
+        Self {
+            source: "xy-cut",
+            fallback: true,
+            confidence: 0.9,
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "source": self.source,
+            "fallback": self.fallback,
+            "confidence": self.confidence
+        })
+    }
+}
+
+fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<ExtractedDocument, String> {
     let document = PdfDocument::open(source_path)
         .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
     let page_count = document
         .page_count()
         .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
-    (0..page_count)
+    let use_structure_order = document.prefers_structure_reading_order();
+    let structure_warnings = structure_tree_reading_order_warnings(&document, use_structure_order);
+    let reading_order = if use_structure_order {
+        ReadingOrderDecision::structure_tree()
+    } else {
+        ReadingOrderDecision::xy_cut_fallback()
+    };
+    let pages = (0..page_count)
         .map(|page_index| {
-            document
-                .extract_page_text_with_options(page_index, ReadingOrder::ColumnAware)
-                .map(|page_text| {
-                    let (positioned_lines, warnings) = filter_positioned_lines(
-                        page_text
-                            .spans
-                            .iter()
-                            .flat_map(|span| {
-                                filterable_lines(&span.text)
-                                    .into_iter()
-                                    .map(|text| PositionedLine {
-                                        text,
-                                        raw_bbox: RawPdfBox {
-                                            x0: span.bbox.x as f64,
-                                            y0: span.bbox.y as f64,
-                                            x1: (span.bbox.x + span.bbox.width) as f64,
-                                            y1: (span.bbox.y + span.bbox.height) as f64,
-                                        },
-                                        bbox: normalize_pdf_rect(
-                                            page_text.page_width,
-                                            page_text.page_height,
-                                            span.bbox.x,
-                                            span.bbox.y,
-                                            span.bbox.x + span.bbox.width,
-                                            span.bbox.y + span.bbox.height,
-                                        ),
-                                        page_width: page_text.page_width as f64,
-                                        page_height: page_text.page_height as f64,
-                                        font_size: span.font_size as f64,
-                                        color: RuntimeColor {
-                                            r: span.color.r as f64,
-                                            g: span.color.g as f64,
-                                            b: span.color.b as f64,
-                                        },
-                                    })
-                                    .collect::<Vec<_>>()
-                            })
-                            .collect::<Vec<_>>(),
+            let (page_width, page_height) = pdf_oxide_page_dimensions(&document, page_index)
+                .unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
+            page_reading_order(&document, page_index)
+                .map(|ordered_spans| {
+                    let canonical_lines = positioned_lines_from_spans(
+                        ordered_spans.iter().map(|ordered_span| &ordered_span.span),
+                        page_width,
+                        page_height,
                     );
-                    let positioned_lines = order_positioned_lines(positioned_lines);
+                    let (positioned_lines, mut warnings) = filter_positioned_lines(canonical_lines);
+                    warnings.extend(raw_span_safety_warnings(
+                        &document,
+                        page_index,
+                        page_width,
+                        page_height,
+                    ));
+                    let positioned_lines = if use_structure_order {
+                        positioned_lines
+                    } else {
+                        order_positioned_lines(positioned_lines)
+                    };
                     let lines = positioned_lines
                         .iter()
                         .map(|line| line.text.clone())
@@ -387,7 +422,139 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
                     error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string()
                 })
         })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ExtractedDocument {
+        pages,
+        reading_order,
+        warnings: structure_warnings,
+    })
+}
+
+fn structure_tree_reading_order_warnings(
+    document: &PdfDocument,
+    use_structure_order: bool,
+) -> Vec<Value> {
+    if use_structure_order {
+        return Vec::new();
+    }
+    let mark_info = document.mark_info().unwrap_or_default();
+    if !mark_info.suspects {
+        return Vec::new();
+    }
+    if document.structure_tree().ok().flatten().is_some() {
+        vec![parser_warning(
+            "structure_tree_suspect_fallback",
+            "Tagged PDF structure tree has /MarkInfo /Suspects true; falling back to geometric XY-Cut reading order",
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
+fn raw_span_safety_warnings(
+    document: &PdfDocument,
+    page_index: usize,
+    page_width: f64,
+    page_height: f64,
+) -> Vec<Value> {
+    let Ok(spans) = document.extract_spans(page_index) else {
+        return Vec::new();
+    };
+    positioned_lines_from_spans(spans.iter(), page_width, page_height)
+        .into_iter()
+        .filter(off_page_positioned_line)
+        .map(|line| {
+            parser_safety_warning(
+                "off_page_text_filtered",
+                &format!("Filtered off-page text-layer span: {}", line.text),
+            )
+        })
         .collect()
+}
+
+fn off_page_text_warnings_from_content(source_path: &str) -> Vec<Value> {
+    let Ok(document) = Document::load(source_path) else {
+        return Vec::new();
+    };
+    let mut warnings = Vec::new();
+    for (_page_number, page_id) in document.get_pages() {
+        let Ok(content) = document.get_page_content(page_id) else {
+            continue;
+        };
+        let Ok(decoded) = Content::decode(&content) else {
+            continue;
+        };
+        let (_segments, text_points) = page_graphics_and_text(&decoded.operations);
+        warnings.extend(
+            text_points
+                .into_iter()
+                .filter(off_page_text_point)
+                .map(|point| {
+                    parser_safety_warning(
+                        "off_page_text_filtered",
+                        &format!("Filtered off-page text-layer span: {}", point.text),
+                    )
+                }),
+        );
+    }
+    warnings
+}
+
+fn off_page_text_point(point: &TextPoint) -> bool {
+    !point.text.trim().is_empty()
+        && (point.x < 0.0 || point.y < 0.0 || point.x > PAGE_WIDTH || point.y > PAGE_HEIGHT)
+}
+
+fn positioned_lines_from_spans<'a, I>(
+    spans: I,
+    page_width: f64,
+    page_height: f64,
+) -> Vec<PositionedLine>
+where
+    I: IntoIterator<Item = &'a TextSpan>,
+{
+    spans
+        .into_iter()
+        .flat_map(|span| {
+            filterable_lines(&span.text)
+                .into_iter()
+                .map(|text| positioned_line_from_span(text, span, page_width, page_height))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn positioned_line_from_span(
+    text: String,
+    span: &TextSpan,
+    page_width: f64,
+    page_height: f64,
+) -> PositionedLine {
+    PositionedLine {
+        text,
+        raw_bbox: RawPdfBox {
+            x0: span.bbox.x as f64,
+            y0: span.bbox.y as f64,
+            x1: (span.bbox.x + span.bbox.width) as f64,
+            y1: (span.bbox.y + span.bbox.height) as f64,
+        },
+        bbox: normalize_pdf_rect(
+            page_width as f32,
+            page_height as f32,
+            span.bbox.x,
+            span.bbox.y,
+            span.bbox.x + span.bbox.width,
+            span.bbox.y + span.bbox.height,
+        ),
+        page_width,
+        page_height,
+        font_size: span.font_size as f64,
+        color: RuntimeColor {
+            r: span.color.r as f64,
+            g: span.color.g as f64,
+            b: span.color.b as f64,
+        },
+    }
 }
 
 const XY_CUT_CROSS_LAYOUT_BETA: f64 = 0.7;
@@ -815,6 +982,14 @@ fn parser_safety_warning(code: &str, message: &str) -> Value {
     json!({
         "code": code,
         "severity": "SEVERE",
+        "message": message
+    })
+}
+
+fn parser_warning(code: &str, message: &str) -> Value {
+    json!({
+        "code": code,
+        "severity": "WARNING",
         "message": message
     })
 }
@@ -3168,10 +3343,16 @@ fn content_block_type(unit: &Value) -> &'static str {
     }
 }
 
-fn parse_trace_json(pages: &[Value], units: &[Value], parser_run_id: &str) -> Value {
+fn parse_trace_json(
+    pages: &[Value],
+    units: &[Value],
+    parser_run_id: &str,
+    reading_order: &Value,
+) -> Value {
     json!({
         "traceId": "trace-0001",
         "parserRunId": parser_run_id,
+        "readingOrder": reading_order,
         "pages": pages
             .iter()
             .enumerate()

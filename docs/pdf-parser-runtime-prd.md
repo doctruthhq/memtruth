@@ -399,7 +399,7 @@ open.
 | Docling | Provenance-first chunks for AI/RAG | Complete for v1 | Chunk/source-map/evidence contracts, compact LLM output, MCP evidence tools, citation verification | Broader chunking strategy can improve after real corpus feedback |
 | Docling | Parser backend/pipeline separation | Complete for Goal 1 defaultization, partial for later legacy-API migration | Parser presets, explicit Java oracle mode, sidecar backend, local worker protocols, Rust runtime commands, SDK backend modes, path-first Rust SDK parsing, MCP Rust parsing, and Rust-default CLI shorthand output | Java/PDFBox is not a primary parser core. Legacy document-first extraction remains compatibility-only until that older extraction API is reworked around the Rust runtime. |
 | OpenDataLoader PDF | XY-Cut++ reading order | Complete for Rust MVP, partial for broad corpus | Rust runtime has an attributed OpenDataLoader-style XY-Cut++ sorter covering cross-layout elements, adaptive horizontal/vertical cuts, narrow-outlier gap retry, two-column layouts, row-section preference, and sidebars | Broaden against labeled real-world PDF corpus and keep Java out of parser ownership |
-| OpenDataLoader PDF | Tagged-PDF structure tree preference | Planned | Reference pipeline uses native PDF tags when available before heuristic layout guessing | Add Rust capability detection and tests that tagged structure can inform reading order/provenance without hiding poor tag quality |
+| OpenDataLoader PDF | Tagged-PDF structure tree preference | Complete for Rust MVP, partial for broad semantic tag export | Rust runtime uses `pdf_oxide` canonical page reading order so trustworthy Tagged-PDF structure trees beat geometric ordering, emits `parserRun.readingOrder` and `parseTrace.readingOrder`, and falls back to XY-Cut with a structured warning when `/MarkInfo /Suspects true` marks the tree unreliable | Broaden against real tagged PDFs and expose richer role/heading/list/table semantics through `TrustDocument` without making external parser schemas canonical |
 | OpenDataLoader PDF | Parser safety/content filters | Partial | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters duplicate, whitespace-only, off-page, tiny, and near-white/background-like text-layer spans, emits severe parser-safety warnings, and blocks audit-grade output | Complete true hidden-text detection, robust render/graphics-state background filtering, broader warning taxonomy, and benchmark assertions in Rust |
 | OpenDataLoader PDF | Table border/cluster heuristics | Planned | Reference parser combines bordered-table processing, cluster detection, cell normalization, nested depth limits, and adjacent table checks | Port only compatible heuristics into Rust table/debug backend after `lopdf` is removed from default parser-core duties |
 | OpenDataLoader Bench | Parser-quality foundation | Vendored, adapter planned | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics | Add a DocTruth adapter that exports Rust runtime predictions into OpenDataLoader Bench shape, imports its parser-quality metrics into DocTruth benchmark reports, and gates audit-grade evidence when parser-quality thresholds fail |
@@ -2243,6 +2243,16 @@ manifest hash, parser configuration, model/cache manifest state, thresholds,
 expected labels, and the actual `TrustDocument` output. Each case must include a
 `replay` object for `sourceRefReplayable`, `quoteReplayable`, and
 `evidenceSpanReplayable`.
+
+Current structure-tree preference status: the Rust runtime now asks `pdf_oxide`
+for canonical page reading order, which prefers a trustworthy Tagged-PDF
+`/StructTreeRoot` before geometric inference. `parserRun.readingOrder` and
+`parseTrace.readingOrder` record whether the chosen source is `structure-tree`
+or fallback `xy-cut`. When a tagged PDF sets `/MarkInfo /Suspects true`, the
+runtime falls back to XY-Cut and emits a non-severe
+`structure_tree_suspect_fallback` warning. This proves the reading-order
+preference and replay trace boundary; richer role/heading/list/table semantic
+export from tags remains a later parser-quality expansion.
 
 Current parser-safety status: the Rust runtime has OpenDataLoader-style
 content-safety filters for duplicate positioned text, whitespace-only spans,

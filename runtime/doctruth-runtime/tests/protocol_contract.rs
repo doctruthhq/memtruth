@@ -555,6 +555,76 @@ fn parse_pdf_filters_off_page_tiny_whitespace_and_background_text() {
 }
 
 #[test]
+fn parse_pdf_prefers_trustworthy_tagged_structure_tree_order() {
+    let pdf = write_tagged_structure_order_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let texts: Vec<&str> = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .map(|unit| unit["text"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(texts, vec!["Logical first.", "Logical second."]);
+    assert_eq!(
+        json["parserRun"]["readingOrder"]["source"],
+        "structure-tree"
+    );
+    assert_eq!(json["parserRun"]["readingOrder"]["fallback"], false);
+    assert_eq!(
+        json["parseTrace"]["readingOrder"]["source"],
+        "structure-tree"
+    );
+    assert_eq!(json["auditGradeStatus"], "AUDIT_GRADE");
+}
+
+#[test]
+fn parse_pdf_falls_back_when_tagged_structure_tree_is_suspect() {
+    let pdf = write_suspect_tagged_structure_order_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let texts: Vec<&str> = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .map(|unit| unit["text"].as_str().unwrap())
+        .collect();
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+    assert_eq!(texts, vec!["Logical second.", "Logical first."]);
+    assert_eq!(json["parserRun"]["readingOrder"]["source"], "xy-cut");
+    assert_eq!(json["parserRun"]["readingOrder"]["fallback"], true);
+    assert_warning_with_severity(
+        warnings,
+        "structure_tree_suspect_fallback",
+        "Suspects true",
+        "WARNING",
+    );
+    assert_eq!(json["auditGradeStatus"], "AUDIT_GRADE");
+}
+
+#[test]
 fn parse_pdf_emits_table_cells_for_bordered_grid_pdf() {
     let pdf = write_bordered_table_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -865,14 +935,35 @@ fn write_safety_filter_pdf_fixture() -> PathBuf {
     path
 }
 
+fn write_tagged_structure_order_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-tagged-structure-order-fixture");
+    fs::write(&path, minimal_tagged_structure_order_pdf(false)).unwrap();
+    path
+}
+
+fn write_suspect_tagged_structure_order_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-suspect-tagged-structure-fixture");
+    fs::write(&path, minimal_tagged_structure_order_pdf(true)).unwrap();
+    path
+}
+
 fn assert_warning(warnings: &[Value], code: &str, message_part: &str) {
+    assert_warning_with_severity(warnings, code, message_part, "SEVERE");
+}
+
+fn assert_warning_with_severity(
+    warnings: &[Value],
+    code: &str,
+    message_part: &str,
+    severity: &str,
+) {
     assert!(
         warnings.iter().any(|warning| {
             warning["code"] == code
-                && warning["severity"] == "SEVERE"
+                && warning["severity"] == severity
                 && warning["message"].as_str().unwrap().contains(message_part)
         }),
-        "missing warning {code} containing {message_part}; got {warnings:?}"
+        "missing {severity} warning {code} containing {message_part}; got {warnings:?}"
     );
 }
 
@@ -1419,6 +1510,36 @@ ET
     minimal_single_stream_pdf(stream)
 }
 
+fn minimal_tagged_structure_order_pdf(suspect: bool) -> Vec<u8> {
+    let stream = "\
+BT
+/F1 16 Tf
+/P <</MCID 1>> BDC
+72 720 Td
+(Logical second.) Tj
+EMC
+/P <</MCID 0>> BDC
+0 -80 Td
+(Logical first.) Tj
+EMC
+ET
+";
+    let suspects = if suspect { "true" } else { "false" };
+    let objects = [
+        format!(
+            "<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true /Suspects {suspects} >> /StructTreeRoot 6 0 R >>"
+        ),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /StructParents 0 /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
+        "<< /Type /StructTreeRoot /K [7 0 R 8 0 R] >>".to_string(),
+        "<< /Type /StructElem /S /P /P 6 0 R /Pg 3 0 R /K 0 >>".to_string(),
+        "<< /Type /StructElem /S /P /P 6 0 R /Pg 3 0 R /K 1 >>".to_string(),
+    ];
+    pdf_from_objects(&objects)
+}
+
 fn minimal_single_stream_pdf(stream: &str) -> Vec<u8> {
     let objects = [
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
@@ -1427,6 +1548,10 @@ fn minimal_single_stream_pdf(stream: &str) -> Vec<u8> {
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
         format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
     ];
+    pdf_from_objects(&objects)
+}
+
+fn pdf_from_objects(objects: &[String]) -> Vec<u8> {
     let mut pdf = b"%PDF-1.4\n".to_vec();
     let mut offsets = Vec::new();
     for (index, object) in objects.iter().enumerate() {

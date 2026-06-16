@@ -46,6 +46,19 @@ Bundled third-party benchmark material:
   Dataset notice: DP-Bench is listed by OpenDataLoader Bench as MIT in
   third_party/opendataloader-bench/THIRD_PARTY_NOTICES.md.
 
+Reference implementations adapted in DocTruth-owned code:
+
+- OpenDataLoader PDF XYCutPlusPlusSorter
+  Source: https://github.com/opendataloader-project/opendataloader-pdf
+  Reference commit: 58a6dc782d27a42d433ffd1052be3f2c61f75cb3
+  Reference files:
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorter.java
+    java/opendataloader-pdf-core/src/test/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorterTest.java
+  License: Apache License 2.0
+  Adaptation: Rust-owned reading-order behavior in
+  runtime/doctruth-runtime/src/lib.rs; TrustDocument remains the only canonical
+  DocTruth output contract.
+
 Test-scope dependencies (not bundled in published artifacts):
 
 - JUnit Jupiter, AssertJ, Mockito, WireMock, slf4j-simple — see their respective

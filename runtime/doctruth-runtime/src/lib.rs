@@ -376,15 +376,337 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
         .collect()
 }
 
-fn order_positioned_lines(mut lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
-    let split = positioned_column_split(&lines);
+const XY_CUT_CROSS_LAYOUT_BETA: f64 = 0.7;
+const XY_CUT_DENSITY_THRESHOLD: f64 = 0.9;
+const XY_CUT_OVERLAP_THRESHOLD: f64 = 0.1;
+const XY_CUT_MIN_OVERLAP_COUNT: usize = 2;
+const XY_CUT_MIN_GAP: f64 = 5.0;
+const XY_CUT_NARROW_WIDTH_RATIO: f64 = 0.1;
+const XY_CUT_CROSS_LAYOUT_MEDIAN_RATIO: f64 = 1.5;
+
+// Adapted from OpenDataLoader PDF's Apache-2.0 XYCutPlusPlusSorter at
+// opendataloader-project/opendataloader-pdf@58a6dc782d27a42d433ffd1052be3f2c61f75cb3.
+// DocTruth keeps TrustDocument as the only canonical output contract.
+fn order_positioned_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
+    xy_cut_plus_plus_sort(lines, XY_CUT_CROSS_LAYOUT_BETA, XY_CUT_DENSITY_THRESHOLD)
+}
+
+fn xy_cut_plus_plus_sort(
+    lines: Vec<PositionedLine>,
+    beta: f64,
+    density_threshold: f64,
+) -> Vec<PositionedLine> {
+    if lines.len() <= 1 {
+        return lines;
+    }
+    let cross_layout = identify_cross_layout_lines(&lines, beta);
+    let remaining = lines
+        .iter()
+        .cloned()
+        .enumerate()
+        .filter(|(index, _)| !cross_layout[*index])
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>();
+    let cross_lines = lines
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| cross_layout[*index])
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>();
+    if remaining.is_empty() {
+        return sort_positioned_y_then_x(cross_lines);
+    }
+    let prefer_horizontal = compute_positioned_density(&remaining) > density_threshold;
+    let sorted_main = recursive_xy_cut_segment(remaining, prefer_horizontal);
+    merge_cross_layout_lines(sorted_main, cross_lines)
+}
+
+fn identify_cross_layout_lines(lines: &[PositionedLine], beta: f64) -> Vec<bool> {
+    if lines.len() < 3 {
+        return vec![false; lines.len()];
+    }
+    let mut widths = lines
+        .iter()
+        .map(|line| bbox_width(&line.bbox))
+        .collect::<Vec<_>>();
+    widths.sort_by(f64::total_cmp);
+    let max_width = widths.iter().copied().fold(0.0, f64::max);
+    let median_width = widths[widths.len() / 2].max(1.0);
+    let threshold = beta * max_width;
+    lines
+        .iter()
+        .map(|line| {
+            let width = bbox_width(&line.bbox);
+            width >= threshold
+                && width >= median_width * XY_CUT_CROSS_LAYOUT_MEDIAN_RATIO
+                && horizontal_overlap_count(line, lines) >= XY_CUT_MIN_OVERLAP_COUNT
+        })
+        .collect()
+}
+
+fn horizontal_overlap_count(line: &PositionedLine, lines: &[PositionedLine]) -> usize {
+    lines
+        .iter()
+        .filter(|other| !std::ptr::eq(*other, line))
+        .filter(|other| {
+            horizontal_overlap_ratio(&line.bbox, &other.bbox) >= XY_CUT_OVERLAP_THRESHOLD
+        })
+        .count()
+}
+
+fn horizontal_overlap_ratio(left: &RuntimeBox, right: &RuntimeBox) -> f64 {
+    let overlap = (left.x1.min(right.x1) - left.x0.max(right.x0)).max(0.0);
+    let smaller_width = bbox_width(left).min(bbox_width(right));
+    if smaller_width <= 0.0 {
+        0.0
+    } else {
+        overlap / smaller_width
+    }
+}
+
+fn compute_positioned_density(lines: &[PositionedLine]) -> f64 {
+    let Some(region) = bounding_region(lines) else {
+        return 1.0;
+    };
+    let region_area = bbox_area(&region);
+    if region_area <= 0.0 {
+        return 1.0;
+    }
+    let content_area = lines.iter().map(|line| bbox_area(&line.bbox)).sum::<f64>();
+    (content_area / region_area).min(1.0)
+}
+
+fn recursive_xy_cut_segment(
+    lines: Vec<PositionedLine>,
+    prefer_horizontal: bool,
+) -> Vec<PositionedLine> {
+    if lines.len() <= 1 {
+        return lines;
+    }
+    let horizontal_cut = best_horizontal_cut(&lines);
+    let vertical_cut = best_vertical_cut(&lines);
+    let has_horizontal = horizontal_cut.gap >= XY_CUT_MIN_GAP;
+    let has_vertical = vertical_cut.gap >= XY_CUT_MIN_GAP;
+    let use_horizontal = match (has_horizontal, has_vertical) {
+        (true, true) if (horizontal_cut.gap - vertical_cut.gap).abs() <= f64::EPSILON => {
+            prefer_horizontal
+        }
+        (true, true) => horizontal_cut.gap > vertical_cut.gap,
+        (true, false) => true,
+        (false, true) => false,
+        (false, false) => return sort_positioned_y_then_x(lines),
+    };
+    let groups = if use_horizontal {
+        split_by_horizontal_cut(lines.clone(), horizontal_cut.position)
+    } else {
+        split_by_vertical_cut(lines.clone(), vertical_cut.position)
+    };
+    if groups.len() <= 1 || groups.iter().any(|group| group.len() == lines.len()) {
+        return sort_positioned_y_then_x(lines);
+    }
+    groups
+        .into_iter()
+        .flat_map(|group| recursive_xy_cut_segment(group, prefer_horizontal))
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CutInfo {
+    position: f64,
+    gap: f64,
+}
+
+fn best_vertical_cut(lines: &[PositionedLine]) -> CutInfo {
+    let edge_cut = vertical_cut_by_edges(lines);
+    if edge_cut.gap >= XY_CUT_MIN_GAP || lines.len() < 3 {
+        return edge_cut;
+    }
+    let Some(region) = bounding_region(lines) else {
+        return edge_cut;
+    };
+    let narrow_threshold = bbox_width(&region) * XY_CUT_NARROW_WIDTH_RATIO;
+    let filtered = lines
+        .iter()
+        .filter(|line| bbox_width(&line.bbox) >= narrow_threshold)
+        .cloned()
+        .collect::<Vec<_>>();
+    if filtered.len() < 2 || filtered.len() == lines.len() {
+        return edge_cut;
+    }
+    let filtered_cut = vertical_cut_by_edges(&filtered);
+    if filtered_cut.gap > edge_cut.gap && filtered_cut.gap >= XY_CUT_MIN_GAP {
+        filtered_cut
+    } else {
+        edge_cut
+    }
+}
+
+fn vertical_cut_by_edges(lines: &[PositionedLine]) -> CutInfo {
+    let mut sorted = lines.to_vec();
+    sorted.sort_by(|left, right| {
+        left.bbox
+            .x0
+            .total_cmp(&right.bbox.x0)
+            .then_with(|| left.bbox.x1.total_cmp(&right.bbox.x1))
+    });
+    let mut largest_gap = 0.0;
+    let mut cut_position = 0.0;
+    let mut previous_right: Option<f64> = None;
+    for line in sorted {
+        if let Some(right) = previous_right {
+            if line.bbox.x0 > right {
+                let gap = line.bbox.x0 - right;
+                if gap > largest_gap {
+                    largest_gap = gap;
+                    cut_position = (right + line.bbox.x0) / 2.0;
+                }
+            }
+            previous_right = Some(right.max(line.bbox.x1));
+        } else {
+            previous_right = Some(line.bbox.x1);
+        }
+    }
+    CutInfo {
+        position: cut_position,
+        gap: largest_gap,
+    }
+}
+
+fn best_horizontal_cut(lines: &[PositionedLine]) -> CutInfo {
+    let mut sorted = lines.to_vec();
+    sorted.sort_by(|left, right| {
+        left.bbox
+            .y0
+            .total_cmp(&right.bbox.y0)
+            .then_with(|| left.bbox.y1.total_cmp(&right.bbox.y1))
+    });
+    let mut largest_gap = 0.0;
+    let mut cut_position = 0.0;
+    let mut previous_bottom: Option<f64> = None;
+    for line in sorted {
+        if let Some(bottom) = previous_bottom {
+            if line.bbox.y0 > bottom {
+                let gap = line.bbox.y0 - bottom;
+                if gap > largest_gap {
+                    largest_gap = gap;
+                    cut_position = (bottom + line.bbox.y0) / 2.0;
+                }
+            }
+            previous_bottom = Some(bottom.max(line.bbox.y1));
+        } else {
+            previous_bottom = Some(line.bbox.y1);
+        }
+    }
+    CutInfo {
+        position: cut_position,
+        gap: largest_gap,
+    }
+}
+
+fn split_by_horizontal_cut(lines: Vec<PositionedLine>, cut_y: f64) -> Vec<Vec<PositionedLine>> {
+    let mut above = Vec::new();
+    let mut below = Vec::new();
+    for line in lines {
+        if bbox_center_y(&line.bbox) < cut_y {
+            above.push(line);
+        } else {
+            below.push(line);
+        }
+    }
+    non_empty_groups(above, below)
+}
+
+fn split_by_vertical_cut(lines: Vec<PositionedLine>, cut_x: f64) -> Vec<Vec<PositionedLine>> {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for line in lines {
+        if bbox_center_x(&line.bbox) < cut_x {
+            left.push(line);
+        } else {
+            right.push(line);
+        }
+    }
+    non_empty_groups(left, right)
+}
+
+fn non_empty_groups(
+    first: Vec<PositionedLine>,
+    second: Vec<PositionedLine>,
+) -> Vec<Vec<PositionedLine>> {
+    [first, second]
+        .into_iter()
+        .filter(|group| !group.is_empty())
+        .collect()
+}
+
+fn merge_cross_layout_lines(
+    sorted_main: Vec<PositionedLine>,
+    cross_lines: Vec<PositionedLine>,
+) -> Vec<PositionedLine> {
+    if cross_lines.is_empty() {
+        return sorted_main;
+    }
+    let sorted_cross = sort_positioned_y_then_x(cross_lines);
+    let mut result = Vec::new();
+    let mut main_index = 0;
+    let mut cross_index = 0;
+    while main_index < sorted_main.len() || cross_index < sorted_cross.len() {
+        if cross_index >= sorted_cross.len() {
+            result.push(sorted_main[main_index].clone());
+            main_index += 1;
+        } else if main_index >= sorted_main.len()
+            || sorted_cross[cross_index].bbox.y0 <= sorted_main[main_index].bbox.y0
+        {
+            result.push(sorted_cross[cross_index].clone());
+            cross_index += 1;
+        } else {
+            result.push(sorted_main[main_index].clone());
+            main_index += 1;
+        }
+    }
+    result
+}
+
+fn sort_positioned_y_then_x(mut lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
     lines.sort_by(|left, right| {
-        positioned_column_index(&left.bbox, split)
-            .cmp(&positioned_column_index(&right.bbox, split))
-            .then_with(|| left.bbox.y0.total_cmp(&right.bbox.y0))
+        left.bbox
+            .y0
+            .total_cmp(&right.bbox.y0)
             .then_with(|| left.bbox.x0.total_cmp(&right.bbox.x0))
     });
     lines
+}
+
+fn bounding_region(lines: &[PositionedLine]) -> Option<RuntimeBox> {
+    let first = lines.first()?;
+    let mut region = first.bbox.clone();
+    for line in lines.iter().skip(1) {
+        region.x0 = region.x0.min(line.bbox.x0);
+        region.y0 = region.y0.min(line.bbox.y0);
+        region.x1 = region.x1.max(line.bbox.x1);
+        region.y1 = region.y1.max(line.bbox.y1);
+    }
+    Some(region)
+}
+
+fn bbox_width(bbox: &RuntimeBox) -> f64 {
+    (bbox.x1 - bbox.x0).max(0.0)
+}
+
+fn bbox_height(bbox: &RuntimeBox) -> f64 {
+    (bbox.y1 - bbox.y0).max(0.0)
+}
+
+fn bbox_area(bbox: &RuntimeBox) -> f64 {
+    bbox_width(bbox) * bbox_height(bbox)
+}
+
+fn bbox_center_x(bbox: &RuntimeBox) -> f64 {
+    (bbox.x0 + bbox.x1) / 2.0
+}
+
+fn bbox_center_y(bbox: &RuntimeBox) -> f64 {
+    (bbox.y0 + bbox.y1) / 2.0
 }
 
 fn filter_positioned_lines(lines: Vec<PositionedLine>) -> (Vec<PositionedLine>, Vec<Value>) {
@@ -442,31 +764,6 @@ fn parser_safety_warning(code: &str, message: &str) -> Value {
 
 fn is_severe_warning(warning: &Value) -> bool {
     warning.get("severity").and_then(Value::as_str) == Some("SEVERE")
-}
-
-fn positioned_column_split(lines: &[PositionedLine]) -> Option<f64> {
-    let mut xs = lines
-        .iter()
-        .filter(|line| !line.text.is_empty())
-        .map(|line| line.bbox.x0)
-        .collect::<Vec<_>>();
-    xs.sort_by(f64::total_cmp);
-    let (left, right, gap) = xs
-        .windows(2)
-        .map(|pair| (pair[0], pair[1], pair[1] - pair[0]))
-        .max_by(|left, right| left.2.total_cmp(&right.2))?;
-    if gap > 250.0 {
-        Some((left + right) / 2.0)
-    } else {
-        None
-    }
-}
-
-fn positioned_column_index(bbox: &RuntimeBox, split: Option<f64>) -> usize {
-    match split {
-        Some(split_x) if bbox.x0 > split_x => 1,
-        _ => 0,
-    }
 }
 
 fn configured_model_worker_parse(
@@ -3555,4 +3852,112 @@ fn error_json(code: &str, message: &str) -> Value {
         "error_code": code,
         "message": message
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xy_cut_orders_cross_layout_header_before_two_columns() {
+        let lines = vec![
+            line("Col2-A", 700.0, 250.0, 900.0, 280.0),
+            line("Col1-B", 100.0, 360.0, 300.0, 390.0),
+            line("Header", 80.0, 80.0, 920.0, 130.0),
+            line("Col2-B", 700.0, 360.0, 900.0, 390.0),
+            line("Col1-A", 100.0, 250.0, 300.0, 280.0),
+        ];
+
+        assert_eq!(
+            ordered_text(lines),
+            vec!["Header", "Col1-A", "Col1-B", "Col2-A", "Col2-B"]
+        );
+    }
+
+    #[test]
+    fn xy_cut_uses_narrow_bridge_filter_for_column_gap() {
+        let lines = vec![
+            line("L1", 80.0, 100.0, 240.0, 140.0),
+            line("R1", 260.0, 100.0, 470.0, 140.0),
+            line("Bridge", 241.0, 112.0, 259.0, 128.0),
+            line("L2", 80.0, 145.0, 240.0, 180.0),
+            line("R2", 260.0, 145.0, 470.0, 180.0),
+        ];
+
+        let ordered = ordered_text(lines);
+        let l2 = position(&ordered, "L2");
+        let r1 = position(&ordered, "R1");
+
+        assert!(l2 < r1, "left column should finish before right column");
+        assert!(position(&ordered, "L1") < l2);
+        assert!(position(&ordered, "R1") < position(&ordered, "R2"));
+    }
+
+    #[test]
+    fn xy_cut_prefers_larger_horizontal_gap_for_row_sections() {
+        let lines = vec![
+            line("C", 100.0, 600.0, 280.0, 640.0),
+            line("B", 360.0, 100.0, 540.0, 140.0),
+            line("D", 360.0, 600.0, 540.0, 640.0),
+            line("A", 100.0, 100.0, 280.0, 140.0),
+        ];
+
+        assert_eq!(ordered_text(lines), vec!["A", "B", "C", "D"]);
+    }
+
+    #[test]
+    fn xy_cut_keeps_sidebar_from_interleaving_main_columns() {
+        let lines = vec![
+            line("R1", 520.0, 180.0, 900.0, 220.0),
+            line("Sidebar", 20.0, 100.0, 60.0, 780.0),
+            line("L2", 100.0, 250.0, 420.0, 290.0),
+            line("Header", 90.0, 70.0, 910.0, 120.0),
+            line("R2", 520.0, 250.0, 900.0, 290.0),
+            line("L1", 100.0, 180.0, 420.0, 220.0),
+        ];
+
+        let ordered = ordered_text(lines);
+
+        assert!(position(&ordered, "Header") < position(&ordered, "L1"));
+        assert!(position(&ordered, "L2") < position(&ordered, "R1"));
+        assert!(position(&ordered, "R1") < position(&ordered, "R2"));
+    }
+
+    #[test]
+    fn xy_cut_does_not_mark_regular_equal_width_columns_as_cross_layout() {
+        let lines = vec![
+            line("L1", 80.0, 100.0, 240.0, 130.0),
+            line("R1", 300.0, 100.0, 460.0, 130.0),
+            line("L2", 80.0, 145.0, 240.0, 175.0),
+            line("R2", 300.0, 145.0, 460.0, 175.0),
+            line("L3", 80.0, 190.0, 240.0, 220.0),
+            line("R3", 300.0, 190.0, 460.0, 220.0),
+        ];
+
+        assert_eq!(
+            ordered_text(lines),
+            vec!["L1", "L2", "L3", "R1", "R2", "R3"]
+        );
+    }
+
+    fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {
+        order_positioned_lines(lines)
+            .into_iter()
+            .map(|line| line.text)
+            .collect()
+    }
+
+    fn line(text: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> PositionedLine {
+        PositionedLine {
+            text: text.to_string(),
+            bbox: RuntimeBox { x0, y0, x1, y1 },
+        }
+    }
+
+    fn position(values: &[String], needle: &str) -> usize {
+        values
+            .iter()
+            .position(|value| value == needle)
+            .expect("expected text")
+    }
 }

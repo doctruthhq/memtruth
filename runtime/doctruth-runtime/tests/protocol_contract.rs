@@ -487,6 +487,44 @@ fn parse_pdf_orders_two_column_positioned_text_by_visual_columns() {
 }
 
 #[test]
+fn parse_pdf_filters_duplicate_positioned_text_and_marks_not_audit_grade() {
+    let pdf = write_duplicate_text_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let line_units: Vec<&Value> = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .collect();
+    let duplicate_count = line_units
+        .iter()
+        .filter(|unit| unit["text"] == "Duplicate overlay evidence.")
+        .count();
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+    assert_eq!(duplicate_count, 1);
+    assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
+    assert!(warnings.iter().any(|warning| {
+        warning["code"] == "duplicate_text_filtered"
+            && warning["severity"] == "SEVERE"
+            && warning["message"]
+                .as_str()
+                .unwrap()
+                .contains("Duplicate overlay evidence.")
+    }));
+}
+
+#[test]
 fn parse_pdf_emits_table_cells_for_bordered_grid_pdf() {
     let pdf = write_bordered_table_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -782,6 +820,12 @@ fn write_continued_table_pdf_fixture() -> PathBuf {
 fn write_two_column_pdf_fixture() -> PathBuf {
     let path = temp_pdf_path("doctruth-runtime-two-column-fixture");
     fs::write(&path, minimal_two_column_pdf()).unwrap();
+    path
+}
+
+fn write_duplicate_text_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-duplicate-text-fixture");
+    fs::write(&path, minimal_duplicate_text_pdf()).unwrap();
     path
 }
 
@@ -1229,6 +1273,49 @@ BT
 (Left column evidence.) Tj
 260 0 Td
 (Right column evidence.) Tj
+ET
+";
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
+    ];
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{}\nendobj\n", index + 1, object).as_bytes());
+    }
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            objects.len() + 1,
+            xref_offset
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+fn minimal_duplicate_text_pdf() -> Vec<u8> {
+    let stream = "\
+BT
+/F1 16 Tf
+72 720 Td
+(Duplicate overlay evidence.) Tj
+0 -10 Td
+(Duplicate overlay evidence.) Tj
+0 -20 Td
+(Unique evidence.) Tj
 ET
 ";
     let objects = [

@@ -269,11 +269,15 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         extract_page_metadata(source_path).unwrap_or_else(|_| fallback_page_metadata(&page_lines));
     let mut units = unit_json(&page_lines, &positioned_lines);
     units.extend(table_unit_json(&tables, units.len() + 1));
-    let warnings = model_unavailable_warnings(preset, &required_models);
-    let audit_grade_status = if warnings.is_empty() {
-        "AUDIT_GRADE"
-    } else {
+    let mut warnings = extracted_pages
+        .iter()
+        .flat_map(|page| page.warnings.clone())
+        .collect::<Vec<_>>();
+    warnings.extend(model_unavailable_warnings(preset, &required_models));
+    let audit_grade_status = if warnings.iter().any(is_severe_warning) {
         "NOT_AUDIT_GRADE"
+    } else {
+        "AUDIT_GRADE"
     };
     let model_identities = required_models
         .iter()
@@ -318,6 +322,7 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
 struct ExtractedPage {
     lines: Vec<String>,
     positioned_lines: Vec<PositionedLine>,
+    warnings: Vec<Value>,
 }
 
 fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>, String> {
@@ -331,7 +336,7 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
             document
                 .extract_page_text_with_options(page_index, ReadingOrder::ColumnAware)
                 .map(|page_text| {
-                    let positioned_lines = order_positioned_lines(
+                    let (positioned_lines, warnings) = filter_positioned_lines(
                         page_text
                             .spans
                             .iter()
@@ -353,6 +358,7 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
                             })
                             .collect::<Vec<_>>(),
                     );
+                    let positioned_lines = order_positioned_lines(positioned_lines);
                     let lines = positioned_lines
                         .iter()
                         .map(|line| line.text.clone())
@@ -360,6 +366,7 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<Vec<ExtractedPage>,
                     ExtractedPage {
                         lines,
                         positioned_lines,
+                        warnings,
                     }
                 })
                 .map_err(|error| {
@@ -378,6 +385,63 @@ fn order_positioned_lines(mut lines: Vec<PositionedLine>) -> Vec<PositionedLine>
             .then_with(|| left.bbox.x0.total_cmp(&right.bbox.x0))
     });
     lines
+}
+
+fn filter_positioned_lines(lines: Vec<PositionedLine>) -> (Vec<PositionedLine>, Vec<Value>) {
+    let mut kept: Vec<PositionedLine> = Vec::new();
+    let mut warnings = Vec::new();
+    for line in lines {
+        if line.text.trim().is_empty() {
+            continue;
+        }
+        if kept
+            .iter()
+            .any(|candidate| duplicate_positioned_line(candidate, &line))
+        {
+            warnings.push(parser_safety_warning(
+                "duplicate_text_filtered",
+                &format!(
+                    "Filtered duplicate text-layer span at the same position: {}",
+                    line.text
+                ),
+            ));
+            continue;
+        }
+        kept.push(line);
+    }
+    (kept, warnings)
+}
+
+fn duplicate_positioned_line(left: &PositionedLine, right: &PositionedLine) -> bool {
+    normalize_text_for_filter(&left.text) == normalize_text_for_filter(&right.text)
+        && close_number(left.bbox.x0, right.bbox.x0)
+        && close_number(left.bbox.x1, right.bbox.x1)
+        && close_vertical(left.bbox.y0, right.bbox.y0)
+        && close_vertical(left.bbox.y1, right.bbox.y1)
+}
+
+fn normalize_text_for_filter(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn close_number(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 1.0
+}
+
+fn close_vertical(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 20.0
+}
+
+fn parser_safety_warning(code: &str, message: &str) -> Value {
+    json!({
+        "code": code,
+        "severity": "SEVERE",
+        "message": message
+    })
+}
+
+fn is_severe_warning(warning: &Value) -> bool {
+    warning.get("severity").and_then(Value::as_str) == Some("SEVERE")
 }
 
 fn positioned_column_split(lines: &[PositionedLine]) -> Option<f64> {

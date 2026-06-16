@@ -2281,10 +2281,12 @@ matches actual case tags, fixture types, and behavior tags, that replay validity
 inputs remain present, that imported OpenDataLoader metrics still match the
 referenced `evaluation.json` and its hash, and that case replay fields match the
 metrics/source hashes they summarize. They must also recompute each case's
-`actualTrustDocumentSha256` from the embedded `actualTrustDocument`, so a report
-cannot be altered by changing only the aggregate, only external metrics, only
-coverage fields, only case-level replay evidence, or only the parser output
-hash.
+`actualTrustDocumentSha256` from the embedded `actualTrustDocument` and replay
+case-level parser-quality metrics against the manifest's expected Markdown and
+expected `TrustDocument` labels, so a report cannot be altered by changing only
+the aggregate, only external metrics, only coverage fields, only case-level
+replay evidence, only the parser output hash, or only the embedded parser
+output.
 Cached remote
 fixtures remain usable offline after SHA-256 verification.
 `scripts/smoke-doctruth-real-ocr-corpus.sh` is an opt-in runtime corpus smoke:

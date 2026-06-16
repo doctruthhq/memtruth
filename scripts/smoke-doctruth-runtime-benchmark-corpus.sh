@@ -233,7 +233,7 @@ if printf '{"command":"verify_benchmark_report","report_path":"%s"}' "$WORK_DIR/
     echo "expected runtime benchmark report aggregate verifier failure" >&2
     exit 1
 fi
-grep -q "aggregate metric mismatch" "$WORK_DIR/recorded-report-aggregate-tampered.err"
+grep -q "actualTrustDocument metrics mismatch" "$WORK_DIR/recorded-report-aggregate-tampered.err"
 grep -q "reading_order_f1" "$WORK_DIR/recorded-report-aggregate-tampered.err"
 cp "$WORK_DIR/corpus.json" "$WORK_DIR/corpus-maximum-fail.json"
 python3 - "$WORK_DIR/corpus-maximum-fail.json" <<'PY'

@@ -1773,7 +1773,10 @@ fn verify_benchmark_report_json(request: &Value) -> Result<Value, String> {
     verify_report_validity_inputs(&report)?;
     verify_report_coverage(&report)?;
     verify_report_case_replay(&report)?;
-    verify_report_actual_trust_documents(&report)?;
+    let manifest_dir = Path::new(manifest_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    verify_report_actual_trust_documents(&report, &manifest, manifest_dir)?;
     verify_report_aggregate_metrics(&report)?;
     verify_report_metric_thresholds(&report)?;
     Ok(json!({
@@ -2101,7 +2104,11 @@ fn verify_report_case_replay(report: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn verify_report_actual_trust_documents(report: &Value) -> Result<(), String> {
+fn verify_report_actual_trust_documents(
+    report: &Value,
+    manifest: &Value,
+    base_dir: &Path,
+) -> Result<(), String> {
     for case in report
         .get("cases")
         .and_then(Value::as_array)
@@ -2131,8 +2138,67 @@ fn verify_report_actual_trust_documents(report: &Value) -> Result<(), String> {
             )
             .to_string());
         }
+        verify_report_actual_trust_document_metrics(case, manifest, base_dir)?;
     }
     Ok(())
+}
+
+fn verify_report_actual_trust_document_metrics(
+    case: &Value,
+    manifest: &Value,
+    base_dir: &Path,
+) -> Result<(), String> {
+    let label_id = case.get("labelId").and_then(Value::as_str).unwrap_or("");
+    let manifest_case = manifest_case_by_label_id(manifest, label_id)?;
+    let expected_markdown = fs::read_to_string(resolve_case_path(
+        base_dir,
+        manifest_case,
+        "expectedMarkdown",
+    )?)
+    .map_err(|error| error_json("BENCHMARK_REPORT_INVALID", &error.to_string()).to_string())?;
+    let expected_document = read_json_file(
+        &resolve_case_path(base_dir, manifest_case, "expectedDocument")?,
+        "BENCHMARK_REPORT_INVALID",
+    )?;
+    let document = case.get("actualTrustDocument").unwrap_or(&Value::Null);
+    let expected_metrics = case_metrics(
+        document,
+        &expected_document,
+        &markdown_from_document(document),
+        &expected_markdown,
+    );
+    for (name, expected) in expected_metrics.as_object().into_iter().flatten() {
+        let expected = expected.as_f64().unwrap_or(f64::NAN);
+        let actual = case
+            .get("metrics")
+            .and_then(|metrics| metrics.get(name))
+            .and_then(Value::as_f64)
+            .unwrap_or(f64::NAN);
+        if !actual.is_finite() || (actual - expected).abs() > 0.000001 {
+            return Err(error_json(
+                "BENCHMARK_REPORT_INVALID",
+                &format!("actualTrustDocument metrics mismatch for {name}"),
+            )
+            .to_string());
+        }
+    }
+    Ok(())
+}
+
+fn manifest_case_by_label_id<'a>(manifest: &'a Value, label_id: &str) -> Result<&'a Value, String> {
+    manifest
+        .get("cases")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|case| case.get("labelId").and_then(Value::as_str) == Some(label_id))
+        .ok_or_else(|| {
+            error_json(
+                "BENCHMARK_REPORT_INVALID",
+                &format!("manifest case not found for labelId {label_id}"),
+            )
+            .to_string()
+        })
 }
 
 fn verify_report_aggregate_metrics(report: &Value) -> Result<(), String> {

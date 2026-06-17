@@ -2256,11 +2256,18 @@ documents and failed one scanned/no-text-layer document. It reported
 `overall_mean=0.509092484964239`, `nid_mean=0.7591850124827885`,
 `teds_mean=0.0`, and `mhs_mean=0.0025571766718785185`, with
 `total_elapsed=389.71747279167175` seconds and one extreme slow sample
-`01030000000141` at about 180 seconds. This is an honest baseline, not a pass
-gate: reading order has a usable text-layer foundation, while table fidelity,
-heading hierarchy, OCR fallback, and slow-sample timeout/parallelism remain
-required parser-quality work before DocTruth can claim OpenDataLoader/Docling
-level extraction quality.
+`01030000000141` at about 180 seconds.
+
+The first export-layer optimization adds conservative Markdown heading
+promotion, TrustDocument table-to-HTML rendering, and a narrow line-span table
+fallback for `No.`/number/name/value table patterns. The next full local run
+still parsed 199 of 200 documents, but improved the OpenDataLoader aggregate to
+`overall_mean=0.5492221210080162`, `nid_mean=0.7665022379711967`,
+`teds_mean=0.06498004117639267`, and `mhs_mean=0.12239636974611434`.
+This is an honest baseline, not a pass gate: reading order has a usable
+text-layer foundation, while table fidelity, heading hierarchy, OCR fallback,
+and slow-sample timeout/parallelism remain required parser-quality work before
+DocTruth can claim OpenDataLoader/Docling level extraction quality.
 
 Current structure-tree preference status: the Rust runtime now asks `pdf_oxide`
 for canonical page reading order, which prefers a trustworthy Tagged-PDF

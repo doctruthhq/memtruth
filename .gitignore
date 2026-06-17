@@ -1,5 +1,6 @@
 # Build output
 target/
+__pycache__/
 *.class
 *.jar
 *.war
@@ -54,6 +55,7 @@ docs/strategy/
 # Test artifacts
 **/test-output/
 **/recordings/*.tmp.json
+third_party/opendataloader-bench/prediction/doctruth-runtime*/
 
 # Real-world fixture corpus — never check in (may contain customer/PII data)
 fixtures/

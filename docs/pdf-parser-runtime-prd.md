@@ -2228,9 +2228,11 @@ evaluator compatibility only; they do not replace TrustDocument or parser trace
 evidence. Fixture taxonomy is
 declared with `requiredFixtureTypes`, `minCasesPerFixtureType`, case
 `fixtureTypes`, `casesPerFixtureType`, `fixtureCoverageRequired`, and
-`fixtureCoverageSatisfied`; it covers simple single-column, two-column,
-sidebar-resume, table, borderless-table, scanned-OCR, invoice, and mixed-layout
-fixtures. Behavior taxonomy is declared with `requiredBehaviors`,
+`fixtureCoverageSatisfied`; recorded reports also include `fixtureResults`,
+which lists each fixture/layout bucket's case count, cases, aggregate metrics,
+and pass/fail status against copied thresholds. It covers simple single-column,
+two-column, sidebar-resume, table, borderless-table, scanned-OCR, invoice, and
+mixed-layout fixtures. Behavior taxonomy is declared with `requiredBehaviors`,
 `minCasesPerBehavior`, case `behaviors`, `casesPerBehavior`,
 `behaviorCoverageRequired`, and `behaviorCoverageSatisfied`; it covers
 OpenDataLoader-inspired XY-Cut edge cases, parser safety filters,

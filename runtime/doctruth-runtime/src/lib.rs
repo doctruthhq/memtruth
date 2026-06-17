@@ -1448,6 +1448,11 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "caseCount": case_reports.len(),
         "casesPerTag": cases_per_tag(&case_reports),
         "casesPerFixtureType": cases_per_field(&case_reports, "fixtureTypes"),
+        "fixtureResults": fixture_results(
+            &case_reports,
+            manifest.get("minimums").unwrap_or(&json!({})),
+            manifest.get("maximums").unwrap_or(&json!({}))
+        ),
         "fixtureCoverageRequired": expected_min_cases_per_field(labeling, "requiredFixtureTypes", "minCasesPerFixtureType"),
         "fixtureCoverageSatisfied": coverage_satisfied(
             &expected_min_cases_per_field(labeling, "requiredFixtureTypes", "minCasesPerFixtureType"),
@@ -2020,6 +2025,15 @@ fn verify_report_coverage(report: &Value) -> Result<(), String> {
         "fixtureCoverageRequired",
         "fixtureCoverageSatisfied",
     )?;
+    verify_expected_value(
+        report,
+        "fixtureResults",
+        fixture_results(
+            &cases,
+            report.get("minimums").unwrap_or(&json!({})),
+            report.get("maximums").unwrap_or(&json!({})),
+        ),
+    )?;
     verify_coverage_dimension(
         report,
         "behaviors",
@@ -2068,6 +2082,56 @@ fn coverage_satisfied_from_counts(required: &Value, actual_cases_per_tag: &Value
         satisfied.insert(tag.to_string(), json!(actual >= minimum));
     }
     Value::Object(satisfied)
+}
+
+fn fixture_results(case_reports: &[Value], minimums: &Value, maximums: &Value) -> Value {
+    let mut fixture_names = cases_per_field(case_reports, "fixtureTypes")
+        .as_object()
+        .map(|object| object.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    fixture_names.sort();
+    let mut results = serde_json::Map::new();
+    for fixture in fixture_names {
+        let matching = case_reports
+            .iter()
+            .filter(|case| case_has_value(case, "fixtureTypes", &fixture))
+            .cloned()
+            .collect::<Vec<_>>();
+        let metrics = aggregate_case_metrics(&matching);
+        let cases = matching
+            .iter()
+            .filter_map(|case| case.get("name").and_then(Value::as_str))
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        results.insert(
+            fixture,
+            json!({
+                "caseCount": matching.len(),
+                "cases": cases,
+                "metrics": metrics,
+                "passed": metrics_pass_thresholds(&metrics, minimums, maximums)
+            }),
+        );
+    }
+    Value::Object(results)
+}
+
+fn metrics_pass_thresholds(metrics: &Value, minimums: &Value, maximums: &Value) -> bool {
+    thresholds_pass(metrics, minimums, |actual, threshold| actual >= threshold)
+        && thresholds_pass(metrics, maximums, |actual, threshold| actual <= threshold)
+}
+
+fn thresholds_pass(metrics: &Value, thresholds: &Value, predicate: fn(f64, f64) -> bool) -> bool {
+    for (name, threshold) in thresholds.as_object().into_iter().flatten() {
+        let Some(actual) = metrics.get(name).and_then(Value::as_f64) else {
+            continue;
+        };
+        let threshold = threshold.as_f64().unwrap_or(f64::NAN);
+        if !actual.is_finite() || !threshold.is_finite() || !predicate(actual, threshold) {
+            return false;
+        }
+    }
+    true
 }
 
 fn verify_report_validity_inputs(report: &Value) -> Result<(), String> {

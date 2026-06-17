@@ -126,6 +126,7 @@ cat > "$WORK_DIR/corpus.json" <<'EOF_MANIFEST'
       "name": "runtime-smoke",
       "labelId": "rust-smoke-v1-0001",
       "tags": ["multi-layout"],
+      "fixtureTypes": ["mixed-layout"],
       "preset": "table-lite",
       "source": "fixture.pdf",
       "expectedMarkdown": "expected.md",
@@ -163,6 +164,9 @@ assert recorded["manifestSha256"].startswith("sha256:")
 assert recorded["caseCount"] == 1
 assert recorded["casesPerTag"]["multi-layout"] == 1
 assert recorded["minCasesPerTag"]["multi-layout"] == 1
+assert recorded["fixtureResults"]["mixed-layout"]["caseCount"] == 1
+assert recorded["fixtureResults"]["mixed-layout"]["passed"] is True
+assert recorded["fixtureResults"]["mixed-layout"]["metrics"]["reading_order_f1"] == 1.0
 assert recorded["minimums"]["reading_order_f1"] == 1.0
 assert isinstance(recorded["maximums"], dict)
 assert recorded["runtime"] == report["runtime"]
@@ -233,8 +237,7 @@ if printf '{"command":"verify_benchmark_report","report_path":"%s"}' "$WORK_DIR/
     echo "expected runtime benchmark report aggregate verifier failure" >&2
     exit 1
 fi
-grep -q "actualTrustDocument metrics mismatch" "$WORK_DIR/recorded-report-aggregate-tampered.err"
-grep -q "reading_order_f1" "$WORK_DIR/recorded-report-aggregate-tampered.err"
+grep -q "fixtureResults mismatch" "$WORK_DIR/recorded-report-aggregate-tampered.err"
 cp "$WORK_DIR/corpus.json" "$WORK_DIR/corpus-maximum-fail.json"
 python3 - "$WORK_DIR/corpus-maximum-fail.json" <<'PY'
 import json

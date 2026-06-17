@@ -2269,6 +2269,14 @@ text-layer foundation, while table fidelity, heading hierarchy, OCR fallback,
 and slow-sample timeout/parallelism remain required parser-quality work before
 DocTruth can claim OpenDataLoader/Docling level extraction quality.
 
+The runner also supports `--timeout-seconds` to keep full-corpus iteration from
+being dominated by a single pathological PDF. With `--timeout-seconds 30`, the
+same optimized export run completed in `239.5388069152832` seconds, marked
+`01030000000141` as timed out, kept the scanned/no-text-layer failure
+`01030000000165`, and retained nearly identical aggregate quality:
+`overall_mean=0.549140667373931`, `nid_mean=0.7663393307030263`,
+`teds_mean=0.06498004117639267`, and `mhs_mean=0.12239636974611434`.
+
 Current structure-tree preference status: the Rust runtime now asks `pdf_oxide`
 for canonical page reading order, which prefers a trustworthy Tagged-PDF
 `/StructTreeRoot` before geometric inference. `parserRun.readingOrder` and

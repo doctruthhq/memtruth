@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only generate prediction artifacts; do not run evaluator.py",
     )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=30.0,
+        help="Per-document DocTruth runtime timeout in seconds.",
+    )
     return parser.parse_args()
 
 
@@ -221,7 +227,9 @@ def markdown_from_document(document: dict[str, Any]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def run_runtime(runtime_bin: Path, pdf_path: Path, preset: str) -> dict[str, Any]:
+def run_runtime(
+    runtime_bin: Path, pdf_path: Path, preset: str, timeout_seconds: float
+) -> dict[str, Any]:
     request = {
         "command": "parse_pdf",
         "source_path": str(pdf_path),
@@ -234,6 +242,7 @@ def run_runtime(runtime_bin: Path, pdf_path: Path, preset: str) -> dict[str, Any
         text=True,
         capture_output=True,
         check=False,
+        timeout=timeout_seconds,
     )
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())
@@ -292,7 +301,7 @@ def write_predictions(args: argparse.Namespace) -> Path:
         doc_id = pdf_path.stem
         markdown_path = markdown_dir / f"{doc_id}.md"
         try:
-            document = run_runtime(runtime_bin, pdf_path, args.preset)
+            document = run_runtime(runtime_bin, pdf_path, args.preset, args.timeout_seconds)
             markdown_path.write_text(markdown_from_document(document), encoding="utf-8")
             status = "parsed"
             error = None
@@ -327,6 +336,7 @@ def write_predictions(args: argparse.Namespace) -> Path:
         "elapsed_per_doc": total_elapsed / len(per_document),
         "date": time.strftime("%Y-%m-%d"),
         "preset": args.preset,
+        "timeout_seconds": args.timeout_seconds,
         "runtime_bin": str(runtime_bin),
         "documents": per_document,
     }

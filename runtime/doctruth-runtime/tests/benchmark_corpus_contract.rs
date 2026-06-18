@@ -57,6 +57,30 @@ fn benchmark_corpus_runs_labeled_manifest_and_reports_metrics() {
     assert_eq!(report["cases"][0]["labelId"], "rust-seed-v1-0001");
     assert_eq!(report["cases"][0]["tags"], json!(["multi-layout"]));
     assert_eq!(report["cases"][0]["metrics"]["reading_order_f1"], 1.0);
+    assert_eq!(report["resourceProfile"]["profile"], "edge-model");
+    assert_eq!(report["resourceProfile"]["modelRuntime"], Value::Null);
+    assert_eq!(
+        report["resourceProfile"]["pythonTorchDoclingProductionResidency"],
+        false
+    );
+    assert_eq!(report["resourceProfile"]["caseCount"], 1);
+    assert!(
+        report["resourceProfile"]["elapsedMs"]
+            .as_f64()
+            .unwrap_or(0.0)
+            >= 0.0,
+        "{report}"
+    );
+    assert_eq!(
+        report["resourceProfile"]["memory"]["measurement"],
+        "process-rss"
+    );
+    assert_eq!(report["cases"][0]["runtimeProfile"], "edge-model");
+    assert!(
+        report["cases"][0]["elapsedMs"].as_f64().unwrap_or(0.0) >= 0.0,
+        "{report}"
+    );
+    assert_eq!(report["cases"][0]["memory"]["measurement"], "process-rss");
 }
 
 #[test]
@@ -129,6 +153,13 @@ fn benchmark_corpus_writes_recorded_report_artifact() {
         recorded["fixtureResults"]["invoice"]["cases"],
         json!(["rust-multi-layout"])
     );
+    assert_eq!(recorded["resourceProfile"]["profile"], "edge-model");
+    assert_eq!(
+        recorded["resourceProfile"]["budgetStatus"],
+        "profile-baseline-pending"
+    );
+    assert_eq!(recorded["cases"][0]["runtimeProfile"], "edge-model");
+    assert_eq!(recorded["cases"][0]["memory"]["measurement"], "process-rss");
     assert_eq!(recorded["casesPerBehavior"]["xy-cut-edge"], 1);
     assert_eq!(
         recorded["behaviorCoverageRequired"]["structure-tree-preference"],
@@ -1146,6 +1177,7 @@ fn benchmark_corpus_uses_case_preset_for_model_worker_cases() {
     let expected_document = root.join("expected.json");
     let manifest = root.join("corpus.json");
     let worker = write_fake_model_worker();
+    let (cache_dir, model_manifest) = ready_mnn_model_manifest();
     fs::write(&pdf, minimal_pdf("Fallback corpus evidence.")).unwrap();
     fs::write(&expected_markdown, "Worker corpus evidence.\n").unwrap();
     fs::write(&expected_document, "{}").unwrap();
@@ -1156,6 +1188,8 @@ fn benchmark_corpus_uses_case_preset_for_model_worker_cases() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd
         .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", worker)
+        .env("DOCTRUTH_MODEL_CACHE", cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", model_manifest)
         .write_stdin(
             json!({
                 "command": "benchmark_corpus",
@@ -1174,6 +1208,26 @@ fn benchmark_corpus_uses_case_preset_for_model_worker_cases() {
     assert_eq!(report["passed"], true);
     assert_eq!(report["cases"][0]["preset"], "table-lite");
     assert_eq!(report["cases"][0]["metrics"]["reading_order_f1"], 1.0);
+    assert_eq!(
+        report["cases"][0]["actualTrustDocument"]["parserRun"]["modelRuntime"]["runtime"],
+        "mnn"
+    );
+    assert_eq!(
+        report["resourceProfile"]["modelRuntime"]["coldStartMs"],
+        11.0
+    );
+    assert_eq!(
+        report["resourceProfile"]["modelRuntime"]["inferenceMs"],
+        4.0
+    );
+    assert_eq!(
+        report["resourceProfile"]["modelRuntime"]["peakMemoryMb"],
+        202
+    );
+    assert_eq!(
+        report["resourceProfile"]["modelRuntime"]["loadedModels"],
+        json!(["slanet-plus:v1"])
+    );
 }
 
 #[test]
@@ -1371,6 +1425,9 @@ import sys
 
 request = json.load(sys.stdin)
 assert request["preset"] == "table-lite"
+assert request["models"][0]["backend"] == "mnn"
+assert request["models"][0]["format"] == "mnn"
+assert request["models"][0]["cacheStatus"] == "READY"
 print(json.dumps({
     "docId": request["source_hash"],
     "source": {
@@ -1410,7 +1467,15 @@ print(json.dumps({
         "models": ["slanet-plus:v1"],
         "warnings": []
     },
-    "auditGradeStatus": "AUDIT_GRADE"
+    "auditGradeStatus": "AUDIT_GRADE",
+    "metrics": {
+        "runtime": "mnn",
+        "coldStartMs": 11.0,
+        "inferenceMs": 4.0,
+        "peakMemoryMb": 202,
+        "loadedModels": ["slanet-plus:v1"],
+        "unload": {"status": "scheduled", "policy": "idle-after-request"}
+    }
 }))
 "#,
     )
@@ -1423,6 +1488,39 @@ print(json.dumps({
         fs::set_permissions(&path, permissions).unwrap();
     }
     path
+}
+
+fn ready_mnn_model_manifest() -> (PathBuf, PathBuf) {
+    let cache_dir = temp_dir("doctruth-runtime-corpus-mnn-cache");
+    fs::create_dir_all(&cache_dir).unwrap();
+    let artifact = b"ready mnn model artifact";
+    let artifact_sha = sha256_bytes(artifact);
+    fs::write(cache_dir.join("slanet-plus-v1.bin"), artifact).unwrap();
+    let manifest = temp_dir("doctruth-runtime-corpus-mnn-manifest").with_extension("json");
+    fs::write(
+        &manifest,
+        json!({
+            "presets": {
+                "table-lite": [
+                    {
+                        "name": "slanet-plus",
+                        "version": "v1",
+                        "sha256": artifact_sha,
+                        "sizeBytes": artifact.len(),
+                        "required": true,
+                        "task": "table-structure-recognition",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "precision": "fp32",
+                        "license": "test"
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    (cache_dir, manifest)
 }
 
 fn temp_dir(prefix: &str) -> PathBuf {

@@ -203,6 +203,7 @@ def _evaluate_engine_version(
     prediction_dir: Path,
     output_filename: str,
     target_doc_id: Optional[str] = None,
+    target_doc_ids: Optional[set[str]] = None,
 ) -> Optional[Path]:
     """Run evaluation for a single ``engine/version`` directory."""
 
@@ -212,6 +213,10 @@ def _evaluate_engine_version(
         return None
 
     gt_paths = sorted(gt_dir.glob("*.md"))
+    if target_doc_id:
+        gt_paths = [path for path in gt_paths if path.stem == target_doc_id]
+    if target_doc_ids is not None:
+        gt_paths = [path for path in gt_paths if path.stem in target_doc_ids]
     if not gt_paths:
         logging.error("No ground truth markdown files found in %s", gt_dir)
         return None
@@ -227,9 +232,6 @@ def _evaluate_engine_version(
 
     for gt_path in gt_paths:
         doc_id = gt_path.stem
-        if target_doc_id and doc_id != target_doc_id:
-            continue
-
         pred_path = markdown_dir / f"{doc_id}.md"
         try:
             scores = _evaluate_single_document(doc_id, gt_path, pred_path)
@@ -295,12 +297,14 @@ def run(
     output_filename: str,
     target_engine: Optional[str] = None,
     target_doc_id: Optional[str] = None,
+    target_doc_ids: Optional[list[str]] = None,
 ) -> List[Path]:
     """Evaluate engine/version pairs under ``prediction_root`` optionally filtered to a single document."""
     project_root = Path(__file__).parent.parent.resolve()
 
     ground_truth_dir = project_root / ground_truth_dir_name
     prediction_root = project_root / prediction_root_name
+    target_doc_id_set = set(target_doc_ids) if target_doc_ids else None
 
     if not ground_truth_dir.is_dir():
         raise FileNotFoundError(f"Ground truth directory not found: {ground_truth_dir}")
@@ -322,7 +326,11 @@ def run(
 
     for engine_dir in engine_dirs:
         result_path = _evaluate_engine_version(
-            ground_truth_dir, engine_dir, output_filename, target_doc_id
+            ground_truth_dir,
+            engine_dir,
+            output_filename,
+            target_doc_id,
+            target_doc_id_set,
         )
         if result_path:
             generated_files.append(result_path)
@@ -361,8 +369,9 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--doc-id",
         type=str,
+        action="append",
         default=None,
-        help="Evaluate only the specified document ID",
+        help="Evaluate only the specified document ID. May be repeated.",
     )
     parser.add_argument(
         "--output-filename",
@@ -388,7 +397,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         args.prediction_root,
         args.output_filename,
         target_engine=args.engine,
-        target_doc_id=args.doc_id,
+        target_doc_id=args.doc_id[0] if args.doc_id and len(args.doc_id) == 1 else None,
+        target_doc_ids=args.doc_id,
     )
     for path in generated:
         print(path)

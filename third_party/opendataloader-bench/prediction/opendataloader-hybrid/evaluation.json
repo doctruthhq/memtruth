@@ -2,11 +2,11 @@
   "summary": {
     "engine_name": "opendataloader-hybrid",
     "engine_version": "2.2.1",
-    "processor": "Apple M4",
+    "processor": "arm64",
     "document_count": 200,
-    "total_elapsed": 92.5457673072815,
-    "elapsed_per_doc": 0.46272883653640745,
-    "date": "2026-04-06"
+    "total_elapsed": 125.29678010940552,
+    "elapsed_per_doc": 0.6264839005470276,
+    "date": "2026-06-18"
   },
   "metrics": {
     "score": {
@@ -2626,9 +2626,9 @@
     }
   ],
   "speed": {
-    "total_elapsed": 92.5457673072815,
-    "elapsed_per_doc": 0.46272883653640745,
+    "total_elapsed": 125.29678010940552,
+    "elapsed_per_doc": 0.6264839005470276,
     "document_count": 200,
-    "processor": "Apple M4"
+    "processor": "arm64"
   }
 }

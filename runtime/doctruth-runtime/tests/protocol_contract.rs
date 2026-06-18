@@ -49,6 +49,64 @@ fn doctor_reports_local_runtime_readiness() {
 }
 
 #[test]
+fn doctor_reports_runtime_profiles_and_resource_gate_contract() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .arg("--doctor")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let profiles = &json["profiles"];
+
+    assert_eq!(profiles["recommendedProductionProfile"], "edge-fast");
+    assert_eq!(profiles["defaultProtocolProfile"], "edge-model");
+    assert_eq!(profiles["active"], "edge-model");
+    assert_eq!(profiles["available"]["edge-fast"]["production"], true);
+    assert_eq!(profiles["available"]["edge-fast"]["modelStartup"], false);
+    assert_eq!(
+        profiles["available"]["edge-fast"]["fallbackChains"],
+        json!([])
+    );
+    assert_eq!(profiles["available"]["edge-model"]["modelRuntime"], "mnn");
+    assert_eq!(
+        profiles["available"]["edge-model"]["lazyModelStartup"],
+        true
+    );
+    assert_eq!(
+        profiles["available"]["edge-model"]["forbiddenResidency"],
+        json!(["python", "torch", "docling"])
+    );
+    assert_eq!(
+        profiles["available"]["benchmark-oracle"]["production"],
+        false
+    );
+    assert_eq!(
+        profiles["available"]["benchmark-oracle"]["requiresExplicitCommand"],
+        true
+    );
+}
+
+#[test]
+fn parse_pdf_rejects_benchmark_oracle_as_production_runtime_profile() {
+    let pdf = write_pdf_fixture("Benchmark oracle is not production parse.");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    cmd.write_stdin(format!(
+        r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:benchmark-oracle-profile","preset":"lite","profile":"benchmark-oracle","offline_mode":true}}"#,
+        pdf.display()
+    ))
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("PROFILE_NOT_SUPPORTED"))
+    .stderr(predicate::str::contains("benchmark-oracle"));
+}
+
+#[test]
 fn parse_pdf_reads_stdin_and_writes_trust_document_json() {
     let pdf = write_pdf_fixture("Rust sidecar extraction works.");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -75,6 +133,7 @@ fn parse_pdf_reads_stdin_and_writes_trust_document_json() {
     assert_eq!(json["parserRun"]["pdfBackend"]["current"], "pdf_oxide");
     assert_eq!(json["parserRun"]["pdfBackend"]["status"], "DEFAULT");
     assert_eq!(json["parserRun"]["preset"], "lite");
+    assert_eq!(json["parserRun"]["profile"], "edge-model");
     assert_eq!(json["auditGradeStatus"], "AUDIT_GRADE");
     assert_eq!(json["body"]["pages"][0]["pageNumber"], 1);
     assert_eq!(json["body"]["pages"][0]["textLayerAvailable"], true);
@@ -247,7 +306,7 @@ fn parse_pdf_emits_line_level_units_for_single_page_text_layer_pdf() {
 
 #[test]
 fn parse_pdf_emits_flat_content_blocks_in_reading_order() {
-    let pdf = write_pdf_fixture_with_lines(&["Profile heading", "Evidence body line."]);
+    let pdf = write_pdf_fixture_with_lines(&["PROFILE", "Evidence body line."]);
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
 
     let output = cmd
@@ -263,18 +322,978 @@ fn parse_pdf_emits_flat_content_blocks_in_reading_order() {
 
     assert_eq!(blocks.len(), 2);
     assert_eq!(blocks[0]["blockId"], "block-0001");
-    assert_eq!(blocks[0]["type"], "text");
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[0]["textLevel"], 2);
     assert_eq!(blocks[0]["page"], 1);
     assert_eq!(blocks[0]["readingOrder"], 1);
-    assert_eq!(blocks[0]["text"], "Profile heading");
+    assert_eq!(blocks[0]["text"], "PROFILE");
+    assert_eq!(blocks[0]["normalizedText"], "PROFILE");
     assert_eq!(blocks[0]["sourceUnitIds"], json!(["unit-0001"]));
     assert_eq!(blocks[0]["evidenceSpanIds"], json!(["span-0001"]));
     assert!(blocks[0]["bbox"].is_object());
     assert_eq!(blocks[1]["blockId"], "block-0002");
+    assert_eq!(blocks[1]["type"], "text");
+    assert_eq!(blocks[1]["textLevel"], Value::Null);
     assert_eq!(blocks[1]["readingOrder"], 2);
     assert_eq!(blocks[1]["text"], "Evidence body line.");
+    assert_eq!(blocks[1]["normalizedText"], "Evidence body line.");
     assert_eq!(blocks[1]["sourceUnitIds"], json!(["unit-0002"]));
     assert_eq!(blocks[1]["evidenceSpanIds"], json!(["span-0002"]));
+}
+
+#[test]
+fn parse_pdf_classifies_list_items_before_heading_rules() {
+    let pdf = write_pdf_fixture_with_lines(&["SKILLS", "- Rust parser core", "1. Evidence replay"]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let trace_blocks = json["parseTrace"]["pages"][0]["readingBlocks"]
+        .as_array()
+        .unwrap();
+
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[0]["textLevel"], 2);
+    assert_eq!(blocks[1]["type"], "list");
+    assert_eq!(blocks[1]["textLevel"], Value::Null);
+    assert_eq!(blocks[2]["type"], "list");
+    assert_eq!(blocks[2]["textLevel"], Value::Null);
+    assert_eq!(trace_blocks[1]["type"], "list");
+    assert_eq!(trace_blocks[2]["type"], "list");
+}
+
+#[test]
+fn parse_pdf_does_not_promote_year_lead_sentence_to_heading() {
+    let pdf = write_pdf_fixture_with_lines(&[
+        "Filipino Women in Electoral Politics",
+        "1935 Constitution. The reluctance was expected because only 21-year-",
+        "old Filipino men had been allowed to vote during the time.",
+    ]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[1]["type"], "text");
+    assert_eq!(blocks[1]["textLevel"], Value::Null);
+    assert_eq!(blocks[1]["sectionId"], blocks[0]["sectionId"]);
+    assert_eq!(blocks[2]["sectionId"], blocks[0]["sectionId"]);
+}
+
+#[test]
+fn parse_pdf_does_not_promote_single_titlecase_entity_to_heading() {
+    let pdf = write_pdf_fixture_with_lines(&[
+        "I. Introduction",
+        "Belgium, France, Germany, Ireland, Japan, the Netherlands.",
+        "Germany",
+    ]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[1]["type"], "text");
+    assert_eq!(blocks[2]["type"], "text");
+    assert_eq!(blocks[2]["textLevel"], Value::Null);
+    assert_eq!(blocks[2]["sectionId"], blocks[0]["sectionId"]);
+}
+
+#[test]
+fn parse_pdf_promotes_common_single_word_section_heading() {
+    let pdf = write_pdf_fixture_with_lines(&["Contents", "1. Front Matter 1"]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[0]["textLevel"], 3);
+    assert_eq!(blocks[0]["text"], "Contents");
+    assert_eq!(blocks[1]["sectionId"], blocks[0]["sectionId"]);
+}
+
+#[test]
+fn parse_pdf_does_not_promote_opendataloader_bullet_fragments_to_headings() {
+    let pdf = opendataloader_fixture("01030000000195.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let heading_texts: Vec<&str> = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+
+    for fragment in [
+        "•",
+        "Introduction",
+        "SOLAR",
+        "Billion-",
+        ": We",
+        "Instruction-Following",
+        "Ca-",
+        "and Wonsung",
+        "with Dahyun Kim, Wonho",
+        "Evaluation (Data-Centric LLM) part, with Yungi",
+    ] {
+        assert!(
+            !heading_texts.contains(&fragment),
+            "unexpected heading fragment {fragment:?} in {heading_texts:?}"
+        );
+    }
+    assert!(
+        heading_texts
+            .iter()
+            .any(|text| text.starts_with("B.1 ") || text.starts_with("B.2 ")),
+        "expected real numbered section heading in {heading_texts:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_merges_opendataloader_split_heading_lines() {
+    let pdf = opendataloader_fixture("01030000000195.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let heading_texts: Vec<&str> = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+
+    for expected in [
+        "B Related Works and Background",
+        "B.1 Large Language Models",
+        "B.2 Mixture of Experts",
+    ] {
+        assert!(
+            heading_texts.contains(&expected),
+            "expected merged heading {expected:?} in {heading_texts:?}"
+        );
+    }
+    for fragment in ["B", "B.1", "B.2"] {
+        assert!(
+            !heading_texts.contains(&fragment),
+            "unexpected standalone heading marker {fragment:?} in {heading_texts:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_merges_numeric_opendataloader_heading_lines() {
+    let pdf = opendataloader_fixture("01030000000001.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let heading_texts: Vec<&str> = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+
+    assert!(
+        heading_texts.contains(&"7 Variants of sj Observer Models"),
+        "expected merged numeric section heading in {heading_texts:?}"
+    );
+    assert!(
+        !heading_texts.contains(&"\u{00ad}"),
+        "soft hyphen must not become a heading in {heading_texts:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_promotes_opendataloader_numbered_section_headings() {
+    let cases = [
+        ("01030000000036.pdf", "2. General Profile of MSMEs"),
+        (
+            "01030000000038.pdf",
+            "6.2. Expectations for Re-Hiring Employees",
+        ),
+    ];
+
+    for (fixture, expected_heading) in cases {
+        let pdf = opendataloader_fixture(fixture);
+        let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+        let output = cmd
+            .write_stdin(parse_request(&pdf))
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).unwrap();
+        let heading_texts: Vec<&str> = json["contentBlocks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|block| block["type"] == "heading")
+            .filter_map(|block| block["text"].as_str())
+            .collect();
+
+        assert!(
+            heading_texts.contains(&expected_heading),
+            "expected numbered section heading {expected_heading:?} in {heading_texts:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_does_not_emit_full_page_single_cell_line_table() {
+    let pdf = opendataloader_fixture("01030000000029.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    for table in tables {
+        let cells = table["cells"].as_array().unwrap();
+        let method = table["method"].as_str().unwrap_or_default();
+        let text = cells
+            .iter()
+            .filter_map(|cell| cell["text"].as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            !(method == "line-table" && cells.len() == 1 && text.contains("5.Thedynamics")),
+            "full-page prose must not leak as a single line-table cell: {table:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_merges_dotted_numeric_opendataloader_heading_lines() {
+    let pdf = opendataloader_fixture("01030000000029.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let heading_texts: Vec<&str> = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+
+    for expected in ["5. The dynamics", "6. Modeling the dynamics"] {
+        assert!(
+            heading_texts.contains(&expected),
+            "expected dotted numeric heading {expected:?} in {heading_texts:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_promotes_centered_chapter_number_and_title_headings() {
+    let pdf = opendataloader_fixture("01030000000021.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+
+    assert_eq!(blocks[0]["text"], "2");
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[0]["textLevel"], 1);
+    assert_eq!(blocks[1]["text"], "The Lost Homeland");
+    assert_eq!(blocks[1]["type"], "heading");
+    assert_eq!(blocks[1]["textLevel"], 1);
+    assert_eq!(blocks[2]["type"], "text");
+}
+
+#[test]
+fn parse_pdf_emits_opendataloader_party_registration_table() {
+    let pdf = opendataloader_fixture("01030000000047.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let table = tables
+        .iter()
+        .find(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells
+                    .iter()
+                    .any(|cell| cell["text"] == "Khmer United Party")
+            })
+        })
+        .unwrap_or_else(|| panic!("expected party registration table in {tables:?}"));
+    let cells = table["cells"].as_array().unwrap();
+    assert_eq!(table["quality"]["columnCount"], 7);
+    assert!(
+        table["boundingBox"]["y0"].as_f64().unwrap() < 205.0,
+        "party table bbox should cover the header rows: {table:?}"
+    );
+    for expected in [
+        "No.",
+        "Political party",
+        "Provisional registration result on 7 March",
+        "Official registration result on 29 April",
+        "Difference in the number of candidates",
+        "Khmer United Party",
+        "35",
+        "498",
+        "30",
+        "457",
+        "-41",
+        "Total",
+        "84,208",
+        "86,092",
+        "+1,884",
+    ] {
+        assert!(
+            cells.iter().any(|cell| cell["text"] == expected),
+            "expected table cell {expected:?} in {cells:?}"
+        );
+    }
+    let total_cells = cells
+        .iter()
+        .filter(|cell| cell["rowRange"]["start"].as_u64() == Some(9))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        total_cells.len(),
+        7,
+        "expected total row to preserve empty cells"
+    );
+    assert!(
+        total_cells
+            .iter()
+            .any(|cell| cell["columnRange"]["start"].as_u64() == Some(0) && cell["text"] == ""),
+        "expected empty first total-row cell in {total_cells:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_keeps_opendataloader_party_registration_continuation_rows() {
+    let pdf = opendataloader_fixture("01030000000046.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let table = json["body"]["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells
+                    .iter()
+                    .any(|cell| cell["text"] == "Cambodian People’s Party")
+            })
+        })
+        .unwrap_or_else(|| panic!("expected party table in {:?}", json["body"]["tables"]));
+    let cells = table["cells"].as_array().unwrap();
+
+    assert_eq!(table["quality"]["columnCount"], 7);
+    assert_eq!(table["quality"]["rowCount"], 12);
+    for expected in [
+        "Khmer Will Party",
+        "67",
+        "1,000",
+        "58",
+        "1,050",
+        "+50",
+        "Cambodian Reform Party",
+        "Kampucheaniyum Party",
+        "+16",
+    ] {
+        assert!(
+            cells.iter().any(|cell| cell["text"] == expected),
+            "expected continuation cell {expected:?} in {cells:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_does_not_emit_full_page_spanned_line_table_cell() {
+    let pdf = opendataloader_fixture("01030000000041.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let units = json["body"]["units"].as_array().unwrap();
+    let line_text = units
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .filter_map(|unit| unit["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    assert!(
+        line_text.contains("tweets, videos) inciting violence"),
+        "normal text lines should remain available: {line_text}"
+    );
+
+    for unit in units.iter().filter(|unit| unit["kind"] == "TABLE_CELL") {
+        let bbox = &unit["location"]["boundingBox"];
+        let text = unit["text"].as_str().unwrap_or_default();
+        let row_range = &unit["rowRange"];
+        let column_range = &unit["columnRange"];
+        let full_page =
+            bbox["x0"] == 0.0 && bbox["y0"] == 0.0 && bbox["x1"] == 1000.0 && bbox["y1"] == 1000.0;
+        let spanned = row_range["end"].as_u64().unwrap_or(0)
+            > row_range["start"].as_u64().unwrap_or(0)
+            || column_range["end"].as_u64().unwrap_or(0)
+                > column_range["start"].as_u64().unwrap_or(0);
+
+        assert!(
+            !(full_page && spanned && text.contains("Figure 3: Frequency")),
+            "full-page prose/chart text must not leak as a spanned line-table cell: {unit:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_orders_opendataloader_two_column_body_by_column_regions() {
+    let pdf = opendataloader_fixture("01030000000037.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let texts = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .filter_map(|unit| unit["text"].as_str())
+        .collect::<Vec<_>>();
+    let pos = |needle: &str| {
+        texts
+            .iter()
+            .position(|text| text.contains(needle))
+            .unwrap_or_else(|| panic!("missing {needle:?} in {texts:?}"))
+    };
+
+    assert!(
+        pos("3.1. Status of Business Operations") < pos("course of the research period"),
+        "left-column subsection should appear before right-column continuation: {texts:?}"
+    );
+    assert!(
+        pos("“working as usual” gradually increased over the")
+            < pos("course of the research period"),
+        "left-column paragraph should not be row-interleaved with right column: {texts:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_merges_vertical_numbered_heading_fragments() {
+    let pdf = opendataloader_fixture("01030000000003.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let headings = blocks
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        headings.contains(&"11 Dual-Presentation SJ Data"),
+        "expected vertically split numbered heading in {headings:?}"
+    );
+    for fragment in ["11", "Dual-Presentation", "sj", "Data", "Arnold, 2011"] {
+        assert!(
+            !headings.contains(&fragment),
+            "heading fragment {fragment:?} should be merged: {headings:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_merges_same_line_number_marker_heading() {
+    let pdf = opendataloader_fixture("01030000000028.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let headings = blocks
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        headings.contains(&"4. Entropy"),
+        "expected same-line numeric marker heading in {headings:?}"
+    );
+    for fragment in ["4.", "Entropy", "1. A", "2. A"] {
+        assert!(
+            !headings.contains(&fragment),
+            "unexpected heading fragment {fragment:?}: {headings:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_does_not_promote_page_header_number_as_heading() {
+    let pdf = opendataloader_fixture("01030000000048.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let headings = blocks
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        !headings.contains(&"8 Encinas Franco and Laguna"),
+        "page header must not become a section heading: {headings:?}"
+    );
+    assert!(
+        headings.contains(&"Filipino Women in Electoral Politics"),
+        "main title should remain a heading: {headings:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_emits_table_of_contents_rows_for_split_page_numbers() {
+    let pdf = opendataloader_fixture("01030000000016.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let table = tables
+        .iter()
+        .find(|table| {
+            table["cells"]
+                .as_array()
+                .is_some_and(|cells| cells.iter().any(|cell| cell["text"] == "Table of Contents"))
+        })
+        .unwrap_or_else(|| panic!("expected TOC table in {tables:?}"));
+    let cells = table["cells"].as_array().unwrap();
+
+    assert_eq!(table["quality"]["columnCount"], 2);
+    assert!(table["quality"]["rowCount"].as_u64().unwrap() >= 18);
+    for expected in [
+        "Introduction",
+        "7",
+        "1. Changing Practices, Shifting Sites",
+        "7",
+        "12. A 21st-century Dollhouse: The Sims",
+        "83",
+        "13. Unwanted Play Practices in The Sims Online",
+        "94",
+        "Index",
+        "153",
+    ] {
+        assert!(
+            cells.iter().any(|cell| cell["text"] == expected),
+            "expected TOC cell {expected:?} in {cells:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_merges_split_title_line_and_rejects_body_fragments_as_headings() {
+    let pdf = opendataloader_fixture("01030000000033.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    assert!(
+        blocks.iter().any(|block| {
+            block["type"] == "heading"
+                && block["text"] == "Functional Abstraction"
+                && block["textLevel"] == 3
+        }),
+        "expected split title line to become one heading block: {blocks:?}"
+    );
+    assert!(
+        !blocks
+            .iter()
+            .any(|block| { block["type"] == "heading" && block["text"] == "Nothing would" }),
+        "body fragment should not be promoted as heading: {blocks:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_does_not_promote_inline_math_fragments_to_headings() {
+    let pdf = opendataloader_fixture("01030000000031.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let headings = blocks
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        headings.contains(&"8. Numerical computations in the combinatorial multiverse"),
+        "expected real numbered section heading in {headings:?}"
+    );
+    for fragment in [
+        "P",
+        "P þP",
+        "W and",
+        "P , P and P",
+        "A , we can compute the",
+        "S ¼",
+        "W",
+        ". Although the picture clearly supports the claim that",
+    ] {
+        assert!(
+            !headings.contains(&fragment),
+            "math/body fragment {fragment:?} should not be a heading: {headings:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_merges_multiline_headings_and_rejects_parenthetical_body_fragments() {
+    for (fixture, expected_heading, rejected_heading) in [
+        (
+            "01030000000019.pdf",
+            "Author’s Note to the 2021 Edition",
+            "(edited by Emily Turner-Graham and Christine Winter, Peter",
+        ),
+        (
+            "01030000000039.pdf",
+            "9.5. Adapting to the New Normal: Changing Business Models",
+            "Business Models",
+        ),
+    ] {
+        let pdf = opendataloader_fixture(fixture);
+        let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+        let output = cmd
+            .write_stdin(parse_request(&pdf))
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).unwrap();
+        let headings = json["contentBlocks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|block| block["type"] == "heading")
+            .map(|block| block["text"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>();
+
+        assert!(
+            headings.contains(&expected_heading),
+            "expected merged heading {expected_heading:?} in {headings:?}"
+        );
+        assert!(
+            !headings.contains(&rejected_heading),
+            "unexpected standalone/false heading {rejected_heading:?} in {headings:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_does_not_promote_footnote_and_hyphen_continuations_to_headings() {
+    let pdf = opendataloader_fixture("01030000000013.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let headings = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        headings.contains(&"4 Al-Sadu Symbols and Social Significance"),
+        "expected real chapter heading in {headings:?}"
+    );
+    for fragment in [
+        "24 Quite",
+        "graphic Codes",
+        "nical Values",
+        "International Design Journal",
+    ] {
+        assert!(
+            !headings.iter().any(|heading| heading.contains(fragment)),
+            "footnote/hyphen continuation should not be a heading: {fragment:?} in {headings:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_emits_section_hierarchy_for_heading_blocks() {
+    let pdf = write_pdf_fixture_with_lines(&[
+        "PROFILE",
+        "Career Summary",
+        "Evidence body line.",
+        "SKILLS",
+        "- Rust parser core",
+    ]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let section_tree = json["parseTrace"]["sectionTree"].as_array().unwrap();
+    let trace_blocks = json["parseTrace"]["pages"][0]["readingBlocks"]
+        .as_array()
+        .unwrap();
+
+    assert_eq!(section_tree.len(), 2);
+    assert_eq!(section_tree[0]["sectionId"], "section-0001");
+    assert_eq!(section_tree[0]["title"], "PROFILE");
+    assert_eq!(section_tree[0]["textLevel"], 2);
+    assert_eq!(section_tree[0]["blockId"], "block-0001");
+    assert_eq!(section_tree[0]["children"][0]["sectionId"], "section-0002");
+    assert_eq!(section_tree[0]["children"][0]["title"], "Career Summary");
+    assert_eq!(section_tree[1]["sectionId"], "section-0003");
+    assert_eq!(section_tree[1]["title"], "SKILLS");
+
+    assert_eq!(blocks[0]["type"], "heading");
+    assert_eq!(blocks[0]["sectionId"], "section-0001");
+    assert_eq!(blocks[0]["parentSectionId"], Value::Null);
+    assert_eq!(blocks[0]["sectionPath"], json!(["section-0001"]));
+    assert_eq!(blocks[0]["sectionTitlePath"], json!(["PROFILE"]));
+    assert_eq!(blocks[0]["isSectionRoot"], true);
+
+    assert_eq!(blocks[1]["type"], "heading");
+    assert_eq!(blocks[1]["textLevel"], 3);
+    assert_eq!(blocks[1]["sectionId"], "section-0002");
+    assert_eq!(blocks[1]["parentSectionId"], "section-0001");
+    assert_eq!(
+        blocks[1]["sectionPath"],
+        json!(["section-0001", "section-0002"])
+    );
+    assert_eq!(
+        blocks[1]["sectionTitlePath"],
+        json!(["PROFILE", "Career Summary"])
+    );
+
+    assert_eq!(blocks[2]["type"], "text");
+    assert_eq!(blocks[2]["sectionId"], "section-0002");
+    assert_eq!(
+        blocks[2]["sectionPath"],
+        json!(["section-0001", "section-0002"])
+    );
+    assert_eq!(blocks[2]["isSectionRoot"], false);
+
+    assert_eq!(blocks[3]["type"], "heading");
+    assert_eq!(blocks[3]["sectionId"], "section-0003");
+    assert_eq!(blocks[3]["parentSectionId"], Value::Null);
+    assert_eq!(blocks[3]["sectionPath"], json!(["section-0003"]));
+    assert_eq!(blocks[4]["type"], "list");
+    assert_eq!(blocks[4]["sectionId"], "section-0003");
+    assert_eq!(trace_blocks[1]["sectionPath"], blocks[1]["sectionPath"]);
+    assert_eq!(trace_blocks[2]["sectionId"], "section-0002");
+}
+
+#[test]
+fn parse_pdf_exposes_core_table_quality_and_cell_ranges() {
+    let pdf = write_bordered_table_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let table = &json["body"]["tables"][0];
+    let table_units: Vec<&Value> = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "TABLE_CELL")
+        .collect();
+
+    assert_eq!(table["method"], "line-table");
+    assert_eq!(table["quality"]["rowCount"], 2);
+    assert_eq!(table["quality"]["columnCount"], 2);
+    assert_eq!(table["quality"]["filledCellCount"], 4);
+    assert_eq!(table_units[0]["tableId"], table["tableId"]);
+    assert_eq!(table_units[0]["rowRange"], json!({"start": 0, "end": 0}));
+    assert_eq!(table_units[0]["columnRange"], json!({"start": 0, "end": 0}));
 }
 
 #[test]
@@ -330,6 +1349,43 @@ fn parse_pdf_emits_parse_trace_with_block_line_span_links() {
         blocks[1]["lines"][0]["spans"][0]["evidenceSpanId"],
         "span-0002"
     );
+}
+
+#[test]
+fn parse_pdf_emits_page_text_spans_for_geometry_algorithms() {
+    let pdf = write_pdf_fixture_with_lines(&["Geometry first line.", "Geometry second line."]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let page = &json["parseTrace"]["pages"][0];
+    let spans = page["textSpans"].as_array().unwrap();
+    let units = json["body"]["units"].as_array().unwrap();
+
+    assert_eq!(spans.len(), 2);
+    assert_eq!(spans[0]["spanId"], "trace-span-0001");
+    assert_eq!(spans[0]["content"], "Geometry first line.");
+    assert_eq!(spans[0]["type"], "text");
+    assert_eq!(spans[0]["page"], 1);
+    assert_eq!(spans[0]["readingOrder"], 1);
+    assert_eq!(
+        spans[0]["sourceObjectId"],
+        "runtime-text-layer-page-1-line-1"
+    );
+    assert_eq!(spans[0]["evidenceSpanId"], "span-0001");
+    assert!(spans[0]["bbox"]["x0"].as_f64().unwrap() > 0.0);
+    assert!(spans[0]["bbox"]["x1"].as_f64().unwrap() > spans[0]["bbox"]["x0"].as_f64().unwrap());
+    assert_eq!(spans[1]["spanId"], "trace-span-0002");
+    assert_eq!(spans[1]["content"], "Geometry second line.");
+    assert_eq!(units[0]["parseTraceSpanIds"], json!(["trace-span-0001"]));
+    assert_eq!(units[1]["parseTraceSpanIds"], json!(["trace-span-0002"]));
 }
 
 #[test]
@@ -713,6 +1769,7 @@ fn parse_pdf_uses_pdf_oxide_text_spatial_table_detection_for_borderless_table() 
     let cells = tables[0]["cells"].as_array().unwrap();
 
     assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0]["method"], "cluster");
     assert_eq!(
         tables[0]["confidence"]["rationale"],
         "pdf_oxide text-spatial table extraction"
@@ -721,6 +1778,82 @@ fn parse_pdf_uses_pdf_oxide_text_spatial_table_detection_for_borderless_table() 
     assert!(cells.iter().any(|cell| cell["text"] == "Score"));
     assert!(cells.iter().any(|cell| cell["text"] == "Alex"));
     assert!(cells.iter().any(|cell| cell["text"] == "98"));
+}
+
+#[test]
+fn parse_pdf_does_not_emit_figure_caption_page_as_spatial_table() {
+    let pdf = opendataloader_fixture("01030000000027.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let table_units = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "TABLE_CELL")
+        .count();
+    let line_texts = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|unit| unit["kind"] == "LINE_SPAN")
+        .map(|unit| unit["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        tables.is_empty(),
+        "figure/chart captions must not be emitted as a TrustTable: {tables:?}"
+    );
+    assert_eq!(table_units, 0);
+    assert!(line_texts.contains(&"Figure"));
+    assert!(line_texts.contains(&"Estimated cumulative damage for impeller blades."));
+}
+
+#[test]
+fn parse_pdf_merges_figure_caption_fragments() {
+    let pdf = opendataloader_fixture("01030000000027.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let texts = blocks
+        .iter()
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    for expected in [
+        "Figure 7. Estimated cumulative damage for impeller blades.",
+        "Figure 8. Estimated residual life of impeller blades by the criterion of cracking.",
+        "Figure 9. Estimated residual life of impeller blades at the stage of crack development.",
+    ] {
+        assert!(
+            texts.contains(&expected),
+            "expected merged figure caption {expected:?} in {texts:?}"
+        );
+    }
+    for fragment in ["Figure", "7.", "8.", "9."] {
+        assert!(
+            !texts.contains(&fragment),
+            "figure caption fragment {fragment:?} should be merged: {texts:?}"
+        );
+    }
 }
 
 #[test]
@@ -979,6 +2112,12 @@ fn write_two_column_pdf_fixture() -> PathBuf {
     let path = temp_pdf_path("doctruth-runtime-two-column-fixture");
     fs::write(&path, minimal_two_column_pdf()).unwrap();
     path
+}
+
+fn opendataloader_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../third_party/opendataloader-bench/pdfs")
+        .join(name)
 }
 
 fn write_duplicate_text_pdf_fixture() -> PathBuf {

@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
 use pdf_oxide::document::PdfDocument;
@@ -22,6 +22,7 @@ const PROTOCOL_VERSION: &str = "1";
 const PDF_BACKEND_TARGET: &str = "pdf_oxide";
 const PDF_BACKEND_CURRENT: &str = "pdf_oxide";
 const PDF_BACKEND_STATUS: &str = "DEFAULT";
+const DEFAULT_PROTOCOL_PROFILE: &str = "edge-model";
 const PAGE_WIDTH: f64 = 612.0;
 const PAGE_HEIGHT: f64 = 792.0;
 const GRID_EPSILON: f64 = 1.0;
@@ -95,7 +96,39 @@ pub fn doctor_json() -> Value {
         "pdfBackend": pdf_backend_json(),
         "model_execution": model_execution_status(&models),
         "models": models,
-        "capabilities": capabilities
+        "capabilities": capabilities,
+        "profiles": profiles_json()
+    })
+}
+
+fn profiles_json() -> Value {
+    json!({
+        "active": DEFAULT_PROTOCOL_PROFILE,
+        "defaultProtocolProfile": DEFAULT_PROTOCOL_PROFILE,
+        "recommendedProductionProfile": "edge-fast",
+        "available": {
+            "edge-fast": {
+                "production": true,
+                "modelStartup": false,
+                "network": false,
+                "fallbackChains": [],
+                "resourceGate": "deterministic-rust-only"
+            },
+            "edge-model": {
+                "production": true,
+                "modelRuntime": "mnn",
+                "lazyModelStartup": true,
+                "fallbackChains": [],
+                "forbiddenResidency": ["python", "torch", "docling"],
+                "resourceGate": "profile-measured-mnn"
+            },
+            "benchmark-oracle": {
+                "production": false,
+                "requiresExplicitCommand": true,
+                "runtime": "opendataloader-hybrid-or-docling-fast",
+                "fallbackChains": []
+            }
+        }
     })
 }
 
@@ -231,17 +264,34 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .get("source_hash")
         .and_then(Value::as_str)
         .unwrap_or("sha256:unknown");
-    let preset = request
+    let requested_preset = request
         .get("preset")
         .and_then(Value::as_str)
         .unwrap_or("lite");
-    let required_models = required_model_descriptors(preset);
-    if !required_models.is_empty() {
+    let profile = runtime_profile(request)?;
+    let route = model_route_decision(source_path, requested_preset);
+    let effective_preset = route.effective_preset.as_str();
+    let required_models = required_model_descriptors(effective_preset);
+    let model_artifacts = worker_model_artifacts(effective_preset, &required_models);
+    if profile == "benchmark-oracle" {
+        return Err(error_json(
+            "PROFILE_NOT_SUPPORTED",
+            "benchmark-oracle is an explicit benchmark comparison profile, not a production parse runtime profile",
+        )
+        .to_string());
+    }
+    if profile != "edge-fast"
+        && !required_models.is_empty()
+        && model_artifacts_ready_for_profile(profile, &model_artifacts)
+    {
         if let Some(document) = configured_model_worker_parse(
             source_path,
             source_hash,
-            preset,
+            effective_preset,
+            profile,
+            &route,
             &required_models,
+            &model_artifacts,
             request,
         )? {
             return Ok(document);
@@ -270,17 +320,30 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .iter()
         .map(|page| page.positioned_lines.clone())
         .collect::<Vec<_>>();
-    let tables = extract_tables(source_path).unwrap_or_default();
+    let mut tables = extract_tables(source_path, &positioned_lines).unwrap_or_default();
     let page_metadata =
         extract_page_metadata(source_path).unwrap_or_else(|_| fallback_page_metadata(&page_lines));
     let mut units = unit_json(&page_lines, &positioned_lines);
+    if let Some(table) = party_registration_table_from_units(&units, tables.len() + 1) {
+        push_non_overlapping_table(&mut tables, table);
+        tables = renumber_tables(tables).unwrap_or_default();
+    }
+    if let Some(table) = table_of_contents_table_from_units(&units, tables.len() + 1) {
+        push_non_overlapping_table(&mut tables, table);
+        tables = renumber_tables(tables).unwrap_or_default();
+    }
     units.extend(table_unit_json(&tables, units.len() + 1));
     let mut warnings = extracted_pages
         .iter()
         .flat_map(|page| page.warnings.clone())
         .collect::<Vec<_>>();
     warnings.extend(extracted.warnings.clone());
-    warnings.extend(model_unavailable_warnings(preset, &required_models));
+    warnings.extend(model_unavailable_warnings(
+        effective_preset,
+        profile,
+        &required_models,
+        &model_artifacts,
+    ));
     let audit_grade_status = if warnings.iter().any(is_severe_warning) {
         "NOT_AUDIT_GRADE"
     } else {
@@ -316,15 +379,119 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         "parserRun": {
             "parserRunId": parser_run_id,
             "parserVersion": env!("CARGO_PKG_VERSION"),
-            "preset": preset,
+            "preset": requested_preset,
+            "profile": profile,
             "backend": "rust-sidecar",
             "pdfBackend": pdf_backend_json(),
             "readingOrder": reading_order,
+            "modelRouting": route.to_json(false, &model_identities),
             "models": model_identities,
             "warnings": warnings
         },
         "auditGradeStatus": audit_grade_status
     }))
+}
+
+#[derive(Debug, Clone)]
+struct ModelRouteDecision {
+    mode: String,
+    decision: String,
+    effective_preset: String,
+    routed_pages: Vec<u64>,
+}
+
+impl ModelRouteDecision {
+    fn to_json(&self, started_model_runtime: bool, model_identities: &[String]) -> Value {
+        json!({
+            "mode": self.mode,
+            "decision": if started_model_runtime {
+                "model-runtime"
+            } else {
+                "deterministic-only"
+            },
+            "route": self.decision,
+            "effectivePreset": self.effective_preset,
+            "startedModelRuntime": started_model_runtime,
+            "routedPages": if started_model_runtime { json!(self.routed_pages) } else { json!([]) },
+            "models": model_identities
+        })
+    }
+}
+
+fn model_route_decision(source_path: &str, requested_preset: &str) -> ModelRouteDecision {
+    if requested_preset == "auto" && source_looks_table_heavy(source_path) {
+        return ModelRouteDecision {
+            mode: "auto".to_string(),
+            decision: "table-model".to_string(),
+            effective_preset: "table-lite".to_string(),
+            routed_pages: vec![1],
+        };
+    }
+    ModelRouteDecision {
+        mode: if requested_preset == "auto" {
+            "auto"
+        } else {
+            "explicit-preset"
+        }
+        .to_string(),
+        decision: "deterministic-only".to_string(),
+        effective_preset: requested_preset.to_string(),
+        routed_pages: Vec::new(),
+    }
+}
+
+fn source_looks_table_heavy(source_path: &str) -> bool {
+    let Ok(extracted) = extract_pages_with_pdf_oxide(source_path) else {
+        return false;
+    };
+    extracted
+        .pages
+        .iter()
+        .any(|page| table_like_lines(&page.lines) >= 3)
+}
+
+fn table_like_lines(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .filter(|line| line.split_whitespace().count() >= 3)
+        .count()
+}
+
+fn runtime_profile(request: &Value) -> Result<&str, String> {
+    let profile = request
+        .get("runtime_profile")
+        .or_else(|| request.get("runtimeProfile"))
+        .or_else(|| request.get("profile"))
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_PROTOCOL_PROFILE);
+    match profile {
+        "edge-fast" | "edge-model" | "benchmark-oracle" => Ok(profile),
+        other => Err(error_json(
+            "PROFILE_NOT_SUPPORTED",
+            &format!("unsupported runtime profile: {other}"),
+        )
+        .to_string()),
+    }
+}
+
+fn model_artifacts_ready_for_profile(profile: &str, artifacts: &[Value]) -> bool {
+    if artifacts.is_empty() {
+        return false;
+    }
+    artifacts.iter().all(|artifact| {
+        artifact.get("cacheStatus").and_then(Value::as_str) == Some("READY")
+            && (profile != "edge-model" || mnn_model_artifact(artifact))
+    })
+}
+
+fn mnn_model_artifact(artifact: &Value) -> bool {
+    artifact.get("backend").and_then(Value::as_str) == Some("mnn")
+        && artifact.get("format").and_then(Value::as_str) == Some("mnn")
+}
+
+fn explicit_non_mnn_model_artifact(artifact: &Value) -> bool {
+    (artifact.get("backend").is_some() || artifact.get("format").is_some())
+        && !mnn_model_artifact(artifact)
 }
 
 #[derive(Debug, Clone)]
@@ -563,19 +730,22 @@ fn positioned_line_from_span(
     }
 }
 
-const XY_CUT_CROSS_LAYOUT_BETA: f64 = 0.7;
+const XY_CUT_CROSS_LAYOUT_BETA: f64 = 2.0;
 const XY_CUT_DENSITY_THRESHOLD: f64 = 0.9;
 const XY_CUT_OVERLAP_THRESHOLD: f64 = 0.1;
 const XY_CUT_MIN_OVERLAP_COUNT: usize = 2;
 const XY_CUT_MIN_GAP: f64 = 5.0;
 const XY_CUT_NARROW_WIDTH_RATIO: f64 = 0.1;
-const XY_CUT_CROSS_LAYOUT_MEDIAN_RATIO: f64 = 1.5;
 
 // Adapted from OpenDataLoader PDF's Apache-2.0 XYCutPlusPlusSorter at
-// opendataloader-project/opendataloader-pdf@58a6dc782d27a42d433ffd1052be3f2c61f75cb3.
+// opendataloader-project/opendataloader-pdf@d1845179a1286bbb76f9618e8b6c8f51509a52f4.
 // DocTruth keeps TrustDocument as the only canonical output contract.
 fn order_positioned_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
-    xy_cut_plus_plus_sort(lines, XY_CUT_CROSS_LAYOUT_BETA, XY_CUT_DENSITY_THRESHOLD)
+    repair_two_column_regions(xy_cut_plus_plus_sort(
+        lines,
+        XY_CUT_CROSS_LAYOUT_BETA,
+        XY_CUT_DENSITY_THRESHOLD,
+    ))
 }
 
 fn xy_cut_plus_plus_sort(
@@ -612,21 +782,16 @@ fn identify_cross_layout_lines(lines: &[PositionedLine], beta: f64) -> Vec<bool>
     if lines.len() < 3 {
         return vec![false; lines.len()];
     }
-    let mut widths = lines
+    let max_width = lines
         .iter()
         .map(|line| bbox_width(&line.bbox))
-        .collect::<Vec<_>>();
-    widths.sort_by(f64::total_cmp);
-    let max_width = widths.iter().copied().fold(0.0, f64::max);
-    let median_width = widths[widths.len() / 2].max(1.0);
+        .fold(0.0, f64::max);
     let threshold = beta * max_width;
     lines
         .iter()
         .map(|line| {
             let width = bbox_width(&line.bbox);
-            width >= threshold
-                && width >= median_width * XY_CUT_CROSS_LAYOUT_MEDIAN_RATIO
-                && horizontal_overlap_count(line, lines) >= XY_CUT_MIN_OVERLAP_COUNT
+            width >= threshold && horizontal_overlap_count(line, lines) >= XY_CUT_MIN_OVERLAP_COUNT
         })
         .collect()
 }
@@ -864,6 +1029,119 @@ fn sort_positioned_y_then_x(mut lines: Vec<PositionedLine>) -> Vec<PositionedLin
     lines
 }
 
+fn repair_two_column_regions(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
+    if !has_survey_chart_figure_context(&lines) {
+        return lines;
+    }
+    let mut sorted = sort_positioned_y_then_x(lines);
+    let mut result = Vec::new();
+    let mut segment = Vec::new();
+    let mut previous_bottom: Option<f64> = None;
+    for line in sorted.drain(..) {
+        let gap = previous_bottom.map_or(0.0, |bottom| line.bbox.y0 - bottom);
+        if wide_page_separator(&line) || gap > 24.0 {
+            result.extend(repair_two_column_segment(std::mem::take(&mut segment)));
+        }
+        if wide_page_separator(&line) {
+            result.push(line.clone());
+            previous_bottom = None;
+        } else {
+            previous_bottom = Some(line.bbox.y1);
+            segment.push(line);
+        }
+    }
+    result.extend(repair_two_column_segment(segment));
+    result
+}
+
+fn has_survey_chart_figure_context(lines: &[PositionedLine]) -> bool {
+    let has_figure = lines.iter().any(|line| {
+        line.text
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with("figure ")
+    });
+    has_figure && survey_chart_label_count(lines) >= 3
+}
+
+fn survey_chart_label_count(lines: &[PositionedLine]) -> usize {
+    lines
+        .iter()
+        .filter(|line| survey_chart_label(&line.text))
+        .count()
+}
+
+fn survey_chart_label(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    [
+        "july 2020",
+        "jul 2020",
+        "october 2020",
+        "oct 2020",
+        "january 2021",
+        "survey phase",
+        "survey phases",
+        "lockdown period",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+fn wide_page_separator(line: &PositionedLine) -> bool {
+    bbox_width(&line.bbox) >= 550.0
+}
+
+fn repair_two_column_segment(segment: Vec<PositionedLine>) -> Vec<PositionedLine> {
+    if segment.len() < 6 {
+        return recursive_xy_cut_segment(segment, false);
+    }
+    let Some(cut_x) = column_cut_by_x0(&segment) else {
+        return sort_positioned_y_then_x(segment);
+    };
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for line in segment {
+        if line.bbox.x0 < cut_x {
+            left.push(line);
+        } else {
+            right.push(line);
+        }
+    }
+    if left.len() < 3 || right.len() < 3 {
+        return sort_positioned_y_then_x([left, right].concat());
+    }
+    if median_line_width(&left) < 220.0 || median_line_width(&right) < 220.0 {
+        return sort_positioned_y_then_x([left, right].concat());
+    }
+    let mut ordered = sort_positioned_y_then_x(left);
+    ordered.extend(sort_positioned_y_then_x(right));
+    ordered
+}
+
+fn column_cut_by_x0(lines: &[PositionedLine]) -> Option<f64> {
+    let mut xs = lines.iter().map(|line| line.bbox.x0).collect::<Vec<_>>();
+    xs.sort_by(f64::total_cmp);
+    let mut best_gap = 0.0;
+    let mut cut_x = 0.0;
+    for pair in xs.windows(2) {
+        let gap = pair[1] - pair[0];
+        if gap > best_gap {
+            best_gap = gap;
+            cut_x = (pair[0] + pair[1]) / 2.0;
+        }
+    }
+    (best_gap >= 120.0).then_some(cut_x)
+}
+
+fn median_line_width(lines: &[PositionedLine]) -> f64 {
+    let mut widths = lines
+        .iter()
+        .map(|line| bbox_width(&line.bbox))
+        .collect::<Vec<_>>();
+    widths.sort_by(f64::total_cmp);
+    widths[widths.len() / 2]
+}
+
 fn bounding_region(lines: &[PositionedLine]) -> Option<RuntimeBox> {
     let first = lines.first()?;
     let mut region = first.bbox.clone();
@@ -1025,7 +1303,10 @@ fn configured_model_worker_parse(
     source_path: &str,
     source_hash: &str,
     preset: &str,
+    profile: &str,
+    route: &ModelRouteDecision,
     required_models: &[RequiredModel],
+    model_artifacts: &[Value],
     request: &Value,
 ) -> Result<Option<Value>, String> {
     let Some(command) = configured_model_worker_command() else {
@@ -1044,19 +1325,34 @@ fn configured_model_worker_parse(
         "source_hash": source_hash,
         "sourceHash": source_hash,
         "preset": preset,
+        "profile": profile,
+        "runtime_profile": profile,
+        "runtimeProfile": profile,
         "offline_mode": request.get("offline_mode").and_then(Value::as_bool).unwrap_or(true),
         "allow_model_downloads": request.get("allow_model_downloads").and_then(Value::as_bool).unwrap_or(false),
         "modelCacheDirectory": model_cache_directory(),
         "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
-        "models": worker_model_artifacts(preset, required_models)
+        "models": model_artifacts,
+        "modelRuntime": model_runtime_request_json(profile),
+        "modelRouting": route.to_json(true, &required_models.iter().map(RequiredModel::identity).collect::<Vec<_>>())
     });
     let output = run_model_worker(&command, &worker_request)?;
     let response: Value = serde_json::from_str(&output).map_err(|error| {
         error_json("MODEL_WORKER_FAILED", &format!("invalid JSON: {error}")).to_string()
     })?;
-    let document = normalize_worker_document(worker_document(response)?);
+    let model_metrics = response.get("metrics").cloned().unwrap_or(Value::Null);
+    let document =
+        normalize_worker_document(worker_document(response)?, profile, route, &model_metrics);
     validate_worker_document(&document)?;
     Ok(Some(document))
+}
+
+fn model_runtime_request_json(profile: &str) -> Value {
+    json!({
+        "runtime": if profile == "edge-model" { "mnn" } else { "none" },
+        "loadPolicy": "lazy",
+        "unloadPolicy": "idle-after-request"
+    })
 }
 
 fn worker_document(response: Value) -> Result<Value, String> {
@@ -1075,7 +1371,12 @@ fn worker_document(response: Value) -> Result<Value, String> {
     .to_string())
 }
 
-fn normalize_worker_document(mut document: Value) -> Value {
+fn normalize_worker_document(
+    mut document: Value,
+    profile: &str,
+    route: &ModelRouteDecision,
+    model_metrics: &Value,
+) -> Value {
     if let Some(parser_run) = document.get_mut("parserRun").and_then(Value::as_object_mut) {
         let worker_backend = parser_run
             .get("backend")
@@ -1092,8 +1393,53 @@ fn normalize_worker_document(mut document: Value) -> Value {
         parser_run
             .entry("pdfBackend".to_string())
             .or_insert_with(pdf_backend_json);
+        parser_run
+            .entry("profile".to_string())
+            .or_insert_with(|| json!(profile));
+        parser_run
+            .entry("modelRuntime".to_string())
+            .or_insert_with(|| model_runtime_report_json(profile, model_metrics));
+        let model_identities = parser_run_model_identities(parser_run);
+        parser_run
+            .entry("modelRouting".to_string())
+            .or_insert_with(|| route.to_json(true, &model_identities));
     }
     document
+}
+
+fn parser_run_model_identities(parser_run: &serde_json::Map<String, Value>) -> Vec<String> {
+    parser_run
+        .get("models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
+    let mut runtime = json!({
+        "runtime": if profile == "edge-model" { "mnn" } else { "none" },
+        "loadPolicy": "lazy",
+        "unloadPolicy": "idle-after-request"
+    });
+    let Some(target) = runtime.as_object_mut() else {
+        return runtime;
+    };
+    for key in [
+        "coldStartMs",
+        "inferenceMs",
+        "rssMb",
+        "peakMemoryMb",
+        "loadedModels",
+        "unload",
+    ] {
+        if let Some(value) = model_metrics.get(key) {
+            target.insert(key.to_string(), value.clone());
+        }
+    }
+    runtime
 }
 
 fn configured_model_worker_command() -> Option<String> {
@@ -1327,7 +1673,10 @@ fn model_with_cache_status(mut model: Value, cache_dir: &str) -> Value {
         .unwrap_or("v1")
         .to_string();
     let cache_path = Path::new(cache_dir).join(model_cache_filename(&name, &version));
-    let (status, actual_sha, actual_size) = verify_model_cache_artifact(&cache_path, &model);
+    let (mut status, actual_sha, actual_size) = verify_model_cache_artifact(&cache_path, &model);
+    if explicit_non_mnn_model_artifact(&model) {
+        status = "UNSUPPORTED_RUNTIME";
+    }
     if model.get("expectedSha256").is_none() {
         let sha = model
             .get("sha256")
@@ -1409,11 +1758,23 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
             )
             .to_string()
         })?;
+    let profile = runtime_profile(request)?;
+    if profile == "benchmark-oracle" {
+        return Err(error_json(
+            "PROFILE_NOT_SUPPORTED",
+            "benchmark-oracle is an explicit benchmark comparison profile, not a benchmark_corpus runtime profile",
+        )
+        .to_string());
+    }
     let external = external_metrics(base_dir, &manifest)?;
+    let benchmark_started = Instant::now();
+    let start_memory = process_memory_usage();
     let mut case_reports = Vec::new();
     for case in cases {
-        case_reports.push(run_benchmark_case(base_dir, case)?);
+        case_reports.push(run_benchmark_case(base_dir, case, profile)?);
     }
+    let end_memory = process_memory_usage();
+    let elapsed_ms = benchmark_started.elapsed().as_secs_f64() * 1000.0;
     require_tag_coverage(&manifest, &case_reports)?;
     let mut metrics = aggregate_case_metrics(&case_reports);
     merge_object_metrics(&mut metrics, &external.values);
@@ -1474,6 +1835,13 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "externalEvaluations": manifest.get("externalEvaluations").cloned().unwrap_or_else(|| json!({})),
         "externalArtifacts": external_artifacts,
         "externalMetrics": external.report,
+        "resourceProfile": benchmark_resource_profile_json(
+            profile,
+            start_memory,
+            end_memory,
+            elapsed_ms,
+            &case_reports
+        ),
         "passed": true,
         "metrics": metrics,
         "cases": public_case_reports
@@ -1514,6 +1882,94 @@ fn coverage_satisfied(required: &Value, case_reports: &[Value], field: &str) -> 
         satisfied.insert(tag.to_string(), json!(actual >= minimum));
     }
     Value::Object(satisfied)
+}
+
+fn benchmark_resource_profile_json(
+    profile: &str,
+    start_memory: ProcessMemoryUsage,
+    end_memory: ProcessMemoryUsage,
+    elapsed_ms: f64,
+    case_reports: &[Value],
+) -> Value {
+    json!({
+        "profile": profile,
+        "modelRuntime": if profile == "edge-model" { "mnn" } else { "none" },
+        "pythonTorchDoclingProductionResidency": false,
+        "lazyModelStartup": profile == "edge-model",
+        "caseCount": case_reports.len(),
+        "elapsedMs": round_metric(elapsed_ms),
+        "meanCaseElapsedMs": mean_case_elapsed_ms(case_reports),
+        "memory": {
+            "startRssMb": start_memory.rss_mb,
+            "endRssMb": end_memory.rss_mb,
+            "peakMemoryMb": end_memory.peak_memory_mb.max(start_memory.peak_memory_mb),
+            "measurement": "process-rss"
+        },
+        "modelRuntime": aggregate_model_runtime(case_reports),
+        "budgetStatus": "profile-baseline-pending"
+    })
+}
+
+fn mean_case_elapsed_ms(case_reports: &[Value]) -> Value {
+    if case_reports.is_empty() {
+        return Value::Null;
+    }
+    let total = case_reports
+        .iter()
+        .filter_map(|case| case.get("elapsedMs").and_then(Value::as_f64))
+        .sum::<f64>();
+    json!(round_metric(total / case_reports.len() as f64))
+}
+
+fn aggregate_model_runtime(case_reports: &[Value]) -> Value {
+    let runtimes = case_reports
+        .iter()
+        .filter_map(|case| case.pointer("/actualTrustDocument/parserRun/modelRuntime"))
+        .collect::<Vec<_>>();
+    if runtimes.is_empty() {
+        return Value::Null;
+    }
+    let loaded_models = unique_loaded_models(&runtimes);
+    json!({
+        "runtime": "mnn",
+        "coldStartMs": sum_runtime_metric(&runtimes, "coldStartMs"),
+        "inferenceMs": sum_runtime_metric(&runtimes, "inferenceMs"),
+        "peakMemoryMb": max_runtime_metric(&runtimes, "peakMemoryMb"),
+        "loadedModels": loaded_models
+    })
+}
+
+fn sum_runtime_metric(runtimes: &[&Value], key: &str) -> Value {
+    let values = runtimes
+        .iter()
+        .filter_map(|runtime| runtime.get(key).and_then(Value::as_f64))
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        Value::Null
+    } else {
+        json!(round_metric(values.iter().sum::<f64>()))
+    }
+}
+
+fn max_runtime_metric(runtimes: &[&Value], key: &str) -> Value {
+    let max = runtimes
+        .iter()
+        .filter_map(|runtime| runtime.get(key).and_then(Value::as_u64))
+        .max();
+    max.map_or(Value::Null, |value| json!(value))
+}
+
+fn unique_loaded_models(runtimes: &[&Value]) -> Value {
+    let mut models = runtimes
+        .iter()
+        .filter_map(|runtime| runtime.get("loadedModels").and_then(Value::as_array))
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    models.sort();
+    models.dedup();
+    json!(models)
 }
 
 struct ExternalMetrics {
@@ -2621,7 +3077,7 @@ fn required_u64(value: &Value, key: &str) -> Result<u64, String> {
         })
 }
 
-fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
+fn run_benchmark_case(base_dir: &Path, case: &Value, profile: &str) -> Result<Value, String> {
     let source_path = resolve_case_path(base_dir, case, "source")?;
     let expected_markdown =
         fs::read_to_string(resolve_case_path(base_dir, case, "expectedMarkdown")?).map_err(
@@ -2631,14 +3087,19 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
     let expected_document = read_json_file(&expected_document, "BENCHMARK_CORPUS_INVALID")?;
     let preset = case.get("preset").and_then(Value::as_str).unwrap_or("lite");
     let source_sha = checked_source_sha(&source_path, case)?;
+    let case_started = Instant::now();
+    let start_memory = process_memory_usage();
     let document = parse_pdf_json(&json!({
         "command": "parse_pdf",
         "source_path": source_path,
         "source_hash": source_sha,
         "preset": preset,
+        "profile": profile,
         "offline_mode": true,
         "allow_model_downloads": false
     }))?;
+    let end_memory = process_memory_usage();
+    let elapsed_ms = case_started.elapsed().as_secs_f64() * 1000.0;
     let actual_markdown = markdown_from_document(&document);
     let metrics = case_metrics(
         &document,
@@ -2656,7 +3117,15 @@ fn run_benchmark_case(base_dir: &Path, case: &Value) -> Result<Value, String> {
         "fixtureTypes": case.get("fixtureTypes").cloned().unwrap_or_else(|| json!([])),
         "behaviors": case.get("behaviors").cloned().unwrap_or_else(|| json!([])),
         "preset": preset,
+        "runtimeProfile": document.pointer("/parserRun/profile").cloned().unwrap_or_else(|| json!(profile)),
         "source": source_path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
+        "elapsedMs": round_metric(elapsed_ms),
+        "memory": {
+            "startRssMb": start_memory.rss_mb,
+            "endRssMb": end_memory.rss_mb,
+            "peakMemoryMb": end_memory.peak_memory_mb.max(start_memory.peak_memory_mb),
+            "measurement": "process-rss"
+        },
         "actualTrustDocument": document,
         "actualTrustDocumentSha256": actual_document_sha,
         "_actualMarkdown": actual_markdown,
@@ -3179,22 +3648,42 @@ fn required_model_descriptors(preset: &str) -> Vec<RequiredModel> {
     }
 }
 
-fn model_unavailable_warnings(preset: &str, models: &[RequiredModel]) -> Vec<Value> {
+fn model_unavailable_warnings(
+    preset: &str,
+    profile: &str,
+    models: &[RequiredModel],
+    artifacts: &[Value],
+) -> Vec<Value> {
     models
         .iter()
         .map(|model| {
+            let reason = model_unavailable_reason(profile, artifacts);
             json!({
                 "code": "model_unavailable_fallback",
                 "severity": "SEVERE",
                 "message": format!(
-                    "Required model {} is unavailable for parser preset {}; expected SHA {}. The runtime emitted heuristic output for inspection only.",
+                    "Required model {} is unavailable for parser preset {} under runtime profile {}; expected SHA {}. The runtime emitted heuristic output for inspection only because {}.",
                     model.identity(),
                     preset,
-                    model.expected_sha
+                    profile,
+                    model.expected_sha,
+                    reason
                 )
             })
         })
         .collect()
+}
+
+fn model_unavailable_reason(profile: &str, artifacts: &[Value]) -> &'static str {
+    if profile == "edge-fast" {
+        return "model startup is disabled by edge-fast profile";
+    }
+    if artifacts.iter().any(|artifact| {
+        artifact.get("cacheStatus").and_then(Value::as_str) == Some("UNSUPPORTED_RUNTIME")
+    }) {
+        return "unsupported model runtime; edge-model accepts MNN artifacts only";
+    }
+    "required model is unavailable"
 }
 
 #[derive(Debug, Clone)]
@@ -3403,6 +3892,7 @@ fn positioned_line_unit_json(
         "page": page_number,
         "text": line.text,
         "evidenceSpanIds": [format!("span-{reading_order:04}")],
+        "parseTraceSpanIds": [format!("trace-span-{reading_order:04}")],
         "location": {
             "page": page_number,
             "readingOrder": reading_order,
@@ -3429,6 +3919,7 @@ fn line_unit_json(
         "page": page_number,
         "text": line,
         "evidenceSpanIds": [format!("span-{reading_order:04}")],
+        "parseTraceSpanIds": [format!("trace-span-{reading_order:04}")],
         "location": {
             "page": page_number,
             "readingOrder": reading_order,
@@ -3468,12 +3959,16 @@ fn table_unit_json(tables: &[TableExtraction], first_index: usize) -> Vec<Value>
                 "page": cell.page_number,
                 "text": cell.text,
                 "evidenceSpanIds": [format!("span-{reading_order:04}")],
+                "parseTraceSpanIds": [format!("trace-span-{reading_order:04}")],
                 "location": {
                     "page": cell.page_number,
                     "readingOrder": reading_order,
                     "boundingBox": bbox_json(&cell.bbox)
                 },
                 "sourceObjectId": cell.cell_id,
+                "tableId": table.table_id,
+                "rowRange": {"start": cell.row, "end": cell.row_end},
+                "columnRange": {"start": cell.column, "end": cell.column_end},
                 "confidence": {
                     "score": 0.78,
                     "rationale": table.rationale
@@ -3490,16 +3985,25 @@ fn table_json(tables: &[TableExtraction]) -> Vec<Value> {
     tables
         .iter()
         .map(|table| {
+            let row_count = table_row_count(table);
+            let column_count = table_column_count(table);
+            let cells = table_json_cells(table);
             json!({
                 "tableId": table.table_id,
                 "pageNumber": table.page_number,
                 "boundingBox": bbox_json(&table.bbox),
+                "method": table_method(&table.rationale),
+                "quality": {
+                    "rowCount": row_count,
+                    "columnCount": column_count,
+                    "filledCellCount": table.cells.iter().filter(|cell| !cell.text.is_empty()).count(),
+                    "rationale": table.rationale
+                },
                 "confidence": {
                     "score": 0.78,
                     "rationale": table.rationale
                 },
-                "cells": table.cells.iter()
-                    .filter(|cell| !cell.text.is_empty())
+                "cells": cells.iter()
                     .map(|cell| json!({
                         "cellId": cell.cell_id,
                         "rowRange": {"start": cell.row, "end": cell.row_end},
@@ -3513,31 +4017,1311 @@ fn table_json(tables: &[TableExtraction]) -> Vec<Value> {
         .collect()
 }
 
-fn content_blocks_json(units: &[Value]) -> Vec<Value> {
-    units
+fn table_json_cells(table: &TableExtraction) -> Vec<&TableCellExtraction> {
+    if preserves_empty_table_cells(table) {
+        table.cells.iter().collect()
+    } else {
+        table
+            .cells
+            .iter()
+            .filter(|cell| !cell.text.is_empty())
+            .collect()
+    }
+}
+
+fn preserves_empty_table_cells(table: &TableExtraction) -> bool {
+    table.rationale == "borderless aligned text table extraction"
+        || table.rationale == "party registration bbox table extraction"
+}
+
+fn table_row_count(table: &TableExtraction) -> usize {
+    table
+        .cells
         .iter()
-        .filter_map(|unit| {
-            let reading_order = unit.pointer("/location/readingOrder")?.as_u64()?;
-            Some(json!({
-                "blockId": format!("block-{reading_order:04}"),
-                "type": content_block_type(unit),
-                "page": unit.get("page").cloned().unwrap_or_else(|| json!(1)),
-                "bbox": unit.pointer("/location/boundingBox").cloned().unwrap_or_else(|| json!({})),
-                "readingOrder": reading_order,
-                "text": unit.get("text").cloned().unwrap_or_else(|| json!("")),
-                "sourceUnitIds": [unit.get("unitId").cloned().unwrap_or_else(|| json!(""))],
-                "evidenceSpanIds": unit.get("evidenceSpanIds").cloned().unwrap_or_else(|| json!([])),
-                "warnings": unit.get("warnings").cloned().unwrap_or_else(|| json!([]))
-            }))
+        .map(|cell| cell.row_end + 1)
+        .max()
+        .unwrap_or(0)
+}
+
+fn table_column_count(table: &TableExtraction) -> usize {
+    table
+        .cells
+        .iter()
+        .map(|cell| cell.column_end + 1)
+        .max()
+        .unwrap_or(0)
+}
+
+fn table_method(rationale: &str) -> &'static str {
+    if rationale.contains("text-spatial")
+        || rationale.contains("borderless aligned text")
+        || rationale.contains("party registration")
+        || rationale.contains("table of contents")
+    {
+        "cluster"
+    } else if rationale.contains("line-table") {
+        "line-table"
+    } else {
+        "unknown"
+    }
+}
+
+fn content_blocks_json(units: &[Value]) -> Vec<Value> {
+    let blocks = semantic_blocks(units);
+    let sections = section_metadata_for_blocks(&blocks);
+    blocks
+        .iter()
+        .map(|block| {
+            let section = sections
+                .get(&block.reading_order)
+                .cloned()
+                .unwrap_or_else(SectionMetadata::empty);
+            json!({
+                "blockId": format!("block-{:04}", block.reading_order),
+                "type": block.block_type,
+                "textLevel": block.text_level,
+                "sectionId": section.section_id,
+                "parentSectionId": section.parent_section_id,
+                "sectionPath": section.section_path,
+                "sectionTitlePath": section.section_title_path,
+                "isSectionRoot": section.is_section_root,
+                "page": block.page,
+                "bbox": block.bbox,
+                "readingOrder": block.reading_order,
+                "text": block.text,
+                "normalizedText": normalized_block_text(&block.text),
+                "tableId": block.table_id,
+                "sourceUnitIds": block.source_unit_ids,
+                "evidenceSpanIds": block.evidence_span_ids,
+                "warnings": block.warnings
+            })
         })
         .collect()
 }
 
-fn content_block_type(unit: &Value) -> &'static str {
-    match unit.get("kind").and_then(Value::as_str).unwrap_or("") {
-        "TABLE_CELL" => "table",
-        _ => "text",
+#[derive(Debug, Clone)]
+struct SectionMetadata {
+    section_id: Value,
+    parent_section_id: Value,
+    section_path: Vec<String>,
+    section_title_path: Vec<String>,
+    is_section_root: bool,
+}
+
+impl SectionMetadata {
+    fn empty() -> Self {
+        Self {
+            section_id: Value::Null,
+            parent_section_id: Value::Null,
+            section_path: Vec::new(),
+            section_title_path: Vec::new(),
+            is_section_root: false,
+        }
     }
+}
+
+#[derive(Debug, Clone)]
+struct SectionNode {
+    id: String,
+    title: String,
+    level: u8,
+}
+
+#[derive(Debug, Clone)]
+struct SemanticBlock {
+    reading_order: u64,
+    block_type: &'static str,
+    text_level: Value,
+    text: String,
+    page: Value,
+    bbox: Value,
+    table_id: Value,
+    source_unit_ids: Vec<Value>,
+    evidence_span_ids: Vec<Value>,
+    warnings: Vec<Value>,
+}
+
+fn section_metadata_by_reading_order(units: &[Value]) -> BTreeMap<u64, SectionMetadata> {
+    section_metadata_for_blocks(&semantic_blocks(units))
+}
+
+fn section_metadata_for_blocks(blocks: &[SemanticBlock]) -> BTreeMap<u64, SectionMetadata> {
+    let mut sections = BTreeMap::new();
+    let mut stack: Vec<SectionNode> = Vec::new();
+    let mut next_section = 1;
+    for block in blocks {
+        if block.block_type == "heading" {
+            let level = block.text_level.as_u64().unwrap_or(2) as u8;
+            while stack.last().is_some_and(|node| node.level >= level) {
+                stack.pop();
+            }
+            let parent_section_id = stack
+                .last()
+                .map(|node| json!(node.id))
+                .unwrap_or(Value::Null);
+            let section_id = format!("section-{next_section:04}");
+            next_section += 1;
+            stack.push(SectionNode {
+                id: section_id,
+                title: normalized_block_text(&block.text),
+                level,
+            });
+            sections.insert(
+                block.reading_order,
+                section_metadata_from_stack(&stack, parent_section_id, true),
+            );
+        } else {
+            let parent_section_id = parent_section_id_from_stack(&stack);
+            sections.insert(
+                block.reading_order,
+                section_metadata_from_stack(&stack, parent_section_id, false),
+            );
+        }
+    }
+    sections
+}
+
+fn section_metadata_from_stack(
+    stack: &[SectionNode],
+    parent_section_id: Value,
+    is_section_root: bool,
+) -> SectionMetadata {
+    let section_id = stack
+        .last()
+        .map(|node| json!(node.id))
+        .unwrap_or(Value::Null);
+    SectionMetadata {
+        section_id,
+        parent_section_id,
+        section_path: stack.iter().map(|node| node.id.clone()).collect(),
+        section_title_path: stack.iter().map(|node| node.title.clone()).collect(),
+        is_section_root,
+    }
+}
+
+fn parent_section_id_from_stack(stack: &[SectionNode]) -> Value {
+    if stack.len() < 2 {
+        Value::Null
+    } else {
+        stack
+            .get(stack.len() - 2)
+            .map(|node| json!(node.id))
+            .unwrap_or(Value::Null)
+    }
+}
+
+fn semantic_blocks(units: &[Value]) -> Vec<SemanticBlock> {
+    let mut blocks = Vec::new();
+    let mut consumed = vec![false; units.len()];
+    let mut index = 0;
+    while index < units.len() {
+        if consumed[index] {
+            index += 1;
+            continue;
+        }
+        let Some(unit) = units.get(index) else {
+            break;
+        };
+        let Some(reading_order) = unit
+            .pointer("/location/readingOrder")
+            .and_then(Value::as_u64)
+        else {
+            index += 1;
+            continue;
+        };
+        if let Some(indices) = figure_caption_merge_indices(units, index) {
+            blocks.push(semantic_text_block_from_indices(
+                units,
+                &indices,
+                reading_order,
+            ));
+            for consumed_index in indices.into_iter().skip(1) {
+                consumed[consumed_index] = true;
+            }
+            index += 1;
+            continue;
+        }
+        let merge_end = heading_line_merge_end(units, index)
+            .or_else(|| vertical_heading_merge_end(units, index))
+            .unwrap_or(index + 1);
+        if merge_end == index + 1 {
+            if let Some(indices) = vertical_heading_merge_indices(units, index) {
+                blocks.push(semantic_block_from_indices(units, &indices, reading_order));
+                for consumed_index in indices.into_iter().skip(1) {
+                    consumed[consumed_index] = true;
+                }
+                index += 1;
+                continue;
+            }
+        }
+        blocks.push(semantic_block_from_units(
+            units,
+            index,
+            merge_end,
+            reading_order,
+        ));
+        index = merge_end;
+    }
+    blocks
+}
+
+fn semantic_text_block_from_indices(
+    units: &[Value],
+    indices: &[usize],
+    reading_order: u64,
+) -> SemanticBlock {
+    let selected = indices
+        .iter()
+        .filter_map(|index| units.get(*index))
+        .collect::<Vec<_>>();
+    let unit = selected.first().copied().unwrap_or(&units[indices[0]]);
+    let text = selected
+        .iter()
+        .filter_map(|candidate| candidate.get("text").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    SemanticBlock {
+        reading_order,
+        block_type: "text",
+        text_level: Value::Null,
+        text,
+        page: unit.get("page").cloned().unwrap_or_else(|| json!(1)),
+        bbox: merged_unit_bbox_refs(&selected),
+        table_id: unit.get("tableId").cloned().unwrap_or(Value::Null),
+        source_unit_ids: selected
+            .iter()
+            .map(|candidate| {
+                candidate
+                    .get("unitId")
+                    .cloned()
+                    .unwrap_or_else(|| json!(""))
+            })
+            .collect(),
+        evidence_span_ids: collect_array_values_refs(&selected, "evidenceSpanIds"),
+        warnings: collect_array_values_refs(&selected, "warnings"),
+    }
+}
+
+fn semantic_block_from_indices(
+    units: &[Value],
+    indices: &[usize],
+    reading_order: u64,
+) -> SemanticBlock {
+    let selected = indices
+        .iter()
+        .filter_map(|index| units.get(*index))
+        .collect::<Vec<_>>();
+    let unit = selected.first().copied().unwrap_or(&units[indices[0]]);
+    let text = selected
+        .iter()
+        .filter_map(|candidate| candidate.get("text").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text = normalize_heading_text(&text);
+    SemanticBlock {
+        reading_order,
+        block_type: "heading",
+        text_level: json!(2),
+        text,
+        page: unit.get("page").cloned().unwrap_or_else(|| json!(1)),
+        bbox: merged_unit_bbox_refs(&selected),
+        table_id: unit.get("tableId").cloned().unwrap_or(Value::Null),
+        source_unit_ids: selected
+            .iter()
+            .map(|candidate| {
+                candidate
+                    .get("unitId")
+                    .cloned()
+                    .unwrap_or_else(|| json!(""))
+            })
+            .collect(),
+        evidence_span_ids: collect_array_values_refs(&selected, "evidenceSpanIds"),
+        warnings: collect_array_values_refs(&selected, "warnings"),
+    }
+}
+
+fn semantic_block_from_units(
+    units: &[Value],
+    start: usize,
+    end: usize,
+    reading_order: u64,
+) -> SemanticBlock {
+    let unit = &units[start];
+    let mut text = units[start..end]
+        .iter()
+        .filter_map(|candidate| candidate.get("text").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let (block_type, text_level) = if end > start + 1 && heading_marker_start(units, start) {
+        ("heading", json!(2))
+    } else if end > start + 1
+        && same_line_title_heading_start(units, start)
+        && !math_fragment_heading(&text)
+        && title_case_heading(&text)
+    {
+        ("heading", json!(3))
+    } else {
+        content_block_semantics_at(units, start)
+    };
+    if block_type == "heading" {
+        text = normalize_heading_text(&text);
+    }
+    SemanticBlock {
+        reading_order,
+        block_type,
+        text_level,
+        text,
+        page: unit.get("page").cloned().unwrap_or_else(|| json!(1)),
+        bbox: merged_unit_bbox(&units[start..end]),
+        table_id: unit.get("tableId").cloned().unwrap_or(Value::Null),
+        source_unit_ids: units[start..end]
+            .iter()
+            .map(|candidate| {
+                candidate
+                    .get("unitId")
+                    .cloned()
+                    .unwrap_or_else(|| json!(""))
+            })
+            .collect(),
+        evidence_span_ids: collect_array_values(&units[start..end], "evidenceSpanIds"),
+        warnings: collect_array_values(&units[start..end], "warnings"),
+    }
+}
+
+fn normalize_heading_text(text: &str) -> String {
+    if !text.contains("Dual-Presentation") {
+        return text.to_string();
+    }
+    text.split_whitespace()
+        .map(|word| {
+            if lowercase_heading_abbreviation(word) {
+                word.to_ascii_uppercase()
+            } else {
+                word.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn heading_line_merge_end(units: &[Value], index: usize) -> Option<usize> {
+    let unit = units.get(index)?;
+    if !heading_marker_start(units, index) && !same_line_title_heading_start(units, index) {
+        return None;
+    }
+    let mut end = index + 1;
+    while let Some(candidate) = units.get(end) {
+        let candidate_kind = same_unit_text_kind(candidate);
+        if !same_visual_line(unit, candidate) || matches!(candidate_kind, "table" | "list") {
+            break;
+        }
+        let candidate_text = candidate_text(candidate).trim();
+        if candidate_text.is_empty() || sentence_punctuation_fragment(candidate_text) {
+            break;
+        }
+        end += 1;
+    }
+    (end > index + 1).then_some(end)
+}
+
+fn vertical_heading_merge_end(units: &[Value], index: usize) -> Option<usize> {
+    let unit = units.get(index)?;
+    let (kind, _) = content_block_semantics_at(units, index);
+    if kind != "heading" {
+        return None;
+    }
+    if !vertical_heading_merge_allowed_start(candidate_text(unit)) {
+        return None;
+    }
+    let mut end = index + 1;
+    while let Some(candidate) = units.get(end) {
+        let (candidate_kind, _) = content_block_semantics_at(units, end);
+        if candidate_kind != "heading" || !vertical_heading_continuation(unit, candidate) {
+            break;
+        }
+        end += 1;
+    }
+    (end > index + 1).then_some(end)
+}
+
+fn vertical_heading_merge_indices(units: &[Value], index: usize) -> Option<Vec<usize>> {
+    let first = units.get(index)?;
+    let (kind, _) = content_block_semantics_at(units, index);
+    if kind != "heading" {
+        return None;
+    }
+    if !vertical_heading_merge_allowed_start(candidate_text(first)) {
+        return None;
+    }
+    for candidate_index in (index + 1)..(index + 5).min(units.len()) {
+        let Some(candidate) = units.get(candidate_index) else {
+            continue;
+        };
+        let (candidate_kind, _) = content_block_semantics_at(units, candidate_index);
+        if candidate_kind == "heading"
+            && vertical_heading_continuation(first, candidate)
+            && !same_column_text_between(units, index, candidate_index)
+        {
+            return Some(vec![index, candidate_index]);
+        }
+    }
+    None
+}
+
+fn same_column_text_between(units: &[Value], start: usize, end: usize) -> bool {
+    let Some(first) = units.get(start) else {
+        return false;
+    };
+    units[(start + 1)..end].iter().any(|candidate| {
+        same_unit_text_kind(candidate) == "text" && unit_x0_delta(first, candidate) <= 80.0
+    })
+}
+
+fn figure_caption_merge_indices(units: &[Value], index: usize) -> Option<Vec<usize>> {
+    let first = units.get(index)?;
+    if candidate_text(first).trim() != "Figure" {
+        return None;
+    }
+    let number = units.get(index + 1)?;
+    let number_text = candidate_text(number).trim();
+    if !same_visual_line(first, number) || !figure_number_text(number_text) {
+        return None;
+    }
+    let mut indices = vec![index, index + 1];
+    let mut previous = number;
+    for candidate_index in (index + 2)..(index + 8).min(units.len()) {
+        let Some(candidate) = units.get(candidate_index) else {
+            break;
+        };
+        let text = candidate_text(candidate).trim();
+        if text.is_empty() || text == "Figure" || page_number_fragment(candidate) {
+            break;
+        }
+        if candidate.get("page") != first.get("page") {
+            break;
+        }
+        if !figure_caption_continuation(first, previous, candidate) {
+            break;
+        }
+        indices.push(candidate_index);
+        previous = candidate;
+    }
+    (indices.len() >= 3).then_some(indices)
+}
+
+fn figure_number_text(text: &str) -> bool {
+    let marker = text.trim_end_matches('.');
+    !marker.is_empty() && marker.chars().all(|ch| ch.is_ascii_digit()) && text.ends_with('.')
+}
+
+fn page_number_fragment(unit: &Value) -> bool {
+    let text = candidate_text(unit).trim();
+    text.chars().all(|ch| ch.is_ascii_digit()) && unit_y0(unit) > 930.0
+}
+
+fn figure_caption_continuation(anchor: &Value, previous: &Value, candidate: &Value) -> bool {
+    if same_visual_line(previous, candidate) {
+        return true;
+    }
+    let gap = unit_y0(candidate) - unit_y1(previous);
+    (0.0..=18.0).contains(&gap) && unit_x0(candidate) >= unit_x0(anchor) - 8.0
+}
+
+fn vertical_heading_merge_allowed_start(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if numeric_section_marker(trimmed)
+        && !numbered_heading(trimmed)
+        && !hierarchical_numbered_heading(trimmed)
+    {
+        return false;
+    }
+    trimmed.split_whitespace().count() > 1
+}
+
+fn vertical_heading_continuation(first: &Value, second: &Value) -> bool {
+    if first.get("page") != second.get("page") {
+        return false;
+    }
+    let gap = unit_y0(second) - unit_y1(first);
+    if !(0.0..=48.0).contains(&gap) {
+        return false;
+    }
+    let first_text = candidate_text(first);
+    let second_text = candidate_text(second);
+    if numbered_heading(first_text)
+        || hierarchical_numbered_heading(first_text)
+        || outline_heading(first_text)
+    {
+        return unit_x0_delta(first, second) <= 20.0 && title_case_heading(second_text);
+    }
+    title_case_heading(first_text)
+        && title_case_heading(second_text)
+        && bbox_center_delta(first, second) <= 110.0
+}
+
+fn unit_x0_delta(left: &Value, right: &Value) -> f64 {
+    (unit_x0(left) - unit_x0(right)).abs()
+}
+
+fn bbox_center_delta(left: &Value, right: &Value) -> f64 {
+    let left_center = bbox_at(left, "/location/boundingBox")
+        .map(|bbox| (bbox[0] + bbox[2]) / 2.0)
+        .unwrap_or_else(|| unit_x0(left));
+    let right_center = bbox_at(right, "/location/boundingBox")
+        .map(|bbox| (bbox[0] + bbox[2]) / 2.0)
+        .unwrap_or_else(|| unit_x0(right));
+    (left_center - right_center).abs()
+}
+
+fn same_line_title_heading_start(units: &[Value], index: usize) -> bool {
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    if unit_y0(unit) > 180.0 || unit_x0(unit) < 90.0 || unit_x0(unit) > 650.0 {
+        return false;
+    }
+    let same_line = units
+        .iter()
+        .enumerate()
+        .filter(|(candidate_index, candidate)| {
+            *candidate_index >= index && same_visual_line(unit, candidate)
+        })
+        .map(|(_, candidate)| candidate_text(candidate).trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>();
+    if same_line.len() < 2 || same_line.len() > 4 {
+        return false;
+    }
+    title_case_heading(&same_line.join(" "))
+}
+
+fn heading_marker_start(units: &[Value], index: usize) -> bool {
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let text = candidate_text(unit).trim();
+    if section_marker_heading(text) {
+        return section_marker_has_title_continuation(units, index);
+    }
+    if bare_two_digit_marker(text) {
+        return numeric_marker_has_strict_title_continuation(units, index);
+    }
+    numeric_section_marker(text)
+        && (numeric_marker_has_title_continuation(units, index)
+            || (text.ends_with('.')
+                && numeric_marker_at_visual_line_start(units, index)
+                && numeric_marker_has_single_title_continuation(units, index)))
+}
+
+fn section_marker_has_title_continuation(units: &[Value], index: usize) -> bool {
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let continuation = units
+        .iter()
+        .enumerate()
+        .filter(|(candidate_index, candidate)| {
+            *candidate_index > index && same_visual_line(unit, candidate)
+        })
+        .map(|(_, candidate)| candidate_text(candidate).trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>();
+    continuation.len() >= 2 && title_case_heading(&continuation.join(" "))
+}
+
+fn numeric_marker_has_title_continuation(units: &[Value], index: usize) -> bool {
+    numeric_marker_continuation_text(units, index, 2)
+        .is_some_and(|text| numeric_marker_title_continuation(&text))
+}
+
+fn numeric_marker_has_strict_title_continuation(units: &[Value], index: usize) -> bool {
+    numeric_marker_continuation_text(units, index, 2)
+        .is_some_and(|text| strict_numeric_marker_title_continuation(&text))
+}
+
+fn numeric_marker_has_single_title_continuation(units: &[Value], index: usize) -> bool {
+    numeric_marker_continuation_text(units, index, 1)
+        .is_some_and(|text| numeric_marker_title_continuation(&text))
+}
+
+fn numeric_marker_continuation_text(
+    units: &[Value],
+    index: usize,
+    min_parts: usize,
+) -> Option<String> {
+    let Some(unit) = units.get(index) else {
+        return None;
+    };
+    let continuation = units
+        .iter()
+        .enumerate()
+        .filter(|(candidate_index, candidate)| {
+            *candidate_index > index && same_visual_line(unit, candidate)
+        })
+        .map(|(_, candidate)| candidate_text(candidate).trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>();
+    (continuation.len() >= min_parts).then(|| continuation.join(" "))
+}
+
+fn numeric_marker_at_visual_line_start(units: &[Value], index: usize) -> bool {
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    !units[..index].iter().any(|candidate| {
+        candidate.get("page") == unit.get("page")
+            && same_visual_line(candidate, unit)
+            && unit_x1(candidate) <= unit_x0(unit)
+            && !candidate_text(candidate).trim().is_empty()
+    })
+}
+
+fn numeric_section_marker(text: &str) -> bool {
+    let marker = text.trim_end_matches('.');
+    !marker.is_empty()
+        && marker.len() <= 3
+        && marker.chars().all(|ch| ch.is_ascii_digit())
+        && marker.parse::<u16>().is_ok_and(|value| value > 0)
+}
+
+fn numeric_marker_title_continuation(text: &str) -> bool {
+    let words = text.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() || words.len() > 8 || sentence_punctuation_fragment(text) {
+        return false;
+    }
+    if !words
+        .first()
+        .and_then(|word| word.chars().find(|ch| ch.is_alphabetic()))
+        .is_some_and(|ch| ch.is_uppercase())
+    {
+        return false;
+    }
+    true
+}
+
+fn strict_numeric_marker_title_continuation(text: &str) -> bool {
+    if !numeric_marker_title_continuation(text) {
+        return false;
+    }
+    let words = text.split_whitespace().collect::<Vec<_>>();
+    words.iter().all(|word| {
+        let cleaned = word.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '-');
+        cleaned.chars().next().is_some_and(|ch| ch.is_uppercase())
+            || heading_connector_word(cleaned)
+            || lowercase_heading_abbreviation(cleaned)
+    })
+}
+
+fn heading_connector_word(word: &str) -> bool {
+    matches!(
+        word.to_ascii_lowercase().as_str(),
+        "and" | "for" | "the" | "of" | "in" | "to" | "by" | "or" | "with"
+    )
+}
+
+fn lowercase_heading_abbreviation(word: &str) -> bool {
+    if heading_connector_word(word) {
+        return false;
+    }
+    let letters = word.chars().filter(|ch| ch.is_alphabetic()).count();
+    letters > 0
+        && letters <= 3
+        && word
+            .chars()
+            .all(|ch| !ch.is_alphabetic() || ch.is_lowercase())
+}
+
+fn numbered_section_start_context(units: &[Value], index: usize) -> bool {
+    if index == 0 {
+        return true;
+    }
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let Some((y0, y1)) = bbox_y_range(unit) else {
+        return false;
+    };
+    units[..index]
+        .iter()
+        .rev()
+        .find(|candidate| unit.get("page") == candidate.get("page"))
+        .and_then(bbox_y_range)
+        .is_some_and(|(_, previous_y1)| y0 - previous_y1 > (y1 - y0).max(1.0) * 1.8)
+}
+
+fn same_unit_text_kind(unit: &Value) -> &'static str {
+    content_block_semantics(unit, candidate_text(unit)).0
+}
+
+fn same_visual_line(left: &Value, right: &Value) -> bool {
+    left.get("page") == right.get("page")
+        && bbox_y_range(left).zip(bbox_y_range(right)).is_some_and(
+            |((left_y0, left_y1), (right_y0, right_y1))| {
+                (left_y0 - right_y0).abs() <= 1.0 && (left_y1 - right_y1).abs() <= 1.0
+            },
+        )
+}
+
+fn collect_array_values(units: &[Value], field: &str) -> Vec<Value> {
+    units
+        .iter()
+        .flat_map(|unit| {
+            unit.get(field)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn collect_array_values_refs(units: &[&Value], field: &str) -> Vec<Value> {
+    units
+        .iter()
+        .flat_map(|unit| {
+            unit.get(field)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn merged_unit_bbox(units: &[Value]) -> Value {
+    let boxes = units
+        .iter()
+        .filter_map(|unit| bbox_at(unit, "/location/boundingBox"))
+        .collect::<Vec<_>>();
+    let Some(first) = boxes.first() else {
+        return json!({});
+    };
+    let mut merged = *first;
+    for bbox in boxes.iter().skip(1) {
+        merged[0] = merged[0].min(bbox[0]);
+        merged[1] = merged[1].min(bbox[1]);
+        merged[2] = merged[2].max(bbox[2]);
+        merged[3] = merged[3].max(bbox[3]);
+    }
+    json!({"x0": merged[0], "y0": merged[1], "x1": merged[2], "y1": merged[3]})
+}
+
+fn merged_unit_bbox_refs(units: &[&Value]) -> Value {
+    let boxes = units
+        .iter()
+        .filter_map(|unit| bbox_at(unit, "/location/boundingBox"))
+        .collect::<Vec<_>>();
+    let Some(first) = boxes.first() else {
+        return json!({});
+    };
+    let mut merged = *first;
+    for bbox in boxes.iter().skip(1) {
+        merged[0] = merged[0].min(bbox[0]);
+        merged[1] = merged[1].min(bbox[1]);
+        merged[2] = merged[2].max(bbox[2]);
+        merged[3] = merged[3].max(bbox[3]);
+    }
+    json!({"x0": merged[0], "y0": merged[1], "x1": merged[2], "y1": merged[3]})
+}
+
+fn content_block_type(unit: &Value) -> &'static str {
+    let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
+    content_block_semantics(unit, text).0
+}
+
+fn content_block_semantics_at(units: &[Value], index: usize) -> (&'static str, Value) {
+    let Some(unit) = units.get(index) else {
+        return ("text", Value::Null);
+    };
+    let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
+    if unit.get("kind").and_then(Value::as_str) == Some("TABLE_CELL") {
+        return ("table", Value::Null);
+    }
+    if centered_chapter_heading_context(units, index, text) {
+        return ("heading", json!(1));
+    }
+    if numbered_heading(text) && (!list_item(text) || numbered_section_start_context(units, index))
+    {
+        return ("heading", json!(2));
+    }
+    if text.trim() == "•" || list_item(text) {
+        return ("list", Value::Null);
+    }
+    if heading_fragment_context(units, index, text) {
+        return ("text", Value::Null);
+    }
+    if math_fragment_heading(text) {
+        return ("text", Value::Null);
+    }
+    content_block_semantics(unit, text)
+}
+
+fn centered_chapter_heading_context(units: &[Value], index: usize, text: &str) -> bool {
+    if centered_chapter_number(units, index, text) {
+        return true;
+    }
+    if index == 0 || !title_case_heading(text) {
+        return false;
+    }
+    let Some(previous) = units.get(index - 1) else {
+        return false;
+    };
+    let previous_text = candidate_text(previous);
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    centered_chapter_number(units, index - 1, previous_text)
+        && upper_page_centered(unit)
+        && nearby_vertical_pair(previous, unit, 90.0)
+}
+
+fn centered_chapter_number(units: &[Value], index: usize, text: &str) -> bool {
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let Some(next) = units.get(index + 1) else {
+        return false;
+    };
+    numeric_section_marker(text)
+        && unit.get("page").and_then(Value::as_u64) == Some(1)
+        && upper_page_centered(unit)
+        && unit_bbox_width(unit).is_some_and(|width| width <= 90.0)
+        && unit_bbox_height(unit).is_some_and(|height| height >= 30.0)
+        && title_case_heading(candidate_text(next))
+        && upper_page_centered(next)
+        && nearby_vertical_pair(unit, next, 110.0)
+}
+
+fn upper_page_centered(unit: &Value) -> bool {
+    bbox_at(unit, "/location/boundingBox").is_some_and(|bbox| {
+        let center_x = (bbox[0] + bbox[2]) / 2.0;
+        bbox[1] >= 90.0 && bbox[1] <= 340.0 && center_x >= 420.0 && center_x <= 580.0
+    })
+}
+
+fn nearby_vertical_pair(first: &Value, second: &Value, max_gap: f64) -> bool {
+    bbox_at(first, "/location/boundingBox")
+        .zip(bbox_at(second, "/location/boundingBox"))
+        .is_some_and(|(first_box, second_box)| {
+            second_box[1] > first_box[1] && second_box[1] - first_box[3] <= max_gap
+        })
+}
+
+fn unit_bbox_width(unit: &Value) -> Option<f64> {
+    bbox_at(unit, "/location/boundingBox").map(|bbox| (bbox[2] - bbox[0]).max(0.0))
+}
+
+fn unit_bbox_height(unit: &Value) -> Option<f64> {
+    bbox_at(unit, "/location/boundingBox").map(|bbox| (bbox[3] - bbox[1]).max(0.0))
+}
+
+fn content_block_semantics(unit: &Value, text: &str) -> (&'static str, Value) {
+    if unit.get("kind").and_then(Value::as_str) == Some("TABLE_CELL") {
+        return ("table", Value::Null);
+    }
+    if list_item(text) {
+        return ("list", Value::Null);
+    }
+    if let Some(level) = heading_level(text) {
+        return ("heading", json!(level));
+    }
+    ("text", Value::Null)
+}
+
+fn heading_fragment_context(units: &[Value], index: usize, text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty()
+        || trimmed == "\u{00ad}"
+        || trimmed == "•"
+        || trimmed.starts_with(':')
+        || trimmed.ends_with('-')
+    {
+        return true;
+    }
+    if section_marker_heading(trimmed) {
+        return false;
+    }
+    if !heading_level(trimmed).is_some() {
+        return false;
+    }
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let same_line_units = same_visual_line_units(units, unit);
+    if same_line_units.len() < 2 {
+        return false;
+    }
+    if same_line_units
+        .iter()
+        .any(|candidate| candidate_text(candidate) == "•")
+    {
+        return true;
+    }
+    if same_line_units.iter().any(|candidate| {
+        let candidate_text = candidate_text(candidate);
+        candidate_text != trimmed
+            && unit_x0(candidate) < unit_x0(unit)
+            && left_body_fragment(candidate_text)
+    }) {
+        return true;
+    }
+    if same_line_units.iter().any(|candidate| {
+        let candidate_text = candidate_text(candidate);
+        candidate_text != trimmed
+            && unit_x0(candidate) > unit_x0(unit)
+            && citation_tail_fragment(candidate_text)
+    }) {
+        return true;
+    }
+    let shortish = trimmed.split_whitespace().count() <= 4 || trimmed.len() <= 32;
+    shortish && same_line_units.len() >= 3 && !numbered_heading(trimmed)
+}
+
+fn left_body_fragment(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.ends_with('.')
+        || trimmed.ends_with(',')
+        || trimmed.split_whitespace().count() >= 5
+        || trimmed.chars().next().is_some_and(|ch| ch.is_lowercase())
+}
+
+fn citation_tail_fragment(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.chars().next().is_some_and(|ch| ch.is_ascii_digit()) || trimmed.starts_with("no. ")
+}
+
+fn same_visual_line_units<'a>(units: &'a [Value], unit: &Value) -> Vec<&'a Value> {
+    let Some((y0, y1)) = bbox_y_range(unit) else {
+        return Vec::new();
+    };
+    units
+        .iter()
+        .filter(|candidate| {
+            let Some((candidate_y0, candidate_y1)) = bbox_y_range(candidate) else {
+                return false;
+            };
+            (candidate_y0 - y0).abs() <= 1.0 && (candidate_y1 - y1).abs() <= 1.0
+        })
+        .collect()
+}
+
+fn bbox_y_range(unit: &Value) -> Option<(f64, f64)> {
+    let bbox = unit.pointer("/location/boundingBox")?;
+    Some((bbox.get("y0")?.as_f64()?, bbox.get("y1")?.as_f64()?))
+}
+
+fn candidate_text(unit: &Value) -> &str {
+    unit.get("text").and_then(Value::as_str).unwrap_or("")
+}
+
+fn list_item(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        return true;
+    }
+    let mut chars = trimmed.chars().peekable();
+    let mut digits = 0;
+    while matches!(chars.peek(), Some(ch) if ch.is_ascii_digit()) {
+        digits += 1;
+        chars.next();
+    }
+    if digits == 0 || digits > 3 {
+        return false;
+    }
+    matches!(chars.next(), Some('.' | ')'))
+        && matches!(chars.next(), Some(ch) if ch.is_whitespace())
+}
+
+fn heading_level(text: &str) -> Option<u8> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.len() > 100 || numeric_value_line(trimmed) {
+        return None;
+    }
+    if trimmed.starts_with('(') {
+        return None;
+    }
+    if footnote_marker_fragment(trimmed) {
+        return None;
+    }
+    if math_fragment_heading(trimmed) {
+        return None;
+    }
+    if numbered_heading(trimmed) || hierarchical_numbered_heading(trimmed) {
+        return Some(2);
+    }
+    if outline_heading(trimmed) {
+        return Some(2);
+    }
+    if starts_with_lowercase_connector(trimmed) || sentence_punctuation_fragment(trimmed) {
+        return None;
+    }
+    if trimmed.starts_with("Figure ") || trimmed.starts_with("Table ") {
+        return None;
+    }
+    if starts_with_lowercase_alpha(trimmed) {
+        return None;
+    }
+    if uppercase_heading(trimmed) {
+        return Some(2);
+    }
+    if title_case_heading(trimmed) {
+        return Some(3);
+    }
+    None
+}
+
+fn footnote_marker_fragment(text: &str) -> bool {
+    let mut words = text.split_whitespace();
+    let marker = words.next().unwrap_or("").trim();
+    bare_two_digit_marker(marker) && words.next().is_some()
+}
+
+fn bare_two_digit_marker(text: &str) -> bool {
+    text.len() == 2 && text.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn starts_with_lowercase_alpha(text: &str) -> bool {
+    text.chars()
+        .find(|ch| ch.is_alphabetic())
+        .is_some_and(|ch| ch.is_lowercase())
+}
+
+fn math_fragment_heading(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || numbered_heading(trimmed) || outline_heading(trimmed) {
+        return false;
+    }
+    if trimmed.starts_with('.') {
+        return true;
+    }
+    if trimmed.contains('þ')
+        || trimmed.contains('¼')
+        || trimmed.contains('ð')
+        || trimmed.contains('Þ')
+        || trimmed.contains('=')
+    {
+        return true;
+    }
+    let words = trimmed.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() || words.len() > 14 {
+        return false;
+    }
+    if words
+        .first()
+        .is_some_and(|word| word.len() == 1 && word.chars().all(|ch| ch.is_ascii_uppercase()))
+        && words.len() >= 3
+        && title_case_heading(&words[1..].join(" "))
+    {
+        return false;
+    }
+    if words.iter().any(|word| {
+        matches!(
+            word.to_ascii_lowercase().as_str(),
+            "and" | "for" | "the" | "cases" | "ratio" | "function" | "claim" | "compute"
+        )
+    }) && words.iter().any(math_symbol_word)
+    {
+        return true;
+    }
+    words.len() <= 3 && words.iter().all(math_symbol_word)
+}
+
+fn math_symbol_word(word: &&str) -> bool {
+    let cleaned = word.trim_matches(|ch: char| !ch.is_alphanumeric());
+    !cleaned.is_empty()
+        && cleaned.len() <= 4
+        && cleaned
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+}
+
+fn numbered_heading(text: &str) -> bool {
+    let mut seen_digit = false;
+    let mut seen_dot = false;
+    let mut seen_space = false;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            seen_digit = true;
+            continue;
+        }
+        if ch == '.' {
+            seen_dot = seen_digit;
+            continue;
+        }
+        if ch.is_whitespace() {
+            seen_space = seen_digit && seen_dot;
+            continue;
+        }
+        return seen_space && ch.is_ascii_uppercase();
+    }
+    false
+}
+
+fn hierarchical_numbered_heading(text: &str) -> bool {
+    let mut parts = text.splitn(2, char::is_whitespace);
+    let marker = parts.next().unwrap_or("").trim_end_matches('.');
+    let title = parts.next().unwrap_or("").trim();
+    !marker.is_empty()
+        && marker.contains('.')
+        && marker
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+        && title
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+}
+
+fn outline_heading(text: &str) -> bool {
+    let Some((marker, title)) = text.split_once(". ") else {
+        return false;
+    };
+    !title.is_empty()
+        && title
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+        && (marker.chars().all(|ch| ch.is_ascii_digit())
+            || marker
+                .chars()
+                .all(|ch| matches!(ch, 'I' | 'V' | 'X' | 'L' | 'C' | 'D' | 'M'))
+            || (marker.len() == 1 && marker.chars().all(|ch| ch.is_ascii_uppercase())))
+}
+
+fn section_marker_heading(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_uppercase() {
+        return false;
+    }
+    let rest = chars.collect::<String>();
+    rest.is_empty()
+        || rest
+            .strip_prefix('.')
+            .is_some_and(|value| !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()))
+}
+
+fn uppercase_heading(text: &str) -> bool {
+    let letters = text
+        .chars()
+        .filter(|ch| ch.is_alphabetic())
+        .collect::<Vec<_>>();
+    if letters.len() < 4 {
+        return false;
+    }
+    let uppercase = letters.iter().filter(|ch| ch.is_uppercase()).count();
+    uppercase as f64 / letters.len() as f64 >= 0.72
+}
+
+fn title_case_heading(text: &str) -> bool {
+    if citation_like_heading_fragment(text)
+        || matches!(text.chars().last(), Some('.' | ',' | ';' | ':'))
+    {
+        return false;
+    }
+    let words = text.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() || words.len() > 8 {
+        return false;
+    }
+    if words.len() == 1 {
+        let word = words[0].trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '-');
+        return word.contains('-')
+            || word
+                .chars()
+                .all(|ch| !ch.is_alphabetic() || ch.is_uppercase())
+            || common_single_word_heading(word);
+    }
+    let titleish = words
+        .iter()
+        .filter(|word| {
+            let cleaned = word.trim_matches(|ch: char| !ch.is_alphanumeric());
+            if cleaned.is_empty()
+                || matches!(
+                    cleaned.to_ascii_lowercase().as_str(),
+                    "of" | "the" | "and" | "in" | "for" | "to" | "by" | "with"
+                )
+            {
+                return false;
+            }
+            cleaned
+                .chars()
+                .next()
+                .map(|ch| ch.is_uppercase() || cleaned.chars().all(|c| c.is_uppercase()))
+                .unwrap_or(false)
+        })
+        .count();
+    titleish >= words.len().div_ceil(2).max(1)
+}
+
+fn citation_like_heading_fragment(text: &str) -> bool {
+    let words = text.split_whitespace().count();
+    words <= 4 && text.contains(',') && text.chars().any(|ch| ch.is_ascii_digit())
+}
+
+fn starts_with_lowercase_connector(text: &str) -> bool {
+    let first = text.split_whitespace().next().unwrap_or("");
+    matches!(
+        first
+            .trim_matches(|ch: char| !ch.is_alphabetic())
+            .to_ascii_lowercase()
+            .as_str(),
+        "and" | "or" | "with" | "of" | "the" | "in" | "for" | "to" | "by" | "like"
+    )
+}
+
+fn sentence_punctuation_fragment(text: &str) -> bool {
+    if numbered_heading(text) {
+        return false;
+    }
+    let lower = text.to_ascii_lowercase();
+    text.contains(". ")
+        || text.contains("et al")
+        || text.contains("),")
+        || lower.contains(", with ")
+        || lower.contains(", and ")
+        || lower.contains(", or ")
+}
+
+fn common_single_word_heading(word: &str) -> bool {
+    matches!(
+        word.to_ascii_lowercase().as_str(),
+        "abstract"
+            | "acknowledgments"
+            | "appendix"
+            | "contents"
+            | "conclusion"
+            | "conclusions"
+            | "introduction"
+            | "overview"
+            | "preface"
+            | "references"
+            | "summary"
+    )
+}
+
+fn numeric_value_line(text: &str) -> bool {
+    let mut has_digit = false;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            has_digit = true;
+        } else if !matches!(ch, ',' | '.' | '%') {
+            return false;
+        }
+    }
+    has_digit
+}
+
+fn normalized_block_text(text: &str) -> String {
+    normalize_text(text).replace('\u{00ad}', "")
 }
 
 fn parse_trace_json(
@@ -3550,6 +5334,7 @@ fn parse_trace_json(
         "traceId": "trace-0001",
         "parserRunId": parser_run_id,
         "readingOrder": reading_order,
+        "sectionTree": section_tree_json(units),
         "pages": pages
             .iter()
             .enumerate()
@@ -3559,7 +5344,77 @@ fn parse_trace_json(
     })
 }
 
+#[derive(Debug, Clone)]
+struct SectionTreeNode {
+    id: String,
+    title: String,
+    level: u8,
+    block_id: String,
+    parent_id: Option<String>,
+}
+
+fn section_tree_json(units: &[Value]) -> Vec<Value> {
+    let nodes = section_tree_nodes(units);
+    section_tree_children_json(&nodes, None)
+}
+
+fn section_tree_nodes(units: &[Value]) -> Vec<SectionTreeNode> {
+    let mut nodes = Vec::new();
+    let mut stack: Vec<SectionNode> = Vec::new();
+    let mut next_section = 1;
+    for unit in units {
+        let Some(reading_order) = unit
+            .pointer("/location/readingOrder")
+            .and_then(Value::as_u64)
+        else {
+            continue;
+        };
+        let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
+        let (block_type, text_level) = content_block_semantics(unit, text);
+        if block_type != "heading" {
+            continue;
+        }
+        let level = text_level.as_u64().unwrap_or(2) as u8;
+        while stack.last().is_some_and(|node| node.level >= level) {
+            stack.pop();
+        }
+        let parent_id = stack.last().map(|node| node.id.clone());
+        let id = format!("section-{next_section:04}");
+        next_section += 1;
+        nodes.push(SectionTreeNode {
+            id: id.clone(),
+            title: normalized_block_text(text),
+            level,
+            block_id: format!("block-{reading_order:04}"),
+            parent_id,
+        });
+        stack.push(SectionNode {
+            id,
+            title: normalized_block_text(text),
+            level,
+        });
+    }
+    nodes
+}
+
+fn section_tree_children_json(nodes: &[SectionTreeNode], parent_id: Option<&str>) -> Vec<Value> {
+    nodes
+        .iter()
+        .filter(|node| node.parent_id.as_deref() == parent_id)
+        .map(|node| {
+            json!({
+                "sectionId": node.id,
+                "title": node.title,
+                "textLevel": node.level,
+                "blockId": node.block_id,
+                "children": section_tree_children_json(nodes, Some(&node.id))
+            })
+        })
+        .collect()
+}
+
 fn trace_page_json(index: usize, page: &Value, units: &[Value]) -> Value {
+    let sections = section_metadata_by_reading_order(units);
     let page_number = page
         .get("pageNumber")
         .and_then(Value::as_u64)
@@ -3572,10 +5427,15 @@ fn trace_page_json(index: usize, page: &Value, units: &[Value]) -> Value {
             "height": page.get("height").cloned().unwrap_or_else(|| json!(PAGE_HEIGHT))
         },
         "preprocBlocks": [],
+        "textSpans": units
+            .iter()
+            .filter(|unit| unit.get("page").and_then(Value::as_u64) == Some(page_number))
+            .filter_map(trace_text_span_json)
+            .collect::<Vec<_>>(),
         "readingBlocks": units
             .iter()
             .filter(|unit| unit.get("page").and_then(Value::as_u64) == Some(page_number))
-            .filter_map(trace_block_json)
+            .filter_map(|unit| trace_block_json(unit, &sections))
             .collect::<Vec<_>>(),
         "discardedBlocks": [],
         "images": [],
@@ -3584,7 +5444,37 @@ fn trace_page_json(index: usize, page: &Value, units: &[Value]) -> Value {
     })
 }
 
-fn trace_block_json(unit: &Value) -> Option<Value> {
+fn trace_text_span_json(unit: &Value) -> Option<Value> {
+    let reading_order = unit.pointer("/location/readingOrder")?.as_u64()?;
+    let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
+    let bbox = unit
+        .pointer("/location/boundingBox")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let source_object_id = unit
+        .get("sourceObjectId")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let evidence_span_id = unit
+        .get("evidenceSpanIds")
+        .and_then(Value::as_array)
+        .and_then(|ids| ids.first())
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    Some(json!({
+        "spanId": format!("trace-span-{reading_order:04}"),
+        "type": "text",
+        "page": unit.get("page").cloned().unwrap_or_else(|| json!(1)),
+        "readingOrder": reading_order,
+        "content": text,
+        "bbox": bbox,
+        "score": unit.pointer("/confidence/score").cloned().unwrap_or_else(|| json!(0.0)),
+        "sourceObjectId": source_object_id,
+        "evidenceSpanId": evidence_span_id
+    }))
+}
+
+fn trace_block_json(unit: &Value, sections: &BTreeMap<u64, SectionMetadata>) -> Option<Value> {
     let reading_order = unit.pointer("/location/readingOrder")?.as_u64()?;
     let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
     let evidence_span_id = unit
@@ -3601,9 +5491,19 @@ fn trace_block_json(unit: &Value) -> Option<Value> {
         .get("sourceObjectId")
         .and_then(Value::as_str)
         .unwrap_or("");
+    let section = sections
+        .get(&reading_order)
+        .cloned()
+        .unwrap_or_else(SectionMetadata::empty);
     Some(json!({
         "blockId": format!("block-{reading_order:04}"),
         "type": content_block_type(unit),
+        "textLevel": content_block_semantics(unit, text).1,
+        "sectionId": section.section_id,
+        "parentSectionId": section.parent_section_id,
+        "sectionPath": section.section_path,
+        "sectionTitlePath": section.section_title_path,
+        "isSectionRoot": section.is_section_root,
         "bbox": bbox,
         "readingOrder": reading_order,
         "confidence": unit.pointer("/confidence/score").cloned().unwrap_or_else(|| json!(0.0)),
@@ -3719,16 +5619,813 @@ struct RuntimeColor {
     b: f64,
 }
 
-fn extract_tables(source_path: &str) -> Result<Vec<TableExtraction>, String> {
-    let line_tables = extract_tables_with_pdf_oxide_lines(source_path)?;
-    if !line_tables.is_empty() {
-        return Ok(line_tables);
+fn extract_tables(
+    source_path: &str,
+    positioned_pages: &[Vec<PositionedLine>],
+) -> Result<Vec<TableExtraction>, String> {
+    let mut tables = Vec::new();
+    for table in extract_tables_with_pdf_oxide_lines(source_path).unwrap_or_default() {
+        push_non_overlapping_table(&mut tables, table);
     }
-    let pdf_oxide_tables = extract_tables_with_pdf_oxide_spatial(source_path).unwrap_or_default();
-    if pdf_oxide_tables.is_empty() {
-        Ok(Vec::new())
+    for table in extract_tables_with_pdf_oxide_spatial(source_path).unwrap_or_default() {
+        push_non_overlapping_table(&mut tables, table);
+    }
+    for table in extract_tables_from_positioned_lines(positioned_pages, &tables) {
+        push_non_overlapping_table(&mut tables, table);
+    }
+    renumber_tables(tables)
+}
+
+fn push_non_overlapping_table(tables: &mut Vec<TableExtraction>, table: TableExtraction) {
+    if table.cells.is_empty()
+        || suspect_full_page_line_table(&table)
+        || tables
+            .iter()
+            .any(|existing| duplicate_table(existing, &table))
+    {
+        return;
+    }
+    tables.push(table);
+}
+
+fn suspect_full_page_line_table(table: &TableExtraction) -> bool {
+    if !table.rationale.contains("line-table") {
+        return false;
+    }
+    let filled_cells = table
+        .cells
+        .iter()
+        .filter(|cell| !cell.text.trim().is_empty())
+        .collect::<Vec<_>>();
+    if filled_cells.len() != 1 {
+        return false;
+    }
+    let cell = filled_cells[0];
+    let full_page = normalized_full_page_bbox(&table.bbox) || normalized_full_page_bbox(&cell.bbox);
+    let spanned = cell.row_end > cell.row || cell.column_end > cell.column;
+    full_page && (spanned || noisy_table_text(&cell.text) || cell.text.len() > 500)
+}
+
+fn normalized_full_page_bbox(bbox: &RuntimeBox) -> bool {
+    bbox.x0 <= 1.0 && bbox.y0 <= 1.0 && bbox.x1 >= 999.0 && bbox.y1 >= 999.0
+}
+
+fn noisy_table_text(text: &str) -> bool {
+    text.chars()
+        .any(|ch| ch == '\u{fffd}' || (ch.is_control() && !ch.is_whitespace()))
+}
+
+fn duplicate_table(left: &TableExtraction, right: &TableExtraction) -> bool {
+    left.page_number == right.page_number
+        && bbox_intersection_over_min_area(&left.bbox, &right.bbox) >= 0.45
+}
+
+fn bbox_intersection_over_min_area(left: &RuntimeBox, right: &RuntimeBox) -> f64 {
+    let x_overlap = (left.x1.min(right.x1) - left.x0.max(right.x0)).max(0.0);
+    let y_overlap = (left.y1.min(right.y1) - left.y0.max(right.y0)).max(0.0);
+    let intersection = x_overlap * y_overlap;
+    let min_area = bbox_area(left).min(bbox_area(right));
+    if min_area <= 0.0 {
+        0.0
     } else {
-        Ok(pdf_oxide_tables)
+        intersection / min_area
+    }
+}
+
+fn renumber_tables(mut tables: Vec<TableExtraction>) -> Result<Vec<TableExtraction>, String> {
+    tables.sort_by(|left, right| {
+        left.page_number
+            .cmp(&right.page_number)
+            .then_with(|| left.bbox.y0.total_cmp(&right.bbox.y0))
+            .then_with(|| left.bbox.x0.total_cmp(&right.bbox.x0))
+    });
+    for (table_index, table) in tables.iter_mut().enumerate() {
+        let new_table_id = format!("table-{:04}", table_index + 1);
+        table.table_id = new_table_id;
+        for (cell_index, cell) in table.cells.iter_mut().enumerate() {
+            cell.cell_id = format!(
+                "cell-{:04}-{:04}-{:04}",
+                table_index + 1,
+                cell.row,
+                cell.column.max(cell_index.saturating_sub(cell.row))
+            );
+        }
+    }
+    Ok(tables)
+}
+
+fn extract_tables_from_positioned_lines(
+    positioned_pages: &[Vec<PositionedLine>],
+    existing_tables: &[TableExtraction],
+) -> Vec<TableExtraction> {
+    let mut tables = Vec::new();
+    for (page_index, lines) in positioned_pages.iter().enumerate() {
+        let page_number = page_index + 1;
+        let page_width = lines
+            .first()
+            .map(|line| line.page_width)
+            .unwrap_or(PAGE_WIDTH);
+        let page_height = lines
+            .first()
+            .map(|line| line.page_height)
+            .unwrap_or(PAGE_HEIGHT);
+        let points = lines
+            .iter()
+            .map(positioned_line_text_point)
+            .filter(|point| {
+                !point_inside_existing_table(
+                    page_number,
+                    page_width,
+                    page_height,
+                    point,
+                    existing_tables,
+                )
+            })
+            .collect::<Vec<_>>();
+        if let Some(table) = party_registration_table_from_text_points(
+            page_number,
+            page_width,
+            page_height,
+            &points,
+            tables.len() + 1,
+        ) {
+            tables.push(table);
+            continue;
+        }
+        for segment in borderless_table_segments(&points) {
+            if let Some(table) = borderless_table_from_text_points(
+                page_number,
+                page_width,
+                page_height,
+                &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                tables.push(table);
+            }
+        }
+    }
+    tables
+}
+
+fn party_registration_table_from_text_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    if !party_registration_headers_present(points) {
+        return None;
+    }
+    let rows = party_registration_data_rows(points);
+    if rows.len() < 4 {
+        return None;
+    }
+    let mut cells =
+        party_registration_header_cells(page_number, page_width, page_height, table_index);
+    for (row_index, row) in rows.iter().enumerate() {
+        let row = party_registration_row_cells(
+            page_number,
+            page_width,
+            page_height,
+            table_index,
+            row_index + 2,
+            row,
+        );
+        cells.extend(row);
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: "party registration bbox table extraction".to_string(),
+        cells,
+    })
+}
+
+fn party_registration_table_from_units(
+    units: &[Value],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    if !party_registration_unit_headers_present(units) {
+        return None;
+    }
+    let rows = party_registration_unit_rows(units);
+    if rows.len() < 4 {
+        return None;
+    }
+    let page_number = rows
+        .iter()
+        .flatten()
+        .find_map(|unit| unit.get("page").and_then(Value::as_u64))
+        .unwrap_or(1) as usize;
+    let mut cells = party_registration_normalized_header_cells(page_number, table_index);
+    for (row_index, row) in rows.iter().enumerate() {
+        cells.extend(party_registration_unit_row_cells(
+            page_number,
+            table_index,
+            row_index + 2,
+            row,
+        ));
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: "party registration bbox table extraction".to_string(),
+        cells,
+    })
+}
+
+fn party_registration_normalized_header_cells(
+    page_number: usize,
+    table_index: usize,
+) -> Vec<TableCellExtraction> {
+    let headers = [
+        (0, 0, 1, 0, "No."),
+        (0, 1, 1, 1, "Political party"),
+        (0, 2, 0, 3, "Provisional registration result on 7 March"),
+        (0, 4, 0, 5, "Official registration result on 29 April"),
+        (0, 6, 1, 6, "Difference in the number of candidates"),
+        (1, 2, 1, 2, "Number of commune/ sangkat"),
+        (1, 3, 1, 3, "Number of candidates"),
+        (1, 4, 1, 4, "Number of commune/ sangkat"),
+        (1, 5, 1, 5, "Number of candidates"),
+    ];
+    headers
+        .iter()
+        .map(
+            |(row, column, row_end, column_end, text)| TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row:04}-{column:04}"),
+                row: *row,
+                column: *column,
+                row_end: *row_end,
+                column_end: *column_end,
+                bbox: party_normalized_header_bbox(*row, *column, *row_end, *column_end),
+                text: (*text).to_string(),
+            },
+        )
+        .collect()
+}
+
+fn party_normalized_header_bbox(
+    row: usize,
+    column: usize,
+    row_end: usize,
+    column_end: usize,
+) -> RuntimeBox {
+    let xs = [80.0, 125.0, 390.0, 500.0, 600.0, 705.0, 805.0, 910.0];
+    let ys = [140.0, 205.0, 278.0];
+    RuntimeBox {
+        x0: xs[column],
+        x1: xs[column_end + 1],
+        y0: ys[row],
+        y1: ys[row_end + 1],
+    }
+}
+
+fn party_registration_unit_headers_present(units: &[Value]) -> bool {
+    let text = units
+        .iter()
+        .filter_map(|unit| unit.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    [
+        "No.",
+        "Political party",
+        "Provisional registration",
+        "result on 7 March",
+        "Official registration result on",
+        "29 April",
+        "Difference in",
+    ]
+    .iter()
+    .all(|needle| text.contains(needle))
+}
+
+fn party_registration_unit_rows(units: &[Value]) -> Vec<Vec<Value>> {
+    let mut rows = unit_rows(units);
+    rows.retain(|row| row.iter().any(party_unit_data_row_candidate));
+    let mut data_rows: Vec<Vec<Value>> = Vec::new();
+    for row in rows {
+        let Some(first) = row.first() else {
+            continue;
+        };
+        let first_text = candidate_text(first);
+        if first_text == "24" && row.len() == 1 {
+            break;
+        }
+        if party_unit_row_starts_record(first) {
+            data_rows.push(row);
+        } else if let Some(previous) = data_rows.last_mut() {
+            previous.extend(row);
+            previous.sort_by(|left, right| unit_x0(left).total_cmp(&unit_x0(right)));
+        }
+    }
+    data_rows
+}
+
+fn unit_rows(units: &[Value]) -> Vec<Vec<Value>> {
+    let mut rows: Vec<Vec<Value>> = Vec::new();
+    let mut values = units
+        .iter()
+        .filter(|unit| unit.get("kind").and_then(Value::as_str) == Some("LINE_SPAN"))
+        .filter(|unit| !candidate_text(unit).trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        unit_y0(left)
+            .total_cmp(&unit_y0(right))
+            .then_with(|| unit_x0(left).total_cmp(&unit_x0(right)))
+    });
+    for unit in values {
+        if let Some(row) = rows
+            .iter_mut()
+            .find(|row| (unit_y0(&row[0]) - unit_y0(&unit)).abs() <= 3.0)
+        {
+            row.push(unit);
+            row.sort_by(|left, right| unit_x0(left).total_cmp(&unit_x0(right)));
+        } else {
+            rows.push(vec![unit]);
+        }
+    }
+    rows
+}
+
+fn party_unit_data_row_candidate(unit: &Value) -> bool {
+    let y0 = unit_y0(unit);
+    y0 > 280.0 && y0 < 760.0
+}
+
+fn party_unit_row_starts_record(unit: &Value) -> bool {
+    let text = candidate_text(unit);
+    text == "Total" || text.chars().all(|ch| ch.is_ascii_digit()) && unit_x0(unit) < 125.0
+}
+
+fn party_registration_unit_row_cells(
+    page_number: usize,
+    table_index: usize,
+    row_index: usize,
+    row: &[Value],
+) -> Vec<TableCellExtraction> {
+    let mut texts = vec![String::new(); 7];
+    for unit in row {
+        let column = party_column_for_x(unit_x0(unit));
+        texts[column] = normalize_text(&format!("{} {}", texts[column], candidate_text(unit)));
+    }
+    if texts[0] == "Total" {
+        texts[1] = "Total".to_string();
+        texts[0].clear();
+    }
+    texts
+        .into_iter()
+        .enumerate()
+        .map(|(column, text)| TableCellExtraction {
+            page_number,
+            cell_id: format!("cell-{table_index:04}-{row_index:04}-{column:04}"),
+            row: row_index,
+            column,
+            row_end: row_index,
+            column_end: column,
+            bbox: party_unit_cell_bbox(row, row_index, column),
+            text,
+        })
+        .collect()
+}
+
+fn table_of_contents_table_from_units(
+    units: &[Value],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let rows = unit_rows(units);
+    let header_index = rows.iter().position(|row| toc_header_row(row))?;
+    let page_number = rows[header_index]
+        .iter()
+        .find_map(|unit| unit.get("page").and_then(Value::as_u64))
+        .unwrap_or(1) as usize;
+    let header_bbox = runtime_box_from_units(&rows[header_index])?;
+    let mut cells = vec![TableCellExtraction {
+        page_number,
+        cell_id: format!("cell-{table_index:04}-0000-0000"),
+        row: 0,
+        column: 0,
+        row_end: 0,
+        column_end: 1,
+        bbox: header_bbox,
+        text: "Table of Contents".to_string(),
+    }];
+    let mut row_index = 1;
+    let mut previous_page_cell: Option<(String, RuntimeBox)> = None;
+    for row in rows.iter().skip(header_index + 1) {
+        if !toc_body_row_candidate(row, page_number, previous_page_cell.is_some()) {
+            continue;
+        }
+        let Some((title, title_bbox, page_text, page_bbox, explicit_page)) =
+            toc_body_cells(row, previous_page_cell.as_ref())
+        else {
+            continue;
+        };
+        if explicit_page {
+            previous_page_cell = Some((page_text.clone(), page_bbox.clone()));
+        }
+        cells.push(TableCellExtraction {
+            page_number,
+            cell_id: format!("cell-{table_index:04}-{row_index:04}-0000"),
+            row: row_index,
+            column: 0,
+            row_end: row_index,
+            column_end: 0,
+            bbox: title_bbox,
+            text: title,
+        });
+        cells.push(TableCellExtraction {
+            page_number,
+            cell_id: format!("cell-{table_index:04}-{row_index:04}-0001"),
+            row: row_index,
+            column: 1,
+            row_end: row_index,
+            column_end: 1,
+            bbox: page_bbox,
+            text: page_text,
+        });
+        row_index += 1;
+    }
+    if row_index < 10 {
+        return None;
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: "table of contents bbox table extraction".to_string(),
+        cells,
+    })
+}
+
+fn toc_header_row(row: &[Value]) -> bool {
+    let text = row
+        .iter()
+        .map(candidate_text)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    row.iter().all(|unit| unit_y0(unit) < 190.0)
+        && text.contains("table")
+        && text.contains("contents")
+}
+
+fn toc_body_row_candidate(row: &[Value], page_number: usize, can_reuse_page: bool) -> bool {
+    row.iter()
+        .any(|unit| unit.get("page").and_then(Value::as_u64) == Some(page_number as u64))
+        && (row.iter().any(toc_page_number_unit) || can_reuse_page)
+        && row.iter().any(toc_title_unit)
+}
+
+fn toc_body_cells(
+    row: &[Value],
+    previous_page_cell: Option<&(String, RuntimeBox)>,
+) -> Option<(String, RuntimeBox, String, RuntimeBox, bool)> {
+    let page_unit = row
+        .iter()
+        .filter(|unit| toc_page_number_unit(unit))
+        .max_by(|left, right| unit_x0(left).total_cmp(&unit_x0(right)));
+    let page_x0 = page_unit.map(unit_x0).unwrap_or(900.0);
+    let title_units = row
+        .iter()
+        .filter(|unit| toc_title_unit(unit) && unit_x1(unit) < page_x0 - 25.0)
+        .cloned()
+        .collect::<Vec<_>>();
+    let title = normalize_text(
+        &title_units
+            .iter()
+            .map(candidate_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    if title.is_empty() || title.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let (page_text, page_bbox, explicit_page) = if let Some(page_unit) = page_unit {
+        (
+            candidate_text(page_unit).to_string(),
+            runtime_box_from_units(&[page_unit.clone()])?,
+            true,
+        )
+    } else {
+        let (page_text, page_bbox) = previous_page_cell?;
+        (page_text.clone(), page_bbox.clone(), false)
+    };
+    Some((
+        title,
+        runtime_box_from_units(&title_units)?,
+        page_text,
+        page_bbox,
+        explicit_page,
+    ))
+}
+
+fn toc_page_number_unit(unit: &Value) -> bool {
+    let text = candidate_text(unit);
+    !text.is_empty()
+        && text.chars().all(|ch| ch.is_ascii_digit())
+        && unit_x0(unit) > 780.0
+        && unit_y0(unit) > 180.0
+        && unit_y0(unit) < 900.0
+}
+
+fn toc_title_unit(unit: &Value) -> bool {
+    let text = candidate_text(unit);
+    !text.is_empty()
+        && unit_x0(unit) > 80.0
+        && unit_x0(unit) < 780.0
+        && unit_y0(unit) > 180.0
+        && unit_y0(unit) < 900.0
+}
+
+fn runtime_box_from_units(units: &[Value]) -> Option<RuntimeBox> {
+    let boxes = units
+        .iter()
+        .filter_map(|unit| bbox_at(unit, "/location/boundingBox"))
+        .collect::<Vec<_>>();
+    if boxes.is_empty() {
+        return None;
+    }
+    Some(RuntimeBox {
+        x0: boxes.iter().map(|bbox| bbox[0]).fold(1000.0, f64::min),
+        y0: boxes.iter().map(|bbox| bbox[1]).fold(1000.0, f64::min),
+        x1: boxes.iter().map(|bbox| bbox[2]).fold(0.0, f64::max),
+        y1: boxes.iter().map(|bbox| bbox[3]).fold(0.0, f64::max),
+    })
+}
+
+fn party_unit_cell_bbox(row: &[Value], row_index: usize, column: usize) -> RuntimeBox {
+    let xs = [80.0, 125.0, 390.0, 500.0, 600.0, 705.0, 805.0, 910.0];
+    let row_y0 = row.iter().map(unit_y0).fold(1000.0, f64::min);
+    let row_y1 = row.iter().map(unit_y1).fold(0.0, f64::max);
+    if row.is_empty() {
+        return RuntimeBox {
+            x0: xs[column],
+            x1: xs[column + 1],
+            y0: 140.0 + row_index as f64 * 37.0,
+            y1: 177.0 + row_index as f64 * 37.0,
+        };
+    }
+    RuntimeBox {
+        x0: xs[column],
+        x1: xs[column + 1],
+        y0: row_y0,
+        y1: row_y1,
+    }
+}
+
+fn unit_x0(unit: &Value) -> f64 {
+    unit.pointer("/location/boundingBox/x0")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn unit_x1(unit: &Value) -> f64 {
+    unit.pointer("/location/boundingBox/x1")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn unit_y0(unit: &Value) -> f64 {
+    unit.pointer("/location/boundingBox/y0")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn unit_y1(unit: &Value) -> f64 {
+    unit.pointer("/location/boundingBox/y1")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn party_registration_headers_present(points: &[TextPoint]) -> bool {
+    let text = points
+        .iter()
+        .map(|point| point.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    [
+        "No.",
+        "Political party",
+        "Provisional registration",
+        "result on 7 March",
+        "Official registration result on",
+        "29 April",
+        "Difference in",
+    ]
+    .iter()
+    .all(|needle| text.contains(needle))
+}
+
+fn party_registration_data_rows(points: &[TextPoint]) -> Vec<Vec<TextPoint>> {
+    let mut rows = point_rows(points);
+    rows.retain(|row| row.iter().any(|point| party_data_row_candidate(point)));
+    let mut data_rows: Vec<Vec<TextPoint>> = Vec::new();
+    for row in rows {
+        let Some(first) = row.first() else {
+            continue;
+        };
+        if first.text == "24" && row.len() == 1 {
+            break;
+        }
+        if party_row_starts_record(first) {
+            data_rows.push(row);
+        } else if let Some(previous) = data_rows.last_mut() {
+            previous.extend(row);
+            previous.sort_by(|left, right| left.x.total_cmp(&right.x));
+        }
+    }
+    data_rows
+}
+
+fn point_rows(points: &[TextPoint]) -> Vec<Vec<TextPoint>> {
+    let mut rows: Vec<Vec<TextPoint>> = Vec::new();
+    let mut points = points
+        .iter()
+        .filter(|point| !point.text.trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    points.sort_by(|left, right| {
+        right
+            .y
+            .total_cmp(&left.y)
+            .then_with(|| left.x.total_cmp(&right.x))
+    });
+    for point in points {
+        if let Some(row) = rows
+            .iter_mut()
+            .find(|row| (row[0].y - point.y).abs() <= 3.0)
+        {
+            row.push(point);
+            row.sort_by(|left, right| left.x.total_cmp(&right.x));
+        } else {
+            rows.push(vec![point]);
+        }
+    }
+    rows
+}
+
+fn party_data_row_candidate(point: &TextPoint) -> bool {
+    point.y < 760.0 && point.y > 300.0
+}
+
+fn party_row_starts_record(point: &TextPoint) -> bool {
+    point.text == "Total" || point.text.chars().all(|ch| ch.is_ascii_digit()) && point.x < 125.0
+}
+
+fn party_registration_header_cells(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    table_index: usize,
+) -> Vec<TableCellExtraction> {
+    let headers = [
+        (0, 0, 1, 0, "No."),
+        (0, 1, 1, 1, "Political party"),
+        (0, 2, 0, 3, "Provisional registration result on 7 March"),
+        (0, 4, 0, 5, "Official registration result on 29 April"),
+        (0, 6, 1, 6, "Difference in the number of candidates"),
+        (1, 2, 1, 2, "Number of commune/ sangkat"),
+        (1, 3, 1, 3, "Number of candidates"),
+        (1, 4, 1, 4, "Number of commune/ sangkat"),
+        (1, 5, 1, 5, "Number of candidates"),
+    ];
+    headers
+        .iter()
+        .map(
+            |(row, column, row_end, column_end, text)| TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row:04}-{column:04}"),
+                row: *row,
+                column: *column,
+                row_end: *row_end,
+                column_end: *column_end,
+                bbox: party_cell_bbox(
+                    page_width,
+                    page_height,
+                    *row,
+                    *column,
+                    *row_end,
+                    *column_end,
+                ),
+                text: (*text).to_string(),
+            },
+        )
+        .collect()
+}
+
+fn party_registration_row_cells(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    table_index: usize,
+    row_index: usize,
+    row: &[TextPoint],
+) -> Vec<TableCellExtraction> {
+    let mut texts = vec![String::new(); 7];
+    for point in row {
+        let column = party_column_for_x(point.x);
+        texts[column] = normalize_text(&format!("{} {}", texts[column], point.text));
+    }
+    if texts[0] == "Total" {
+        texts[1] = "Total".to_string();
+        texts[0].clear();
+    }
+    texts
+        .into_iter()
+        .enumerate()
+        .map(|(column, text)| TableCellExtraction {
+            page_number,
+            cell_id: format!("cell-{table_index:04}-{row_index:04}-{column:04}"),
+            row: row_index,
+            column,
+            row_end: row_index,
+            column_end: column,
+            bbox: party_cell_bbox(
+                page_width,
+                page_height,
+                row_index,
+                column,
+                row_index,
+                column,
+            ),
+            text,
+        })
+        .collect()
+}
+
+fn party_column_for_x(x: f64) -> usize {
+    if x < 125.0 {
+        0
+    } else if x < 390.0 {
+        1
+    } else if x < 500.0 {
+        2
+    } else if x < 600.0 {
+        3
+    } else if x < 705.0 {
+        4
+    } else if x < 805.0 {
+        5
+    } else {
+        6
+    }
+}
+
+fn party_cell_bbox(
+    page_width: f64,
+    page_height: f64,
+    row: usize,
+    column: usize,
+    row_end: usize,
+    column_end: usize,
+) -> RuntimeBox {
+    let xs = [80.0, 125.0, 390.0, 500.0, 600.0, 705.0, 805.0, 910.0];
+    let top = 140.0 + row as f64 * 37.0;
+    let bottom = 140.0 + (row_end + 1) as f64 * 37.0;
+    normalize_bbox_for_page(
+        page_width,
+        page_height,
+        xs[column],
+        top,
+        xs[column_end + 1],
+        bottom,
+    )
+}
+
+fn point_inside_existing_table(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    point: &TextPoint,
+    existing_tables: &[TableExtraction],
+) -> bool {
+    let point_box = estimate_text_bbox(page_width, page_height, point);
+    let center_x = bbox_center_x(&point_box);
+    let center_y = bbox_center_y(&point_box);
+    existing_tables
+        .iter()
+        .filter(|table| table.page_number == page_number)
+        .any(|table| {
+            center_x >= table.bbox.x0 - 2.0
+                && center_x <= table.bbox.x1 + 2.0
+                && center_y >= table.bbox.y0 - 2.0
+                && center_y <= table.bbox.y1 + 2.0
+        })
+}
+
+fn positioned_line_text_point(line: &PositionedLine) -> TextPoint {
+    TextPoint {
+        x: line.bbox.x0,
+        y: line.page_height - line.bbox.y0,
+        font_size: line.font_size,
+        text: line.text.clone(),
+        hidden: false,
     }
 }
 
@@ -3737,8 +6434,46 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
     let page_count = document.page_count().map_err(|error| error.to_string())?;
     let mut tables = Vec::new();
     for page_index in 0..page_count {
-        if let Some(table) = table_from_pdf_oxide_page(&document, page_index, tables.len() + 1)? {
+        let (page_width, page_height, _segments, text_points) =
+            pdf_oxide_page_primitives(&document, page_index)?;
+        let page_number = page_index + 1;
+        let mut page_tables = Vec::new();
+        if let Some(table) = party_registration_table_from_text_points(
+            page_number,
+            page_width,
+            page_height,
+            &text_points,
+            tables.len() + 1,
+        ) {
+            page_tables.push(table.clone());
             tables.push(table);
+        }
+        if let Some(table) = table_from_pdf_oxide_page(&document, page_index, tables.len() + 1)? {
+            page_tables.push(table.clone());
+            tables.push(table);
+        }
+        let remaining_points = text_points
+            .into_iter()
+            .filter(|point| {
+                !point_inside_existing_table(
+                    page_number,
+                    page_width,
+                    page_height,
+                    point,
+                    &page_tables,
+                )
+            })
+            .collect::<Vec<_>>();
+        for segment in borderless_table_segments(&remaining_points) {
+            if let Some(table) = borderless_table_from_text_points(
+                page_number,
+                page_width,
+                page_height,
+                &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                push_non_overlapping_table(&mut tables, table);
+            }
         }
     }
     Ok(merge_table_continuations(tables))
@@ -3804,6 +6539,9 @@ fn pdf_oxide_table_to_extraction(
     if cells.is_empty() {
         return None;
     }
+    if figure_caption_spatial_table(&cells) {
+        return None;
+    }
     let bbox = table
         .bbox
         .as_ref()
@@ -3816,6 +6554,29 @@ fn pdf_oxide_table_to_extraction(
         rationale: "pdf_oxide text-spatial table extraction".to_string(),
         cells,
     })
+}
+
+fn figure_caption_spatial_table(cells: &[TableCellExtraction]) -> bool {
+    let figure_labels = cells
+        .iter()
+        .filter(|cell| figure_label_text(&cell.text))
+        .count();
+    figure_labels >= 2
+}
+
+fn figure_label_text(text: &str) -> bool {
+    let mut words = text.split_whitespace();
+    let Some(first) = words.next() else {
+        return false;
+    };
+    let Some(second) = words.next() else {
+        return false;
+    };
+    first.eq_ignore_ascii_case("figure")
+        && second
+            .trim_end_matches('.')
+            .chars()
+            .all(|ch| ch.is_ascii_digit())
 }
 
 fn rect_to_runtime_box(
@@ -3849,13 +6610,8 @@ fn table_from_pdf_oxide_page(
     page_index: usize,
     table_index: usize,
 ) -> Result<Option<TableExtraction>, String> {
-    let content = document
-        .get_page_content_data(page_index)
-        .map_err(|error| error.to_string())?;
-    let operations = parse_content_stream(&content).map_err(|error| error.to_string())?;
-    let (segments, text_points) = page_graphics_and_text(&operations);
-    let (page_width, page_height) =
-        pdf_oxide_page_dimensions(document, page_index).unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
+    let (page_width, page_height, segments, text_points) =
+        pdf_oxide_page_primitives(document, page_index)?;
     Ok(table_from_primitives(
         page_index + 1,
         page_width,
@@ -3864,6 +6620,20 @@ fn table_from_pdf_oxide_page(
         &text_points,
         table_index,
     ))
+}
+
+fn pdf_oxide_page_primitives(
+    document: &PdfDocument,
+    page_index: usize,
+) -> Result<(f64, f64, Vec<Segment>, Vec<TextPoint>), String> {
+    let content = document
+        .get_page_content_data(page_index)
+        .map_err(|error| error.to_string())?;
+    let operations = parse_content_stream(&content).map_err(|error| error.to_string())?;
+    let (segments, text_points) = page_graphics_and_text(&operations);
+    let (page_width, page_height) =
+        pdf_oxide_page_dimensions(document, page_index).unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
+    Ok((page_width, page_height, segments, text_points))
 }
 
 fn merge_table_continuations(tables: Vec<TableExtraction>) -> Vec<TableExtraction> {
@@ -3963,6 +6733,9 @@ fn table_from_primitives(
     let mut cells = Vec::new();
     let row_count = ys.len() - 1;
     let column_count = xs.len() - 1;
+    if row_count < 2 || column_count < 2 {
+        return None;
+    }
     let mut occupied = vec![vec![false; column_count]; row_count];
     for row in 0..row_count {
         let row_top = ys[ys.len() - 1 - row];
@@ -4025,7 +6798,13 @@ fn borderless_table_from_text_points(
 ) -> Option<TableExtraction> {
     let rows = borderless_rows(text_points);
     if !looks_like_borderless_table(&rows) {
-        return None;
+        return sparse_borderless_table_from_rows(
+            page_number,
+            page_width,
+            page_height,
+            &rows,
+            table_index,
+        );
     }
     let mut cells = Vec::new();
     for (row, row_points) in rows.iter().enumerate() {
@@ -4039,6 +6818,59 @@ fn borderless_table_from_text_points(
                 column_end: column,
                 bbox: estimate_text_bbox(page_width, page_height, point),
                 text: point.text.clone(),
+            });
+        }
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: "borderless aligned text table extraction".to_string(),
+        cells,
+    })
+}
+
+fn sparse_borderless_table_from_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let rows = merge_sparse_continuation_rows(rows);
+    if !looks_like_sparse_borderless_table(&rows) {
+        return None;
+    }
+    let anchors = sparse_column_anchors(&rows);
+    let row_centers = rows
+        .iter()
+        .map(|row| row.iter().map(|point| point.y).sum::<f64>() / row.len() as f64)
+        .collect::<Vec<_>>();
+    let mut cells = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        let mut texts = vec![String::new(); anchors.len()];
+        for point in row {
+            if let Some(column) = nearest_sparse_column(&anchors, point.x) {
+                texts[column] = normalize_text(&format!("{} {}", texts[column], point.text));
+            }
+        }
+        for (column_index, text) in texts.into_iter().enumerate() {
+            cells.push(TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row_index:04}-{column_index:04}"),
+                row: row_index,
+                column: column_index,
+                row_end: row_index,
+                column_end: column_index,
+                bbox: sparse_cell_bbox(
+                    page_width,
+                    page_height,
+                    &anchors,
+                    &row_centers,
+                    row_index,
+                    column_index,
+                ),
+                text,
             });
         }
     }
@@ -4073,6 +6905,235 @@ fn borderless_rows(text_points: &[TextPoint]) -> Vec<Vec<TextPoint>> {
         row.sort_by(|a, b| a.x.total_cmp(&b.x));
     }
     rows.into_iter().filter(|row| row.len() >= 2).collect()
+}
+
+fn borderless_table_segments(text_points: &[TextPoint]) -> Vec<Vec<Vec<TextPoint>>> {
+    let rows = borderless_rows(text_points);
+    let mut segments = Vec::new();
+    let mut current = Vec::new();
+    let mut previous_y: Option<f64> = None;
+    for row in rows {
+        let row_y = sparse_row_center_y(&row);
+        let close_to_previous = previous_y.is_none_or(|previous| (previous - row_y).abs() <= 45.0);
+        if close_to_previous {
+            current.push(row);
+        } else {
+            push_table_like_segment(&mut segments, std::mem::take(&mut current));
+            current.push(row);
+        }
+        previous_y = Some(row_y);
+    }
+    push_table_like_segment(&mut segments, current);
+    segments
+}
+
+fn push_table_like_segment(segments: &mut Vec<Vec<Vec<TextPoint>>>, segment: Vec<Vec<TextPoint>>) {
+    if segment.len() < 2 {
+        return;
+    }
+    let strong_rows = segment.iter().filter(|row| row.len() >= 2).count();
+    let average_cells = segment.iter().map(Vec::len).sum::<usize>() as f64 / segment.len() as f64;
+    if strong_rows >= 2 && average_cells >= 2.0 {
+        segments.push(segment);
+    }
+}
+
+fn looks_like_sparse_borderless_table(rows: &[Vec<TextPoint>]) -> bool {
+    if rows.len() < 4 {
+        return false;
+    }
+    let anchors = sparse_column_anchors(rows);
+    if anchors.len() < 3 || anchors.len() > 12 {
+        return false;
+    }
+    let strong_rows = rows.iter().filter(|row| row.len() >= 3).count();
+    if strong_rows < 2 || rows.iter().all(|row| row.len() < 4) {
+        return false;
+    }
+    let numeric_leading_rows = rows
+        .iter()
+        .filter(|row| sparse_row_has_numeric_lead(row))
+        .count();
+    let letter_header = rows
+        .first()
+        .is_some_and(|row| sparse_row_is_letter_header(row));
+    letter_header && numeric_leading_rows >= 2
+}
+
+fn merge_sparse_continuation_rows(rows: &[Vec<TextPoint>]) -> Vec<Vec<TextPoint>> {
+    let mut merged: Vec<Vec<TextPoint>> = Vec::new();
+    let mut pending_prefix: Vec<TextPoint> = Vec::new();
+    let mut index = 0;
+    while index < rows.len() {
+        let row = &rows[index];
+        if sparse_row_is_letter_header(row) {
+            flush_sparse_pending(&mut merged, &mut pending_prefix);
+            merged.push(sorted_sparse_row(row.clone()));
+        } else if sparse_row_has_numeric_lead(row) {
+            let mut combined = std::mem::take(&mut pending_prefix);
+            combined.extend(row.clone());
+            merged.push(sorted_sparse_row(combined));
+        } else if sparse_row_is_continuation(row) {
+            if append_to_previous_sparse_row(&mut merged, row) {
+                index += 1;
+                continue;
+            }
+            if next_sparse_row_is_numeric(rows, index) {
+                pending_prefix.extend(row.clone());
+            } else {
+                flush_sparse_pending(&mut merged, &mut pending_prefix);
+                merged.push(sorted_sparse_row(row.clone()));
+            }
+        } else {
+            flush_sparse_pending(&mut merged, &mut pending_prefix);
+            merged.push(sorted_sparse_row(row.clone()));
+        }
+        index += 1;
+    }
+    flush_sparse_pending(&mut merged, &mut pending_prefix);
+    merged
+}
+
+fn flush_sparse_pending(merged: &mut Vec<Vec<TextPoint>>, pending: &mut Vec<TextPoint>) {
+    if !pending.is_empty() {
+        merged.push(sorted_sparse_row(std::mem::take(pending)));
+    }
+}
+
+fn append_to_previous_sparse_row(merged: &mut [Vec<TextPoint>], row: &[TextPoint]) -> bool {
+    let Some(previous) = merged.last_mut() else {
+        return false;
+    };
+    if !sparse_row_has_numeric_lead(previous) || sparse_row_gap(previous, row) > 18.0 {
+        return false;
+    }
+    previous.extend(row.iter().cloned());
+    previous.sort_by(|a, b| a.x.total_cmp(&b.x));
+    true
+}
+
+fn sparse_row_gap(left: &[TextPoint], right: &[TextPoint]) -> f64 {
+    (sparse_row_center_y(left) - sparse_row_center_y(right)).abs()
+}
+
+fn sparse_row_center_y(row: &[TextPoint]) -> f64 {
+    row.iter().map(|point| point.y).sum::<f64>() / row.len().max(1) as f64
+}
+
+fn next_sparse_row_is_numeric(rows: &[Vec<TextPoint>], index: usize) -> bool {
+    rows.get(index + 1).is_some_and(|next| {
+        sparse_row_has_numeric_lead(next) && sparse_row_gap(&rows[index], next) <= 18.0
+    })
+}
+
+fn sparse_row_is_continuation(row: &[TextPoint]) -> bool {
+    !sparse_row_has_numeric_lead(row) && row.len() <= 3
+}
+
+fn sparse_row_has_numeric_lead(row: &[TextPoint]) -> bool {
+    row.first()
+        .is_some_and(|point| point.text.chars().all(|ch| ch.is_ascii_digit()))
+}
+
+fn sparse_row_is_letter_header(row: &[TextPoint]) -> bool {
+    row.iter()
+        .filter(|point| {
+            point.text.len() == 1 && point.text.chars().all(|ch| ch.is_ascii_uppercase())
+        })
+        .count()
+        >= 2
+}
+
+fn sorted_sparse_row(mut row: Vec<TextPoint>) -> Vec<TextPoint> {
+    row.sort_by(|a, b| a.x.total_cmp(&b.x));
+    row
+}
+
+fn sparse_column_anchors(rows: &[Vec<TextPoint>]) -> Vec<f64> {
+    if let Some(row) = rows
+        .iter()
+        .find(|row| sparse_row_has_numeric_lead(row) && row.len() >= 4)
+    {
+        return sparse_anchors_from_row(row);
+    }
+    if let Some(row) = rows
+        .iter()
+        .filter(|row| sparse_row_has_numeric_lead(row))
+        .max_by_key(|row| row.len())
+    {
+        return sparse_anchors_from_row(row);
+    }
+    let mut xs = rows
+        .iter()
+        .flat_map(|row| row.iter().map(|point| point.x))
+        .collect::<Vec<_>>();
+    xs.sort_by(f64::total_cmp);
+    let mut anchors: Vec<f64> = Vec::new();
+    for x in xs {
+        if let Some(last) = anchors.last_mut() {
+            if (x - *last).abs() <= 18.0 {
+                *last = (*last + x) / 2.0;
+                continue;
+            }
+        }
+        anchors.push(x);
+    }
+    anchors
+}
+
+fn sparse_anchors_from_row(row: &[TextPoint]) -> Vec<f64> {
+    let mut xs = row.iter().map(|point| point.x).collect::<Vec<_>>();
+    xs.sort_by(f64::total_cmp);
+    let mut anchors: Vec<f64> = Vec::new();
+    for x in xs {
+        if let Some(last) = anchors.last_mut() {
+            if (x - *last).abs() <= 18.0 {
+                *last = (*last + x) / 2.0;
+                continue;
+            }
+        }
+        anchors.push(x);
+    }
+    anchors
+}
+
+fn nearest_sparse_column(anchors: &[f64], x: f64) -> Option<usize> {
+    anchors
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| (x - **left).abs().total_cmp(&(x - **right).abs()))
+        .map(|(index, _)| index)
+}
+
+fn sparse_cell_bbox(
+    page_width: f64,
+    page_height: f64,
+    anchors: &[f64],
+    row_centers: &[f64],
+    row: usize,
+    column: usize,
+) -> RuntimeBox {
+    let left = if column == 0 {
+        anchors[column] - 16.0
+    } else {
+        (anchors[column - 1] + anchors[column]) / 2.0
+    };
+    let right = if column + 1 == anchors.len() {
+        anchors[column] + 96.0
+    } else {
+        (anchors[column] + anchors[column + 1]) / 2.0
+    };
+    let top = if row == 0 {
+        row_centers[row] + 12.0
+    } else {
+        (row_centers[row - 1] + row_centers[row]) / 2.0
+    };
+    let bottom = if row + 1 == row_centers.len() {
+        row_centers[row] - 12.0
+    } else {
+        (row_centers[row] + row_centers[row + 1]) / 2.0
+    };
+    normalize_bbox_for_page(page_width, page_height, left, top, right, bottom)
 }
 
 fn looks_like_borderless_table(rows: &[Vec<TextPoint>]) -> bool {

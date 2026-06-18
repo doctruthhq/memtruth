@@ -83,7 +83,8 @@ assert payload["engine"] == "mnn"
 assert payload["productionPythonResidency"] is False
 '
 
-REPORT="$(DOCTRUTH_RUNTIME_MODEL_COMMAND="$WORKER_BIN" \
+REPORT="$(DOCTRUTH_MNN_WORKER_STUB=1 \
+  DOCTRUTH_RUNTIME_MODEL_COMMAND="$WORKER_BIN" \
   DOCTRUTH_MODEL_CACHE="$WORK_DIR/cache" \
   DOCTRUTH_MODEL_MANIFEST="$WORK_DIR/manifest.json" \
   "$RUNTIME_BIN" <<EOF_REQUEST
@@ -100,10 +101,10 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     report = json.load(handle)
 assert report["docId"] == "sha256:model-worker-smoke"
 assert report["parserRun"]["backend"] == "rust-sidecar+model-worker"
-assert report["parserRun"]["workerBackend"] == "mnn-model-worker"
+assert report["parserRun"]["workerBackend"] == "mnn-model-worker-stub"
 assert report["parserRun"]["modelRuntime"]["runtime"] == "mnn"
 assert report["parserRun"]["models"] == ["slanet-plus:v1"]
-assert report["auditGradeStatus"] == "AUDIT_GRADE"
+assert report["auditGradeStatus"] == "NOT_AUDIT_GRADE"
 assert report["body"]["units"][0]["kind"] == "TABLE_CELL"
 assert report["body"]["units"][0]["text"] == "Auto table MNN evidence"
 PY

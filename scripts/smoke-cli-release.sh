@@ -104,6 +104,10 @@ payload = json.load(sys.stdin)
 assert payload["ok"] is True
 assert payload["runtime"] == "mnn"
 assert payload["engine"] == "mnn"
+assert payload["code"] == "protocol_ready"
+assert payload["protocolReady"] is True
+assert payload["inferenceReady"] is False
+assert payload["stubMode"] is False
 assert payload["productionPythonResidency"] is False
 '
 

@@ -39,6 +39,8 @@ before OpenDataLoader Bench is used as a final acceptance gate.
   Rust MNN worker protocol entrypoint.
 - [x] Remove Python RapidOCR, SLANeXT/PaddleOCR, and ONNX worker adapters from
   source install and release packaging.
+- [x] Make Rust MNN worker fail closed by default until real MNN inference is
+  wired; contract-smoke stub mode is explicit and non-audit-grade.
 - [ ] Implement real MNN OCR inference inside `doctruth-mnn-model-worker`.
 - [ ] Implement real MNN table/layout inference inside `doctruth-mnn-model-worker`.
 - [x] Replace Python ONNX model worker with Rust/MNN model worker or remove it

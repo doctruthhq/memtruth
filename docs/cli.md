@@ -302,10 +302,14 @@ The worker `--doctor` command verifies the Rust MNN protocol entrypoint:
 doctruth-mnn-model-worker --doctor
 ```
 
-The doctor reports `runtime=mnn`, `engine=mnn`, protocol version, and
-`productionPythonResidency=false`. Model files are packaged with the client
-runtime or supplied through `DOCTRUTH_MODEL_CACHE` and `DOCTRUTH_MODEL_MANIFEST`;
-they are not bundled in the generic Java jar.
+The doctor reports `runtime=mnn`, `engine=mnn`, protocol version,
+`protocolReady=true`, `inferenceReady=false`, and
+`productionPythonResidency=false` until real MNN inference is wired. Model files
+are packaged with the client runtime or supplied through `DOCTRUTH_MODEL_CACHE`
+and `DOCTRUTH_MODEL_MANIFEST`; they are not bundled in the generic Java jar.
+`DOCTRUTH_MNN_WORKER_STUB=1` is reserved for local contract smokes. Stub output
+is explicitly marked `NOT_AUDIT_GRADE` and must not be treated as production
+inference.
 
 For a Rust MNN worker, package these model files with the client runtime:
 

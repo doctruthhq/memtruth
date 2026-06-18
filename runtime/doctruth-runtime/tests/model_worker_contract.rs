@@ -224,6 +224,10 @@ fn rust_mnn_model_worker_doctor_is_python_free() {
     assert_eq!(json["ok"], true);
     assert_eq!(json["runtime"], "mnn");
     assert_eq!(json["engine"], "mnn");
+    assert_eq!(json["code"], "protocol_ready");
+    assert_eq!(json["protocolReady"], true);
+    assert_eq!(json["inferenceReady"], false);
+    assert_eq!(json["stubMode"], false);
     assert_eq!(json["productionPythonResidency"], false);
 }
 
@@ -256,6 +260,74 @@ fn rust_mnn_model_worker_rejects_non_mnn_artifacts() {
 }
 
 #[test]
+fn rust_mnn_model_worker_rejects_inference_without_stub_or_backend() {
+    let model_path = temp_path("doctruth-runtime-worker-mnn", "mnn");
+    fs::write(&model_path, b"mnn").unwrap();
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "parse_pdf",
+            "source_path": "document.pdf",
+            "source_hash": "sha256:model-worker",
+            "preset": "table-lite",
+            "models": [{
+                "name": "slanet-plus",
+                "version": "v1",
+                "backend": "mnn",
+                "format": "mnn",
+                "cacheStatus": "READY",
+                "cachePath": model_path
+            }]
+        })
+        .to_string(),
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("mnn_inference_unavailable"));
+}
+
+#[test]
+fn rust_mnn_model_worker_stub_mode_is_explicit() {
+    let model_path = temp_path("doctruth-runtime-worker-mnn-stub", "mnn");
+    fs::write(&model_path, b"mnn").unwrap();
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_MNN_WORKER_STUB", "1")
+        .write_stdin(
+            json!({
+                "command": "parse_pdf",
+                "source_path": "document.pdf",
+                "source_hash": "sha256:model-worker",
+                "preset": "table-lite",
+                "models": [{
+                    "name": "slanet-plus",
+                    "version": "v1",
+                    "backend": "mnn",
+                    "format": "mnn",
+                    "cacheStatus": "READY",
+                    "cachePath": model_path
+                }]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["metrics"]["stubMode"], true);
+    assert_eq!(
+        json["document"]["parserRun"]["workerBackend"],
+        "mnn-model-worker-stub"
+    );
+    assert_eq!(json["document"]["auditGradeStatus"], "NOT_AUDIT_GRADE");
+}
+
+#[test]
 fn parse_pdf_routes_to_rust_mnn_model_worker_binary() {
     let pdf = write_pdf_fixture("Fallback text should not be used.");
     let worker = assert_cmd::cargo::cargo_bin("doctruth-mnn-model-worker");
@@ -263,6 +335,7 @@ fn parse_pdf_routes_to_rust_mnn_model_worker_binary() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
 
     let output = cmd
+        .env("DOCTRUTH_MNN_WORKER_STUB", "1")
         .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
         .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
         .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
@@ -275,7 +348,7 @@ fn parse_pdf_routes_to_rust_mnn_model_worker_binary() {
 
     let json: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
-    assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker");
+    assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker-stub");
     assert_eq!(json["parserRun"]["modelRuntime"]["runtime"], "mnn");
     assert_eq!(json["body"]["units"][0]["kind"], "TABLE_CELL");
     assert_eq!(json["body"]["units"][0]["text"], "Auto table MNN evidence");
@@ -296,6 +369,7 @@ fn parse_pdf_auto_ocr_route_discovers_packaged_rust_mnn_worker() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
 
     let output = cmd
+        .env("DOCTRUTH_MNN_WORKER_STUB", "1")
         .env("PATH", path)
         .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
         .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
@@ -309,7 +383,7 @@ fn parse_pdf_auto_ocr_route_discovers_packaged_rust_mnn_worker() {
     let json: Value = serde_json::from_slice(&output).unwrap();
 
     assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
-    assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker");
+    assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker-stub");
     assert_eq!(json["parserRun"]["preset"], "ocr");
     assert_eq!(json["parserRun"]["modelRouting"]["route"], "ocr-model");
     assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");

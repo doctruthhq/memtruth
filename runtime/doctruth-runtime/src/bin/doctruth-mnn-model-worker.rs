@@ -29,13 +29,20 @@ fn main() {
         fail("worker_protocol_error", "unsupported worker command");
     }
     let model = ready_mnn_model(&request);
+    if !stub_mode_enabled() {
+        fail(
+            "mnn_inference_unavailable",
+            "Rust MNN worker protocol is ready, but real MNN inference is not wired yet",
+        );
+    }
     let document = trust_document(&request, &model);
     print_json(json!({
         "ok": true,
         "document": document,
         "metrics": {
             "runtime": "mnn",
-            "inputSource": "rust_mnn_worker_protocol",
+            "inputSource": "rust_mnn_worker_stub",
+            "stubMode": true,
             "coldStartMs": 0.0,
             "inferenceMs": elapsed_ms(started),
             "loadedModels": [model_identity(&model)],
@@ -52,9 +59,12 @@ fn doctor_json() -> Value {
         "ok": true,
         "runtime": "mnn",
         "engine": "mnn",
-        "code": "ready",
-        "message": "Rust MNN model worker protocol ready",
+        "code": "protocol_ready",
+        "message": "Rust MNN model worker protocol ready; real inference backend not wired",
         "protocol_version": PROTOCOL_VERSION,
+        "protocolReady": true,
+        "inferenceReady": false,
+        "stubMode": stub_mode_enabled(),
         "productionPythonResidency": false
     })
 }
@@ -156,11 +166,16 @@ fn trust_document(request: &Value, model: &Value) -> Value {
             "parserRunId": "parser-run-rust-mnn-worker",
             "parserVersion": "doctruth-mnn-model-worker",
             "preset": preset,
-            "backend": "mnn-model-worker",
+            "backend": "mnn-model-worker-stub",
+            "workerBackend": "mnn-model-worker-stub",
             "models": [model_id],
-            "warnings": []
+            "warnings": [{
+                "code": "mnn_worker_stub_output",
+                "severity": "SEVERE",
+                "message": "Rust MNN worker emitted explicit stub output; real MNN inference is not wired"
+            }]
         },
-        "auditGradeStatus": "AUDIT_GRADE"
+        "auditGradeStatus": "NOT_AUDIT_GRADE"
     })
 }
 
@@ -179,6 +194,13 @@ fn elapsed_ms(started: Instant) -> f64 {
 
 fn print_json(value: Value) {
     println!("{}", serde_json::to_string(&value).unwrap());
+}
+
+fn stub_mode_enabled() -> bool {
+    std::env::var("DOCTRUTH_MNN_WORKER_STUB")
+        .ok()
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 fn fail(code: &str, message: &str) -> ! {

@@ -54,7 +54,10 @@ source tree only for migration comparison, differential oracle tests, or
 explicit opt-in historical smokes. Real MNN OCR/table/layout inference inside
 `doctruth-mnn-model-worker` is still an implementation task; the current Rust
 worker locks the production protocol, packaging, discovery, and fail-closed
-runtime boundary.
+runtime boundary. Its doctor reports `protocolReady=true` and
+`inferenceReady=false` until real inference is wired. The only non-real parse
+path is the explicit `DOCTRUTH_MNN_WORKER_STUB=1` contract-smoke mode, whose
+output must be `NOT_AUDIT_GRADE`.
 
 ## 1. Summary
 
@@ -1102,7 +1105,10 @@ the Rust runtime and Rust MNN worker only. Legacy Python RapidOCR,
 SLANeXT/PaddleOCR, and ONNXRuntime scripts remain source-tree oracle tools for
 migration comparison and opt-in historical smokes. The current Rust MNN worker
 locks the protocol, default discovery, fail-closed MNN-only model acceptance,
-and `TrustDocument` normalization. Real MNN inference and broad labeled OCR/table
+and `TrustDocument` normalization. Without explicit stub mode it rejects
+model-assisted parse requests with `mnn_inference_unavailable` until real MNN
+inference is implemented. Stub output is severe-warning, non-audit-grade output
+for contract smokes only. Real MNN inference and broad labeled OCR/table
 accuracy are still open implementation and evaluation work.
 
 Current parser-accuracy corpus status: JSON and readable

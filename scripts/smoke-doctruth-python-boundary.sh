@@ -41,4 +41,16 @@ fi
 
 printf '%s' "$ADAPTER_OUT" | rg -n "oracle-only|DOCTRUTH_ALLOW_PYTHON_ORACLE" >/dev/null
 
+set +e
+OFFICIAL_OUT="$(sh "$DEFAULT_BENCH" --doc-id 01030000000001 --evaluator official 2>&1)"
+OFFICIAL_STATUS="$?"
+set -e
+
+if [ "$OFFICIAL_STATUS" -eq 0 ]; then
+  echo "official Python evaluator should fail closed without DOCTRUTH_ALLOW_PYTHON_ORACLE=1" >&2
+  exit 1
+fi
+
+printf '%s' "$OFFICIAL_OUT" | rg -n "oracle-only|DOCTRUTH_ALLOW_PYTHON_ORACLE" >/dev/null
+
 echo "doctruth python boundary smoke passed"

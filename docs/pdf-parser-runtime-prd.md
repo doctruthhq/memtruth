@@ -2263,8 +2263,10 @@ cases. Legacy Python/OpenDataLoader hybrid baseline scripts are fail-closed and
 require `DOCTRUTH_ALLOW_PYTHON_ORACLE=1` before launching the heavy oracle path.
 The legacy Python prediction adapter also refuses direct command-line execution
 without the same opt-in; importing it from legacy smoke tests remains a test
-helper boundary. The default Rust runner and MNN promotion runner must not call
-the Python prediction adapter. The first full local baseline on 200 vendored PDFs parsed 199
+helper boundary. Even `--evaluator official` is fail-closed behind the opt-in so
+the Python/APTED/lxml/rapidfuzz upstream evaluator cannot be launched by
+accident. The default Rust runner and MNN promotion runner must not call the
+Python prediction adapter. The first full local baseline on 200 vendored PDFs parsed 199
 documents and failed one scanned/no-text-layer document. It reported
 `overall_mean=0.509092484964239`, `nid_mean=0.7591850124827885`,
 `teds_mean=0.0`, and `mhs_mean=0.0025571766718785185`, with

@@ -164,6 +164,19 @@ case "$EVALUATOR" in
     printf '%s' "$EVAL_REQUEST" | "$BIN" >/dev/null
     ;;
   official)
+    if [ "${DOCTRUTH_ALLOW_PYTHON_ORACLE:-}" != "1" ]; then
+      cat >&2 <<'EOF'
+refusing to start official Python OpenDataLoader evaluator.
+
+The official evaluator is oracle-only comparison infrastructure. It is not the
+default DocTruth benchmark evaluator.
+
+Use --evaluator rust for the default Rust path. Set
+DOCTRUTH_ALLOW_PYTHON_ORACLE=1 only when intentionally comparing against the
+upstream Python/APTED/lxml/rapidfuzz oracle.
+EOF
+      exit 2
+    fi
     if command -v uv >/dev/null 2>&1; then
       set -- run src/evaluator.py --engine "$ENGINE"
       if [ -n "$DOC_ID" ]; then

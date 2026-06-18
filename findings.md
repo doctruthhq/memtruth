@@ -1919,3 +1919,6 @@
   `DOCTRUTH_ALLOW_PYTHON_ORACLE=1`.
 - The direct Python prediction adapter had the same confusion risk when invoked
   from the command line. It now shares the same fail-closed opt-in boundary.
+- The upstream OpenDataLoader official evaluator is still useful as a comparison
+  oracle, but it is also Python/APTED/lxml/rapidfuzz-based and should not start
+  as part of a normal run. `--evaluator official` now requires the same opt-in.

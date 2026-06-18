@@ -7958,3 +7958,20 @@
   `sh scripts/smoke-doctruth-opendataloader-bench-runner.sh`;
   `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
   `git diff --check`.
+
+## 2026-06-18 Official Evaluator Opt-In Boundary Slice
+
+- Extended `scripts/smoke-doctruth-python-boundary.sh` so
+  `scripts/run-doctruth-opendataloader-bench.sh --evaluator official` must fail
+  closed without `DOCTRUTH_ALLOW_PYTHON_ORACLE=1`.
+- RED result: the official evaluator path could still launch without oracle
+  opt-in.
+- Updated `scripts/run-doctruth-opendataloader-bench.sh` so the `official`
+  evaluator branch refuses to start and points users to `--evaluator rust`
+  unless oracle opt-in is explicit.
+- GREEN verification passed:
+  `sh scripts/smoke-doctruth-python-boundary.sh`;
+  `sh scripts/smoke-doctruth-opendataloader-bench-runner.sh`;
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
+  `git diff --check`.

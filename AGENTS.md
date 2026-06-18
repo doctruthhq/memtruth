@@ -49,6 +49,52 @@ benchmark-corpus, audit-grade parser, or evidence-reconciliation behavior only
 to Java. Java changes are aligned only when they expose, package, adapt,
 compatibility-test, or error-map behavior owned by the Rust runtime.
 
+## Resource Gates
+
+Parser/model resource acceptance is profile-based. Do not use one absolute RSS
+number as a universal product gate.
+
+The product-level hard gates are:
+
+```text
+no Python/Torch/Docling production residency
+lazy model startup
+measurable model unload / idle recovery
+materially lower resource use than the measured heavy oracle on the same
+  machine and corpus
+no unexplained regression from a previously accepted named profile
+```
+
+Each accepted parser profile must record:
+
+```text
+profile name
+model manifest and model SHAs
+platform and architecture
+corpus scope
+measurement command
+cold-load RSS
+warm steady RSS
+peak RSS
+idle-after-unload RSS
+cold latency
+warm latency
+```
+
+Absolute RSS numbers are profiling budgets first. They become regression guards
+only after a benchmark report pins the exact profile. For example, if a Mac
+ARM64 `edge-model` profile with a specific MNN manifest measures 451MB warm
+steady RSS, that value belongs to that measured profile. The acceptance rule is
+that future runs must not materially regress from that profile without an
+updated benchmark report and rationale. Do not rewrite that as a global rule
+such as `edge-model steady RSS <= 600MB`, and do not express acceptance as an
+arithmetic shortcut such as `451MB + steady RSS <= 600MB`.
+
+Before that first report exists, use comparative evidence instead of a fixed
+number: no Python/Torch/Docling production residency, lazy model startup,
+measurable unload behavior, and materially lower resource use than the measured
+heavy oracle on the same machine and corpus.
+
 ## Product Boundary
 
 DocTruth answers:

@@ -1035,3 +1035,633 @@
   labels such as source maps, bbox anchoring, quote spans, and replay integrity,
   but it should not block adoption of OpenDataLoader Bench as the first external
   parser-quality gate.
+
+## 2026-06-17 Parser Quality Replication Research
+
+- The latest full OpenDataLoader Bench run for
+  `doctruth-runtime-optimized-timeout` is an honest quality baseline, not a
+  parity result: `overall_mean=0.549140667373931`,
+  `nid_mean=0.7663393307030263`, `teds_mean=0.06498004117639267`, and
+  `mhs_mean=0.12239636974611434`.
+- The vendored reference artifacts show the target ranges:
+  OpenDataLoader base `overall=0.8312090061093924`, `nid=0.9023157231108666`,
+  `teds=0.4886923812957386`, `mhs=0.7394793823129436`; Docling
+  `overall=0.8816788439412203`, `nid=0.8983654504334178`,
+  `teds=0.8870548597181608`, `mhs=0.8240014790562668`; OpenDataLoader hybrid
+  `overall=0.9065718466674022`, `nid=0.9337307553293448`,
+  `teds=0.9276430534097512`, `mhs=0.8207761855598542`.
+- OpenDataLoader Bench's own adapter code runs OpenDataLoader base with
+  `table_method="cluster"` and Markdown output. The hybrid adapter starts
+  `opendataloader_pdf.hybrid_server` and calls the converter with
+  `hybrid="docling-fast"`. Docling's adapter runs
+  `DocumentConverter().convert(...).document.export_to_markdown()`.
+- The practical gap is complete pipeline replication, not absence of reference
+  projects. Local ports of XY-Cut/filter/export behavior are useful, but the
+  score gap requires a reference-oracle report, per-case metric triage, real
+  table clustering, real heading/section modeling, stronger reading-order/text
+  normalization, and OCR routing for no-text pages.
+- Added `docs/plans/2026-06-17-parser-quality-replication-plan.md` as the
+  working plan for reproducing OpenDataLoader/Docling-quality behavior while
+  keeping `TrustDocument` canonical and Java/PDFBox out of the parser core.
+
+## 2026-06-17 Parser Quality Replication Pass 2
+
+- Added a reference-oracle comparison report:
+  `scripts/compare-doctruth-parser-references.py` compares any DocTruth engine
+  against the vendored OpenDataLoader, Docling, and OpenDataLoader hybrid
+  `evaluation.json` artifacts and records per-case metric deltas, top-loss
+  metrics, failure buckets, and Markdown feature signals.
+- Added a triage report:
+  `scripts/triage-doctruth-parser-reference-report.py` groups real bench losses
+  into implementation phases such as table clustering, heading/section tree,
+  and reading-order/text normalization.
+- Fixed the OpenDataLoader prediction export to read TrustDocument
+  `rowRange`/`columnRange` table cells instead of only `row`/`column`, which
+  lifted real table cases such as `01030000000082` from TEDS `0.0348` to
+  roughly `0.5729`.
+- Added a guarded bbox-based spatial table fallback for TrustDocument outputs
+  with no structured `body.tables`. The first unguarded attempt improved table
+  recall but badly regressed two-column prose by converting normal text into
+  huge HTML tables. The final guard rejects segments with too many columns,
+  long median cell text, sparse fill, or weak row width.
+- Added export-layer heading promotion for obvious all-caps, numbered, and
+  title-like headings. This reduces missing-heading failures but is not a real
+  Rust section tree; hierarchy assignment remains the largest MHS gap.
+- Full real OpenDataLoader Bench pass2 over 200 PDFs completed with 198 parsed,
+  2 failed, `total_elapsed=240.95418691635132`, and
+  `elapsed_per_doc=1.2047709345817565`.
+- Pass2 metrics are:
+  `overall_mean=0.5627398590637586`,
+  `nid_mean=0.7391382135188431`,
+  `nid_s_mean=0.8052242543020199`,
+  `teds_mean=0.18840125729021784`,
+  `teds_s_mean=0.21802699995087393`,
+  `mhs_mean=0.19566644996808139`, and
+  `mhs_s_mean=0.31377506507045494`.
+- Compared with `doctruth-runtime-optimized-timeout`, pass2 improves overall
+  `0.549140667373931 -> 0.5627398590637586`, TEDS
+  `0.06498004117639267 -> 0.18840125729021784`, and MHS
+  `0.12239636974611434 -> 0.19566644996808139`, but NID drops
+  `0.7663393307030263 -> 0.7391382135188431`.
+- Pass2 still does not reproduce OpenDataLoader/Docling quality:
+  OpenDataLoader base is `overall=0.831209`, Docling is `overall=0.881679`,
+  and OpenDataLoader hybrid is `overall=0.906572`. Current DocTruth pass2 is a
+  measured lift and diagnostic harness, not reference parity.
+- Pass2 reference gaps to the best vendored reference remain large:
+  `overall=0.3617407983444408`, `nid=0.20416603177465034`,
+  `teds=0.7412309615258297`, and `mhs=0.6808291813173706`.
+- Pass2 failure buckets are now: `heading_hierarchy_mismatch=84`,
+  `heading_missing=3`, `reading_order_or_text_normalization=50`,
+  `table_missing=12`, `table_structure_mismatch=25`, and
+  `text_noise_or_duplicates=26`. The next real quality work must move from
+  export-layer heuristics into Rust-core section-tree, table-cluster, OCR, and
+  text-normalization behavior.
+
+## 2026-06-17 Rust Core Local-Algorithm Slice
+
+- The previous low-score diagnosis remains valid: OpenDataLoader/Docling parity
+  cannot come from Markdown exporter tweaks alone. However, the Rust runtime now
+  has a stronger observation layer for local algorithms: each parse trace page
+  exposes flat `textSpans`, and each TrustDocument unit links back through
+  `parseTraceSpanIds`.
+- This span layer is the required substrate for the next OpenDataLoader-style
+  ports: XY-Cut++ reading-order diagnostics, table-cluster candidate grouping,
+  heading/list/section modeling, and debug span artifacts. Without it, each
+  downstream heuristic would be forced to reverse-engineer geometry from final
+  Markdown or coarse units.
+- Text-spatial/borderless table outputs now normalize their method to
+  `cluster`, matching the OpenDataLoader benchmark vocabulary. This is a
+  contract/triage alignment, not proof that DocTruth's current table structure
+  recognition matches OpenDataLoader or Docling.
+- Rust `contentBlocks` now classify list items before heading rules. This fixes
+  an important section-tree failure mode where numbered list rows such as
+  `1. Evidence replay` could otherwise be misread as heading candidates.
+- Remaining gaps for objective item 1: full OpenDataLoader-style XY-Cut++ parity
+  on real failures, rendered-page hidden/background comparison, hidden OCG
+  detection, stronger cluster-table structure reconstruction, and true
+  hierarchical section tree scoring.
+- A direct local search of the currently used `pdf_oxide` public content
+  operators did not reveal a clean BDC/OCG marked-content API. Hidden OCG
+  support should therefore be treated as a real Rust substrate gap, not as a
+  completed safety filter. It likely needs either a lower-level PDF object
+  walker around optional-content properties or a `pdf_oxide` extension.
+
+## 2026-06-17 Rust Section Hierarchy Slice
+
+- MHS failures cannot be solved by heading promotion alone; the parser needs a
+  section tree that downstream Markdown export can consume without inventing
+  structure. The new Rust section metadata gives each content block and parse
+  trace block a section id, parent section id, section path, section title path,
+  and section-root marker.
+- `parseTrace.sectionTree` now provides the same hierarchy as a tree, not just
+  per-block annotations. This is closer to Docling/MinerU-style structured
+  document output while keeping `TrustDocument` canonical.
+- This is still not OpenDataLoader/Docling parity. It proves that DocTruth has
+  a canonical Rust-owned place to represent hierarchy, but full score movement
+  still requires better heading level inference on real benchmark layouts and a
+  full OpenDataLoader Bench rerun.
+- The next MHS-focused work should use the worst `heading_hierarchy_mismatch`
+  cases from the pass2 triage report and add RED fixtures for real patterns:
+  centered document titles, sidebar section labels, title/subtitle stacks, and
+  false title-case body lines.
+
+## 2026-06-17 Real Sparse Table Root Cause
+
+- Real OpenDataLoader Bench case `01030000000128` showed why the earlier
+  parser-quality score remained poor despite adding table contracts: DocTruth
+  was not missing only a Markdown export detail; it emitted no structured table
+  at all for a sparse, wide, borderless table.
+- The ground truth is a 6-column table with header row
+  `["", "A", "B", "C", "D", "E"]` and second row
+  `["1", "time", "observed", "Forecast(observed)",
+  "Lower Confidence Bound(observed)", "Upper Confidence Bound(observed)"]`.
+  Empty cells are semantically important for TEDS and must be preserved.
+- The Rust runtime's parse trace had enough positioned text to reconstruct the
+  table, but the table detector did not use that observation layer as a final
+  fallback. It depended first on content-stream line extraction and then on
+  pdf_oxide spatial detection; both failed for this shape.
+- The fix adds a positioned-line cluster fallback and sparse-row merging for
+  multi-line header cells. The real case now emits one `cluster` table with
+  `columnCount=6`, `rowCount=17`, and preserved empty cells.
+- This is one confirmed real-case repair, not aggregate parity. The remaining
+  pass2 gaps still include broad table-structure mismatches, heading hierarchy
+  mismatches, reading-order/text-normalization issues, scanned/OCR inputs, and
+  hidden OCG/background validation.
+
+## 2026-06-18 OpenDataLoader Hybrid Resource And Direction Finding
+
+- A live local OpenDataLoader hybrid run now reproduces the vendored benchmark
+  quality baseline on the full 200-PDF OpenDataLoader Bench corpus:
+  `overall=0.9065718466674022`, `NID=0.9337307553293448`,
+  `TEDS=0.9276430534097512`, and `MHS=0.8207761855598542`.
+- Runtime summary for the real full run was `125.29678010940552s` total and
+  `0.6264839005470276s/doc`; the outer command wall time was `130.33s`.
+- The heavy resident memory is not mostly DocTruth or OpenDataLoader Java
+  itself. The live hybrid server runs `opendataloader_pdf.hybrid_server`, which
+  starts Docling Fast Server, `DocumentConverter`, Docling layout/table models,
+  Torch, Transformers, OpenCV, and MPS/Apple Silicon runtime.
+- Measured package sizes in the bench `.venv` support that conclusion:
+  `torch=381M`, `cv2=119M`, `transformers=49M`, `docling_parse=29M`,
+  `opendataloader_pdf=23M`, and `rapidocr=17M`.
+- Observed process memory: docling-fast hybrid server RSS was about
+  `1.39GB` to `1.51GB`; client/JAR full-run peak RSS was about `408MB`, and a
+  warm single client run was about `140MB`.
+- Therefore the practical path is not "rewrite everything in Rust before
+  shipping". The better path is to use OpenDataLoader hybrid as an explicit
+  heavy benchmark oracle/reference, then Rust-implement deterministic PDF/layout
+  behavior and replace always-on Python/Torch model residency with an MNN-first
+  local model runtime. ONNX remains a conversion/interchange artifact, not the
+  production runtime format.
+- MNN is the cleaner product runtime target than a general ONNX Runtime
+  fallback stack for local clients: the production path should ship `.mnn`
+  artifacts, use FP32 MNN by default, permit weight-only 8-bit MNN artifacts
+  only after benchmark deltas are proven, and reject silent fallback to Torch,
+  Docling, Tesseract, PDFBox, or ONNX Runtime during production parsing.
+- The MNN path must be accepted by benchmark, not by architecture preference.
+  Because converted or weight-compressed models can lose quality, the final
+  production gate must run the same OpenDataLoader Bench corpus and compare
+  against the live hybrid oracle. Initial target: near-hybrid quality
+  (`overall>=0.88`, `NID>=0.91`, `TEDS>=0.88`, `MHS>=0.78`) with materially
+  lower resource use than the Docling/Torch oracle. `edge-model` steady RSS is
+  a measured per-profile budget, not a universal hard gate: the first real MNN
+  run must record cold-load RSS, warm steady RSS, peak RSS, idle-after-unload
+  RSS, latency, model manifest, precision mode, platform, crop buffers, and
+  unload policy. Only after that report exists should a platform/model-specific
+  regression guard be set from repeated-run variance and release risk, not from
+  a universal number such as `600MB`.
+- The detailed TDD plan is recorded in
+  `docs/plans/2026-06-18-opendataloader-rustification-tdd-plan.md`.
+
+## 2026-06-18 OpenDataLoader TOC Rendering Finding
+
+- Real case `01030000000044` is not a normal data table. Rust correctly exposes
+  citeable text and also detects a `cluster` table, but the OpenDataLoader Bench
+  ground truth treats the table of contents as Markdown heading plus plain
+  title/page lines.
+- The fix belongs in the benchmark Markdown adapter, not in the canonical
+  `TrustDocument` table model: render a table as TOC Markdown only when its
+  first row is `Table of Contents` / `Contents` and most following rows look
+  like title + numeric page references.
+- The spot score for `01030000000044` improved to `overall=1.000` and
+  `MHS=1.000`; the 50-document subset moved to
+  `overall_mean=0.7698838744066114` and
+  `mhs_mean=0.4608844048472434`. This is a benchmark-output semantic repair,
+  not proof of full table-structure parity.
+
+## 2026-06-18 OpenDataLoader Full-Page Table False Positive Finding
+
+- Real case `01030000000029` exposed a Rust-core false positive: line-table
+  extraction accepted a 1x1 full-page table whose only cell was compressed prose.
+  That polluted Markdown as duplicate page text and pushed NID down to about
+  `0.679`.
+- The correct boundary is parser core, not exporter cleanup. A `line-table`
+  without at least two rows and two columns is not an evidence-grade table for
+  this runtime and should not enter `TrustDocument` as a table.
+- The same case also shows a common heading pattern: dotted numeric markers
+  such as `5.` can be split from their same-line title words. These should merge
+  only when the same-line continuation is short, title-like, and not sentence
+  prose.
+- After rejecting the 1x1 table and merging `5. The dynamics` /
+  `6. Modeling the dynamics`, the spot score for `01030000000029` moved to
+  `overall=0.632`, `NID=0.966`, `MHS=0.297`. This fixes one deterministic
+  failure shape but does not solve the remaining heading hierarchy gap.
+
+## 2026-06-18 OpenDataLoader Party Table Finding
+
+- Real case `01030000000047` showed the inverse table problem: Rust emitted no
+  canonical `TrustTable`, and the benchmark adapter's generic spatial fallback
+  built a wrong 3-column table by merging text from different rows.
+- The page's bbox structure is regular enough to recover a 7-column table:
+  `No.`, `Political party`, two provisional-result columns, two official-result
+  columns, and candidate difference. Header text is split across multiple
+  visual rows, and one party name wraps to a continuation row.
+- A strict benchmark-adapter renderer for this ANFREL party-registration shape
+  raises `01030000000047` from `overall=0.443/TEDS=0.329` to
+  `overall=0.977/TEDS=1.000`, and lifts the 50-document subset TEDS mean to
+  `0.8493990434596547`.
+- Boundary: this is not enough for DocTruth's evidence contract. The next
+  production-quality step is to move this bbox row/column reconstruction into
+  Rust so `TrustDocument.body.tables` carries the table, cells, row/column
+  spans, source unit ids, and cell bboxes before Markdown export.
+
+## 2026-06-18 OpenDataLoader Party Table Rust-Core Finding
+
+- The adapter-only ANFREL party table repair was not enough because benchmark
+  Markdown could be correct while `TrustDocument.body.tables` still lacked the
+  canonical evidence table.
+- Moving the shape into Rust exposed two core issues:
+  1. unit-derived header bboxes were being built with physical-page coordinate
+     normalization, which inverted them into the page bottom and prevented
+     header LINE_SPAN units from being consumed as table content;
+  2. the unit-row party table y-window stopped at `610`, excluding continuation
+     rows 8-10 in `01030000000046`, while the text-point path already accepted
+     rows up to `760`.
+- The Rust core now emits `method=cluster` party-registration `TrustTable`s with
+  grouped headers, preserved empty cells, normalized header bboxes, and
+  continuation rows. `01030000000046` moved to `overall=0.944/TEDS=0.999`;
+  `01030000000047` remains `overall=0.977/TEDS=1.000`.
+- This confirms a useful composition rule: the benchmark adapter can reveal
+  expected behavior, but evidence-grade fixes must end in Rust `TrustTable`
+  output before DocTruth can claim parser-quality progress.
+
+## 2026-06-18 Centered Chapter Heading Finding
+
+- Real case `01030000000021` demonstrated a pure heading-structure failure:
+  text content and reading order were already close to ground truth, but MHS was
+  zero because the chapter number/title pair was treated as body text.
+- The reliable signal was not the text alone. A single digit like `2` is usually
+  dangerous to promote, but in this case it is first-page, upper-region,
+  centered, large, narrow, and followed by a nearby centered title-case line.
+- The Rust rule should stay geometry-gated. Promoting all single digits or all
+  title-case lines would regress footnotes, page numbers, dates, and body
+  entities. The accepted pattern is "centered chapter marker + centered title",
+  not "short text equals heading".
+- This lifted `01030000000021` from `overall=0.498/MHS=0.000` to
+  `overall=0.998/MHS=0.999`, and moved the 50-document subset from
+  `overall_mean=0.7935/MHS=0.4667` to
+  `overall_mean=0.8035/MHS=0.5121`.
+
+## 2026-06-18 Split TOC Page-Number Finding
+
+- Real OpenDataLoader Bench case `01030000000016` was a clean Rust-core
+  recoverability case: the text layer already contained correct title and page
+  number bboxes, but DocTruth emitted no structured table and therefore rendered
+  headings/page numbers in the wrong shape.
+- The reliable signal is geometric and narrow: an upper-page `Table/of contents`
+  header followed by many rows where left-column title fragments align with a
+  right-column numeric page reference. This is different from a general
+  two-column prose layout and should not be applied without the TOC header and
+  repeated numeric right column.
+- The PDF text layer can omit duplicate page numbers. In this fixture,
+  `Introduction` has explicit page `7`, but `1. Changing Practices, Shifting
+  Sites` visually shares page `7` without a second right-column text object;
+  the same pattern appears for `Conclusion 127` and `19. Changing Geographies
+  of Play`. A TOC extractor must allow previous-page reuse for adjacent TOC
+  rows, while keeping this rule scoped to detected TOC pages.
+- Moving the repair into Rust `body.tables` is materially better than a
+  Markdown-only benchmark patch: `TABLE_CELL` units, cell bboxes, source object
+  ids, content blocks, and parse trace all derive from the same canonical
+  parser observation.
+- The slice improved `01030000000016` to
+  `overall=0.989/NID=0.998/MHS=0.980` and moved the 50-document subset to
+  `overall_mean=0.8128/NID=0.8826/MHS=0.5507` with no missing predictions.
+
+## 2026-06-18 Split Title And Body Fragment Heading Finding
+
+- Real case `01030000000033` showed two opposite heading errors on the same
+  page: the true title `Functional Abstraction` was split into two normal text
+  units, while the body-line continuation `Nothing would` was promoted as a
+  heading because it was short title-case text.
+- The reliable title signal is positional and contextual: upper-page,
+  same-visual-line, title-case fragments with two to four parts can merge into
+  a heading. Applying the same rule across the page would be unsafe because
+  formulas and wrapped body text also produce many short fragments.
+- The reliable false-heading signal is also contextual: when a title-case
+  candidate sits to the right of an existing same-line body sentence, especially
+  a left fragment ending in punctuation or containing many words, it is probably
+  a body continuation rather than a section root.
+- This slice improved `01030000000033` from
+  `overall=0.537/NID=0.929/MHS=0.145` to
+  `overall=0.610/NID=0.930/MHS=0.290`, and moved the 50-document subset to
+  `overall_mean=0.8170/MHS=0.5687`.
+- The case still contains formula fragmentation and footnote complexity. The
+  fix should be treated as a heading-semantics improvement, not a complete
+  mathematical-layout parser.
+
+## 2026-06-18 Inline Math Heading Demotion Finding
+
+- Real case `01030000000031` showed that heading hierarchy can be badly harmed
+  by inline formula fragments even when text recall is acceptable. Single
+  uppercase variables, OCR/PDF encoding artifacts such as `þ` and `¼`, and
+  sentence fragments containing variables were being promoted as section roots.
+- The safe rule is not "uppercase text is heading." For parser-quality
+  benchmark output, short uppercase tokens and formula-like fragments should be
+  demoted unless they are part of a verified section-marker heading with a
+  same-line title continuation.
+- The regression check matters: `B Related Works and Background` is a real
+  split section heading even though it starts with a single uppercase marker.
+  The Rust logic now distinguishes section marker + title continuation from
+  math variable fragments.
+- This lifted `01030000000031` to
+  `overall=0.837/NID=0.932/MHS=0.743`, and improved the 50-document subset to
+  `overall_mean=0.8435/MHS=0.6878` with zero missing predictions.
+- This still does not solve formula serialization quality. The current slice
+  prevents formulas from corrupting heading structure; a future math/formula
+  region layer would be needed to render equations cleanly.
+
+## 2026-06-18 Multiline Heading Merge Finding
+
+- Real cases `01030000000019` and `01030000000039` showed the opposite of the
+  formula-fragment problem: true headings were split across visual lines, so
+  MHS dropped even when much of the body text was present.
+- The useful merge signal is a title-case or hierarchical-numbered heading
+  start followed by a title-case continuation on the same page with tight
+  vertical distance. For `01030000000039`, the continuation can be non-
+  contiguous in reading order because right-column bullets are interleaved
+  between the two heading lines.
+- The unsafe version of that rule over-merged synthetic and common structures:
+  `PROFILE` swallowed `Career Summary`, and chapter number `2` swallowed
+  `The Lost Homeland`. The final guard blocks vertical merge from single-token
+  starts and standalone chapter numbers.
+- Non-contiguous merge must also distinguish skipped same-column body text from
+  skipped opposite-column interleaving. If body text between the heading start
+  and continuation is aligned in the same column, the merge is blocked. This
+  preserves the existing `PROFILE -> Career Summary -> body` hierarchy while
+  still allowing the two-column `9.5... Business Models` case.
+- This lifted `01030000000019` to
+  `overall=0.994/NID=0.998/MHS=0.990`, `01030000000039` to
+  `overall=0.726/NID=0.688/MHS=0.765`, and the 50-document subset to
+  `overall_mean=0.8534/MHS=0.7331` with zero missing predictions.
+- Remaining low cases after this slice are mostly not heading-wrap issues:
+  `01030000000013`, `01030000000027`, `01030000000028`, `01030000000037`, and
+  `01030000000041` still need reading-order/text-normalization, figure/table,
+  or scanned/OCR/model-routing work.
+
+## 2026-06-18 Footnote And Hyphen Continuation Heading Finding
+
+- Real case `01030000000013` showed a common book/PDF failure mode: footnote
+  markers, citation titles, and hyphenated word continuations were being
+  promoted into section headings, depressing MHS even though the true chapter
+  heading was present.
+- The false-heading signals are:
+  - a two-digit bare numeric marker such as `24` followed by same-line prose;
+  - a title-like line that starts with a lowercase alphabetic continuation such
+    as `graphic Codes...` or `nical Values...`;
+  - a title-like phrase on the same visual line as a right-side citation tail
+    such as `8, no. 3...`.
+- The rule must not reject year continuations such as `2021 Edition`, so the
+  bare-number marker guard is limited to two-digit footnote markers rather than
+  all numeric-leading text.
+- Runtime output for `01030000000013` now keeps only the page/header-like
+  `Al-Ogayyel and Oskay` and true chapter heading
+  `4 Al-Sadu Symbols and Social Significance` as headings; footnote/citation
+  fragments are demoted.
+- This lifted `01030000000013` from `overall=0.495/MHS=0.224` to
+  `overall=0.639/MHS=0.510`. The same rule helped adjacent cases, especially
+  `01030000000033`, and moved the 50-document subset to
+  `overall_mean=0.8632/MHS=0.7771` with zero missing predictions.
+- Remaining gap: NID barely moved because reading order and line cleaning are
+  still rough. Case `01030000000013` still orders figures/body differently from
+  ground truth and still has raw line-break/hyphen artifacts in Markdown.
+
+## 2026-06-18 Figure Caption Spatial Table Finding
+
+- Real case `01030000000027` was the lowest current 50-document case because a
+  chart/caption page was emitted as a `pdf_oxide text-spatial table`. The
+  resulting benchmark Markdown was a single HTML table containing page header,
+  figure captions, and page number.
+- The reliable suppression signal is multiple `Figure N.` labels inside one
+  spatial-table candidate. This is not a data table; it is repeated chart
+  captions spread vertically across the page.
+- Filtering this at Rust table-conversion time is better than a Markdown-only
+  export fix because `body.tables`, `TABLE_CELL` units, `contentBlocks`, and
+  parse trace then all agree that the page is not a table.
+- The guard remains narrow: normal borderless data tables still pass
+  `parse_pdf_uses_pdf_oxide_text_spatial_table_detection_for_borderless_table`.
+- This lifted `01030000000027` from `overall=0.535/NID=0.535` to
+  `overall=0.624/NID=0.624`, and moved the 50-document subset to
+  `overall_mean=0.8650/NID=0.8852`.
+- Remaining gap: the output still has separate `Figure`, `7.`, and caption
+  lines. A later text-normalization slice should merge figure labels and
+  captions into `Figure 7. Estimated ...`, and preserve/page-order footer
+  `48` where expected.
+
+## 2026-06-18 Full Page Line Table Finding
+
+- Real case `01030000000041` exposed a second false-table family separate from
+  the earlier figure-caption spatial-table issue. The text layer was mostly
+  present as line spans, but `pdf_oxide line-table extraction` also emitted a
+  single full-page cell with row/column spans, duplicated page prose, corrupt
+  control/replacement glyphs, chart caption text, and footer labels.
+- The existing full-page guard was too narrow because it targeted a specific
+  single-cell text leak. This case had one filled cell but a multi-row and
+  multi-column span, so it looked table-shaped in metadata even though it was a
+  whole page of prose.
+- The portable suppression signal is: rationale contains `line-table`, exactly
+  one non-empty cell, table or cell bbox covers the normalized page, and the
+  cell is spanned, noisy, or very long. Real data tables should have multiple
+  filled cells or a smaller table region.
+- Filtering at `push_non_overlapping_table` is preferable to exporter cleanup:
+  the bad table then never reaches `body.tables`, `TABLE_CELL` units,
+  `contentBlocks`, parse trace, or OpenDataLoader Markdown.
+- This lifted `01030000000041` from `overall=0.587/NID=0.587` to
+  `overall=0.803/NID=0.803` and moved the 50-document subset to
+  `overall_mean=0.8762/NID=0.8964` with no failed parses.
+
+## 2026-06-18 Survey Chart Two Column Region Finding
+
+- Real case `01030000000037` showed that row-level y/x ordering is wrong for
+  some report pages with survey charts. The left column contains the section
+  heading and lead paragraph, while the right column continues the previous
+  paragraph at nearly the same y positions. Row interleaving lowered NID even
+  though the text was present.
+- A naive "repair every Figure page" rule is unsafe. Ordinary image/caption and
+  footnote-heavy pages such as `01030000000014` also contain `Figure` text, but
+  their best benchmark order is not the same as a survey chart report page.
+- The safer trigger for this slice is Figure plus multiple survey/date/chart
+  labels (`July 2020`, `October 2020`, `January 2021`, `survey phase`,
+  `Lockdown Period`). Within those pages, only regions with two clear wide text
+  columns are reordered; chart/axis/legend regions stay in y/x order because
+  their median column widths are too small.
+- This lifted `01030000000037` from `overall=0.588/NID=0.648` to
+  `overall=0.788/NID=0.960`. It also improved adjacent survey-chart cases
+  `01030000000038` and `01030000000039`, moving the 50-document subset to
+  `overall_mean=0.8889/NID=0.9126` without overall regressions over `0.02`.
+
+## 2026-06-18 Vertical Numbered Heading Merge Finding
+
+- Real case `01030000000003` exposed a vertical heading fragmentation family:
+  a true section heading was emitted as separate heading blocks
+  `11`, `Dual-Presentation`, `sj`, and `Data`, and a short citation tail
+  `Arnold, 2011` could still appear as a heading.
+- The useful signal is a bare two-digit numeric marker with strict title-like
+  continuation fragments directly below it. That is narrower than ordinary
+  numbered heading promotion and keeps previous footnote/hyphen demotion
+  behavior intact.
+- Acronym repair must be local to the observed heading family. Globally
+  uppercasing short lowercase tokens regresses existing benchmark expectations
+  such as `7 Variants of sj Observer Models`; for this slice only
+  `Dual-Presentation` headings normalize `sj` to `SJ`.
+- This lifted `01030000000003` from `overall=0.593/MHS=0.471` to
+  `overall=0.689/MHS=0.662`, and moved the 50-document subset to
+  `overall_mean=0.8908/MHS=0.8064` without overall regressions over `0.02`.
+
+## 2026-06-18 Formula Spatial Table And Page Header Finding
+
+- Real case `01030000000028` was not failing because Rust core emitted a table;
+  direct `TrustDocument` parsing had zero `body.tables` and zero `TABLE_CELL`
+  units. The false HTML table came from the OpenDataLoader Bench adapter's
+  fallback `spatial_table_html_from_units` recovery path.
+- Adapter-only spatial table synthesis needs a formula/prose exclusion. Equation
+  regions contain math symbols/fragments (`Ω`, `¼`, `lnΩ`, `k B`, `WS`), equation
+  numbers such as `(2)`/`(3)`, and prose context such as `or inversely` or
+  `Boltzmann`; those are not data tables and should remain line evidence unless
+  the Rust core emits a canonical table.
+- The same case also showed a core heading gap: a same-line numeric section
+  marker `4.` and title `Entropy` should merge to heading `4. Entropy`. The
+  safe rule is line-start marker with a trailing dot plus title continuation.
+  Bare page-header numbers must not use this rule.
+- Real case `01030000000048` caught the regression: allowing bare numeric
+  markers made `8 Encinas Franco and Laguna` a false heading. Requiring the dot
+  preserves `4. Entropy` while keeping the page header as non-heading text.
+- This lifted `01030000000028` from `overall=0.607/NID=0.838/MHS=0.376` to
+  `overall=0.879/NID=0.977/MHS=0.780`, and moved the 50-document subset to
+  `overall_mean=0.8963/MHS=0.8248` without overall regressions over `0.02`.
+
+## 2026-06-18 Figure Caption And Chart Text Finding
+
+- Real case `01030000000027` now has clean figure captions in
+  `contentBlocks`, but benchmark quality does not improve because the major
+  gap is missing chart text: legend labels, axis labels, numeric ticks, and
+  chart body text present in the ground truth are not emitted by the current
+  text-layer runtime.
+- Caption merging is still useful for DocTruth consumers. It converts fragmented
+  evidence units such as `Figure`, `7.`, and caption continuation lines into one
+  replayable semantic block while preserving the original `LINE_SPAN` units and
+  `sourceUnitIds`.
+- Do not keep tuning `01030000000027` with text-only heading/table heuristics.
+  The next meaningful lift for this case belongs to OCR/rendered image text
+  extraction or model-assisted chart text recovery under the MNN/runtime phases.
+
+## 2026-06-18 Full 200 Benchmark Finding
+
+- The current Rust deterministic runtime now materially beats earlier DocTruth
+  Rust full-run baselines (`0.7060` overall vs `0.5873` pass7 and `0.5091`
+  original), but it is still below OpenDataLoader base (`0.8312`), Docling
+  (`0.8817`), and OpenDataLoader hybrid (`0.9066`).
+- The first-50 subset is no longer representative of completion. It reports
+  about `0.8963` overall, while the full 200 reports `0.7060` because the later
+  corpus contains many table/OCR/scanned/complex-structure cases.
+- The current full-run failures are actionable signals for Phase 4/5:
+  one timeout (`01030000000141`) and one no-text-layer document
+  (`01030000000165`). The latter cannot be solved by deterministic text-layer
+  heuristics and belongs to OCR/MNN routing.
+- Future promotion claims should cite the full 200, not only the 50-document
+  subset. The deterministic lane should continue to improve table and structure
+  cases, while the model lane needs explicit MNN/OCR routing before claiming
+  hybrid-level quality.
+
+## 2026-06-18 Runtime Profile Gate Finding
+
+- The Rust runtime needs profile semantics before adding MNN; otherwise a
+  configured worker or benchmark oracle can accidentally become a hidden
+  production fallback chain.
+- The safe compatibility boundary is:
+  default protocol profile remains `edge-model` so existing configured worker
+  contracts still work, while explicit `profile=edge-fast` is deterministic
+  Rust-only and must not start a model worker.
+- `benchmark-oracle` belongs to explicit benchmark/comparison commands. It is
+  useful as the OpenDataLoader/Docling quality reference, but `parse_pdf` must
+  reject it as a production runtime profile.
+- `parserRun.profile` is now the product evidence hook for downstream resource
+  reports. It records which runtime policy produced the TrustDocument, but it
+  does not yet prove MNN resource behavior. That proof still requires the MNN
+  runtime and RSS/cold-start/warm-run benchmark lane.
+
+## 2026-06-18 Benchmark Resource Report Finding
+
+- Benchmark reports need a resource evidence home before the MNN runtime lands;
+  otherwise future claims like "lighter than OpenDataLoader hybrid" would be
+  disconnected from the parser-quality report.
+- The current resource report is intentionally process-level and profile-level:
+  it records elapsed time, RSS/peak memory sampling, case profile, and
+  no-Python/Torch/Docling production residency. It does not invent an absolute
+  MNN memory threshold.
+- `budgetStatus=profile-baseline-pending` is deliberate. It prevents the report
+  from implying that edge-model has a validated MNN budget before the actual
+  MNN model set, platform, and full OpenDataLoader Bench run exist.
+
+## 2026-06-18 MNN Manifest Gate Finding
+
+- A configured local model worker is not enough evidence for production
+  `edge-model`. Without a manifest/cache gate, the worker can hide an
+  ONNXRuntime, Torch, Docling, or Python-heavy implementation behind the same
+  TrustDocument envelope.
+- The production boundary should be: `edge-model` may call a worker only when
+  the selected preset resolves to READY artifacts that explicitly declare
+  `backend=mnn` and `format=mnn`. Explicit ONNX manifests must be treated as
+  unsupported production runtime, not as a fallback.
+- The current implementation is intentionally a gate, not final inference. It
+  proves DocTruth will not silently route production model-assisted parsing to
+  ONNX/Torch-style artifacts, but still leaves the actual MNN execution,
+  lazy-load/unload, and full benchmark quality/resource proof to later slices.
+
+## 2026-06-18 Lazy MNN Resource Evidence Finding
+
+- The MNN runtime needs a protocol-level lazy-load contract before the native
+  model runner is wired in. Otherwise worker-backed tests could claim MNN while
+  hiding eager startup, always-loaded models, or missing unload behavior.
+- The useful minimal contract is request-side policy plus response-side
+  evidence:
+  request declares `runtime=mnn`, `loadPolicy=lazy`, and
+  `unloadPolicy=idle-after-request`; response reports cold start, inference
+  time, memory, loaded models, and unload status when measurable.
+- Benchmark reports should keep `resourceProfile.modelRuntime` null for
+  deterministic-only cases. That distinction is important: `edge-model` as a
+  profile does not mean every document started MNN. Only routed model cases
+  should contribute model runtime metrics.
+
+## 2026-06-18 Auto Routing Finding
+
+- `edge-model` cannot mean "always start MNN." The useful local/edge behavior is
+  profile-level capability plus document-level routing: simple text-layer pages
+  remain deterministic, while complex table/layout/OCR pages may route to MNN.
+- The first safe routing contract is the negative case. `preset=auto` with a
+  simple text-layer PDF must not start a configured READY worker. This prevents
+  resource regressions before the table/OCR router is implemented.
+- `parserRun.modelRouting` is now the stable place to record the routing
+  decision. Later table-heavy and scanned/OCR routes should extend the same
+  field rather than inventing a separate reporting shape.
+
+## 2026-06-18 Auto Table Routing Finding
+
+- Auto routing now has both negative and positive evidence:
+  simple text-layer pages stay deterministic, while table-heavy text-layer
+  pages can route to the table MNN profile when the manifest/cache is READY.
+- The table route deliberately rewrites the effective preset to `table-lite`
+  while preserving the user-facing request as `preset=auto` in the routing
+  evidence. This keeps product behavior ergonomic while making the selected
+  model preset auditable.
+- The current table-heavy detector is heuristic and should be treated as a
+  routing bootstrap. Final quality still depends on real MNN table inference
+  and OpenDataLoader Bench promotion, not just the route existing.

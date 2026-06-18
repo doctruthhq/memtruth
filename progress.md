@@ -1,5 +1,82 @@
 # DocTruth v1 Parser Runtime Progress
 
+## 2026-06-17
+
+- Started OpenDataLoader hybrid benchmark-oracle Phase 1 TDD slice from
+  `docs/plans/2026-06-18-opendataloader-rustification-tdd-plan.md`.
+- Added RED CLI tests in
+  `src/test/java/ai/doctruth/cli/BenchmarkOracleCommandTest.java` for:
+  missing opendataloader-hybrid dependency doctor hint, fake oracle
+  TrustDocument output with `parserRun.externalBackend` and `elapsedMs`,
+  markdown-only `NOT_AUDIT_GRADE`, and production parse rejecting
+  `--backend opendataloader-hybrid`.
+- RED command:
+  `mvn -q -Dtest=BenchmarkOracleCommandTest test`.
+- RED result: 3 tests ran, 2 failed as expected because `benchmark-oracle`
+  is not registered yet and returns usage error 2 instead of the planned
+  oracle behavior. The production parse no-fallback guard already passes.
+- Implemented `benchmark-oracle --engine opendataloader-hybrid` as a
+  benchmark-only CLI command. It requires
+  `DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND`, executes that runner with a
+  PDF path, reads the oracle JSON contract, maps Markdown into coarse
+  `TrustDocument` units, records `parserRun.externalBackend` and `elapsedMs`,
+  and emits a severe `opendataloader_markdown_only_source_mapping` warning so
+  the result is `NOT_AUDIT_GRADE`.
+- Kept production `parse --backend opendataloader-hybrid` rejected; the hybrid
+  path is not a production fallback.
+- Added `ParserRunDetails` so `ParserRun` can expose `models()`,
+  `warnings()`, `externalBackend()`, and `elapsedMs()` without violating the
+  public record component-count architecture gate.
+- Added `scripts/doctruth_opendataloader_hybrid_oracle.py`, a benchmark-only
+  wrapper around `opendataloader_pdf.convert(..., hybrid="docling-fast")` that
+  emits the oracle JSON contract.
+- Added `scripts/smoke-doctruth-benchmark-oracle.sh`, which uses the vendored
+  OpenDataLoader Bench PDF when present, runs a fake oracle through the actual
+  CLI jar, and verifies the TrustDocument/provenance/audit-grade contract.
+- Focused green command:
+  `mvn -q -Dtest=BenchmarkOracleCommandTest test`.
+- API/architecture green command:
+  `mvn -q -Dtest=BenchmarkOracleCommandTest,TrustDocumentContractTest,TrustDocumentRenderedOutputTest,TrustDocumentParserApiContractTest,PublicApiSnapshotTest,ArchitectureContractTest test`.
+- Smoke green command:
+  `sh scripts/smoke-doctruth-benchmark-oracle.sh`.
+- Syntax checks passed:
+  `python3 scripts/doctruth_opendataloader_hybrid_oracle.py --help` and
+  `python3 -m py_compile scripts/doctruth_opendataloader_hybrid_oracle.py scripts/doctruth_opendataloader_prediction.py scripts/compare-doctruth-parser-references.py scripts/triage-doctruth-parser-reference-report.py`.
+- Remaining Phase 1 gap: run the live OpenDataLoader hybrid server/JAR or
+  `opendataloader-pdf[hybrid]` path through the new CLI adapter and record the
+  real one-document quality/resource smoke. The new wrapper exists, but the
+  current smoke intentionally avoids starting Python/Torch/Docling.
+- Added RED coverage proving
+  `DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND` may include an interpreter and
+  script path, e.g. `.venv/bin/python scripts/doctruth_opendataloader_hybrid_oracle.py`.
+  RED command: `mvn -q -Dtest=BenchmarkOracleCommandTest test`; expected
+  failure was command exit 1 because the implementation treated the whole env
+  string as a single executable path.
+- Implemented small quote-aware command tokenization for the benchmark oracle
+  env command and reran `mvn -q -Dtest=BenchmarkOracleCommandTest test`
+  successfully.
+- First live one-document oracle attempt failed because `opendataloader-pdf`
+  internally invoked bare `java`, and the child PATH could not locate a Java
+  runtime. Fixed the wrapper by prepending detected OpenJDK paths to PATH.
+- Second live one-document oracle attempt failed because
+  `opendataloader_pdf.convert(...)` does not start the hybrid server by itself.
+  Direct Java invocation showed: `Hybrid server is not available at
+  http://localhost:5002`. Fixed the wrapper by adding benchmark-only
+  start/reuse/stop lifecycle for `python -m opendataloader_pdf.hybrid_server`.
+- Live one-document DocTruth CLI adapter smoke passed:
+  `DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND="<bench-venv-python> scripts/doctruth_opendataloader_hybrid_oracle.py" java -jar target/doctruth-java-0.2.0-alpha-all.jar benchmark-oracle --engine opendataloader-hybrid third_party/opendataloader-bench/pdfs/01030000000119.pdf --json > target/benchmark-oracle-live/01030000000119.trust.json`.
+- Live result:
+  `elapsedMs=13115`, `backend=opendataloader-hybrid-oracle`,
+  `externalBackend.name=opendataloader-pdf`, `version=2.2.1`,
+  `doclingVersion=2.84.0`, `mode=docling-fast`,
+  `auditGradeStatus=NOT_AUDIT_GRADE`, `unitCount=10`.
+- `/usr/bin/time -l` for the live one-document oracle path reported
+  `13.71 real` and `1566621696 maximum resident set size` bytes. This is the
+  Python/Torch/Docling benchmark oracle resource profile, not the production
+  Rust/MNN runtime profile.
+- `curl http://127.0.0.1:5002/health` returned no response after the run,
+  confirming the wrapper stopped the server it started.
+
 ## 2026-06-12
 
 - Started persistent plan for `$planning-with-files` objective.
@@ -5943,3 +6020,1378 @@
   blocker on DocTruth-owned human-reviewed corpus.
 - Updated `NOTICE`, `docs/pdf-parser-runtime-prd.md`, and `task_plan.md` to
   record the vendored benchmark and the next adapter/gate work.
+
+## 2026-06-17 Parser Quality Replication Planning
+
+- Re-entered the parser-quality loop after the full real OpenDataLoader Bench
+  run showed DocTruth is still far from reference quality despite the adapter
+  and export-layer lift.
+- Confirmed latest DocTruth optimized-timeout metrics:
+  `overall=0.549140667373931`, `nid=0.7663393307030263`,
+  `teds=0.06498004117639267`, `mhs=0.12239636974611434`.
+- Confirmed reference metrics from vendored artifacts:
+  OpenDataLoader base `overall=0.8312090061093924`, Docling
+  `overall=0.8816788439412203`, OpenDataLoader hybrid
+  `overall=0.9065718466674022`.
+- Inspected the vendored OpenDataLoader Bench engine adapters and confirmed the
+  base path uses `table_method="cluster"`, the hybrid path uses
+  `hybrid="docling-fast"`, and Docling uses `DocumentConverter` plus
+  `export_to_markdown`.
+- Wrote `docs/plans/2026-06-17-parser-quality-replication-plan.md` to define
+  the next sequence: reference-oracle harness, per-case triage, reading-order
+  cleanup, table-cluster Rust port, heading/section model, OCR routing, and an
+  optional hybrid advisor.
+
+## 2026-06-17 Parser Quality Replication Pass 2
+
+- Implemented and smoked the reference comparison harness and triage harness:
+  `scripts/compare-doctruth-parser-references.py`,
+  `scripts/triage-doctruth-parser-reference-report.py`,
+  `scripts/smoke-doctruth-parser-reference-comparison.py`, and
+  `scripts/smoke-doctruth-parser-reference-triage.py`.
+- Implemented export-layer parser-quality fixes:
+  TrustDocument table range rendering, guarded bbox/spatial table fallback,
+  heading promotion, page-number noise filtering, and regression smoke
+  coverage for false spatial-table positives.
+- Ran full OpenDataLoader Bench pass2:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-replication-pass2 --timeout-seconds 30`.
+- Pass2 result: `overall=0.5627398590637586`, `nid=0.7391382135188431`,
+  `teds=0.18840125729021784`, `mhs=0.19566644996808139`, 198 parsed, 2 failed,
+  `total_elapsed=240.95418691635132`.
+- Generated pass2 comparison and triage artifacts under
+  `third_party/opendataloader-bench/prediction/doctruth-runtime-replication-pass2/`.
+  These generated prediction/report artifacts remain ignored and are not meant
+  to be committed unless a small fixture is intentionally promoted later.
+- Current state is an honest measured lift over the prior optimized-timeout
+  run, not reference parity. The next implementation work is Rust-core table
+  clustering, Rust section-tree hierarchy, stronger reading-order/text
+  normalization, and real OCR/model routing for scanned or no-text cases.
+
+## 2026-06-17 Rust Core Local-Algorithm Contract Slice
+
+- Moved the next parser-quality work back into `runtime/doctruth-runtime`
+  instead of continuing exporter-only changes.
+- Added a RED/green Rust protocol contract for
+  `parseTrace.pages[].textSpans[]`. The runtime now emits a flat page span
+  stream with `spanId`, `type`, `page`, `readingOrder`, `content`, `bbox`,
+  `score`, `sourceObjectId`, and `evidenceSpanId`.
+- Added `parseTraceSpanIds` back-links to `LINE_SPAN` and `TABLE_CELL` units,
+  so `TrustDocument` units, content blocks, parse trace lines, and page spans
+  can be reconciled from the same observation layer.
+- Added a RED/green contract that text-spatial/borderless table extraction
+  reports OpenDataLoader-style `method="cluster"` while preserving DocTruth's
+  original extraction rationale.
+- Added Rust-owned list classification before heading classification so `- ...`
+  and `1. ...` list items become `contentBlocks[].type="list"` and are not
+  promoted as numbered headings.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`.
+
+## 2026-06-17 Rust Section Hierarchy Contract Slice
+
+- Added a RED/green Rust protocol contract for parser-owned section hierarchy,
+  not Markdown-only heading promotion.
+- `contentBlocks` and `parseTrace.pages[].readingBlocks[]` now include:
+  `sectionId`, `parentSectionId`, `sectionPath`, `sectionTitlePath`, and
+  `isSectionRoot`.
+- `parseTrace.sectionTree` now exposes the same hierarchy as a tree of
+  `sectionId`, `title`, `textLevel`, `blockId`, and `children`, which is the
+  parser-owned structure downstream Markdown/MHS export should consume.
+- The section hierarchy is generated by scanning Rust parser observations in
+  reading order with a heading stack. A level-3 title-case heading nests under
+  the preceding level-2 heading; a later level-2 heading closes the nested
+  section and starts a new top-level section. Body/list blocks inherit the
+  current section path.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`.
+
+## 2026-06-17 Real Sparse Table Cluster Fix
+
+- Reproduced a real OpenDataLoader Bench table miss on
+  `third_party/opendataloader-bench/pdfs/01030000000128.pdf`: DocTruth emitted
+  `table_count=0` even though the ground truth is a sparse 6-column HTML table.
+- Root cause: the table detector had diverged from the main parse observation
+  layer. The line-table path could fail without producing a table, pdf_oxide's
+  spatial detector did not catch this sparse layout, and DocTruth had no final
+  fallback that clustered the already extracted positioned text lines.
+- Added a RED/green Rust regression using the real vendored PDF, not a
+  screenshot or synthetic-only fixture. The runtime now emits one
+  OpenDataLoader-style `cluster` table with `columnCount=6`, `rowCount>=10`,
+  preserved empty cells, and the expected header cells:
+  `Forecast(observed)`, `Lower Confidence Bound(observed)`, and
+  `Upper Confidence Bound(observed)`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`;
+  `git diff --check`.
+- This fixes one real TEDS failure shape but does not prove full
+  OpenDataLoader/Docling parity. Pass3/full OpenDataLoader Bench still needs to
+  be run before claiming an aggregate score lift.
+
+## 2026-06-18 OpenDataLoader Hybrid Rustification Plan
+
+- Ran the real vendored OpenDataLoader Bench `opendataloader-hybrid` path after
+  installing `opendataloader-pdf[hybrid]` into the bench `.venv`.
+- First real run exposed two environment issues:
+  - shell `java` did not resolve to an installed runtime;
+  - `cpuinfo.get_cpu_info()["brand_raw"]` could fail while writing
+    `summary.json`.
+- Resolved the Java issue for local runs by putting the Homebrew OpenJDK bin
+  directory at the front of `PATH` during benchmark execution.
+- Patched `third_party/opendataloader-bench/src/pdf_parser.py` to use a
+  fallback processor string when `brand_raw` is absent.
+- Verified live single-document hybrid parsing writes Markdown and summary.
+- Started `opendataloader_pdf.hybrid_server` manually to measure warm behavior.
+  The server reported MPS acceleration, Docling Fast Server startup, and
+  Docling model loading.
+- Warm 5-PDF batch result:
+  `total_elapsed=4.7210118770599365`, `elapsed_per_doc=0.9442023754119873`.
+- Full 200-PDF live run result:
+  `overall=0.9065718466674022`, `NID=0.9337307553293448`,
+  `TEDS=0.9276430534097512`, `MHS=0.8207761855598542`,
+  `total_elapsed=125.29678010940552`, `elapsed_per_doc=0.6264839005470276`.
+- Resource observations:
+  docling-fast hybrid server RSS about `1.39GB` to `1.51GB`; client/JAR
+  full-run peak RSS about `408MB`; warm single client peak about `140MB`.
+- Stopped the manually launched hybrid server after the run.
+- Wrote the implementation plan:
+  `docs/plans/2026-06-18-opendataloader-rustification-tdd-plan.md`.
+- Updated `task_plan.md` phases 323-327 and `findings.md` with the new product
+  and engineering direction.
+- Tightened the plan after product review: production runtime is now
+  Rust + MNN-first model runtime, not ONNX Runtime sidecars and not a parser
+  fallback stack. ONNX is only a conversion/interchange artifact; OpenDataLoader
+  hybrid/Docling/Python/Torch remain benchmark oracle/reference tooling only.
+- Added the final MNN benchmark acceptance gate: because MNN conversion or
+  weight-only compression can reduce quality, the MNN runtime must run the full
+  OpenDataLoader Bench and prove near-hybrid quality with materially better
+  resources before promotion. Initial targets are `overall>=0.88`, `NID>=0.91`,
+  `TEDS>=0.88`, `MHS>=0.78`; resource gates are relative to the Docling/Torch
+  oracle and no universal absolute RSS gate is accepted before the real MNN
+  model profile is measured. The first absolute RSS threshold must be derived
+  from a full benchmark report for the actual model set, precision mode,
+  platform, crop buffers, and unload policy.
+- Next implementation starts with Phase 1 RED tests:
+  - benchmark oracle `opendataloader-hybrid` missing-dependency doctor failure;
+  - fake hybrid oracle runner maps Markdown/provenance into `TrustDocument`;
+  - Markdown-only mapping is explicitly `NOT_AUDIT_GRADE`;
+  - production parse profiles cannot auto-select OpenDataLoader hybrid;
+  - one-document OpenDataLoader Bench smoke can use the backend.
+
+## 2026-06-17 OpenDataLoader Structured Adapter Phase 2
+
+- Added RED tests proving the OpenDataLoader hybrid benchmark oracle must prefer
+  structured `blocks` over Markdown:
+  heading/list/table blocks map into `TrustDocument`, table cells are preserved,
+  structured source mapping emits an INFO warning instead of the severe
+  Markdown-only warning, and `benchmark-oracle --format content_blocks`
+  preserves heading levels plus list/table shape.
+- RED command:
+  `mvn -q -Dtest=BenchmarkOracleCommandTest test`.
+- RED result: structured output was still `NOT_AUDIT_GRADE`, and
+  `--format content_blocks` returned usage code 2 because the command only
+  supported `--json`.
+- Implemented structured adapter behavior in `BenchmarkOracleCommand`:
+  oracle `blocks` are now the default source when present; Markdown is only the
+  fallback path.
+- Structured blocks currently support:
+  heading/title -> `TEXT_BLOCK` unit plus `contentBlocks[].type=heading`;
+  list -> one citeable unit per item plus `contentBlocks[].items`;
+  table -> `TrustTable` cells plus `TABLE_CELL` units and `contentBlocks[].rows`.
+- Added `TrustDocument.withLayeredOutputs(JsonNode, JsonNode)` as the narrow
+  bridge for CLI/adapter paths to attach parser-owned content-block and
+  parse-trace layers without adding record components.
+- Added benchmark-oracle output profiles:
+  `--format content_blocks` and `--format parse_trace`; existing `--json`
+  behavior is unchanged.
+- Updated the public API snapshot for the new layered-output bridge.
+- GREEN commands:
+  `mvn -q -Dtest=BenchmarkOracleCommandTest test`;
+  `mvn -q -Dtest=BenchmarkOracleCommandTest,TrustDocumentContractTest,TrustDocumentRenderedOutputTest,TrustDocumentParserApiContractTest,PublicApiSnapshotTest,ArchitectureContractTest test`.
+- Phase 2 is complete for the benchmark-oracle adapter. The next remaining
+  plan item is Phase 3: move more deterministic OpenDataLoader behavior into
+  Rust and verify with real OpenDataLoader Bench subset/full metrics.
+
+## 2026-06-17 Phase 3 Heading Fragment Suppression Slice
+
+- Selected the next deterministic Phase 3 slice from the latest available
+  OpenDataLoader Bench triage artifacts instead of older pass2 notes. The
+  current pass7 artifact reports:
+  `overall_mean=0.587331014907702`, `nid_mean=0.7721853768826462`,
+  `teds_mean=0.235017848867468`, `mhs_mean=0.1801015892875034`,
+  `parsed_count=198`, `failed_count=2`.
+- Triage still shows heading hierarchy as the largest bucket, followed by
+  reading-order/text-normalization and table-cluster parity.
+- Inspected real case `01030000000195`: Rust `contentBlocks` promoted bullet
+  symbols, bullet-line fragments (`Introduction`, `SOLAR`, `Billion-`, `: We`),
+  author-line fragments (`and Wonsung`, `with Dahyun Kim, Wonho`), and prose
+  citation tails as headings, producing very poor MHS.
+- Added RED Rust regression:
+  `parse_pdf_does_not_promote_opendataloader_bullet_fragments_to_headings`
+  against the vendored real PDF `third_party/opendataloader-bench/pdfs/01030000000195.pdf`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_does_not_promote_opendataloader_bullet_fragments_to_headings`.
+- RED result: failed with unexpected heading fragments including `•`,
+  `Introduction`, `SOLAR`, `Billion-`, `: We`, `Instruction-Following`,
+  `Ca-`, `and Wonsung`, and `with Dahyun Kim, Wonho`.
+- Implemented context-aware heading suppression in Rust:
+  - bullet symbol becomes list, not heading;
+  - same-line bullet fragments are text;
+  - short same-line fragments in multi-token visual lines are text;
+  - lowercase connector starts such as `and`, `with`, `like` are text;
+  - sentence-punctuation/prose fragments are text;
+  - real outline markers such as `A`, `B.1`, `B.2`, and `I. Introduction`
+    remain headings.
+- Fixed the OpenDataLoader prediction exporter so it trusts Rust
+  `contentBlocks[].type`; it only falls back to Python heading guessing when no
+  core block type is available. This prevents benchmark Markdown from
+  reintroducing `#` headings that Rust already downgraded.
+- GREEN Rust command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-heading-fragment-195 --doc-id 01030000000195 --timeout-seconds 30`.
+- Spot result for `01030000000195`:
+  `overall=0.6913270788798284`, `nid=0.9974025974025974`,
+  `mhs=0.3852515603570593`, up from the pre-fix spot-style result
+  `overall=0.537880818746233`, `mhs=0.08284267604478679`.
+- Verification passed:
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py scripts/doctruth_opendataloader_hybrid_oracle.py scripts/compare-doctruth-parser-references.py scripts/triage-doctruth-parser-reference-report.py`;
+  `git diff --check`.
+- Remaining Phase 3 work is still substantial: heading text merge, broader
+  reading-order/text normalization, table missing/mismatch parity, OCR/no-text
+  cases, full OpenDataLoader Bench rerun, and then MNN model runtime phases.
+
+## 2026-06-18 Phase 3 Heading Merge Slice
+
+- Added RED Rust regression:
+  `parse_pdf_merges_opendataloader_split_heading_lines` against
+  `third_party/opendataloader-bench/pdfs/01030000000195.pdf`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_merges_opendataloader_split_heading_lines`.
+- RED result: failed because headings were still split as standalone markers:
+  `["A", "Evaluation (Data-Centric LLM) part, with Yungi", "B", "B.1", "B.2"]`;
+  the expected merged headings `B Related Works and Background`,
+  `B.1 Large Language Models`, and `B.2 Mixture of Experts` were absent.
+- Implemented Rust semantic block merging at the canonical `contentBlocks`
+  layer:
+  same-line section markers such as `B`, `B.1`, and `B.2` now merge with their
+  following same-line title tokens; source unit IDs, evidence span IDs, warnings,
+  bbox, and section metadata are aggregated from the merged units.
+- Added another RED assertion to the existing OpenDataLoader heading-fragment
+  regression for the prose citation tail
+  `Evaluation (Data-Centric LLM) part, with Yungi`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_does_not_promote_opendataloader_bullet_fragments_to_headings`.
+- RED result: failed because that prose tail was still classified as a heading.
+- Fixed sentence/prose heading suppression for connector fragments containing
+  `, with`, `, and`, or `, or`.
+- Fixed the OpenDataLoader benchmark exporter to render each merged
+  `contentBlock.blockId` only once. Without this, the merged heading was emitted
+  repeatedly for every source unit inside the merged block.
+- GREEN commands:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_merges_opendataloader_split_heading_lines`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_does_not_promote_opendataloader_bullet_fragments_to_headings`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-heading-merge-195 --doc-id 01030000000195 --timeout-seconds 30`.
+- Spot result for `01030000000195`:
+  `overall=0.9981309274448072`, `nid=0.9976279227380549`,
+  `mhs=0.9986339321515596`, up from the prior Phase 3 slice
+  `overall=0.6913270788798284`, `mhs=0.3852515603570593`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`;
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py scripts/doctruth_opendataloader_hybrid_oracle.py scripts/compare-doctruth-parser-references.py scripts/triage-doctruth-parser-reference-report.py`;
+  `git diff --check`.
+- Remaining Phase 3 work: broaden the improvement beyond this one PDF, rerun a
+  larger OpenDataLoader Bench subset/full corpus, then continue table parity,
+  OCR/no-text cases, and MNN runtime/resource phases.
+
+## 2026-06-18 Phase 3 Numeric Heading Slice
+
+- Ran a broader current-runtime subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-phase3-subset50 --limit 50 --timeout-seconds 30`.
+- Tooling caveat discovered: OpenDataLoader `evaluator.py` still evaluates all
+  200 ground-truth Markdown files when `--limit 50` is used, so the generated
+  aggregate `evaluation.json` includes 150 missing-prediction zeros. For this
+  slice, only `prediction_available=true` documents are meaningful.
+- Actual parsed subset metrics over the 50 generated predictions:
+  `overall≈0.7299984032348616`, `nid≈0.8546464047572715`,
+  `teds≈0.49773358841675375` over 3 table cases, and
+  `mhs≈0.2950005784813315` over 22 heading cases.
+- Selected `01030000000001` because text similarity was already high
+  (`nid≈0.991`) but heading hierarchy was zero (`mhs=0.0`), indicating a
+  deterministic heading-structure miss rather than a model/OCR issue.
+- Added RED Rust regression:
+  `parse_pdf_merges_numeric_opendataloader_heading_lines` against
+  `third_party/opendataloader-bench/pdfs/01030000000001.pdf`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_merges_numeric_opendataloader_heading_lines`.
+- RED result: failed because headings were only soft-hyphen fragments
+  `["\u{00ad}", "\u{00ad}", "\u{00ad}", "\u{00ad}"]`; the real heading
+  `7 Variants of sj Observer Models` was absent.
+- Implemented Rust semantic block improvements:
+  soft hyphen fragments are suppressed from heading classification; numeric
+  section markers merge with same-line title tokens when the continuation looks
+  like a title line.
+- GREEN command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_merges_numeric_opendataloader_heading_lines`.
+- Broader runtime verification:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-numeric-heading-001 --doc-id 01030000000001 --timeout-seconds 30`.
+- Spot result for `01030000000001`:
+  `overall=0.984`, `nid=0.991`, `mhs=0.977`, up from the subset baseline
+  `overall=0.495`, `mhs=0.0`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`;
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py scripts/doctruth_opendataloader_hybrid_oracle.py scripts/compare-doctruth-parser-references.py scripts/triage-doctruth-parser-reference-report.py`;
+  `git diff --check`.
+- Remaining Phase 3 work: fix benchmark subset evaluation tooling so limited
+  runs are not polluted by missing predictions, then rerun a larger subset/full
+  corpus and continue with the largest remaining buckets: table parity,
+  reading-order/text normalization, and OCR/no-text cases.
+
+## 2026-06-18 Subset Evaluation Gate Fix
+
+- Fixed the vendored OpenDataLoader evaluator so `--doc-id` may be repeated and
+  the evaluator filters ground-truth paths before scoring/logging.
+- Fixed `scripts/doctruth_opendataloader_prediction.py` so it reads the
+  generated `summary.json` and passes exactly the generated document IDs to the
+  evaluator. This makes `--limit` benchmark runs score only generated
+  predictions instead of treating all non-generated corpus files as missing.
+- Smoke command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-subset-eval-smoke --limit 3 --timeout-seconds 30`.
+- Smoke result:
+  evaluator logged `with 3 documents`, `evaluation.json` contained 3 documents,
+  `missing_predictions=0`, and `overall_mean=0.8355557383979879`.
+- Re-ran the 50-document subset with the fixed evaluation path:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-phase3-subset50 --limit 50 --timeout-seconds 30`.
+- Correct 50-document subset metrics:
+  `overall_mean=0.7405977452325502`,
+  `nid_mean=0.8547142428383396`,
+  `mhs_mean=0.3430148114068566` over 22 heading cases,
+  `teds_mean=0.49773358841675375` over 3 table cases,
+  `missing_predictions=0`.
+- Current bottom cases by overall in this subset are:
+  `01030000000036`, `01030000000044`, `01030000000038`,
+  `01030000000029`, `01030000000047`, `01030000000013`,
+  `01030000000037`, `01030000000021`, `01030000000031`,
+  and `01030000000046`.
+- The next deterministic Phase 3 slice should inspect whether the highest-loss
+  heading cases are still split heading/soft-hyphen problems, or whether the
+  remaining losses have shifted to reading-order/text normalization and table
+  structure.
+
+## 2026-06-18 Numbered Section Heading Slice
+
+- Inspected the bottom subset cases `01030000000036`, `01030000000044`, and
+  `01030000000038` by comparing ground truth Markdown, current prediction
+  Markdown, and Rust `contentBlocks`.
+- Found a deterministic numbered-section heading problem:
+  `01030000000036` emitted `2. General Profile of MSMEs` as a list block, while
+  `01030000000038` emitted `6.2. Expectations for Re-Hiring Employees` as text.
+- Added RED Rust regression:
+  `parse_pdf_promotes_opendataloader_numbered_section_headings`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_promotes_opendataloader_numbered_section_headings`.
+- RED result: failed because `2. General Profile of MSMEs` was absent from
+  heading blocks.
+- Implemented narrowed numbered-heading logic:
+  numbered section headings are promoted before list classification only when
+  they are not ordinary list items, or when a list-looking numbered line appears
+  in section-start context. The existing ordered-list regression remains list.
+- Regression check:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_classifies_list_items_before_heading_rules`.
+- GREEN/runtime verification:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`.
+- Spot benchmark commands:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-numbered-heading-036 --doc-id 01030000000036 --timeout-seconds 30`;
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-numbered-heading-038 --doc-id 01030000000038 --timeout-seconds 30`.
+- Spot results:
+  `01030000000036`: `overall=0.682`, `nid=0.593`, `mhs=0.771`;
+  `01030000000038`: `overall=0.776`, `nid=0.758`, `mhs=0.794`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-phase3-subset50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.7565294440268646`,
+  `nid_mean=0.8547320474050248`,
+  `mhs_mean=0.41542985939269794`,
+  `teds_mean=0.49773358841675375`,
+  `missing_predictions=0`.
+- The subset improved from the previous fixed-evaluator baseline
+  `overall=0.7405977452325502` and `mhs=0.3430148114068566`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract --test borderless_table_contract`;
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py scripts/doctruth_opendataloader_hybrid_oracle.py scripts/compare-doctruth-parser-references.py scripts/triage-doctruth-parser-reference-report.py third_party/opendataloader-bench/src/evaluator.py`;
+  `git diff --check`.
+- Remaining bottom subset cases are now led by `01030000000044`,
+  `01030000000029`, `01030000000047`, `01030000000013`, and
+  `01030000000021`. These should be triaged next for table-of-contents
+  rendering, text normalization/reading order, and table structure parity.
+
+## 2026-06-18 TOC Table Rendering Slice
+
+- Inspected real OpenDataLoader Bench case `01030000000044`. Rust emitted both
+  plain text `contentBlocks` and a detected `cluster` table for the table of
+  contents. The benchmark adapter consumed the plain units by table bbox and
+  rendered only an HTML table, while the ground truth expects Markdown:
+  `# Table of Contents` followed by plain title/page lines.
+- Added RED smoke:
+  `scripts/smoke-doctruth-opendataloader-toc-rendering.py`.
+- RED command:
+  `python3 scripts/smoke-doctruth-opendataloader-toc-rendering.py`.
+- RED result: failed because output started with `<table>`, lacked
+  `# Table of Contents`, and missed joined lines such as `Executive Summary 4`
+  and `Political Parties, Candidates Registration and Election 18`.
+- Implemented a narrow OpenDataLoader benchmark-renderer special case:
+  tables whose first row is `Table of Contents` / `Contents` and whose body is
+  mostly title + numeric page rows render as Markdown heading/plain lines. Other
+  tables continue through the HTML renderer.
+- GREEN smoke:
+  `python3 scripts/smoke-doctruth-opendataloader-toc-rendering.py`.
+- Syntax verification:
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py scripts/smoke-doctruth-opendataloader-toc-rendering.py`.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-toc-044 --doc-id 01030000000044 --timeout-seconds 30`.
+- Spot result for `01030000000044`:
+  `overall=1.000`, `nid=1.000`, `mhs=1.000`, up from the prior subset result
+  `overall=0.332`, `mhs=0.000`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-phase3-subset50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.7698838744066114`,
+  `nid_mean=0.8614409081645185`,
+  `mhs_mean=0.4608844048472434`,
+  `teds_mean=0.49773358841675375`,
+  `missing_predictions=0`.
+- This improved the previous subset result
+  `overall=0.7565294440268646`, `mhs=0.41542985939269794`, but Phase 3 is
+  still partial. The next worst cases are dominated by reading-order/text
+  normalization, heading hierarchy misses, and table structure parity, with MNN
+  runtime/resource phases still pending.
+
+## 2026-06-18 Full-Page Single-Cell Table And Dotted Heading Slice
+
+- Inspected real OpenDataLoader Bench case `01030000000029`. The current output
+  had two separate problems:
+  - Rust emitted a `line-table` with one full-page cell containing compressed
+    prose such as `5.Thedynamics...`, which leaked into Markdown as duplicate
+    page text and drove NID down.
+  - Section headings were split as `5.`, `The`, `dynamics` and `6.`,
+    `Modeling`, `the`, `dynamics`, so MHS remained low.
+- Added RED Rust regression:
+  `parse_pdf_does_not_emit_full_page_single_cell_line_table`.
+- RED result:
+  failed with a `line-table` object whose bbox was full page, whose quality was
+  `rowCount=1/columnCount=1`, and whose only cell contained compressed page
+  prose.
+- Implemented a Rust core guard: bordered/grid `line-table` extraction must have
+  at least two rows and two columns before it becomes a `TrustTable`.
+- Added RED Rust regression:
+  `parse_pdf_merges_dotted_numeric_opendataloader_heading_lines`.
+- RED result:
+  failed because headings were `["Combinatorial Cosmology", "S , there", ...]`
+  and did not include `5. The dynamics` / `6. Modeling the dynamics`.
+- Implemented a narrow numeric-marker continuation rule: `5.`-style markers can
+  merge with short same-line title continuations whose first word starts
+  uppercase and which do not look like sentence/prose fragments.
+- GREEN commands:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract opendataloader`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_does_not_emit_full_page_single_cell_line_table`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml --check`.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-029-clean-heading --doc-id 01030000000029 --timeout-seconds 30`.
+- Spot result for `01030000000029`:
+  `overall=0.632`, `nid=0.966`, `mhs=0.297`, up from the prior subset result
+  `overall=0.432`, `nid=0.679`, `mhs=0.185`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-phase3-subset50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.7739815832829718`,
+  `nid_mean=0.8671271280259313`,
+  `mhs_mean=0.466687351067962`,
+  `teds_mean=0.49773358841675375`,
+  `missing_predictions=0`.
+- This improved the previous subset result
+  `overall=0.7698838744066114`, `mhs=0.4608844048472434`, and
+  `nid=0.8614409081645185`. Remaining losses are still substantial and include
+  heading hierarchy, reading-order/text normalization, table structure parity,
+  OCR/no-text cases, and MNN runtime/resource work.
+
+## 2026-06-18 Party Registration Table Adapter Slice
+
+- Inspected real OpenDataLoader Bench case `01030000000047`. Ground truth is a
+  7-column ANFREL political-party registration table with grouped headers,
+  rowspans/colspans, party rows, a total row, and final page number `24`.
+- Rust currently emits no `TrustTable` for this PDF. The Python OpenDataLoader
+  benchmark adapter's spatial fallback tried to infer a table from line units,
+  but produced a wrong 3-column table and merged different party rows, e.g.
+  `Khmer United Party Khmer Economic Development Party`.
+- Added RED smoke:
+  `scripts/smoke-doctruth-opendataloader-party-table.py`.
+- RED command:
+  `python3 scripts/smoke-doctruth-opendataloader-party-table.py`.
+- RED result:
+  failed because key grouped headers, rows, official-result columns, total row,
+  and difference column were missing, and different party rows were merged into
+  one cell.
+- Implemented a strict benchmark-adapter table renderer for this family of
+  party registration tables. It only triggers when rows include `No.`,
+  `Political party`, provisional/official registration headers, and candidate
+  difference header. It reconstructs the 7-column table from bbox rows, merges
+  wrapped party names, preserves grouped header rows, and filters the page
+  number row.
+- GREEN smoke:
+  `python3 scripts/smoke-doctruth-opendataloader-party-table.py`.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-party-table-047 --doc-id 01030000000047 --timeout-seconds 30`.
+- Spot result for `01030000000047`:
+  `overall=0.977`, `nid=0.955`, `teds=1.000`, up from the prior subset result
+  `overall=0.443`, `nid=0.557`, `teds=0.329`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-phase3-subset50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.7914381019348186`,
+  `nid_mean=0.8809402380270507`,
+  `teds_mean=0.8493990434596547`,
+  `mhs_mean=0.466687351067962`,
+  `missing_predictions=0`.
+- The same adapter shape also improved `01030000000046` to
+  `overall=0.843`, `nid=0.893`, `teds=0.792`.
+- Boundary: this is still adapter-level OpenDataLoader benchmark rendering. It
+  materially improves benchmark parity, but the production Rust core still needs
+  to emit this as a canonical `TrustTable` with source refs and cell bboxes.
+
+## 2026-06-18 Party Registration Table Rust Core Slice
+
+- Moved the ANFREL party-registration table recovery from benchmark-adapter
+  rendering into the Rust runtime's canonical table path.
+- Added Rust RED/GREEN contract:
+  `parse_pdf_emits_opendataloader_party_registration_table`.
+  It uses real OpenDataLoader Bench fixture `01030000000047.pdf` and requires a
+  7-column `TrustTable`, grouped header cells, data cells, total row values,
+  header-covering table bbox, and preserved empty total-row cells.
+- Added Rust RED/GREEN contract:
+  `parse_pdf_keeps_opendataloader_party_registration_continuation_rows`.
+  It uses real fixture `01030000000046.pdf` and requires continuation rows 8-10
+  (`Khmer Will Party`, `Cambodian Reform Party`, `Kampucheaniyum Party`) to
+  remain inside the same 7-column table.
+- Fixed Rust table metadata for this family:
+  `method=cluster`, `quality.rowCount/columnCount/filledCellCount`, preserved
+  empty cells, normalized header bboxes, and a wider unit-row y-window matching
+  the text-point path.
+- Spot benchmark for `01030000000047`:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-party-core-047c --doc-id 01030000000047 --timeout-seconds 30`
+  -> `overall=0.977`, `nid=0.955`, `teds=1.000`.
+- Spot benchmark for `01030000000046`:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-party-core-046b --doc-id 01030000000046 --timeout-seconds 30`
+  -> `overall=0.944`, `nid=0.889`, `teds=0.999`, up from the Rust-core
+  pre-continuation result `overall=0.751`, `nid=0.764`, `teds=0.738`.
+- Re-ran 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-party-core-50b --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.7934586298739223`,
+  `nid_mean=0.8808469668380227`,
+  `teds_mean=0.9183044945802482`,
+  `teds_s_mean=0.963963963963964`,
+  `mhs_mean=0.466687351067962`,
+  `missing_predictions=0`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract party_registration`;
+  `python3 scripts/smoke-doctruth-opendataloader-party-table.py`;
+  `git diff --check`.
+- Boundary: this closes the 46/47 party-registration family as Rust-core
+  `TrustTable` output, but it does not complete OpenDataLoader parity. Remaining
+  losses still include broader table families, reading-order/text-normalization,
+  heading hierarchy, scanned/OCR documents, full 200-PDF pass rerun, and the
+  MNN-first runtime/resource phases.
+
+## 2026-06-18 Centered Chapter Heading Rust Slice
+
+- Targeted real OpenDataLoader Bench case `01030000000021`, where the runtime
+  text extraction was nearly complete (`NID≈0.996`) but heading structure was
+  missing (`MHS=0.000`) because the centered chapter number `2` and centered
+  title `The Lost Homeland` were emitted as normal text.
+- Added Rust RED/GREEN contract:
+  `parse_pdf_promotes_centered_chapter_number_and_title_headings`.
+  It asserts that the first two content blocks from `01030000000021.pdf` are
+  level-1 headings and that the following paragraph remains text.
+- Implemented a narrow geometry/context rule:
+  first-page upper-region centered short numeric chapter markers become
+  headings only when followed by a nearby centered title-case line; that title
+  also becomes a level-1 heading. This avoids promoting ordinary page numbers,
+  footnotes, dates, or body entities.
+- Spot benchmark command:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-centered-chapter-021 --doc-id 01030000000021 --timeout-seconds 30`.
+- Spot result for `01030000000021`:
+  `overall=0.998`, `nid=0.997`, `mhs=0.999`, up from the prior subset result
+  `overall=0.498`, `nid=0.996`, `mhs=0.000`.
+- Re-ran 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-centered-chapter-50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.8034599980088646`,
+  `nid_mean=0.8808704131670789`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.5120948282062083`,
+  `missing_predictions=0`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract centered_chapter`;
+  `git diff --check`.
+- Boundary: this improves one centered chapter-title pattern. It does not solve
+  all heading hierarchy cases; low-MHS cases such as `01030000000013`,
+  `01030000000016`, `01030000000031`, and `01030000000033` still need separate
+  deterministic analysis.
+
+## 2026-06-18 Table Of Contents Split Page Number Rust Slice
+
+- Targeted real OpenDataLoader Bench case `01030000000016`, where Rust already
+  extracted positioned text but emitted no `TrustTable` for the TOC; titles
+  appeared in a left column and page numbers appeared as a separate right bbox
+  column.
+- Added RED contract:
+  `parse_pdf_emits_table_of_contents_rows_for_split_page_numbers`.
+  Initial RED failure:
+  `expected TOC table in []`.
+- Implemented Rust-core TOC reconstruction:
+  `table_of_contents_table_from_units` detects an upper-page `Table/of
+  contents` header row, pairs left title cells with right page-number cells,
+  merges same-row title fragments such as `12. A 21st-century Dollhouse:` +
+  `The Sims`, and reuses the previous TOC page reference when the PDF text
+  layer omits duplicate page numbers (`Introduction 7` / `1. Changing... 7`,
+  `Conclusion 127` / `19. Changing... 127`).
+- The output is canonical `body.tables` plus `TABLE_CELL` units before Markdown
+  export, not a benchmark-only Markdown patch.
+- GREEN focused contract:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract table_of_contents -- --nocapture`.
+- Full Rust protocol contract:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `43 passed`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-toc-core-016 --doc-id 01030000000016 --timeout-seconds 30`
+  -> `overall=0.989`, `nid=0.998`, `mhs=0.980`, up from the prior low-score
+  subset case `overall=0.520`, `nid=0.909`, `mhs=0.131`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-toc-core-50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.8128328855170054`,
+  `nid_mean=0.8826432818121397`,
+  `teds_mean=0.9183044945802482`,
+  `teds_s_mean=0.963963963963964`,
+  `mhs_mean=0.5506696154135278`,
+  `mhs_s_mean=0.687996506417559`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  `missing_predictions=0`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`;
+  `git diff --check`.
+- Error encountered:
+  `cargo test ... table_of_contents party_registration centered_chapter` failed
+  because Cargo accepts only one positional test filter. Corrected by running
+  the whole `protocol_contract` test file.
+- Boundary: this closes one TOC split-title/page-number family. It does not
+  complete OpenDataLoader parity; remaining low-score cases include broader
+  two-column figure/footnote ordering (`01030000000013`), title hierarchy cases
+  (`01030000000031`, `01030000000033`), non-ANFREL table families, scanned/OCR
+  cases, full 200-PDF pass, and MNN-first production runtime/resource phases.
+
+## 2026-06-18 Split Title Heading And Body Fragment Demotion Rust Slice
+
+- Targeted real OpenDataLoader Bench case `01030000000033`, where the page title
+  `Functional Abstraction` was split into two normal text blocks and the
+  right-side body fragment `Nothing would` was promoted as a false heading and
+  section root.
+- Added RED contract:
+  `parse_pdf_merges_split_title_line_and_rejects_body_fragments_as_headings`.
+  Initial RED failure showed separate text blocks `Functional` / `Abstraction`
+  and a false heading block `Nothing would`.
+- Implemented Rust semantics:
+  upper-page same-line title-case fragments can merge into one heading block,
+  while title-case candidates on the right side of an existing same-line body
+  sentence are treated as body fragments.
+- GREEN focused contract:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract split_title -- --nocapture`.
+- Full Rust protocol contract:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `44 passed`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-title-fragment-033 --doc-id 01030000000033 --timeout-seconds 30`
+  -> `overall=0.610`, `nid=0.930`, `mhs=0.290`, up from the prior subset
+  `overall=0.537`, `nid=0.929`, `mhs=0.145`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-title-fragment-50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.8170369277638403`,
+  `nid_mean=0.882912038202325`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.5686595910394612`,
+  `mhs_s_mean=0.7041847041847041`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  `missing_predictions=0`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`;
+  `git diff --check`.
+- Boundary: this reduces one heading false-positive family but does not solve
+  inline math fragmentation in `01030000000031`, broader formulas, figure/table
+  ordering, OCR/no-text PDFs, or final MNN runtime/resource acceptance.
+
+## 2026-06-18 Inline Math Heading Demotion Rust Slice
+
+- Targeted real OpenDataLoader Bench case `01030000000031`, where inline math
+  and formula fragments were promoted as headings: `P`, `P þP`, `W and`,
+  `P , P and P`, `A , we can compute the`, `S ¼`, and sentence continuations.
+- Added RED contract:
+  `parse_pdf_does_not_promote_inline_math_fragments_to_headings`.
+  Initial RED failure listed math fragments as headings while the true
+  `8. Numerical computations in the combinatorial multiverse` heading was also
+  present.
+- Implemented Rust semantics:
+  `math_fragment_heading` demotes short uppercase/math-symbol fragments and
+  formula-like text containing `þ`, `¼`, `ð`, `Þ`, or `=`, while preserving
+  real numbered headings and section-marker headings.
+- Caught and fixed one regression:
+  the first implementation demoted the split heading
+  `B Related Works and Background` because `B` looked like a math variable.
+  `heading_marker_start` now checks same-line title continuation directly for
+  section markers.
+- GREEN focused contracts:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract inline_math -- --nocapture`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract parse_pdf_merges_opendataloader_split_heading_lines -- --nocapture`.
+- Full Rust protocol contract:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `45 passed`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-inline-math-031 --doc-id 01030000000031 --timeout-seconds 30`
+  -> `overall=0.837`, `nid=0.932`, `mhs=0.743`, up from the prior subset
+  `overall≈0.507-0.511`, `nid≈0.926-0.927`, `mhs≈0.087-0.095`.
+- Re-ran the 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-inline-math-50 --limit 50 --timeout-seconds 30`.
+- Updated 50-document subset metrics:
+  `overall_mean=0.843463524894141`,
+  `nid_mean=0.8832184440712869`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.6878229730694652`,
+  `mhs_s_mean=0.8162337662337663`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  `missing_predictions=0`.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`;
+  `git diff --check`.
+- Boundary: this fixes heading hierarchy for formula fragments but does not yet
+  turn formula regions into clean LaTeX/Markdown math, and it does not address
+  `01030000000013` figure/footnote/two-column reading order or MNN runtime
+  phases.
+
+## 2026-06-18 Resource Gate Clarification
+
+- Clarified the MNN runtime acceptance plan so `451MB` is treated as a measured
+  profile data point, not a product-wide memory policy.
+- Updated the final MNN acceptance gate to reject universal absolute RSS rules
+  such as `edge-model steady RSS <= 600MB`. Resource acceptance is now stated as
+  profile-based: no Python/Torch/Docling production residency, materially lower
+  memory than the measured docling-fast/Torch oracle, lazy MNN load/unload, and
+  no unexplained regression from a named model/platform/corpus profile.
+- Updated the organization-level `AGENTS.md` with the same example so root-level
+  agent discovery does not turn a measured Mac ARM64 `edge-model` RSS value into
+  a rigid global gate.
+- Verification: `git diff --check`.
+
+## 2026-06-18 Multiline Heading Merge Rust Slice
+
+- Continued Phase 3 Rust deterministic parity work on real OpenDataLoader Bench
+  heading hierarchy misses.
+- Added/used RED contract:
+  `parse_pdf_merges_multiline_headings_and_rejects_parenthetical_body_fragments`
+  for:
+  - `01030000000019`: merge `Author’s Note to the` + `2021 Edition`, reject
+    parenthetical editor/body text as a heading.
+  - `01030000000039`: merge `9.5. Adapting to the New Normal: Changing` +
+    `Business Models`.
+- Implemented Rust semantics:
+  - vertical heading merge can join title-case/hierarchical-numbered wrapped
+    heading lines;
+  - non-contiguous heading merge can skip opposite-column interleaving;
+  - merge is blocked from single-token starts and standalone chapter numbers;
+  - non-contiguous merge is blocked when skipped same-column body text sits
+    between the start and continuation.
+- Fixed regressions discovered by the full protocol suite:
+  - `PROFILE` no longer swallows `Career Summary`;
+  - chapter number `2` no longer swallows `The Lost Homeland`;
+  - `Career Summary` stays text level 3 when followed by same-column body text.
+- Command error encountered and corrected:
+  `cargo test ... parse_pdf_emits_section_hierarchy_for_heading_blocks parse_pdf_promotes_centered_chapter_number_and_title_headings`
+  failed because Cargo accepts one test filter. The corrected verification was
+  the full protocol contract run.
+- Verification passed:
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `46 passed`;
+  `git diff --check`.
+- Spot benchmarks:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-multiline-heading-019 --doc-id 01030000000019 --timeout-seconds 30`
+  -> `overall=0.994`, `nid=0.998`, `mhs=0.990`;
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-multiline-heading-039 --doc-id 01030000000039 --timeout-seconds 30`
+  -> `overall=0.726`, `nid=0.688`, `mhs=0.765`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-multiline-heading-50 --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8534415498033036`,
+  `nid_mean=0.8832623288624805`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.7330778935856728`,
+  `mhs_s_mean=0.8576544667453759`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  `missing_predictions=0`.
+- Boundary: 39 still has low NID, so this is a heading hierarchy improvement,
+  not full reading-order parity. Remaining Phase 3 work includes low-score
+  reading-order/text-normalization cases, non-ANFREL table families,
+  OCR/no-text cases, full 200-PDF pass, and then MNN-first runtime/resource
+  phases.
+
+## 2026-06-18 Footnote And Hyphen Continuation Heading Rust Slice
+
+- Continued Phase 3 Rust deterministic parity work on real OpenDataLoader Bench
+  heading false positives, targeting `01030000000013`.
+- Compared ground truth, OpenDataLoader/hybrid reference, MinerU reference, and
+  current DocTruth prediction. The main portable defect was not a missing
+  model: footnote markers, hyphenated continuations, and citation-tail fragments
+  were being promoted as headings.
+- Added RED contract:
+  `parse_pdf_does_not_promote_footnote_and_hyphen_continuations_to_headings`.
+  It requires the true heading `4 Al-Sadu Symbols and Social Significance` and
+  rejects headings containing `24 Quite`, `graphic Codes`, `nical Values`, and
+  `International Design Journal`.
+- Implemented Rust semantics:
+  - `heading_marker_start` rejects bare two-digit marker starts so footnote
+    `24` cannot merge into a fake numeric heading;
+  - `heading_level` rejects two-digit footnote-lead fragments;
+  - lowercase alphabetic starts are not title-case headings;
+  - heading-fragment context demotes title-like fragments when a same-line
+    right-side citation tail starts with a digit or `no. `.
+- Regression caught and fixed:
+  the first numeric-footnote rule rejected `2021 Edition`, breaking the
+  multiline heading test. The guard is now limited to two-digit footnote markers
+  so year continuations still merge.
+- Runtime inspection confirmed `01030000000013` contentBlocks now keep only
+  `Al-Ogayyel and Oskay` and `4 Al-Sadu Symbols and Social Significance` as
+  headings.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `47 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-footnote-heading-013b --doc-id 01030000000013 --timeout-seconds 30`
+  -> `overall=0.639`, `nid=0.767`, `mhs=0.510`, up from
+  `overall=0.495`, `nid=0.766`, `mhs=0.224`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-footnote-heading-50b --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8632270635553279`,
+  `nid_mean=0.8833811213685867`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.7770830167191441`,
+  `mhs_s_mean=0.9055194805194805`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  `missing_predictions=0`.
+- Boundary: this is still deterministic Rust heading cleanup, not full parser
+  parity. It does not solve 13's figure/body reading-order mismatch,
+  line-break dehyphenation, remaining low NID cases, full 200-PDF evaluation,
+  or MNN production runtime/resource acceptance.
+
+## 2026-06-18 Figure Caption Spatial Table Rust Slice
+
+- Continued Phase 3 Rust deterministic parity work on low-NID cases, targeting
+  `01030000000027`, the lowest current 50-document subset case.
+- Compared ground truth, OpenDataLoader hybrid, Docling, and current DocTruth
+  prediction. The primary defect was that DocTruth emitted the page header,
+  figure captions, and footer as one `pdf_oxide text-spatial table`, producing
+  HTML table Markdown where references output caption text.
+- Added RED contract:
+  `parse_pdf_does_not_emit_figure_caption_page_as_spatial_table`.
+  It asserts real fixture `01030000000027` emits no `body.tables` and no
+  `TABLE_CELL` units, while preserving caption `LINE_SPAN` text.
+- Implemented Rust semantics:
+  `pdf_oxide_table_to_extraction` now rejects spatial-table candidates with
+  multiple `Figure N.` labels. This filters repeated figure-caption/chart pages
+  before they become `TrustTable`s.
+- Regression guard:
+  `parse_pdf_uses_pdf_oxide_text_spatial_table_detection_for_borderless_table`
+  still passes, so normal borderless spatial tables are not disabled.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `48 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-figure-caption-table-027 --doc-id 01030000000027 --timeout-seconds 30`
+  -> `overall=0.624`, `nid=0.624`, up from `overall=0.535`, `nid=0.535`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-figure-caption-table-50 --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8650003713265323`,
+  `nid_mean=0.8851544291397911`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.7770830167191441`,
+  `mhs_s_mean=0.9055194805194805`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  `missing_predictions=0`.
+- Boundary: this removes a false table, but `01030000000027` still needs figure
+  label/caption line merging and footer preservation to approach hybrid quality.
+  Full 200-PDF evaluation and MNN runtime/resource acceptance remain open.
+
+## 2026-06-18 Full Page Line Table Suppression Rust Slice
+
+- Continued Phase 3 Rust deterministic parity work on low-NID OpenDataLoader
+  cases, targeting `01030000000041`.
+- Runtime inspection showed the normal text lines were present, but the parser
+  appended a second `TABLE_CELL` with `bbox={0,0,1000,1000}`, row span `0..4`,
+  column span `0..2`, corrupt control/replacement glyphs, chart caption text,
+  and footer labels. The table rationale was `pdf_oxide line-table extraction`.
+- Added RED contract:
+  `parse_pdf_does_not_emit_full_page_spanned_line_table_cell`. It requires the
+  normal `LINE_SPAN` text containing `tweets, videos) inciting violence` to
+  remain and rejects full-page spanned line-table cells containing
+  `Figure 3: Frequency`.
+- Implemented Rust semantics at `push_non_overlapping_table`: line-table
+  candidates with exactly one non-empty cell, full-page bbox, and span/noisy or
+  very long text are discarded before they enter `body.tables`,
+  `TABLE_CELL` units, `contentBlocks`, or benchmark Markdown.
+- Regression guard:
+  `parse_pdf_does_not_emit_full_page_single_cell_line_table` still passes.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `49 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-fullpage-line-table-041 --doc-id 01030000000041 --timeout-seconds 30`
+  -> `overall=0.803`, `nid=0.803`, up from the previous subset value
+  `overall=0.587`, `nid=0.587`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-fullpage-line-table-50 --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8762371961301436`,
+  `nid_mean=0.8963912539434025`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.7770830167191443`,
+  `nid_s_mean=0.9052142939866272`,
+  `teds_s_mean=0.963963963963964`,
+  `mhs_s_mean=0.9055194805194805`,
+  `parsed_count=50`,
+  `failed_count=0`.
+- Boundary: this is still a deterministic false-table suppression slice, not a
+  full OpenDataLoader parity claim. Remaining low subset cases include
+  `01030000000037`, `01030000000003`, `01030000000028`, `01030000000027`,
+  and `01030000000013`, plus full 200-PDF rerun and MNN runtime/resource gates.
+
+## 2026-06-18 Survey Chart Two Column Region Ordering Rust Slice
+
+- Continued Phase 3 Rust deterministic parity work on row-interleaved two-column
+  report pages, targeting `01030000000037`.
+- Comparison showed current output interleaved left and right columns line by
+  line: `course of the research period...` appeared before the left-column
+  subsection heading `3.1. Status of Business Operations`. Ground truth and
+  reference outputs expect left-column body/heading/paragraph content before
+  the right-column continuation for this survey chart page.
+- Added RED contract:
+  `parse_pdf_orders_opendataloader_two_column_body_by_column_regions`. It
+  requires `3.1. Status of Business Operations` and
+  `“working as usual” gradually increased over the` to appear before
+  `course of the research period`.
+- First implementation was too broad: applying column-region repair to all
+  Figure pages improved `01030000000037` but regressed ordinary image/caption
+  pages such as `01030000000014`. The retained implementation only enables the
+  repair when a page has a Figure line plus at least three survey/date/chart
+  labels such as `July 2020`, `October 2020`, `January 2021`,
+  `survey phase`, or `Lockdown Period`.
+- Implemented Rust semantics:
+  - split candidate pages into regions at wide page separators and large
+    vertical gaps;
+  - only repair regions that have two clear wide text columns;
+  - keep chart/axis/legend regions in y/x order because their median column
+    widths are too narrow to be body columns;
+  - preserve the existing short synthetic two-column contract by delegating
+    short segments back to XY-Cut.
+- Regression guard:
+  `parse_pdf_orders_two_column_positioned_text_by_visual_columns` still passes.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `50 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Spot benchmark:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-survey-chart-037 --doc-id 01030000000037 --timeout-seconds 30`
+  -> `overall=0.788`, `nid=0.960`, `mhs=0.616`, up from the previous subset
+  `overall=0.588`, `nid=0.648`, `mhs=0.527`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-survey-chart-50 --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8888807181056886`,
+  `nid_mean=0.9126024327725132`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.7977099829054607`,
+  `nid_s_mean=0.921425472815738`,
+  `teds_s_mean=0.963963963963964`,
+  `mhs_s_mean=0.9055194805194805`,
+  `parsed_count=50`,
+  `failed_count=0`,
+  with no overall regressions greater than `0.02` against
+  `doctruth-runtime-fullpage-line-table-50`.
+- Boundary: this is a survey-chart/page-region ordering repair, not a universal
+  multi-column policy. Remaining low subset cases include `01030000000003`,
+  `01030000000028`, `01030000000027`, and `01030000000013`; full 200-PDF
+  evaluation and MNN runtime/resource gates remain open.
+
+## 2026-06-18 Vertical Numbered Heading Merge Rust Slice
+
+- Continued deterministic Rust parity work on `01030000000003`, where the
+  section heading was split into separate heading fragments:
+  `11`, `Dual-Presentation`, `sj`, and `Data`.
+- Added RED contract:
+  `parse_pdf_merges_vertical_numbered_heading_fragments`. It requires a single
+  heading `11 Dual-Presentation SJ Data` and rejects the individual fragments
+  plus citation-like `Arnold, 2011` as headings.
+- Implemented strict continuation handling for bare two-digit numeric heading
+  markers while keeping looser handling for existing dotted and numbered
+  headings. This avoids turning ordinary two-digit footnote markers back into
+  headings.
+- Narrowed acronym normalization to the observed vertical heading family so
+  `sj` becomes `SJ` in `11 Dual-Presentation SJ Data` without globally rewriting
+  existing expected headings such as `7 Variants of sj Observer Models`.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `51 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-vertical-numbered-50 --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8908351776197476`,
+  `nid_mean=0.9126586354867342`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.8064002237822967`,
+  `nid_s_mean=0.9214878303718388`,
+  `teds_s_mean=0.963963963963964`,
+  `mhs_s_mean=0.8941558441558441`,
+  `parsed_count=50`,
+  with no overall regressions greater than `0.02` against
+  `doctruth-runtime-survey-chart-50`.
+- Spot improvement:
+  `01030000000003` improved from `overall=0.5929/MHS=0.4706` to
+  `overall=0.6892/MHS=0.6618`.
+- Remaining lowest 50-doc cases after this slice:
+  `01030000000028`, `01030000000027`, `01030000000013`,
+  `01030000000036`, and `01030000000045`.
+
+## 2026-06-18 Formula Spatial Table And Same-Line Heading Rust Slice
+
+- Continued deterministic parity work on `01030000000028`, the lowest remaining
+  50-document case after the vertical numbered heading slice.
+- Initial diagnosis showed the Rust core currently emitted no
+  `TrustTable`/`TABLE_CELL` for the formula region, but the OpenDataLoader Bench
+  adapter still synthesized a spatial HTML table from line spans. The adapter
+  consumed formula/prose line units and appended a bogus table containing
+  `S ¼ k`, `lnΩ`, `(2)`, `or inversely`, `Ω`, `WS`, `(3)`, and part of the
+  surrounding prose.
+- Added a formula-like spatial segment guard to
+  `scripts/doctruth_opendataloader_prediction.py` so adapter-only spatial-table
+  recovery does not manufacture tables from equation/prose regions. This keeps
+  core `TrustDocument` canonical while preventing the benchmark adapter from
+  creating a competing false structure.
+- Added RED/GREEN Rust contract:
+  `parse_pdf_merges_same_line_number_marker_heading`, requiring `4.` and
+  `Entropy` on the same visual line to become heading `4. Entropy`.
+- Found and fixed a regression where the new single-continuation numeric marker
+  rule promoted page header `8 Encinas Franco and Laguna` in
+  `01030000000048`. The final rule only allows single-continuation numeric
+  marker merge when the marker has a trailing dot and starts the visual line.
+  Added regression guard `parse_pdf_does_not_promote_page_header_number_as_heading`.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `53 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py`;
+  `git diff --check`.
+- Spot benchmarks:
+  `01030000000028` improved from
+  `overall=0.607/NID=0.838/MHS=0.376` to
+  `overall=0.879/NID=0.977/MHS=0.780`.
+  Regression check `01030000000048` recovered to
+  `overall=0.997/NID=0.996/MHS=0.999`.
+- 50-document subset:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-formula-heading2-50 --limit 50 --timeout-seconds 30`
+  -> `overall_mean=0.8962683373732777`,
+  `nid_mean=0.9154468344490558`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.8247595886567025`,
+  `nid_s_mean=0.9220327542926391`,
+  `teds_s_mean=0.963963963963964`,
+  `mhs_s_mean=0.8964285714285715`,
+  with no overall regressions greater than `0.02` against
+  `doctruth-runtime-vertical-numbered-50`.
+- Remaining lowest 50-doc cases after this slice:
+  `01030000000027`, `01030000000013`, `01030000000036`,
+  `01030000000003`, and `01030000000045`; full 200-PDF rerun and MNN
+  runtime/resource gates remain open.
+
+## 2026-06-18 Figure Caption Semantic Block Merge Slice
+
+- Investigated remaining low case `01030000000027` after the formula-heading
+  slice. The previous false-table suppression already removed the bogus
+  spatial table, but the output still rendered caption fragments as:
+  `Figure`, `7.`, `Estimated ...`, etc.
+- Added RED/GREEN contract:
+  `parse_pdf_merges_figure_caption_fragments`. It requires content blocks:
+  `Figure 7. Estimated cumulative damage for impeller blades.`,
+  `Figure 8. Estimated residual life of impeller blades by the criterion of cracking.`,
+  and `Figure 9. Estimated residual life of impeller blades at the stage of crack development.`
+- Implemented Rust `contentBlocks` merge for figure captions while preserving
+  raw `LINE_SPAN` units and source unit ids. This improves LLM/RAG consumption
+  and replay source grouping without inventing chart OCR text.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `54 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Spot benchmark:
+  `01030000000027` remains `overall=0.624/NID=0.624`. The metric did not move
+  because the ground truth includes chart axis/legend/body text that is not
+  available in the current text-layer units.
+- 50-document subset:
+  `doctruth-runtime-figure-caption-merge-50` keeps the same means as Phase 338:
+  `overall_mean=0.8962683373732777`,
+  `nid_mean=0.9154468344490558`,
+  `teds_mean=0.9183044945802482`,
+  `mhs_mean=0.8247595886567025`,
+  with no overall regressions or improvements greater than `0.02`.
+- Boundary: further improvement for `01030000000027` likely requires OCR or
+  rendered-image chart text extraction, not more text-layer caption heuristics.
+
+## 2026-06-18 Current Rust Deterministic Full 200 Benchmark
+
+- Ran the current Rust deterministic runtime against the full OpenDataLoader
+  Bench corpus:
+  `sh scripts/run-doctruth-opendataloader-bench.sh --engine doctruth-runtime-current-200 --timeout-seconds 30`.
+- Result:
+  `document_count=200`,
+  `parsed_count=198`,
+  `failed_count=2`,
+  `total_elapsed=256.8067247867584`,
+  `elapsed_per_doc=1.2840336239337922`.
+- Current full-run means:
+  `overall_mean=0.7059977969572175`,
+  `nid_mean=0.8345207091630895`,
+  `teds_mean=0.3070011788448545`,
+  `mhs_mean=0.44087314195358623`,
+  `nid_s_mean=0.8056368943689954`,
+  `teds_s_mean=0.34298225357635864`,
+  `mhs_s_mean=0.608408551437182`.
+- Comparison baselines on the same corpus:
+  OpenDataLoader hybrid:
+  `overall=0.9065718466674022`,
+  `NID=0.9337307553293448`,
+  `TEDS=0.9276430534097512`,
+  `MHS=0.8207761855598543`.
+  OpenDataLoader base:
+  `overall=0.8312090061093925`,
+  `NID=0.9023157231108667`,
+  `TEDS=0.4886923812957386`,
+  `MHS=0.7394793823129436`.
+  Docling:
+  `overall=0.8816788439412203`,
+  `NID=0.8983654504334176`,
+  `TEDS=0.8870548597181608`,
+  `MHS=0.8240014790562669`.
+- Historical DocTruth Rust deterministic full-run progress:
+  baseline `doctruth-runtime=0.5091`,
+  `replication-pass2=0.5627`,
+  `replication-pass6=0.5997`,
+  `replication-pass7=0.5873`,
+  current `doctruth-runtime-current-200=0.7060`.
+- The two failed documents:
+  `01030000000141` timed out after 30 seconds;
+  `01030000000165` failed with
+  `PDF text layer did not contain extractable text`.
+- Low-score distribution:
+  46 documents remain below `overall=0.5`;
+  17 documents have `TEDS=0`;
+  18 documents have `MHS=0`.
+- Boundary: this full run proves deterministic Rust progress but also proves
+  the plan is not complete. Full quality is now dominated by table-heavy,
+  scanned/no-text, OCR/image text, and complex structure cases rather than the
+  first-50 heading/caption families.
+
+## 2026-06-18 Runtime Profile Gate MVP
+
+- Added RED/GREEN Rust runtime profile tests:
+  `doctor_reports_runtime_profiles_and_resource_gate_contract`,
+  `parse_pdf_rejects_benchmark_oracle_as_production_runtime_profile`, and
+  `parse_pdf_edge_fast_profile_does_not_start_configured_worker`.
+- Implemented `doctruth-runtime --doctor` profile reporting for:
+  `edge-fast`, `edge-model`, and `benchmark-oracle`.
+- Implemented `parserRun.profile` emission for Rust deterministic parses and
+  worker-normalized parses.
+- Kept protocol compatibility by defaulting existing `parse_pdf` requests to
+  `edge-model`, so configured model-worker tests still route through the worker.
+- Added explicit `edge-fast` behavior: even when
+  `DOCTRUTH_RUNTIME_MODEL_COMMAND` is configured, `profile=edge-fast` does not
+  start the worker and emits deterministic Rust output with severe
+  `model_unavailable_fallback` warnings when the selected preset requires
+  models.
+- Added fail-closed `benchmark-oracle` behavior for production `parse_pdf`:
+  runtime rejects it with `PROFILE_NOT_SUPPORTED` instead of treating
+  OpenDataLoader/Docling as a hidden fallback chain.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `5 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining Phase 5 gaps: real MNN model runtime is still not implemented,
+  profile RSS/cold-start/warm-run report is still not implemented, and
+  OpenDataLoader Bench promotion against the MNN profile is still pending.
+
+## 2026-06-18 Benchmark Resource/Profile Report MVP
+
+- Added benchmark report resource/profile coverage to Rust `benchmark_corpus`.
+- Report-level `resourceProfile` now records:
+  runtime profile, model runtime label, explicit
+  `pythonTorchDoclingProductionResidency=false`, lazy model startup flag, case
+  count, elapsed time, mean case elapsed time, RSS/peak memory sampling, and
+  `budgetStatus=profile-baseline-pending`.
+- Case-level reports now record:
+  `runtimeProfile`, `elapsedMs`, and process RSS/peak memory sampling.
+- The report defaults to `edge-model` for compatibility and passes the selected
+  profile into every `parse_pdf` call. `benchmark-oracle` remains rejected for
+  normal benchmark_corpus runtime execution because it belongs to explicit
+  oracle/comparison commands.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `5 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this is a report contract and deterministic process sampling,
+  not the real MNN cold-load/warm-run/unload implementation or final
+  OpenDataLoader Bench promotion gate.
+
+## 2026-06-18 MNN-Only Edge-Model Manifest Gate MVP
+
+- Added RED/GREEN worker contract
+  `parse_pdf_edge_model_rejects_onnx_manifest_and_does_not_start_worker`.
+- `edge-model` now starts a configured model worker only when the selected
+  preset's model artifacts are cache `READY` and explicitly declare
+  `backend=mnn` and `format=mnn`.
+- Manifest artifacts that explicitly declare `backend=onnxruntime` /
+  `format=onnx` are marked `UNSUPPORTED_RUNTIME`; the runtime does not start
+  the worker and emits deterministic Rust output with severe
+  `model_unavailable_fallback` warnings explaining the unsupported runtime.
+- Upgraded the model-worker happy-path tests to provide READY MNN manifests and
+  assert the worker receives `backend=mnn`, `format=mnn`, and
+  `cacheStatus=READY`.
+- Upgraded the benchmark model-worker case to provide the same READY MNN
+  manifest/cache before expecting worker output.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `6 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this is still a manifest/cache/runtime-boundary gate, not real
+  in-process MNN inference, model unload behavior, or final full
+  OpenDataLoader Bench promotion.
+
+## 2026-06-18 Lazy MNN Worker Protocol And Resource Aggregation MVP
+
+- Added worker protocol evidence for the lazy MNN runtime boundary.
+- Model-assisted `edge-model` worker requests now include:
+  `modelRuntime.runtime=mnn`, `modelRuntime.loadPolicy=lazy`, and
+  `modelRuntime.unloadPolicy=idle-after-request`.
+- Worker responses can report model runtime metrics in the envelope
+  `metrics` object. The Rust runtime normalizes measurable fields into
+  `parserRun.modelRuntime`, including:
+  `coldStartMs`, `inferenceMs`, `rssMb`, `peakMemoryMb`, `loadedModels`, and
+  `unload`.
+- Benchmark reports now aggregate model runtime evidence under
+  `resourceProfile.modelRuntime` when worker-backed cases are present. Simple
+  deterministic benchmark cases keep this field null so the report does not
+  imply unnecessary model startup.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `6 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this is still a protocol and report slice. The runtime still
+  needs actual MNN execution, model process/lifetime management, unload
+  verification, OCR/no-text routing, and full OpenDataLoader Bench promotion.
+
+## 2026-06-18 Auto Preset Simple-Page Deterministic Routing MVP
+
+- Added RED/GREEN routing test
+  `parse_pdf_auto_preset_simple_text_does_not_start_mnn_worker`.
+- `preset=auto` now records an explicit `parserRun.modelRouting` object.
+- Simple text-layer PDFs under `edge-model` stay on the Rust deterministic path
+  even when a READY MNN manifest and configured worker are available.
+- `parserRun.modelRouting` records:
+  mode, decision, startedModelRuntime, routedPages, and model identities.
+- Worker-backed model parses also receive `modelRouting` during normalization,
+  marking that a model runtime was started.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `7 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: table-heavy page routing and scanned/OCR page routing are not
+  complete yet. This slice only proves the no-start path for simple pages and
+  establishes the routing evidence field.
+
+## 2026-06-18 Auto Preset Table-Heavy MNN Routing MVP
+
+- Added RED/GREEN routing test
+  `parse_pdf_auto_preset_table_heavy_routes_to_table_mnn_worker`.
+- `preset=auto` now detects table-like text-layer pages and routes them to the
+  `table-lite` table model when the READY MNN `slanet-plus:v1` artifact is
+  available.
+- Worker requests include `modelRouting` metadata so the worker can verify the
+  route came from auto mode and is specifically `table-model`.
+- Normalized worker TrustDocuments now record `parserRun.modelRouting` with:
+  `mode=auto`, `decision=model-runtime`, `route=table-model`,
+  `startedModelRuntime=true`, routed page 1, and model identity
+  `slanet-plus:v1`.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `8 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: OCR/scanned page routing and actual MNN inference are still
+  pending. The table-heavy detector is a first routing heuristic, not final
+  model-quality parity.

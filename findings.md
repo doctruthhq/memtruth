@@ -1665,3 +1665,17 @@
 - The current table-heavy detector is heuristic and should be treated as a
   routing bootstrap. Final quality still depends on real MNN table inference
   and OpenDataLoader Bench promotion, not just the route existing.
+
+## 2026-06-18 Auto OCR Routing Finding
+
+- Empty text-layer PDFs need a separate route from table-heavy text-layer PDFs.
+  If `preset=auto` waits until deterministic extraction returns no lines, the
+  runtime can only emit `PDF_EXTRACTION_FAILED`; it has already missed the
+  chance to launch OCR.
+- The correct production boundary is still MNN-only: scanned/no-text pages can
+  route to `ocr-router:v1` only when the manifest/cache prove a READY MNN OCR
+  artifact. A missing OCR artifact should fail the OCR feature rather than
+  silently invoking Torch, Docling, Tesseract, PDFBox, or OpenDataLoader hybrid.
+- The same `parserRun.modelRouting` shape works for simple, table, and OCR
+  routes. That keeps page-level routing auditable without introducing another
+  reporting schema.

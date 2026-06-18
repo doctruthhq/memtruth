@@ -419,6 +419,16 @@ impl ModelRouteDecision {
 }
 
 fn model_route_decision(source_path: &str, requested_preset: &str) -> ModelRouteDecision {
+    if requested_preset == "auto" {
+        if let Some(routed_pages) = source_empty_text_pages(source_path) {
+            return ModelRouteDecision {
+                mode: "auto".to_string(),
+                decision: "ocr-model".to_string(),
+                effective_preset: "ocr".to_string(),
+                routed_pages,
+            };
+        }
+    }
     if requested_preset == "auto" && source_looks_table_heavy(source_path) {
         return ModelRouteDecision {
             mode: "auto".to_string(),
@@ -437,6 +447,21 @@ fn model_route_decision(source_path: &str, requested_preset: &str) -> ModelRoute
         decision: "deterministic-only".to_string(),
         effective_preset: requested_preset.to_string(),
         routed_pages: Vec::new(),
+    }
+}
+
+fn source_empty_text_pages(source_path: &str) -> Option<Vec<u64>> {
+    let extracted = extract_pages_with_pdf_oxide(source_path).ok()?;
+    let routed_pages = extracted
+        .pages
+        .iter()
+        .enumerate()
+        .filter_map(|(index, page)| page.lines.is_empty().then_some(index as u64 + 1))
+        .collect::<Vec<_>>();
+    if routed_pages.len() == extracted.pages.len() && !routed_pages.is_empty() {
+        Some(routed_pages)
+    } else {
+        None
     }
 }
 

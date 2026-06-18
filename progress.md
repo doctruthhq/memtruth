@@ -7395,3 +7395,31 @@
 - Remaining gap: OCR/scanned page routing and actual MNN inference are still
   pending. The table-heavy detector is a first routing heuristic, not final
   model-quality parity.
+
+## 2026-06-18 Auto Preset Scanned/OCR MNN Routing MVP
+
+- Added RED/GREEN routing test
+  `parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker`.
+- RED failure was the expected current behavior:
+  `PDF_EXTRACTION_FAILED` with message
+  `PDF text layer did not contain extractable text`, proving `preset=auto`
+  did not route empty-text-layer PDFs to OCR.
+- `preset=auto` now detects PDFs where all pages have no extractable text
+  lines and rewrites the effective preset to `ocr` for routing.
+- The OCR route only starts the configured model worker when the manifest/cache
+  contain a READY MNN `ocr-router:v1` artifact. This keeps the production path
+  fail-closed instead of falling back to Torch, Docling, Tesseract, PDFBox, or
+  OpenDataLoader hybrid.
+- Worker requests and normalized worker TrustDocuments record
+  `parserRun.modelRouting` with `mode=auto`, `decision=model-runtime`,
+  `route=ocr-model`, `startedModelRuntime=true`, routed page 1, and model
+  identity `ocr-router:v1`.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `9 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`.
+- Remaining gap: this is still a worker-routing contract using a fake worker,
+  not real RapidOCR/MNN inference or full OpenDataLoader Bench MNN promotion.

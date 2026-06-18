@@ -167,6 +167,48 @@ fn parse_pdf_auto_preset_table_heavy_routes_to_table_mnn_worker() {
 }
 
 #[test]
+fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
+    let pdf = write_empty_text_layer_pdf();
+    let worker = write_auto_ocr_model_worker();
+    let (cache_dir, manifest) = ready_mnn_ocr_model_manifest("doctruth-runtime-auto-ocr-cache");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "auto"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(json["parserRun"]["preset"], "ocr");
+    assert_eq!(json["parserRun"]["profile"], "edge-model");
+    assert_eq!(json["parserRun"]["modelRouting"]["mode"], "auto");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["decision"],
+        "model-runtime"
+    );
+    assert_eq!(json["parserRun"]["modelRouting"]["route"], "ocr-model");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["startedModelRuntime"],
+        true
+    );
+    assert_eq!(json["parserRun"]["modelRouting"]["routedPages"], json!([1]));
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["models"],
+        json!(["ocr-router:v1"])
+    );
+    assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");
+    assert_eq!(json["body"]["units"][0]["text"], "Auto OCR evidence");
+}
+
+#[test]
 fn parse_pdf_reports_configured_worker_bad_json_as_stable_error() {
     let pdf = write_pdf_fixture("Fallback text should not be used.");
     let worker = write_bad_model_worker();
@@ -399,6 +441,40 @@ fn ready_mnn_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
     (cache_dir, manifest)
 }
 
+fn ready_mnn_ocr_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
+    let cache_dir = temp_dir(prefix);
+    fs::create_dir_all(&cache_dir).unwrap();
+    let artifact = b"ready mnn ocr model artifact";
+    let artifact_sha = sha256(artifact);
+    let artifact_path = cache_dir.join("ocr-router-v1.bin");
+    fs::write(&artifact_path, artifact).unwrap();
+    let manifest = temp_path(&format!("{prefix}-manifest"), "json");
+    fs::write(
+        &manifest,
+        json!({
+            "presets": {
+                "ocr": [
+                    {
+                        "name": "ocr-router",
+                        "version": "v1",
+                        "sha256": artifact_sha,
+                        "sizeBytes": artifact.len(),
+                        "required": true,
+                        "task": "ocr",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "precision": "fp32",
+                        "license": "test"
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    (cache_dir, manifest)
+}
+
 fn write_failing_model_worker() -> PathBuf {
     write_worker_script(
         "doctruth-runtime-failing-model-worker",
@@ -614,6 +690,73 @@ print(json.dumps({
     )
 }
 
+fn write_auto_ocr_model_worker() -> PathBuf {
+    write_worker_script(
+        "doctruth-runtime-auto-ocr-model-worker",
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+request = json.load(sys.stdin)
+assert request["preset"] == "ocr"
+assert request["modelRouting"]["mode"] == "auto"
+assert request["modelRouting"]["decision"] == "model-runtime"
+assert request["modelRouting"]["route"] == "ocr-model"
+assert request["models"][0]["name"] == "ocr-router"
+assert request["models"][0]["backend"] == "mnn"
+assert request["models"][0]["format"] == "mnn"
+print(json.dumps({
+    "docId": request["source_hash"],
+    "source": {
+        "sourceFilename": "auto-ocr-worker.pdf",
+        "sourceHash": request["source_hash"],
+        "metadata": {"sourceFilename": "auto-ocr-worker.pdf", "pageCount": 1}
+    },
+    "body": {
+        "pages": [{
+            "pageNumber": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "textLayerAvailable": False,
+            "imageHash": "sha256:" + "0" * 64
+        }],
+        "units": [{
+            "unitId": "unit-0001",
+            "kind": "OCR_REGION",
+            "page": 1,
+            "text": "Auto OCR evidence",
+            "evidenceSpanIds": ["span-0001"],
+            "location": {
+                "page": 1,
+                "readingOrder": 1,
+                "boundingBox": {"x0": 20.0, "y0": 20.0, "x1": 200.0, "y1": 80.0}
+            },
+            "sourceObjectId": "auto-ocr-worker-region-1",
+            "confidence": {"score": 0.91, "rationale": "fake auto ocr worker"},
+            "warnings": []
+        }],
+        "tables": []
+    },
+    "parserRun": {
+        "parserVersion": "test-worker",
+        "preset": request["preset"],
+        "backend": "rust-sidecar+model-worker",
+        "models": ["ocr-router:v1"],
+        "warnings": []
+    },
+    "auditGradeStatus": "AUDIT_GRADE",
+    "metrics": {
+        "runtime": "mnn",
+        "coldStartMs": 10.0,
+        "inferenceMs": 5.0,
+        "loadedModels": ["ocr-router:v1"],
+        "unload": {"status": "scheduled", "policy": "idle-after-request"}
+    }
+}))
+"#,
+    )
+}
+
 fn write_fake_model_worker() -> PathBuf {
     write_worker_script(
         "doctruth-runtime-model-worker",
@@ -698,6 +841,12 @@ fn write_pdf_fixture(text: &str) -> PathBuf {
     path
 }
 
+fn write_empty_text_layer_pdf() -> PathBuf {
+    let path = temp_path("doctruth-runtime-worker-empty-text-layer", "pdf");
+    fs::write(&path, minimal_empty_text_layer_pdf()).unwrap();
+    path
+}
+
 fn temp_path(prefix: &str, extension: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -740,6 +889,22 @@ fn minimal_pdf(text: &str) -> Vec<u8> {
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
         format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
+    ];
+    write_pdf_objects(&objects)
+}
+
+fn minimal_empty_text_layer_pdf() -> Vec<u8> {
+    let stream = "q\n0.95 0.95 0.95 rg\n72 600 120 60 re\nf\nQ\n";
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R >>"
+            .to_string(),
+        format!(
+            "<< /Length {} >>\nstream\n{}endstream",
+            stream.len(),
+            stream
+        ),
     ];
     write_pdf_objects(&objects)
 }

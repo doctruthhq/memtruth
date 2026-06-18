@@ -227,6 +227,8 @@ fn rust_mnn_model_worker_doctor_is_python_free() {
     assert_eq!(json["code"], "protocol_ready");
     assert_eq!(json["protocolReady"], true);
     assert_eq!(json["inferenceReady"], false);
+    assert_eq!(json["nativeBackend"]["compiled"], false);
+    assert_eq!(json["nativeBackend"]["crate"], "mnn-rs");
     assert_eq!(json["stubMode"], false);
     assert_eq!(json["productionPythonResidency"], false);
 }

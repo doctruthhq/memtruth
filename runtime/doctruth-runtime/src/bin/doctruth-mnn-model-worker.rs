@@ -64,6 +64,7 @@ fn doctor_json() -> Value {
         "protocol_version": PROTOCOL_VERSION,
         "protocolReady": true,
         "inferenceReady": false,
+        "nativeBackend": native_backend_json(),
         "stubMode": stub_mode_enabled(),
         "productionPythonResidency": false
     })
@@ -201,6 +202,26 @@ fn stub_mode_enabled() -> bool {
         .ok()
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+#[cfg(feature = "mnn-native")]
+fn native_backend_json() -> Value {
+    json!({
+        "compiled": true,
+        "crate": "mnn-rs",
+        "binding": std::any::type_name::<mnn_rs::Interpreter>(),
+        "mode": "native-mnn-feature"
+    })
+}
+
+#[cfg(not(feature = "mnn-native"))]
+fn native_backend_json() -> Value {
+    json!({
+        "compiled": false,
+        "crate": "mnn-rs",
+        "binding": Value::Null,
+        "mode": "feature-disabled"
+    })
 }
 
 fn fail(code: &str, message: &str) -> ! {

@@ -57,7 +57,9 @@ worker locks the production protocol, packaging, discovery, and fail-closed
 runtime boundary. Its doctor reports `protocolReady=true` and
 `inferenceReady=false` until real inference is wired. The only non-real parse
 path is the explicit `DOCTRUTH_MNN_WORKER_STUB=1` contract-smoke mode, whose
-output must be `NOT_AUDIT_GRADE`.
+output must be `NOT_AUDIT_GRADE`. Native MNN binding work is behind the optional
+`mnn-native` Cargo feature using `mnn-rs`; the default build remains Rust
+runtime/protocol only until real model decoders are wired and benchmarked.
 
 ## 1. Summary
 
@@ -1108,8 +1110,10 @@ locks the protocol, default discovery, fail-closed MNN-only model acceptance,
 and `TrustDocument` normalization. Without explicit stub mode it rejects
 model-assisted parse requests with `mnn_inference_unavailable` until real MNN
 inference is implemented. Stub output is severe-warning, non-audit-grade output
-for contract smokes only. Real MNN inference and broad labeled OCR/table
-accuracy are still open implementation and evaluation work.
+for contract smokes only. The optional `mnn-native` feature verifies that
+`mnn-rs` can compile as the native binding seam without changing default runtime
+weight. Real MNN inference and broad labeled OCR/table accuracy are still open
+implementation and evaluation work.
 
 Current parser-accuracy corpus status: JSON and readable
 `benchmark-corpus` output expose `kind`, `qualityProfile`, `reviewType`,

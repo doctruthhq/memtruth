@@ -304,7 +304,9 @@ doctruth-mnn-model-worker --doctor
 
 The doctor reports `runtime=mnn`, `engine=mnn`, protocol version,
 `protocolReady=true`, `inferenceReady=false`, and
-`productionPythonResidency=false` until real MNN inference is wired. Model files
+`productionPythonResidency=false` until real MNN inference is wired. It also
+reports `nativeBackend.compiled`; this is `false` in the default build and
+`true` only when built with the optional `mnn-native` Cargo feature. Model files
 are packaged with the client runtime or supplied through `DOCTRUTH_MODEL_CACHE`
 and `DOCTRUTH_MODEL_MANIFEST`; they are not bundled in the generic Java jar.
 `DOCTRUTH_MNN_WORKER_STUB=1` is reserved for local contract smokes. Stub output

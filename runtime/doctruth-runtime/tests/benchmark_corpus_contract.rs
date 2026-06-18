@@ -583,6 +583,67 @@ fn opendataloader_promotion_report_uses_existing_prediction_summary_without_repa
 }
 
 #[test]
+fn opendataloader_evaluate_prediction_writes_rust_evaluation_without_python() {
+    let root = temp_dir("doctruth-runtime-opendataloader-evaluator");
+    let gt = root.join("ground-truth/markdown");
+    let prediction = root.join("prediction/doctruth-rust-eval");
+    let markdown = prediction.join("markdown");
+    fs::create_dir_all(&gt).unwrap();
+    fs::create_dir_all(&markdown).unwrap();
+    fs::write(
+        gt.join("doc-a.md"),
+        "# Title\n\nAlpha paragraph.\n\n<table><tr><td>A</td></tr></table>\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("doc-a.md"),
+        "# Title\n\nAlpha paragraph.\n\n<table><tr><td>A</td></tr></table>\n",
+    )
+    .unwrap();
+    fs::write(gt.join("doc-b.md"), "# Missing\n\nBeta paragraph.\n").unwrap();
+    fs::write(
+        prediction.join("summary.json"),
+        json!({
+            "engine_name": "doctruth-rust-eval",
+            "parsed_count": 1,
+            "failed_count": 0
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output_path = prediction.join("evaluation-rust.json");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_evaluate_prediction",
+                "ground_truth_dir": gt,
+                "prediction_dir": prediction,
+                "output_path": output_path
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["summary"]["engine_name"], "doctruth-rust-eval");
+    assert_eq!(report["metrics"]["score"]["nid_mean"], 0.5);
+    assert_eq!(report["metrics"]["score"]["teds_mean"], 1.0);
+    assert_eq!(report["metrics"]["score"]["mhs_mean"], 0.5);
+    assert_eq!(report["metrics"]["missing_predictions"], 1);
+    assert_eq!(report["documents"][0]["scores"]["overall"], 1.0);
+    assert_eq!(report["documents"][0]["prediction_available"], true);
+    assert_eq!(report["documents"][1]["scores"]["overall"], 0.0);
+    assert_eq!(report["documents"][1]["prediction_available"], false);
+    assert!(output_path.is_file());
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

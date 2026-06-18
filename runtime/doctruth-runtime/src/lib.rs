@@ -77,6 +77,9 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         Some("opendataloader_prediction") => {
             opendataloader_prediction_json(&request).map(|json| json.to_string())
         }
+        Some("opendataloader_evaluate_prediction") => {
+            opendataloader_evaluate_prediction_json(&request).map(|json| json.to_string())
+        }
         Some("opendataloader_promotion_report") => {
             opendataloader_promotion_report_json(&request).map(|json| json.to_string())
         }
@@ -2361,6 +2364,343 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         "resourceProfile": resource_profile,
         "mnnPromotion": mnn_promotion
     }))
+}
+
+fn opendataloader_evaluate_prediction_json(request: &Value) -> Result<Value, String> {
+    let ground_truth_dir = Path::new(required_request_str(
+        request,
+        "ground_truth_dir",
+        "OPENDATALOADER_EVALUATION_INVALID",
+    )?);
+    let prediction_dir = Path::new(required_request_str(
+        request,
+        "prediction_dir",
+        "OPENDATALOADER_EVALUATION_INVALID",
+    )?);
+    let markdown_dir = prediction_dir.join("markdown");
+    let mut gt_paths = markdown_files(ground_truth_dir, "OPENDATALOADER_EVALUATION_INVALID")?;
+    if let Some(doc_id) = request
+        .get("doc_id")
+        .or_else(|| request.get("docId"))
+        .and_then(Value::as_str)
+    {
+        gt_paths.retain(|path| path.file_stem().and_then(|stem| stem.to_str()) == Some(doc_id));
+    }
+    if gt_paths.is_empty() {
+        return Err(error_json(
+            "OPENDATALOADER_EVALUATION_INVALID",
+            "ground_truth_dir contains no markdown files",
+        )
+        .to_string());
+    }
+    let mut documents = Vec::new();
+    for gt_path in gt_paths {
+        let document_id = gt_path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let pred_path = markdown_dir.join(format!("{document_id}.md"));
+        documents.push(evaluate_opendataloader_document(
+            &document_id,
+            &gt_path,
+            &pred_path,
+        )?);
+    }
+    let summary = prediction_summary_json(prediction_dir);
+    let metrics = aggregate_opendataloader_scores(&documents);
+    let report = json!({
+        "summary": summary,
+        "metrics": metrics,
+        "documents": documents
+    });
+    if let Some(output_path) = request.get("output_path").and_then(Value::as_str) {
+        write_pretty_json(
+            Path::new(output_path),
+            &report,
+            "OPENDATALOADER_EVALUATION_WRITE_FAILED",
+        )?;
+    }
+    Ok(report)
+}
+
+fn markdown_files(dir: &Path, code: &str) -> Result<Vec<PathBuf>, String> {
+    let entries = fs::read_dir(dir).map_err(|error| {
+        error_json(code, &format!("failed to read {}: {error}", dir.display())).to_string()
+    })?;
+    let mut paths = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|error| error_json(code, &error.to_string()).to_string())?
+            .path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn evaluate_opendataloader_document(
+    document_id: &str,
+    gt_path: &Path,
+    pred_path: &Path,
+) -> Result<Value, String> {
+    let gt = fs::read_to_string(gt_path).map_err(|error| {
+        error_json(
+            "OPENDATALOADER_EVALUATION_READ_FAILED",
+            &format!("failed to read {}: {error}", gt_path.display()),
+        )
+        .to_string()
+    })?;
+    let prediction_available = pred_path.is_file();
+    let pred = if prediction_available {
+        fs::read_to_string(pred_path).map_err(|error| {
+            error_json(
+                "OPENDATALOADER_EVALUATION_READ_FAILED",
+                &format!("failed to read {}: {error}", pred_path.display()),
+            )
+            .to_string()
+        })?
+    } else {
+        String::new()
+    };
+    let (nid, nid_s) = evaluate_opendataloader_reading_order(&gt, &pred);
+    let (teds, teds_s) = evaluate_opendataloader_table(&gt, &pred);
+    let (mhs, mhs_s) = evaluate_opendataloader_heading(&gt, &pred);
+    let overall = mean_score([nid, teds, mhs]);
+    Ok(json!({
+        "document_id": document_id,
+        "scores": {
+            "overall": optional_metric_json(overall),
+            "nid": optional_metric_json(nid),
+            "nid_s": optional_metric_json(nid_s),
+            "teds": optional_metric_json(teds),
+            "teds_s": optional_metric_json(teds_s),
+            "mhs": optional_metric_json(mhs),
+            "mhs_s": optional_metric_json(mhs_s)
+        },
+        "prediction_available": prediction_available
+    }))
+}
+
+fn evaluate_opendataloader_reading_order(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
+    let gt_normalized = normalize_markdown_for_evaluator(gt);
+    if gt_normalized.is_empty() {
+        return (None, None);
+    }
+    let pred_normalized = normalize_markdown_for_evaluator(pred);
+    let gt_stripped = strip_html_tables(gt);
+    let pred_stripped = strip_html_tables(pred);
+    (
+        Some(markdown_similarity(&gt_normalized, &pred_normalized)),
+        Some(markdown_similarity(
+            &normalize_markdown_for_evaluator(&gt_stripped),
+            &normalize_markdown_for_evaluator(&pred_stripped),
+        )),
+    )
+}
+
+fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
+    let gt_tables = html_tables(gt);
+    if gt_tables.is_empty() {
+        return (None, None);
+    }
+    let pred_tables = html_tables(pred);
+    if pred_tables.is_empty() {
+        return (Some(0.0), Some(0.0));
+    }
+    let gt_joined = normalize_markdown_for_evaluator(&gt_tables.join("\n"));
+    let pred_joined = normalize_markdown_for_evaluator(&pred_tables.join("\n"));
+    let score = markdown_similarity(&gt_joined, &pred_joined);
+    (Some(score), Some(score))
+}
+
+fn evaluate_opendataloader_heading(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
+    let gt_structure = markdown_heading_structure(gt);
+    if gt_structure.is_empty() {
+        return (None, None);
+    }
+    let pred_structure = markdown_heading_structure(pred);
+    if pred_structure.is_empty() {
+        return (Some(0.0), Some(0.0));
+    }
+    let with_text = markdown_similarity(&gt_structure.join("\n"), &pred_structure.join("\n"));
+    let gt_tags = gt_structure
+        .iter()
+        .map(|line| line.split_once(':').map_or(line.as_str(), |(tag, _)| tag))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let pred_tags = pred_structure
+        .iter()
+        .map(|line| line.split_once(':').map_or(line.as_str(), |(tag, _)| tag))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let structure_only = markdown_similarity(&gt_tags, &pred_tags);
+    (Some(with_text), Some(structure_only))
+}
+
+fn aggregate_opendataloader_scores(documents: &[Value]) -> Value {
+    let overall = collect_document_scores(documents, "overall");
+    let nid = collect_document_scores(documents, "nid");
+    let nid_s = collect_document_scores(documents, "nid_s");
+    let teds = collect_document_scores(documents, "teds");
+    let teds_s = collect_document_scores(documents, "teds_s");
+    let mhs = collect_document_scores(documents, "mhs");
+    let mhs_s = collect_document_scores(documents, "mhs_s");
+    let missing_predictions = documents
+        .iter()
+        .filter(|document| {
+            document
+                .get("prediction_available")
+                .and_then(Value::as_bool)
+                != Some(true)
+        })
+        .count();
+    json!({
+        "score": {
+            "overall_mean": optional_metric_json(mean_vec(&overall)),
+            "nid_mean": optional_metric_json(mean_vec(&nid)),
+            "nid_s_mean": optional_metric_json(mean_vec(&nid_s)),
+            "teds_mean": optional_metric_json(mean_vec(&teds)),
+            "teds_s_mean": optional_metric_json(mean_vec(&teds_s)),
+            "mhs_mean": optional_metric_json(mean_vec(&mhs)),
+            "mhs_s_mean": optional_metric_json(mean_vec(&mhs_s))
+        },
+        "nid_count": nid.len(),
+        "teds_count": teds.len(),
+        "mhs_count": mhs.len(),
+        "missing_predictions": missing_predictions
+    })
+}
+
+fn collect_document_scores(documents: &[Value], key: &str) -> Vec<f64> {
+    documents
+        .iter()
+        .filter_map(|document| {
+            document
+                .pointer(&format!("/scores/{key}"))
+                .and_then(Value::as_f64)
+        })
+        .collect()
+}
+
+fn prediction_summary_json(prediction_dir: &Path) -> Value {
+    read_json_file(
+        &prediction_dir.join("summary.json"),
+        "OPENDATALOADER_EVALUATION_SUMMARY_INVALID",
+    )
+    .unwrap_or_else(|_| json!({}))
+}
+
+fn mean_score(values: [Option<f64>; 3]) -> Option<f64> {
+    let scores = values.into_iter().flatten().collect::<Vec<_>>();
+    mean_vec(&scores)
+}
+
+fn mean_vec(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(round_metric(
+            values.iter().sum::<f64>() / values.len() as f64,
+        ))
+    }
+}
+
+fn markdown_similarity(left: &str, right: &str) -> f64 {
+    if left.is_empty() && right.is_empty() {
+        return 1.0;
+    }
+    let max_len = left.chars().count().max(right.chars().count()).max(1);
+    round_metric(1.0 - levenshtein(left, right) as f64 / max_len as f64)
+}
+
+fn normalize_markdown_for_evaluator(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn strip_html_tables(text: &str) -> String {
+    let mut result = String::new();
+    let mut rest = text;
+    loop {
+        let Some(start) = rest.to_ascii_lowercase().find("<table") else {
+            result.push_str(rest);
+            break;
+        };
+        result.push_str(&rest[..start]);
+        let after_start = &rest[start..];
+        let Some(end) = after_start.to_ascii_lowercase().find("</table>") else {
+            break;
+        };
+        rest = &after_start[end + "</table>".len()..];
+    }
+    result
+}
+
+fn html_tables(text: &str) -> Vec<String> {
+    let mut tables = Vec::new();
+    let mut rest = text;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        let Some(start) = lower.find("<table") else {
+            break;
+        };
+        let after_start = &rest[start..];
+        let lower_after = after_start.to_ascii_lowercase();
+        let Some(end) = lower_after.find("</table>") else {
+            break;
+        };
+        let table_end = end + "</table>".len();
+        tables.push(after_start[..table_end].to_string());
+        rest = &after_start[table_end..];
+    }
+    tables
+}
+
+fn markdown_heading_structure(markdown: &str) -> Vec<String> {
+    markdown
+        .lines()
+        .filter_map(markdown_heading_entry)
+        .collect()
+}
+
+fn markdown_heading_entry(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    let level = trimmed.chars().take_while(|char| *char == '#').count();
+    if !(1..=6).contains(&level) {
+        return None;
+    }
+    let text = trimmed[level..].trim_start();
+    if text.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "h{level}:{}",
+            normalize_markdown_for_evaluator(text)
+        ))
+    }
+}
+
+fn write_pretty_json(path: &Path, value: &Value, code: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            error_json(
+                code,
+                &format!("failed to create {}: {error}", parent.display()),
+            )
+            .to_string()
+        })?;
+    }
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|error| error_json(code, &error.to_string()).to_string())?;
+    fs::write(path, json).map_err(|error| {
+        error_json(
+            code,
+            &format!("failed to write {}: {error}", path.display()),
+        )
+        .to_string()
+    })
 }
 
 fn opendataloader_promotion_report_json(request: &Value) -> Result<Value, String> {

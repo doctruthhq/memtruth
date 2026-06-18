@@ -12,8 +12,11 @@ MODEL_MANIFEST="$WORK_DIR/models.json"
 MODEL_BYTES="$MODEL_CACHE/slanet-plus-v1.bin"
 PREDICTION="$WORK_DIR/prediction/doctruth-rust-mnn"
 REPORT="$WORK_DIR/report.json"
+RUST_EVALUATION="$WORK_DIR/opendataloader-evaluation-rust.json"
+RUST_EVALUATION_STDOUT="$WORK_DIR/opendataloader-evaluation-rust-stdout.json"
 EVALUATION="$WORK_DIR/opendataloader-evaluation.json"
 PROMOTION_REPORT="$WORK_DIR/promotion-report.json"
+RUST_PROMOTION_REPORT="$WORK_DIR/promotion-report-rust-eval.json"
 
 mkdir -p "$MODEL_CACHE"
 printf '%s' "rust-owned-mnn-promotion-model" > "$MODEL_BYTES"
@@ -51,6 +54,22 @@ jq -e '.production_residency.python_torch_docling == false' "$PREDICTION/summary
 jq -e '.documents[0].modelRuntime.runtime == "mnn"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.documents[0].modelRouting.route == "table-model"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.documents == []' "$PREDICTION/errors.json" >/dev/null
+
+"$BIN" <<EOF_EVALUATE > "$RUST_EVALUATION_STDOUT"
+{"command":"opendataloader_evaluate_prediction","ground_truth_dir":"$BENCH_DIR/ground-truth/markdown","prediction_dir":"$PREDICTION","doc_id":"01030000000001","output_path":"$RUST_EVALUATION"}
+EOF_EVALUATE
+
+jq -e '.summary.engine_name == "doctruth-rust-mnn"' "$RUST_EVALUATION_STDOUT" >/dev/null
+jq -e '.summary.engine_name == "doctruth-rust-mnn"' "$RUST_EVALUATION" >/dev/null
+jq -e '.documents | length == 1' "$RUST_EVALUATION" >/dev/null
+jq -e '.metrics.missing_predictions == 0' "$RUST_EVALUATION" >/dev/null
+
+"$BIN" <<EOF_RUST_REPORT > "$RUST_PROMOTION_REPORT"
+{"command":"opendataloader_promotion_report","prediction_dir":"$PREDICTION","opendataloader_evaluation":"$RUST_EVALUATION","promotionGates":{"mnn":{"heavyOracleSteadyRssMb":1400,"qualityMinimums":{"overall":0.88,"nid":0.91,"teds":0.88,"mhs":0.78}}}}
+EOF_RUST_REPORT
+
+jq -e '.externalMetrics.opendataloader.evaluationSha256 | startswith("sha256:")' "$RUST_PROMOTION_REPORT" >/dev/null
+jq -e '.resourceProfile.modelRuntime.runtime == "mnn"' "$RUST_PROMOTION_REPORT" >/dev/null
 
 cat > "$EVALUATION" <<'EOF_EVALUATION'
 {

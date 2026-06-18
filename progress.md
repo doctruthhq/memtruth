@@ -7669,3 +7669,36 @@
 - Remaining gap: OpenDataLoader's evaluator is still upstream Python. This
   slice removes DocTruth-owned prediction/report assembly from Python, but it
   does not replace external scoring or prove full-corpus real MNN acceptance.
+
+## 2026-06-18 Rust OpenDataLoader Evaluator MVP
+
+- Added RED test
+  `opendataloader_evaluate_prediction_writes_rust_evaluation_without_python`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluate_prediction_writes_rust_evaluation_without_python`.
+- RED result: expected `UNKNOWN_COMMAND` because `doctruth-runtime` did not yet
+  own an OpenDataLoader-style evaluator command.
+- Implemented protocol command `opendataloader_evaluate_prediction`.
+- The command reads `ground_truth_dir/*.md`, `prediction_dir/markdown/*.md`,
+  optional `doc_id` / `docId`, and optional `output_path`.
+- It emits OpenDataLoader-style `evaluation.json` with:
+  summary passthrough, per-document `scores`, `prediction_available`,
+  aggregate `metrics.score.*_mean`, metric counts, and `missing_predictions`.
+- Implemented MVP metric behavior in Rust:
+  whitespace-normalized reading-order similarity, HTML table presence/content
+  similarity for simple TEDS plumbing, and Markdown heading similarity for MHS
+  plumbing.
+- Updated `scripts/smoke-doctruth-rust-opendataloader-prediction.sh` so the
+  smoke now proves:
+  Rust `opendataloader_prediction` -> Rust `opendataloader_evaluate_prediction`
+  -> Rust `opendataloader_promotion_report`.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `32 passed`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this is a Rust evaluator MVP, not a full clone of upstream
+  Python `rapidfuzz` ratio, APTED tree edit distance, lxml HTML parsing, or
+  BeautifulSoup table extraction. Full metric parity must be proven before
+  replacing the upstream evaluator as the authoritative full-corpus gate.

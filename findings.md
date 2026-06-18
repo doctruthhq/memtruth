@@ -1795,3 +1795,18 @@
 - Model memory metrics can arrive as JSON floats from workers. Promotion
   resource gates should conservatively accept numeric MB values by rounding up,
   but still reject missing memory evidence.
+
+## 2026-06-18 Rust OpenDataLoader Evaluator Finding
+
+- The upstream OpenDataLoader evaluator boundary is separable from prediction
+  generation and promotion report assembly. A Rust evaluator command can now
+  produce the same report shape for simple Markdown cases without invoking
+  Python.
+- The MVP evaluator is useful for smoke, promotion plumbing, missing-prediction
+  accounting, and no-Python report flow, but it is not yet the authoritative
+  replacement for upstream metrics on the full corpus.
+- Full parity requires matching Python `rapidfuzz` reading-order ratio, APTED
+  heading/table tree edit distance, lxml/BeautifulSoup HTML normalization, and
+  Markdown table conversion behavior. Until those are tested against upstream
+  fixture outputs, use the Rust evaluator as an MVP lane and keep upstream
+  Python evaluator as the full-corpus oracle.

@@ -7924,3 +7924,19 @@
   malformed HTML, escaped/multiline Markdown tables, multiple-table documents,
   and broad OpenDataLoader Bench metric parity still need larger comparison
   coverage.
+
+## 2026-06-18 Python Oracle Fail-Closed Boundary Slice
+
+- Added `scripts/smoke-doctruth-python-boundary.sh`.
+- RED result: `sh scripts/smoke-doctruth-python-boundary.sh` failed with
+  `legacy Python oracle runner must require DOCTRUTH_ALLOW_PYTHON_ORACLE=1`.
+- Updated `scripts/run-doctruth-opendataloader-hybrid-baseline.sh` so it refuses
+  to launch unless `DOCTRUTH_ALLOW_PYTHON_ORACLE=1` is set.
+- The script now states that it is oracle-only legacy benchmark
+  infrastructure, points default users to
+  `scripts/run-doctruth-opendataloader-bench.sh`, and exits with code 2 without
+  explicit opt-in.
+- This narrows the remaining Python surface to explicit oracle reproduction and
+  test/helpers, while keeping default prediction/evaluation runners Rust-owned.
+- GREEN verification passed:
+  `sh scripts/smoke-doctruth-python-boundary.sh`.

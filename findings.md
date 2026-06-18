@@ -1901,3 +1901,19 @@
   table wrapper/header normalization. It does not yet prove full-corpus parity
   for malformed HTML, nested table-cell inline markup, multiple tables,
   escaped/multiline Markdown tables, or all APTED edge cases.
+
+## 2026-06-18 Python Boundary Finding
+
+- The default OpenDataLoader Bench runner and MNN promotion runner no longer
+  call `scripts/doctruth_opendataloader_prediction.py`; they use the Rust
+  `opendataloader_prediction` and Rust evaluator paths.
+- Remaining Python in this work falls into three buckets:
+  - explicit heavy oracle reproduction, such as the OpenDataLoader hybrid
+    baseline;
+  - upstream evaluator parity/comparison against the Python/APTED/lxml/rapidfuzz
+    reference implementation;
+  - local smoke/test helper code for fixture creation and JSON assertions.
+- The risky confusion was `scripts/run-doctruth-opendataloader-hybrid-baseline.sh`
+  because it looked like a normal runnable benchmark script while launching the
+  legacy Python adapter. It is now fail-closed behind
+  `DOCTRUTH_ALLOW_PYTHON_ORACLE=1`.

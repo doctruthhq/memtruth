@@ -2259,7 +2259,10 @@ skip-safe fixture-level parity smoke between the Rust evaluator and the official
 upstream evaluator for exact text, heading-level normalization, and table
 wrapper/header normalization. This is not yet a full-corpus proof that the Rust
 evaluator can replace the official oracle for all APTED/lxml/rapidfuzz edge
-cases. The first full local baseline on 200 vendored PDFs parsed 199
+cases. Legacy Python/OpenDataLoader hybrid baseline scripts are fail-closed and
+require `DOCTRUTH_ALLOW_PYTHON_ORACLE=1` before launching the heavy oracle path;
+the default Rust runner and MNN promotion runner must not call the Python
+prediction adapter. The first full local baseline on 200 vendored PDFs parsed 199
 documents and failed one scanned/no-text-layer document. It reported
 `overall_mean=0.509092484964239`, `nid_mean=0.7591850124827885`,
 `teds_mean=0.0`, and `mhs_mean=0.0025571766718785185`, with

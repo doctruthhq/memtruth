@@ -1756,3 +1756,16 @@
 - The richer Rust summary is useful for MNN promotion because it records
   per-document `runtimeProfile`, `modelRouting`, and `modelRuntime` alongside
   `production_residency.python_torch_docling=false`.
+
+## 2026-06-18 Direct Rust Bench Prediction Command Finding
+
+- Generating a temporary parser-accuracy corpus manifest was an unnecessary
+  adapter layer for OpenDataLoader Bench prediction generation. The direct Rust
+  command can scan `bench_dir/pdfs` and write prediction artifacts without that
+  intermediate manifest.
+- `opendataloader_prediction` is now the cleanest DocTruth-owned replacement
+  for the Python prediction adapter when the requirement is "produce
+  prediction markdown/summary/errors from a bench directory."
+- The remaining non-Rust boundary is evaluation/scoring, not prediction
+  generation. The OpenDataLoader evaluator is still upstream Python; replacing
+  or wrapping that is a separate slice from parser runtime Rustification.

@@ -74,6 +74,9 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
     match request.get("command").and_then(Value::as_str) {
         Some("parse_pdf") => parse_pdf_json(&request).map(|json| json.to_string()),
         Some("benchmark_corpus") => benchmark_corpus_json(&request).map(|json| json.to_string()),
+        Some("opendataloader_prediction") => {
+            opendataloader_prediction_json(&request).map(|json| json.to_string())
+        }
         Some("verify_benchmark_report") => {
             verify_benchmark_report_json(&request).map(|json| json.to_string())
         }
@@ -2300,6 +2303,220 @@ fn write_opendataloader_prediction_if_requested(
             "documentCount": case_reports.len()
         }
     }))
+}
+
+fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
+    let bench_dir = Path::new(required_request_str(
+        request,
+        "bench_dir",
+        "OPENDATALOADER_PREDICTION_INVALID",
+    )?);
+    let engine = request
+        .get("engine")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("doctruth");
+    let output_dir = request
+        .get("output_dir")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| bench_dir.join("prediction").join(engine));
+    let preset = request
+        .get("preset")
+        .and_then(Value::as_str)
+        .unwrap_or("lite");
+    let profile = runtime_profile(request)?;
+    if profile == "benchmark-oracle" {
+        return Err(error_json(
+            "PROFILE_NOT_SUPPORTED",
+            "benchmark-oracle is an explicit benchmark comparison profile, not an opendataloader prediction runtime profile",
+        )
+        .to_string());
+    }
+    let pdfs = select_opendataloader_pdfs(bench_dir, request)?;
+    let prediction =
+        write_opendataloader_prediction_artifacts(&output_dir, engine, preset, profile, &pdfs)?;
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "engine": engine,
+        "prediction": prediction
+    }))
+}
+
+fn required_request_str<'a>(value: &'a Value, key: &str, code: &str) -> Result<&'a str, String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| error_json(code, &format!("request.{key} is required")).to_string())
+}
+
+fn select_opendataloader_pdfs(bench_dir: &Path, request: &Value) -> Result<Vec<PathBuf>, String> {
+    let pdf_dir = bench_dir.join("pdfs");
+    let doc_id = request
+        .get("doc_id")
+        .or_else(|| request.get("docId"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    let mut pdfs = if let Some(doc_id) = doc_id {
+        let path = pdf_dir.join(format!("{doc_id}.pdf"));
+        if !path.is_file() {
+            return Err(error_json(
+                "OPENDATALOADER_PDF_NOT_FOUND",
+                &format!("PDF not found: {}", path.to_string_lossy()),
+            )
+            .to_string());
+        }
+        vec![path]
+    } else {
+        let mut paths = fs::read_dir(&pdf_dir)
+            .map_err(|error| {
+                error_json("OPENDATALOADER_PREDICTION_INVALID", &error.to_string()).to_string()
+            })?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("pdf"))
+            .collect::<Vec<_>>();
+        paths.sort();
+        paths
+    };
+    if let Some(limit) = request.get("limit").and_then(Value::as_u64) {
+        pdfs.truncate(limit as usize);
+    }
+    if pdfs.is_empty() {
+        return Err(error_json(
+            "OPENDATALOADER_PDF_NOT_FOUND",
+            &format!("No PDFs found in {}", pdf_dir.to_string_lossy()),
+        )
+        .to_string());
+    }
+    Ok(pdfs)
+}
+
+fn write_opendataloader_prediction_artifacts(
+    output_dir: &Path,
+    engine: &str,
+    preset: &str,
+    profile: &str,
+    pdfs: &[PathBuf],
+) -> Result<Value, String> {
+    let markdown_dir = output_dir.join("markdown");
+    fs::create_dir_all(&markdown_dir).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
+    let started = Instant::now();
+    let mut documents = Vec::new();
+    let mut errors = Vec::new();
+    for pdf in pdfs {
+        let doc_start = Instant::now();
+        let document_id = pdf
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .map(safe_document_id)
+            .unwrap_or_else(|| "document".to_string());
+        let markdown_path = markdown_dir.join(format!("{document_id}.md"));
+        let source_hash = sha256_file(pdf)?;
+        let result = parse_pdf_json(&json!({
+            "command": "parse_pdf",
+            "source_path": pdf.to_string_lossy(),
+            "source_hash": source_hash,
+            "preset": preset,
+            "profile": profile,
+            "runtime_profile": profile,
+            "runtimeProfile": profile,
+            "offline_mode": true,
+            "allow_model_downloads": false
+        }));
+        let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);
+        match result {
+            Ok(document) => {
+                fs::write(&markdown_path, markdown_from_document(&document)).map_err(|error| {
+                    error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+                })?;
+                documents.push(opendataloader_prediction_document_summary_from_document(
+                    &document,
+                    &document_id,
+                    &markdown_path,
+                    elapsed,
+                ));
+            }
+            Err(error) => {
+                fs::write(&markdown_path, "").map_err(|write_error| {
+                    error_json("BENCHMARK_REPORT_WRITE_FAILED", &write_error.to_string())
+                        .to_string()
+                })?;
+                errors.push(json!({"document_id": document_id, "error": error}));
+                documents.push(json!({
+                    "document_id": document_id,
+                    "status": "failed",
+                    "elapsed": elapsed,
+                    "markdown_path": markdown_path.to_string_lossy(),
+                    "error": error,
+                    "runtimeProfile": profile,
+                    "modelRuntime": Value::Null,
+                    "modelRouting": Value::Null
+                }));
+            }
+        }
+    }
+    let parsed_count = documents
+        .iter()
+        .filter(|document| document.get("status").and_then(Value::as_str) == Some("parsed"))
+        .count();
+    let document_count = documents.len();
+    let failed_count = document_count - parsed_count;
+    let total_elapsed = round_metric(started.elapsed().as_secs_f64() * 1000.0);
+    let summary = json!({
+        "engine_name": engine,
+        "engine_version": env!("CARGO_PKG_VERSION"),
+        "runtime_contract": "TrustDocument",
+        "runtime_profile": profile,
+        "document_count": document_count,
+        "parsed_count": parsed_count,
+        "failed_count": failed_count,
+        "total_elapsed": total_elapsed,
+        "elapsed_per_doc": if document_count == 0 { Value::Null } else { json!(round_metric(total_elapsed / document_count as f64)) },
+        "preset": preset,
+        "production_residency": {
+            "python_torch_docling": false
+        },
+        "documents": documents
+    });
+    fs::write(output_dir.join("summary.json"), pretty_json(&summary)?).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
+    fs::write(
+        output_dir.join("errors.json"),
+        pretty_json(&json!({"documents": errors}))?,
+    )
+    .map_err(|error| error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string())?;
+    Ok(json!({
+        "engine": engine,
+        "path": output_dir.to_string_lossy(),
+        "markdownPath": markdown_dir.to_string_lossy(),
+        "documentCount": document_count,
+        "parsedCount": parsed_count,
+        "failedCount": failed_count
+    }))
+}
+
+fn opendataloader_prediction_document_summary_from_document(
+    document: &Value,
+    document_id: &str,
+    markdown_path: &Path,
+    elapsed: f64,
+) -> Value {
+    json!({
+        "document_id": document_id,
+        "status": "parsed",
+        "elapsed": elapsed,
+        "markdown_path": markdown_path.to_string_lossy(),
+        "error": Value::Null,
+        "runtimeProfile": document.pointer("/parserRun/profile").cloned().unwrap_or(Value::Null),
+        "modelRuntime": document.pointer("/parserRun/modelRuntime").cloned().unwrap_or(Value::Null),
+        "modelRouting": document.pointer("/parserRun/modelRouting").cloned().unwrap_or(Value::Null)
+    })
 }
 
 fn prediction_runtime_profile(case_reports: &[Value]) -> Value {

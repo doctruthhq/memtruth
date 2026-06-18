@@ -371,6 +371,75 @@ fn benchmark_corpus_exports_opendataloader_prediction_artifacts() {
 }
 
 #[test]
+fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
+    let root = temp_dir("doctruth-runtime-opendataloader-direct");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-direct");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("doc-b.pdf"),
+        minimal_pdf("Second document evidence."),
+    )
+    .unwrap();
+    fs::write(
+        pdf_dir.join("doc-a.pdf"),
+        minimal_pdf("First document evidence."),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-direct",
+                "limit": 1,
+                "preset": "lite",
+                "runtime_profile": "edge-fast",
+                "output_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["runtime"], "doctruth-runtime");
+    assert_eq!(report["engine"], "doctruth-direct");
+    assert_eq!(report["prediction"]["documentCount"], 1);
+    assert_eq!(report["prediction"]["failedCount"], 0);
+
+    let markdown = prediction.join("markdown/doc-a.md");
+    assert!(markdown.is_file());
+    assert!(
+        fs::read_to_string(markdown)
+            .unwrap()
+            .contains("First document evidence.")
+    );
+    assert!(!prediction.join("markdown/doc-b.md").exists());
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["engine_name"], "doctruth-direct");
+    assert_eq!(summary["runtime_contract"], "TrustDocument");
+    assert_eq!(summary["runtime_profile"], "edge-fast");
+    assert_eq!(summary["document_count"], 1);
+    assert_eq!(summary["parsed_count"], 1);
+    assert_eq!(summary["failed_count"], 0);
+    assert_eq!(summary["documents"][0]["document_id"], "doc-a");
+    assert_eq!(summary["documents"][0]["runtimeProfile"], "edge-fast");
+
+    let errors: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
+    assert_eq!(errors["documents"], json!([]));
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

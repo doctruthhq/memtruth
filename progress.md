@@ -7564,3 +7564,42 @@
   DocTruth Python prediction adapter still exists for compatibility. The new
   Rust path now covers DocTruth-owned prediction artifact generation, but not
   full evaluator replacement or real MNN full-corpus promotion.
+
+## 2026-06-18 Direct Rust OpenDataLoader Prediction Command MVP
+
+- Added RED test
+  `opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir`.
+- RED result: expected `UNKNOWN_COMMAND` because `doctruth-runtime` did not yet
+  have a direct OpenDataLoader Bench prediction command.
+- Implemented protocol command `opendataloader_prediction`.
+- The command accepts:
+  `bench_dir`, `engine`, `doc_id`/`docId`, `limit`, `preset`,
+  `runtime_profile`, and `output_dir`.
+- It scans `bench_dir/pdfs/*.pdf`, sorts PDFs for deterministic subset runs,
+  applies `doc_id` or `limit`, calls Rust `parse_pdf_json`, and writes:
+  `markdown/<doc>.md`, `summary.json`, and `errors.json`.
+- The summary records the same production-relevant evidence as the Rust
+  prediction writer: TrustDocument contract, runtime profile, parsed/failed
+  counts, no Python/Torch/Docling production residency, and per-document
+  `runtimeProfile`, `modelRouting`, and `modelRuntime`.
+- Updated `scripts/smoke-doctruth-rust-opendataloader-prediction.sh` to call
+  `opendataloader_prediction` directly instead of constructing a temporary
+  `benchmark_corpus` manifest. This removes another DocTruth-owned Python/
+  manifest-adapter layer from the prediction generation path.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `29 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: the direct Rust command still only writes prediction artifacts.
+  It does not replace the upstream OpenDataLoader evaluator, and it has not yet
+  run a real full/subset MNN benchmark with accepted quality thresholds.

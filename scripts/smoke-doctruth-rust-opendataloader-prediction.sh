@@ -40,6 +40,7 @@ test -s "$PREDICTION/errors.json"
 
 jq -e '.prediction.engine == "doctruth-rust-mnn"' "$REPORT" >/dev/null
 jq -e '.prediction.documentCount == 1 and .prediction.failedCount == 0' "$REPORT" >/dev/null
+jq -e '.mnnPromotion.evaluated == false' "$REPORT" >/dev/null
 jq -e '.engine_name == "doctruth-rust-mnn"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.runtime_contract == "TrustDocument"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.runtime_profile == "edge-model"' "$PREDICTION/summary.json" >/dev/null

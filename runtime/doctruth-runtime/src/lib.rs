@@ -2336,12 +2336,49 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
     let pdfs = select_opendataloader_pdfs(bench_dir, request)?;
     let prediction =
         write_opendataloader_prediction_artifacts(&output_dir, engine, preset, profile, &pdfs)?;
+    let summary = read_json_file(
+        &output_dir.join("summary.json"),
+        "OPENDATALOADER_PREDICTION_INVALID",
+    )?;
+    let external = opendataloader_prediction_external_metrics(bench_dir, request)?;
+    let resource_profile = opendataloader_prediction_resource_profile(profile, &summary);
+    let promotion_manifest = json!({
+        "promotionGates": request.get("promotionGates").cloned().unwrap_or_else(|| json!({}))
+    });
+    let mnn_promotion =
+        mnn_promotion_json(&promotion_manifest, &external.values, &resource_profile);
     Ok(json!({
         "runtime": RUNTIME,
         "protocol_version": PROTOCOL_VERSION,
         "engine": engine,
-        "prediction": prediction
+        "prediction": prediction,
+        "metrics": external.values,
+        "externalMetrics": external.report,
+        "resourceProfile": resource_profile,
+        "mnnPromotion": mnn_promotion
     }))
+}
+
+fn opendataloader_prediction_external_metrics(
+    bench_dir: &Path,
+    request: &Value,
+) -> Result<ExternalMetrics, String> {
+    let Some(relative) = request
+        .get("opendataloader_evaluation")
+        .or_else(|| request.get("opendataloaderEvaluation"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(ExternalMetrics {
+            report: json!({}),
+            values: json!({}),
+        });
+    };
+    let imported = opendataloader_external_metrics(&bench_dir.join(relative))?;
+    Ok(ExternalMetrics {
+        report: json!({"opendataloader": imported.report}),
+        values: imported.values,
+    })
 }
 
 fn required_request_str<'a>(value: &'a Value, key: &str, code: &str) -> Result<&'a str, String> {
@@ -2516,6 +2553,42 @@ fn opendataloader_prediction_document_summary_from_document(
         "runtimeProfile": document.pointer("/parserRun/profile").cloned().unwrap_or(Value::Null),
         "modelRuntime": document.pointer("/parserRun/modelRuntime").cloned().unwrap_or(Value::Null),
         "modelRouting": document.pointer("/parserRun/modelRouting").cloned().unwrap_or(Value::Null)
+    })
+}
+
+fn opendataloader_prediction_resource_profile(profile: &str, summary: &Value) -> Value {
+    let documents = summary
+        .get("documents")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    json!({
+        "profile": profile,
+        "pythonTorchDoclingProductionResidency": false,
+        "lazyModelStartup": profile == "edge-model",
+        "caseCount": documents.len(),
+        "elapsedMs": summary.get("total_elapsed").cloned().unwrap_or(Value::Null),
+        "meanCaseElapsedMs": summary.get("elapsed_per_doc").cloned().unwrap_or(Value::Null),
+        "modelRuntime": aggregate_prediction_model_runtime(&documents),
+        "budgetStatus": "profile-baseline-pending"
+    })
+}
+
+fn aggregate_prediction_model_runtime(documents: &[Value]) -> Value {
+    let runtimes = documents
+        .iter()
+        .filter_map(|document| document.get("modelRuntime"))
+        .filter(|runtime| runtime.is_object())
+        .collect::<Vec<_>>();
+    if runtimes.is_empty() {
+        return Value::Null;
+    }
+    json!({
+        "runtime": "mnn",
+        "coldStartMs": sum_runtime_metric(&runtimes, "coldStartMs"),
+        "inferenceMs": sum_runtime_metric(&runtimes, "inferenceMs"),
+        "peakMemoryMb": max_runtime_metric(&runtimes, "peakMemoryMb"),
+        "loadedModels": unique_loaded_models(&runtimes)
     })
 }
 

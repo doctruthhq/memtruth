@@ -1769,3 +1769,13 @@
 - The remaining non-Rust boundary is evaluation/scoring, not prediction
   generation. The OpenDataLoader evaluator is still upstream Python; replacing
   or wrapping that is a separate slice from parser runtime Rustification.
+
+## 2026-06-18 Direct Prediction Promotion Report Finding
+
+- Direct prediction can now be the report assembly point after an upstream
+  OpenDataLoader evaluator run. It imports evaluator JSON and applies the same
+  MNN promotion gate used by `benchmark_corpus`.
+- This reduces Python's role to scoring/evaluation only. Python no longer has
+  to assemble DocTruth promotion evidence or infer runtime/resource status.
+- A promotion report must still fail resource acceptance when no model runtime
+  evidence is present. Passing NID/TEDS/MHS alone is insufficient.

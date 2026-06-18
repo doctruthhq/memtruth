@@ -7603,3 +7603,37 @@
 - Remaining gap: the direct Rust command still only writes prediction artifacts.
   It does not replace the upstream OpenDataLoader evaluator, and it has not yet
   run a real full/subset MNN benchmark with accepted quality thresholds.
+
+## 2026-06-18 Direct Prediction Evaluator Import And Promotion Report MVP
+
+- Added RED test
+  `opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_report`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_report`.
+- RED result: expected failure on missing
+  `report.externalMetrics.opendataloader.nid`.
+- Implemented `opendataloader_prediction` evaluator import through
+  `opendataloader_evaluation` / `opendataloaderEvaluation`.
+- The command now imports OpenDataLoader evaluator JSON, exposes
+  `metrics.opendataloader_*`, `externalMetrics.opendataloader`, synthesizes a
+  direct prediction `resourceProfile`, and evaluates `promotionGates.mnn`
+  through the same `mnn_promotion_json(...)` gate used by `benchmark_corpus`.
+- The RED/GREEN test intentionally uses `edge-fast` so quality can pass while
+  resource promotion fails because `modelRuntimePresent=false`. This prevents a
+  fake promotion claim without MNN runtime evidence.
+- Updated direct prediction smoke to assert `mnnPromotion.evaluated=false`
+  when no evaluator/gate is supplied.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_report`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `30 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this imports evaluator output but does not replace the
+  upstream OpenDataLoader evaluator. It also has not run real MNN models over a
+  full/subset corpus to produce an accepted promotion report.

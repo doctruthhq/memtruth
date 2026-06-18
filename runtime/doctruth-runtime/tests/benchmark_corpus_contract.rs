@@ -440,6 +440,64 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
 }
 
 #[test]
+fn opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_report() {
+    let root = temp_dir("doctruth-runtime-opendataloader-direct-promotion");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-direct");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("doc-a.pdf"),
+        minimal_pdf("First document evidence."),
+    )
+    .unwrap();
+    write_high_quality_opendataloader_evaluation(&root);
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-direct",
+                "doc_id": "doc-a",
+                "preset": "lite",
+                "runtime_profile": "edge-fast",
+                "output_dir": prediction,
+                "opendataloader_evaluation": "opendataloader-evaluation.json",
+                "promotionGates": {
+                    "mnn": {
+                        "heavyOracleSteadyRssMb": 1400,
+                        "qualityMinimums": {
+                            "overall": 0.88,
+                            "nid": 0.91,
+                            "teds": 0.88,
+                            "mhs": 0.78
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["externalMetrics"]["opendataloader"]["nid"], 0.93);
+    assert_eq!(report["metrics"]["opendataloader_teds"], 0.90);
+    assert_eq!(report["mnnPromotion"]["evaluated"], true);
+    assert_eq!(report["mnnPromotion"]["quality"]["passed"], true);
+    assert_eq!(report["mnnPromotion"]["quality"]["overall"], 0.91);
+    assert_eq!(report["mnnPromotion"]["resources"]["passed"], false);
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["modelRuntimePresent"],
+        false
+    );
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

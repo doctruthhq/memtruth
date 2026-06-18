@@ -2510,10 +2510,17 @@ fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f
     if pred_tables.is_empty() {
         return (Some(0.0), Some(0.0));
     }
-    let gt_joined = normalize_table_markup(&gt_tables.join("\n"));
-    let pred_joined = normalize_table_markup(&pred_tables.join("\n"));
-    let score = markdown_similarity(&gt_joined, &pred_joined);
-    (Some(score), Some(score))
+    let gt_tree = table_eval_tree(&gt_tables);
+    let pred_tree = table_eval_tree(&pred_tables);
+    let max_nodes = table_tree_size(&gt_tree)
+        .max(table_tree_size(&pred_tree))
+        .max(1);
+    (
+        Some(table_tree_similarity(&gt_tree, &pred_tree, true, max_nodes)),
+        Some(table_tree_similarity(
+            &gt_tree, &pred_tree, false, max_nodes,
+        )),
+    )
 }
 
 fn evaluate_opendataloader_heading(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
@@ -2687,6 +2694,171 @@ fn normalize_table_markup(markup: &str) -> String {
         normalized = normalized.replace(from, to);
     }
     normalized.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[derive(Clone)]
+struct TableEvalNode {
+    tag: &'static str,
+    text: String,
+    colspan: usize,
+    rowspan: usize,
+    children: Vec<TableEvalNode>,
+}
+
+fn table_eval_tree(tables: &[String]) -> TableEvalNode {
+    TableEvalNode {
+        tag: "body",
+        text: String::new(),
+        colspan: 1,
+        rowspan: 1,
+        children: tables
+            .iter()
+            .map(|table| parse_table_eval_node(table))
+            .collect(),
+    }
+}
+
+fn parse_table_eval_node(table: &str) -> TableEvalNode {
+    let normalized = normalize_table_markup(table);
+    let mut rows = Vec::new();
+    for row in html_segments(&normalized, "tr") {
+        let mut cells = Vec::new();
+        for cell in html_segments(&row, "td") {
+            let open_tag = opening_tag(&cell).unwrap_or_default();
+            cells.push(TableEvalNode {
+                tag: "td",
+                text: normalize_markdown_for_evaluator(&strip_html_tags(&cell)),
+                colspan: html_usize_attr(&open_tag, "colspan").unwrap_or(1),
+                rowspan: html_usize_attr(&open_tag, "rowspan").unwrap_or(1),
+                children: Vec::new(),
+            });
+        }
+        rows.push(TableEvalNode {
+            tag: "tr",
+            text: String::new(),
+            colspan: 1,
+            rowspan: 1,
+            children: cells,
+        });
+    }
+    TableEvalNode {
+        tag: "table",
+        text: String::new(),
+        colspan: 1,
+        rowspan: 1,
+        children: rows,
+    }
+}
+
+fn html_segments(markup: &str, tag: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut rest = markup;
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    loop {
+        let Some(start) = rest.find(&open) else {
+            break;
+        };
+        let after_start = &rest[start..];
+        let Some(end) = after_start.find(&close) else {
+            break;
+        };
+        let segment_end = end + close.len();
+        segments.push(after_start[..segment_end].to_string());
+        rest = &after_start[segment_end..];
+    }
+    segments
+}
+
+fn opening_tag(markup: &str) -> Option<String> {
+    let start = markup.find('<')?;
+    let end = markup[start..].find('>')?;
+    Some(markup[start..=start + end].to_string())
+}
+
+fn html_usize_attr(tag: &str, attr: &str) -> Option<usize> {
+    let needle = format!("{attr}=");
+    let start = tag.find(&needle)? + needle.len();
+    let value = tag[start..].trim_start();
+    let quote = value.chars().next()?;
+    if quote == '"' || quote == '\'' {
+        let end = value[1..].find(quote)?;
+        value[1..1 + end].parse().ok()
+    } else {
+        value
+            .split(|char: char| char.is_whitespace() || char == '>')
+            .next()
+            .and_then(|raw| raw.parse().ok())
+    }
+}
+
+fn strip_html_tags(markup: &str) -> String {
+    let mut result = String::new();
+    let mut in_tag = false;
+    for char in markup.chars() {
+        match char {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(char),
+            _ => {}
+        }
+    }
+    result
+}
+
+fn table_tree_size(node: &TableEvalNode) -> usize {
+    1 + node.children.iter().map(table_tree_size).sum::<usize>()
+}
+
+fn table_tree_similarity(
+    gt: &TableEvalNode,
+    pred: &TableEvalNode,
+    include_text: bool,
+    max_nodes: usize,
+) -> f64 {
+    let distance = table_tree_distance(gt, pred, include_text);
+    round_metric((1.0 - distance / max_nodes as f64).clamp(0.0, 1.0))
+}
+
+fn table_tree_distance(left: &TableEvalNode, right: &TableEvalNode, include_text: bool) -> f64 {
+    table_rename_cost(left, right, include_text)
+        + table_children_distance(&left.children, &right.children, include_text)
+}
+
+fn table_children_distance(
+    left: &[TableEvalNode],
+    right: &[TableEvalNode],
+    include_text: bool,
+) -> f64 {
+    let mut dp = vec![vec![0.0; right.len() + 1]; left.len() + 1];
+    for index in 0..left.len() {
+        dp[index + 1][0] = dp[index][0] + table_tree_size(&left[index]) as f64;
+    }
+    for index in 0..right.len() {
+        dp[0][index + 1] = dp[0][index] + table_tree_size(&right[index]) as f64;
+    }
+    for left_index in 0..left.len() {
+        for right_index in 0..right.len() {
+            let delete =
+                dp[left_index][right_index + 1] + table_tree_size(&left[left_index]) as f64;
+            let insert =
+                dp[left_index + 1][right_index] + table_tree_size(&right[right_index]) as f64;
+            let rename = dp[left_index][right_index]
+                + table_tree_distance(&left[left_index], &right[right_index], include_text);
+            dp[left_index + 1][right_index + 1] = delete.min(insert).min(rename);
+        }
+    }
+    dp[left.len()][right.len()]
+}
+
+fn table_rename_cost(left: &TableEvalNode, right: &TableEvalNode, include_text: bool) -> f64 {
+    if left.tag != right.tag || left.colspan != right.colspan || left.rowspan != right.rowspan {
+        return 1.0;
+    }
+    if !include_text || left.tag != "td" {
+        return 0.0;
+    }
+    normalized_string_distance(&left.text, &right.text)
 }
 
 #[derive(Clone)]

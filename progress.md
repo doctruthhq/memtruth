@@ -7766,3 +7766,39 @@
 - Remaining gap: this is an ordered-tree edit approximation shaped to the
   upstream MHS tree contract. It still needs explicit upstream fixture parity
   before replacing Python APTED as the authoritative full-corpus evaluator.
+
+## 2026-06-18 Rust Evaluator TEDS Tree Content Parity Slice
+
+- Added RED test
+  `opendataloader_evaluator_teds_scores_content_separately_from_structure`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_teds_scores_content_separately_from_structure`.
+- RED result: Rust evaluator returned `teds_s=0.965909` for same-structure
+  tables with one changed cell value, proving the MVP was still scoring TEDS-S
+  with text-sensitive string similarity.
+- Implemented a Rust table evaluator tree:
+  - `body -> table -> tr -> td`
+  - `td` nodes preserve normalized text
+  - `rowspan` and `colspan` are parsed from the opening tag
+  - `th` is normalized to `td`
+  - `thead` / `tbody` wrappers are removed before tree parsing
+  - insert/delete cost = subtree size
+  - rename cost = tag/rowspan/colspan mismatch or normalized cell text distance
+    when TEDS includes text
+  - TEDS-S uses the same tree but ignores cell text
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_teds_scores_content_separately_from_structure`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_matches_upstream_heading_and_table_normalization`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `35 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this handles simple HTML table trees. Full upstream parity
+  still needs Markdown-table-to-HTML conversion parity, robust HTML parsing,
+  nested tag tokenization inside cells, and fixture-level comparison against
+  upstream Python APTED outputs.

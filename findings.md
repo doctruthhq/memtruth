@@ -1835,3 +1835,16 @@
 - This is closer to upstream APTED semantics, but it is not yet a proof of full
   APTED parity across arbitrary trees. Keep the upstream evaluator as the
   authoritative oracle until Rust fixture parity covers the tricky cases.
+
+## 2026-06-18 Rust Evaluator TEDS Tree Finding
+
+- TEDS and TEDS-S must diverge when only table cell content changes. A string
+  similarity over normalized table markup incorrectly lets text changes reduce
+  TEDS-S even though structure is unchanged.
+- A simple `body/table/tr/td` tree with ordered edit distance closes the core
+  semantic gap for HTML tables: structure-only scoring ignores cell text, while
+  content scoring includes normalized td text and rowspan/colspan attributes.
+- The Rust evaluator still needs a dedicated parity pass against upstream
+  Python APTED for complex cases: Markdown table conversion, nested inline HTML
+  inside cells, malformed HTML recovery, multiple tables, and tokenization
+  details.

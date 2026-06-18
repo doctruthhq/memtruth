@@ -730,6 +730,59 @@ fn opendataloader_evaluator_mhs_scores_content_separately_from_structure() {
 }
 
 #[test]
+fn opendataloader_evaluator_teds_scores_content_separately_from_structure() {
+    let root = temp_dir("doctruth-runtime-opendataloader-evaluator-teds-tree");
+    let gt = root.join("ground-truth/markdown");
+    let prediction = root.join("prediction/doctruth-rust-eval");
+    let markdown = prediction.join("markdown");
+    fs::create_dir_all(&gt).unwrap();
+    fs::create_dir_all(&markdown).unwrap();
+    fs::write(
+        gt.join("content-change.md"),
+        "<table><tr><td>Name</td><td>Role</td></tr><tr><td>Ada</td><td>Engineer</td></tr></table>\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("content-change.md"),
+        "<table><tr><td>Name</td><td>Role</td></tr><tr><td>Ada</td><td>Designer</td></tr></table>\n",
+    )
+    .unwrap();
+    fs::write(
+        gt.join("structure-change.md"),
+        "<table><tr><td>Name</td><td>Role</td></tr><tr><td>Ada</td><td>Engineer</td></tr></table>\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("structure-change.md"),
+        "<table><tr><td>Name</td><td>Role</td></tr></table>\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_evaluate_prediction",
+                "ground_truth_dir": gt,
+                "prediction_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    let content = &report["documents"][0]["scores"];
+    let structure = &report["documents"][1]["scores"];
+    assert!(content["teds"].as_f64().unwrap() < 1.0, "{report}");
+    assert_eq!(content["teds_s"], 1.0);
+    assert!(structure["teds_s"].as_f64().unwrap() < 1.0, "{report}");
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

@@ -498,6 +498,91 @@ fn opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_rep
 }
 
 #[test]
+fn opendataloader_promotion_report_uses_existing_prediction_summary_without_reparse() {
+    let root = temp_dir("doctruth-runtime-opendataloader-report");
+    let prediction = root.join("prediction/doctruth-direct");
+    fs::create_dir_all(&prediction).unwrap();
+    fs::write(
+        prediction.join("summary.json"),
+        json!({
+            "engine_name": "doctruth-direct",
+            "runtime_contract": "TrustDocument",
+            "runtime_profile": "edge-model",
+            "document_count": 1,
+            "parsed_count": 1,
+            "failed_count": 0,
+            "total_elapsed": 12.0,
+            "elapsed_per_doc": 12.0,
+            "production_residency": {"python_torch_docling": false},
+            "documents": [{
+                "document_id": "doc-a",
+                "status": "parsed",
+                "elapsed": 12.0,
+                "markdown_path": "prediction/doctruth-direct/markdown/doc-a.md",
+                "error": null,
+                "runtimeProfile": "edge-model",
+                "modelRuntime": {
+                    "runtime": "mnn",
+                    "coldStartMs": 8.0,
+                    "inferenceMs": 3.0,
+                    "peakMemoryMb": 202,
+                    "loadedModels": ["slanet-plus:v1"]
+                },
+                "modelRouting": {
+                    "route": "table-model",
+                    "startedModelRuntime": true
+                }
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    write_high_quality_opendataloader_evaluation(&root);
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_promotion_report",
+                "prediction_dir": prediction,
+                "opendataloader_evaluation": root.join("opendataloader-evaluation.json"),
+                "promotionGates": {
+                    "mnn": {
+                        "heavyOracleSteadyRssMb": 1400,
+                        "qualityMinimums": {
+                            "overall": 0.88,
+                            "nid": 0.91,
+                            "teds": 0.88,
+                            "mhs": 0.78
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["prediction"]["engine"], "doctruth-direct");
+    assert_eq!(report["prediction"]["documentCount"], 1);
+    assert_eq!(report["metrics"]["opendataloader_nid"], 0.93);
+    assert_eq!(
+        report["resourceProfile"]["modelRuntime"]["peakMemoryMb"],
+        202
+    );
+    assert_eq!(report["mnnPromotion"]["evaluated"], true);
+    assert_eq!(report["mnnPromotion"]["accepted"], true);
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["modelRuntimePresent"],
+        true
+    );
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

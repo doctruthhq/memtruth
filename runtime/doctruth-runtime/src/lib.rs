@@ -77,6 +77,9 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         Some("opendataloader_prediction") => {
             opendataloader_prediction_json(&request).map(|json| json.to_string())
         }
+        Some("opendataloader_promotion_report") => {
+            opendataloader_promotion_report_json(&request).map(|json| json.to_string())
+        }
         Some("verify_benchmark_report") => {
             verify_benchmark_report_json(&request).map(|json| json.to_string())
         }
@@ -2101,7 +2104,8 @@ fn sum_runtime_metric(runtimes: &[&Value], key: &str) -> Value {
 fn max_runtime_metric(runtimes: &[&Value], key: &str) -> Value {
     let max = runtimes
         .iter()
-        .filter_map(|runtime| runtime.get(key).and_then(Value::as_u64))
+        .filter_map(|runtime| runtime.get(key).and_then(Value::as_f64))
+        .map(|value| value.ceil() as u64)
         .max();
     max.map_or(Value::Null, |value| json!(value))
 }
@@ -2357,6 +2361,71 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         "resourceProfile": resource_profile,
         "mnnPromotion": mnn_promotion
     }))
+}
+
+fn opendataloader_promotion_report_json(request: &Value) -> Result<Value, String> {
+    let prediction_dir = Path::new(required_request_str(
+        request,
+        "prediction_dir",
+        "OPENDATALOADER_PROMOTION_REPORT_INVALID",
+    )?);
+    let summary = read_json_file(
+        &prediction_dir.join("summary.json"),
+        "OPENDATALOADER_PROMOTION_REPORT_INVALID",
+    )?;
+    let evaluation_path = opendataloader_evaluation_path(request)?;
+    let imported = opendataloader_external_metrics(&evaluation_path)?;
+    let profile = summary
+        .get("runtime_profile")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_PROTOCOL_PROFILE);
+    let resource_profile = opendataloader_prediction_resource_profile(profile, &summary);
+    let promotion_manifest = json!({
+        "promotionGates": request.get("promotionGates").cloned().unwrap_or_else(|| json!({}))
+    });
+    let mnn_promotion =
+        mnn_promotion_json(&promotion_manifest, &imported.values, &resource_profile);
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "prediction": {
+            "engine": summary.get("engine_name").cloned().unwrap_or(Value::Null),
+            "path": prediction_dir.to_string_lossy(),
+            "documentCount": summary.get("document_count").cloned().unwrap_or(Value::Null),
+            "parsedCount": summary.get("parsed_count").cloned().unwrap_or(Value::Null),
+            "failedCount": summary.get("failed_count").cloned().unwrap_or(Value::Null)
+        },
+        "metrics": imported.values,
+        "externalMetrics": json!({"opendataloader": imported.report}),
+        "resourceProfile": resource_profile,
+        "mnnPromotion": mnn_promotion
+    }))
+}
+
+fn opendataloader_evaluation_path(request: &Value) -> Result<PathBuf, String> {
+    let raw = request
+        .get("opendataloader_evaluation")
+        .or_else(|| request.get("opendataloaderEvaluation"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            error_json(
+                "OPENDATALOADER_PROMOTION_REPORT_INVALID",
+                "request.opendataloader_evaluation is required",
+            )
+            .to_string()
+        })?;
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        return Ok(path);
+    }
+    let base = request
+        .get("bench_dir")
+        .or_else(|| request.get("benchDir"))
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    Ok(base.join(path))
 }
 
 fn opendataloader_prediction_external_metrics(

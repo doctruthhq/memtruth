@@ -7637,3 +7637,35 @@
 - Remaining gap: this imports evaluator output but does not replace the
   upstream OpenDataLoader evaluator. It also has not run real MNN models over a
   full/subset corpus to produce an accepted promotion report.
+
+## 2026-06-18 Existing Prediction Promotion Report MVP
+
+- Added RED test
+  `opendataloader_promotion_report_uses_existing_prediction_summary_without_reparse`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_promotion_report_uses_existing_prediction_summary_without_reparse`.
+- RED result: expected `UNKNOWN_COMMAND` because `doctruth-runtime` did not yet
+  have a report-only promotion command.
+- Implemented protocol command `opendataloader_promotion_report`.
+- The command reads an existing Rust prediction `summary.json`, imports an
+  OpenDataLoader evaluator JSON, synthesizes `resourceProfile`, and applies the
+  same `promotionGates.mnn` decision path without reparsing PDFs.
+- Updated `scripts/smoke-doctruth-rust-opendataloader-prediction.sh` to prove
+  the two-step bench flow:
+  Rust `opendataloader_prediction` -> evaluator JSON -> Rust
+  `opendataloader_promotion_report`.
+- Fixed `max_runtime_metric` so model peak-memory metrics survive when worker
+  JSON reports floating-point MB values such as `123.0`; the promotion gate
+  still requires a concrete peak-memory value and remains fail-closed.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `31 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`.
+- Remaining gap: OpenDataLoader's evaluator is still upstream Python. This
+  slice removes DocTruth-owned prediction/report assembly from Python, but it
+  does not replace external scoring or prove full-corpus real MNN acceptance.

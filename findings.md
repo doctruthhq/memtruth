@@ -1779,3 +1779,19 @@
   to assemble DocTruth promotion evidence or infer runtime/resource status.
 - A promotion report must still fail resource acceptance when no model runtime
   evidence is present. Passing NID/TEDS/MHS alone is insufficient.
+
+## 2026-06-18 Existing Prediction Promotion Report Finding
+
+- A report-only promotion command is useful because the realistic benchmark
+  flow is two-step: generate prediction artifacts once, run the external
+  evaluator, then assemble promotion evidence without reparsing PDFs.
+- `opendataloader_promotion_report` is the Rust-owned bridge for that flow. It
+  consumes Rust prediction `summary.json` plus OpenDataLoader evaluator JSON and
+  emits the combined quality/resource/MNN promotion decision.
+- Python is still present as the upstream OpenDataLoader evaluator/oracle
+  boundary and as legacy compatibility tooling. It should not be described as
+  production parser runtime, model runtime, or DocTruth-owned promotion report
+  assembly for this lane.
+- Model memory metrics can arrive as JSON floats from workers. Promotion
+  resource gates should conservatively accept numeric MB values by rounding up,
+  but still reject missing memory evidence.

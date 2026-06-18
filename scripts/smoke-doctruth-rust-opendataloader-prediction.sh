@@ -12,6 +12,8 @@ MODEL_MANIFEST="$WORK_DIR/models.json"
 MODEL_BYTES="$MODEL_CACHE/slanet-plus-v1.bin"
 PREDICTION="$WORK_DIR/prediction/doctruth-rust-mnn"
 REPORT="$WORK_DIR/report.json"
+EVALUATION="$WORK_DIR/opendataloader-evaluation.json"
+PROMOTION_REPORT="$WORK_DIR/promotion-report.json"
 
 mkdir -p "$MODEL_CACHE"
 printf '%s' "rust-owned-mnn-promotion-model" > "$MODEL_BYTES"
@@ -49,6 +51,33 @@ jq -e '.production_residency.python_torch_docling == false' "$PREDICTION/summary
 jq -e '.documents[0].modelRuntime.runtime == "mnn"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.documents[0].modelRouting.route == "table-model"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.documents == []' "$PREDICTION/errors.json" >/dev/null
+
+cat > "$EVALUATION" <<'EOF_EVALUATION'
+{
+  "summary": {
+    "engine_name": "doctruth-rust-mnn",
+    "engine_version": "smoke",
+    "document_count": 1,
+    "elapsed_per_doc": 0.01
+  },
+  "metrics": {
+    "score": {
+      "nid_mean": 0.93,
+      "teds_mean": 0.90,
+      "mhs_mean": 0.90
+    }
+  }
+}
+EOF_EVALUATION
+
+"$BIN" <<EOF_REPORT > "$PROMOTION_REPORT"
+{"command":"opendataloader_promotion_report","prediction_dir":"$PREDICTION","opendataloader_evaluation":"$EVALUATION","promotionGates":{"mnn":{"heavyOracleSteadyRssMb":1400,"qualityMinimums":{"overall":0.88,"nid":0.91,"teds":0.88,"mhs":0.78}}}}
+EOF_REPORT
+
+jq -e '.metrics.opendataloader_nid == 0.93' "$PROMOTION_REPORT" >/dev/null
+jq -e '.mnnPromotion.evaluated == true' "$PROMOTION_REPORT" >/dev/null
+jq -e '.mnnPromotion.accepted == true' "$PROMOTION_REPORT" >/dev/null
+jq -e '.resourceProfile.modelRuntime.runtime == "mnn"' "$PROMOTION_REPORT" >/dev/null
 
 rm -rf "$WORK_DIR"
 

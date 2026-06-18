@@ -2272,16 +2272,19 @@ text-layer foundation, while table fidelity, heading hierarchy, OCR fallback,
 and slow-sample timeout/parallelism remain required parser-quality work before
 DocTruth can claim OpenDataLoader/Docling level extraction quality.
 
-Historical note: the legacy Python prediction adapter supported
-`--timeout-seconds` to keep full-corpus iteration from being dominated by a
-single pathological PDF. With `--timeout-seconds 30`, the same optimized export
-run completed in `239.5388069152832` seconds, marked `01030000000141` as timed
-out, kept the scanned/no-text-layer failure `01030000000165`, and retained
-nearly identical aggregate quality: `overall_mean=0.549140667373931`,
-`nid_mean=0.7663393307030263`, `teds_mean=0.06498004117639267`, and
-`mhs_mean=0.12239636974611434`. The Rust-owned runner no longer accepts this as
-a Python-adapter flag; per-document timeout needs a Rust command implementation
-before it can return as a default-runner feature.
+The Rust-owned runner supports `--timeout-seconds` without returning to the
+Python prediction adapter. When this option is present, `opendataloader_prediction`
+spawns the current `doctruth-runtime` binary per document, sends a normal
+`parse_pdf` request over stdin, kills the child on timeout, writes an empty
+Markdown artifact, and records `errorCode=PARSE_TIMEOUT` in `summary.json` and
+`errors.json`. Without this option, prediction stays on the faster in-process
+Rust path. Historical context: the legacy Python adapter used the same kind of
+per-document isolation to keep full-corpus iteration from being dominated by a
+single pathological PDF; a 30-second run completed in `239.5388069152832`
+seconds, marked `01030000000141` as timed out, kept the scanned/no-text-layer
+failure `01030000000165`, and retained nearly identical aggregate quality:
+`overall_mean=0.549140667373931`, `nid_mean=0.7663393307030263`,
+`teds_mean=0.06498004117639267`, and `mhs_mean=0.12239636974611434`.
 
 Current structure-tree preference status: the Rust runtime now asks `pdf_oxide`
 for canonical page reading order, which prefers a trustworthy Tagged-PDF

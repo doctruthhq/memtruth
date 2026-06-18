@@ -440,6 +440,67 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
 }
 
 #[test]
+fn opendataloader_prediction_command_records_per_document_timeout() {
+    let root = temp_dir("doctruth-runtime-opendataloader-timeout");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-timeout");
+    let worker = write_slow_model_worker();
+    let (cache_dir, manifest) = ready_mnn_model_manifest();
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("slow-doc.pdf"),
+        minimal_pdf("Slow model evidence."),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", worker)
+        .env("DOCTRUTH_MODEL_CACHE", cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", manifest)
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-timeout",
+                "preset": "table-lite",
+                "runtime_profile": "edge-model",
+                "timeout_seconds": 0.05,
+                "output_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["prediction"]["documentCount"], 1);
+    assert_eq!(report["prediction"]["failedCount"], 1);
+
+    let markdown = prediction.join("markdown/slow-doc.md");
+    assert!(markdown.is_file());
+    assert_eq!(fs::read_to_string(markdown).unwrap(), "");
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["timeout_seconds"], 0.05);
+    assert_eq!(summary["parsed_count"], 0);
+    assert_eq!(summary["failed_count"], 1);
+    assert_eq!(summary["documents"][0]["status"], "failed");
+    assert_eq!(summary["documents"][0]["errorCode"], "PARSE_TIMEOUT");
+    assert_eq!(summary["documents"][0]["runtimeProfile"], "edge-model");
+
+    let errors: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
+    assert_eq!(errors["documents"][0]["document_id"], "slow-doc");
+    assert_eq!(errors["documents"][0]["errorCode"], "PARSE_TIMEOUT");
+}
+
+#[test]
 fn opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_report() {
     let root = temp_dir("doctruth-runtime-opendataloader-direct-promotion");
     let pdf_dir = root.join("pdfs");
@@ -2109,6 +2170,27 @@ print(json.dumps({
         "unload": {"status": "scheduled", "policy": "idle-after-request"}
     }
 }))
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+    path
+}
+
+fn write_slow_model_worker() -> PathBuf {
+    let path = temp_dir("doctruth-runtime-slow-model-worker").with_extension("py");
+    fs::write(
+        &path,
+        r#"#!/usr/bin/env python3
+import time
+
+time.sleep(2)
 "#,
     )
     .unwrap();

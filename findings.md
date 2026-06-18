@@ -1879,6 +1879,11 @@
   `modelRuntime` evidence from `prediction-report.json`, not Python-adapter-only
   fields such as `mnn_promotion_candidate`.
 - The old Python adapter supported per-document timeout by spawning the runtime
-  per PDF. The direct Rust command currently does not provide equivalent
-  per-document timeout isolation, so `--timeout-seconds` must remain unsupported
-  until implemented in Rust rather than being accepted as a no-op.
+  per PDF. The Rust runner now owns equivalent timeout isolation through
+  `opendataloader_prediction timeout_seconds`: it spawns the current runtime as
+  a child `parse_pdf` process per document only when timeout is requested, kills
+  timed-out children, and records `PARSE_TIMEOUT`.
+- Timeout mode is intentionally not the default fast path. Without
+  `timeout_seconds`, prediction still calls `parse_pdf_json` in-process. With
+  `timeout_seconds`, the child-process boundary is slower but protects
+  full-corpus runs from pathological documents or stuck model workers.

@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
 use pdf_oxide::document::PdfDocument;
@@ -2341,8 +2341,15 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         .to_string());
     }
     let pdfs = select_opendataloader_pdfs(bench_dir, request)?;
-    let prediction =
-        write_opendataloader_prediction_artifacts(&output_dir, engine, preset, profile, &pdfs)?;
+    let timeout_seconds = prediction_timeout_seconds(request)?;
+    let prediction = write_opendataloader_prediction_artifacts(
+        &output_dir,
+        engine,
+        preset,
+        profile,
+        timeout_seconds,
+        &pdfs,
+    )?;
     let summary = read_json_file(
         &output_dir.join("summary.json"),
         "OPENDATALOADER_PREDICTION_INVALID",
@@ -2422,6 +2429,22 @@ fn opendataloader_evaluate_prediction_json(request: &Value) -> Result<Value, Str
         )?;
     }
     Ok(report)
+}
+
+fn prediction_timeout_seconds(request: &Value) -> Result<Option<f64>, String> {
+    let timeout = request
+        .get("timeout_seconds")
+        .or_else(|| request.get("timeoutSeconds"))
+        .and_then(Value::as_f64);
+    match timeout {
+        Some(value) if value > 0.0 => Ok(Some(value)),
+        Some(_) => Err(error_json(
+            "OPENDATALOADER_PREDICTION_INVALID",
+            "timeout_seconds must be greater than zero",
+        )
+        .to_string()),
+        None => Ok(None),
+    }
 }
 
 fn markdown_files(dir: &Path, code: &str) -> Result<Vec<PathBuf>, String> {
@@ -3236,6 +3259,7 @@ fn write_opendataloader_prediction_artifacts(
     engine: &str,
     preset: &str,
     profile: &str,
+    timeout_seconds: Option<f64>,
     pdfs: &[PathBuf],
 ) -> Result<Value, String> {
     let markdown_dir = output_dir.join("markdown");
@@ -3254,7 +3278,7 @@ fn write_opendataloader_prediction_artifacts(
             .unwrap_or_else(|| "document".to_string());
         let markdown_path = markdown_dir.join(format!("{document_id}.md"));
         let source_hash = sha256_file(pdf)?;
-        let result = parse_pdf_json(&json!({
+        let parse_request = json!({
             "command": "parse_pdf",
             "source_path": pdf.to_string_lossy(),
             "source_hash": source_hash,
@@ -3264,7 +3288,8 @@ fn write_opendataloader_prediction_artifacts(
             "runtimeProfile": profile,
             "offline_mode": true,
             "allow_model_downloads": false
-        }));
+        });
+        let result = parse_pdf_for_prediction(&parse_request, timeout_seconds);
         let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);
         match result {
             Ok(document) => {
@@ -3279,16 +3304,22 @@ fn write_opendataloader_prediction_artifacts(
                 ));
             }
             Err(error) => {
+                let error_code = error_code_from_json(&error);
                 fs::write(&markdown_path, "").map_err(|write_error| {
                     error_json("BENCHMARK_REPORT_WRITE_FAILED", &write_error.to_string())
                         .to_string()
                 })?;
-                errors.push(json!({"document_id": document_id, "error": error}));
+                errors.push(json!({
+                    "document_id": document_id,
+                    "errorCode": error_code,
+                    "error": error
+                }));
                 documents.push(json!({
                     "document_id": document_id,
                     "status": "failed",
                     "elapsed": elapsed,
                     "markdown_path": markdown_path.to_string_lossy(),
+                    "errorCode": error_code,
                     "error": error,
                     "runtimeProfile": profile,
                     "modelRuntime": Value::Null,
@@ -3314,6 +3345,7 @@ fn write_opendataloader_prediction_artifacts(
         "failed_count": failed_count,
         "total_elapsed": total_elapsed,
         "elapsed_per_doc": if document_count == 0 { Value::Null } else { json!(round_metric(total_elapsed / document_count as f64)) },
+        "timeout_seconds": timeout_seconds,
         "preset": preset,
         "production_residency": {
             "python_torch_docling": false
@@ -3336,6 +3368,86 @@ fn write_opendataloader_prediction_artifacts(
         "parsedCount": parsed_count,
         "failedCount": failed_count
     }))
+}
+
+fn parse_pdf_for_prediction(
+    request: &Value,
+    timeout_seconds: Option<f64>,
+) -> Result<Value, String> {
+    match timeout_seconds {
+        Some(timeout) => parse_pdf_child_with_timeout(request, timeout),
+        None => parse_pdf_json(request),
+    }
+}
+
+fn parse_pdf_child_with_timeout(request: &Value, timeout_seconds: f64) -> Result<Value, String> {
+    let exe = env::current_exe()
+        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
+    let mut child = Command::new(exe)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(request.to_string().as_bytes())
+            .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
+    }
+    let started = Instant::now();
+    let timeout = Duration::from_secs_f64(timeout_seconds);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                if let Some(mut stream) = child.stdout.take() {
+                    let _ = stream.read_to_string(&mut stdout);
+                }
+                if let Some(mut stream) = child.stderr.take() {
+                    let _ = stream.read_to_string(&mut stderr);
+                }
+                if !status.success() {
+                    return Err(error_json(
+                        "PDF_EXTRACTION_FAILED",
+                        &format!("parse child exited with {status}; {}", stderr.trim()),
+                    )
+                    .to_string());
+                }
+                return serde_json::from_str(&stdout).map_err(|error| {
+                    error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string()
+                });
+            }
+            Ok(None) if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error_json(
+                    "PARSE_TIMEOUT",
+                    &format!("document parse exceeded {timeout_seconds} seconds"),
+                )
+                .to_string());
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string());
+            }
+        }
+    }
+}
+
+fn error_code_from_json(error: &str) -> String {
+    serde_json::from_str::<Value>(error)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error_code")
+                .or_else(|| value.get("code"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "UNKNOWN_ERROR".to_string())
 }
 
 fn opendataloader_prediction_document_summary_from_document(

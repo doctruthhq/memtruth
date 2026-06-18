@@ -12,6 +12,7 @@ PRESET="lite"
 RUNTIME_PROFILE="${DOCTRUTH_RUNTIME_PROFILE:-edge-model}"
 OUTPUT_DIR=""
 EVALUATOR="rust"
+TIMEOUT_SECONDS=""
 
 usage() {
   cat <<'EOF'
@@ -28,6 +29,7 @@ Options:
   --runtime-profile PROFILE    edge-fast or edge-model.
   --runtime-bin PATH           doctruth-runtime binary.
   --output-dir DIR             Prediction output directory.
+  --timeout-seconds SECONDS    Per-document Rust parse timeout.
   --skip-eval                  Do not run evaluator.
   --evaluator rust|official    Rust evaluator by default; official is oracle-only.
   --official-eval              Alias for --evaluator official.
@@ -85,8 +87,8 @@ while [ "$#" -gt 0 ]; do
       exit 2
       ;;
     --timeout-seconds)
-      echo "--timeout-seconds belonged to the legacy Python adapter and is not supported by the Rust runner" >&2
-      exit 2
+      TIMEOUT_SECONDS="$2"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -128,6 +130,7 @@ REQUEST="$(jq -n \
   --arg preset "$PRESET" \
   --arg runtime_profile "$RUNTIME_PROFILE" \
   --arg output_dir "$OUTPUT_DIR" \
+  --arg timeout_seconds "$TIMEOUT_SECONDS" \
   '{
     command: "opendataloader_prediction",
     bench_dir: $bench_dir,
@@ -137,7 +140,8 @@ REQUEST="$(jq -n \
     output_dir: $output_dir
   }
   + (if $doc_id == "" then {} else {doc_id: $doc_id} end)
-  + (if $limit == "" then {} else {limit: ($limit | tonumber)} end)')"
+  + (if $limit == "" then {} else {limit: ($limit | tonumber)} end)
+  + (if $timeout_seconds == "" then {} else {timeout_seconds: ($timeout_seconds | tonumber)} end)')"
 
 printf '%s' "$REQUEST" | "$BIN" > "$REPORT_TMP"
 mkdir -p "$OUTPUT_DIR"

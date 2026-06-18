@@ -7871,3 +7871,35 @@
 - Remaining gap: the old Python adapter's per-document `--timeout-seconds`
   behavior is not silently preserved. The Rust direct command needs an explicit
   per-document timeout implementation before that flag can return.
+
+## 2026-06-18 Rust OpenDataLoader Per-Document Timeout Slice
+
+- Added RED test
+  `opendataloader_prediction_command_records_per_document_timeout`.
+- RED setup: a READY MNN manifest/cache plus a slow configured model worker
+  makes `opendataloader_prediction` block unless the Rust command owns
+  per-document timeout handling.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_prediction_command_records_per_document_timeout`.
+- RED result: `summary.timeout_seconds` was `null`, proving the Rust command
+  ignored `timeout_seconds`.
+- Implemented `timeout_seconds` / `timeoutSeconds` parsing in
+  `opendataloader_prediction`.
+- Implemented timeout execution by spawning the current `doctruth-runtime`
+  binary per document only when timeout is requested. The child receives a
+  normal `parse_pdf` protocol request over stdin. On timeout the parent kills
+  the child, writes an empty Markdown artifact, and records
+  `errorCode=PARSE_TIMEOUT` in both `summary.json` and `errors.json`.
+- Kept the default no-timeout prediction path in-process for speed.
+- Wired `scripts/run-doctruth-opendataloader-bench.sh --timeout-seconds` into
+  the Rust protocol request.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_prediction_command_records_per_document_timeout`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `37 passed`;
+  `sh scripts/smoke-doctruth-opendataloader-bench-runner.sh`;
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`.
+- Smoke note: forcing `--timeout-seconds 5` and `30` on the normal smoke PDF
+  correctly triggered `PARSE_TIMEOUT` in debug builds because timeout mode uses
+  child-process isolation. The smoke was kept on the default fast in-process
+  path; timeout behavior is covered by the dedicated slow-worker Rust test.

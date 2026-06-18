@@ -1848,3 +1848,15 @@
   Python APTED for complex cases: Markdown table conversion, nested inline HTML
   inside cells, malformed HTML recovery, multiple tables, and tokenization
   details.
+
+## 2026-06-18 Rust Evaluator Markdown Table Finding
+
+- Upstream TEDS does not require source Markdown to already contain HTML
+  `<table>` tags. It first converts Markdown tables into HTML tables, then
+  extracts table trees.
+- Rust evaluator now handles the common pipe-table shape, which is important
+  because many OpenDataLoader ground-truth and prediction artifacts can contain
+  Markdown pipe tables rather than literal HTML tables.
+- This is still a subset of upstream conversion behavior. Escaped pipes,
+  multiline cells, alignment details, and malformed Markdown need explicit
+  parity fixtures before the Rust evaluator can replace the Python converter.

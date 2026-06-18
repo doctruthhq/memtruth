@@ -783,6 +783,48 @@ fn opendataloader_evaluator_teds_scores_content_separately_from_structure() {
 }
 
 #[test]
+fn opendataloader_evaluator_converts_markdown_pipe_tables_for_teds() {
+    let root = temp_dir("doctruth-runtime-opendataloader-evaluator-markdown-table");
+    let gt = root.join("ground-truth/markdown");
+    let prediction = root.join("prediction/doctruth-rust-eval");
+    let markdown = prediction.join("markdown");
+    fs::create_dir_all(&gt).unwrap();
+    fs::create_dir_all(&markdown).unwrap();
+    fs::write(
+        gt.join("doc.md"),
+        "| Name | Role |\n| --- | --- |\n| Ada | Engineer |\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("doc.md"),
+        "| Name | Role |\n| --- | --- |\n| Ada | Designer |\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_evaluate_prediction",
+                "ground_truth_dir": gt,
+                "prediction_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    let scores = &report["documents"][0]["scores"];
+    assert!(scores["teds"].as_f64().unwrap() < 1.0, "{report}");
+    assert_eq!(scores["teds_s"], 1.0);
+    assert_eq!(report["metrics"]["teds_count"], 1);
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

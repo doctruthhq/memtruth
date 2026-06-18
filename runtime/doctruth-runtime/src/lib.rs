@@ -2502,11 +2502,11 @@ fn evaluate_opendataloader_reading_order(gt: &str, pred: &str) -> (Option<f64>, 
 }
 
 fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
-    let gt_tables = html_tables(gt);
+    let gt_tables = evaluator_tables(gt);
     if gt_tables.is_empty() {
         return (None, None);
     }
-    let pred_tables = html_tables(pred);
+    let pred_tables = evaluator_tables(pred);
     if pred_tables.is_empty() {
         return (Some(0.0), Some(0.0));
     }
@@ -2679,6 +2679,76 @@ fn html_tables(text: &str) -> Vec<String> {
         rest = &after_start[table_end..];
     }
     tables
+}
+
+fn evaluator_tables(text: &str) -> Vec<String> {
+    let mut tables = html_tables(text);
+    tables.extend(markdown_pipe_tables_as_html(text));
+    tables
+}
+
+fn markdown_pipe_tables_as_html(markdown: &str) -> Vec<String> {
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut tables = Vec::new();
+    let mut index = 0;
+    while index + 1 < lines.len() {
+        if !is_markdown_table_row(lines[index]) || !is_markdown_separator_row(lines[index + 1]) {
+            index += 1;
+            continue;
+        }
+        let mut rows = vec![markdown_table_cells(lines[index])];
+        index += 2;
+        while index < lines.len() && is_markdown_table_row(lines[index]) {
+            rows.push(markdown_table_cells(lines[index]));
+            index += 1;
+        }
+        if rows.iter().any(|row| !row.is_empty()) {
+            tables.push(markdown_rows_to_html_table(&rows));
+        }
+    }
+    tables
+}
+
+fn is_markdown_table_row(line: &str) -> bool {
+    line.trim().contains('|') && markdown_table_cells(line).len() >= 2
+}
+
+fn is_markdown_separator_row(line: &str) -> bool {
+    let cells = markdown_table_cells(line);
+    cells.len() >= 2
+        && cells.iter().all(|cell| {
+            let trimmed = cell.trim_matches(':').trim();
+            trimmed.len() >= 3 && trimmed.chars().all(|char| char == '-')
+        })
+}
+
+fn markdown_table_cells(line: &str) -> Vec<String> {
+    let trimmed = line.trim().trim_matches('|');
+    trimmed
+        .split('|')
+        .map(|cell| normalize_markdown_for_evaluator(cell))
+        .collect::<Vec<_>>()
+}
+
+fn markdown_rows_to_html_table(rows: &[Vec<String>]) -> String {
+    let mut html = String::from("<table>");
+    for row in rows {
+        html.push_str("<tr>");
+        for cell in row {
+            html.push_str("<td>");
+            html.push_str(&escape_table_text(cell));
+            html.push_str("</td>");
+        }
+        html.push_str("</tr>");
+    }
+    html.push_str("</table>");
+    html
+}
+
+fn escape_table_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn normalize_table_markup(markup: &str) -> String {

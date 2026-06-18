@@ -7802,3 +7802,37 @@
   still needs Markdown-table-to-HTML conversion parity, robust HTML parsing,
   nested tag tokenization inside cells, and fixture-level comparison against
   upstream Python APTED outputs.
+
+## 2026-06-18 Rust Evaluator Markdown Table Conversion Slice
+
+- Added RED test
+  `opendataloader_evaluator_converts_markdown_pipe_tables_for_teds`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_converts_markdown_pipe_tables_for_teds`.
+- RED result: `scores.teds` was `null` because the Rust evaluator only
+  recognized literal HTML `<table>` blocks, while upstream converts Markdown
+  pipe tables into HTML tables before TEDS.
+- Implemented simple Markdown pipe table conversion:
+  - detects header row plus separator row
+  - captures subsequent pipe rows as table rows
+  - emits HTML `<table><tr><td>...`
+  - escapes table text
+  - feeds converted tables into the same Rust TEDS tree evaluator as literal
+    HTML tables
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_converts_markdown_pipe_tables_for_teds`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_teds_scores_content_separately_from_structure`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_matches_upstream_heading_and_table_normalization`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `36 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this covers common pipe-table syntax. Full upstream conversion
+  parity still needs multiline cells, escaped pipes, alignment metadata,
+  malformed table recovery, and fixture-level comparison against the Python
+  converter.

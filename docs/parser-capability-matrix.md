@@ -43,8 +43,11 @@ Rules:
 - `SourceLocation` is the durable audit anchor.
 - `BoundingBox` is an optional visual anchor for PDF-originated text.
 - Absence of bbox does not mean absence of evidence.
-- Scanned PDFs should be routed through `OcrEngine` before DocTruth block assembly.
-- The CLI discovers local OCR workers via `DOCTRUTH_OCR_COMMAND`,
-  `LOCAL_OCR_COMMAND`, `doctruth-rapidocr-mnn-worker`, or compatible legacy
-  worker names on `PATH`. OCR models stay in the desktop/deployment package, not
-  in the generic Java parser jar.
+- Scanned PDFs should be routed through the Rust model-worker path before
+  DocTruth block assembly.
+- The CLI discovers the production local model worker via
+  `DOCTRUTH_RUNTIME_MODEL_COMMAND`, `DOCTRUTH_MODEL_COMMAND`, or
+  `doctruth-mnn-model-worker` on `PATH`. Legacy Python OCR/table/model worker
+  names remain source-tree oracle tools only. OCR/table models stay in the
+  desktop/deployment package or local model cache, not in the generic Java
+  parser jar.

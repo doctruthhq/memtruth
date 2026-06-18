@@ -30,6 +30,32 @@ path. It is not a reason to silently parse with Java/PDFBox. Java/PDFBox may be
 selected only through explicit legacy/oracle controls such as
 `ParserBackendMode.PDFBOX` or `--backend pdfbox`.
 
+Current production model-worker direction:
+
+```text
+Production package:
+  doctruth-runtime
+  doctruth-mnn-model-worker
+
+Production runtime:
+  Rust-owned parser orchestration
+  Rust-owned model manifest/cache validation
+  Rust-owned worker protocol and TrustDocument normalization
+
+Legacy/source-only oracle:
+  scripts/doctruth-onnx-model-worker
+  scripts/doctruth-slanext-table-worker
+  scripts/doctruth-rapidocr-mnn-worker
+```
+
+RapidOCR, SLANeXT/PaddleOCR, and ONNXRuntime Python worker scripts are no longer
+source-install or release-tarball production entrypoints. They can remain in the
+source tree only for migration comparison, differential oracle tests, or
+explicit opt-in historical smokes. Real MNN OCR/table/layout inference inside
+`doctruth-mnn-model-worker` is still an implementation task; the current Rust
+worker locks the production protocol, packaging, discovery, and fail-closed
+runtime boundary.
+
 ## 1. Summary
 
 DocTruth cannot be credible if its source evidence is wrong. The product promise
@@ -386,10 +412,10 @@ open.
 | --- | --- | --- | --- | --- |
 | Kreuzberg | Rust parser/runtime as the product core | Complete for Goal 1 defaultization, partial for broad parser-quality depth | `runtime/doctruth-runtime` has `parse_pdf`, `benchmark_corpus`, model-worker handoff, packaged sidecar, Java CLI/MCP/SDK sidecar wiring, OCR runtime-first selection, path-first SDK backend selection, Rust-default CLI shorthand output, missing-runtime failures for default TrustDocument parsing, and `pdf_oxide` text-layer extraction, page geometry, rendered image hashes, bbox-backed line units, content-stream safety checks, and line-table extraction | Future parser-quality phases must broaden labeled accuracy coverage and real-world table/OCR/model calibration |
 | Kreuzberg | `pdf_oxide`-style Rust PDF backend | Complete for default PDF substrate and table/debug MVP | Current Rust runtime uses `pdf_oxide` for text-layer page extraction, span bbox evidence, column-order post-processing, page MediaBox geometry, default rendered PNG page hashes, raw content-stream safety checks, and line-table extraction; `parserRun.pdfBackend.current` reports `pdf_oxide` and `status` reports `DEFAULT` | Broaden against real-world PDFs and keep model-assisted layout/table/OCR accuracy gates calibrated |
-| Kreuzberg | Local model cache and manifest-driven model handoff | Complete for cache/manifest/handoff, partial for production execution | Cache warm, SHA verification, model descriptors, runtime hints, Java and Rust doctor output, Java and Rust worker request metadata, Rust runtime real RT-DETR/TATR artifact entrypoint, and Rust SLANeXT/OCR worker protocol smokes | Production model execution is still through external Python workers, not in-process Rust, and broad accuracy/release artifact evidence is still pending |
+| Kreuzberg | Local model cache and manifest-driven model handoff | Complete for cache/manifest/handoff and Rust-owned production worker protocol, partial for real MNN inference | Cache warm, SHA verification, model descriptors, runtime hints, Java and Rust doctor output, Java and Rust worker request metadata, `doctruth-mnn-model-worker` discovery, and Rust MNN worker protocol smoke | Real MNN OCR/table/layout inference, resource-profile reports, and broad accuracy/release artifact evidence are still pending |
 | Kreuzberg | RT-DETR-style layout detection | Complete for adapter/smoke and Rust runtime real-artifact entrypoint, partial for accuracy | Synthetic ONNX RT-DETR decoder smokes, opt-in public `Kreuzberg/layout-models` RT-DETR smoke, and `DOCTRUTH_RUNTIME_REAL_MODEL_ARTIFACTS=1` Rust runtime smoke | Broad labeled multi-layout corpus and calibrated layout-quality targets |
 | Kreuzberg | TATR-style table structure recognition | Complete for adapter/smoke and Rust runtime real-artifact entrypoint, partial for accuracy | Synthetic TATR decoder smokes, opt-in public Xenova TATR ONNX smoke with rendered-page input and row/column post-processing, and `DOCTRUTH_RUNTIME_REAL_MODEL_ARTIFACTS=1` Rust runtime smoke | Calibrated table normalization and labeled real-world table corpus |
-| Kreuzberg | SLANeXT/PaddleOCR-style server table recognition | Complete for adapter/runtime protocol, opt-in Java-side real smoke, and generated Rust-route real smoke; partial for accuracy | Packaged `doctruth-slanext-table-worker`, Java and Rust runtime worker smokes, fake worker smoke, opt-in real PaddleOCR/SLANeXT smoke, and `DOCTRUTH_RUNTIME_REAL_SLANEXT_SMOKE=1` through `doctruth-runtime parse_pdf` in an isolated `paddleocr+paddlepaddle` environment | Broad borderless/mixed-table corpus and calibrated SLANeXT/PaddleOCR table accuracy |
+| Kreuzberg | SLANeXT/PaddleOCR-style server table recognition | Legacy oracle only after Rust MNN worker defaultization | Source-tree Python SLANeXT scripts remain available for historical comparison and opt-in smokes | Production table recognition should move into `doctruth-mnn-model-worker`; broad borderless/mixed-table corpus and calibrated table accuracy remain open |
 | Kreuzberg | Feature-gated heavy capabilities | Complete | Real model and OCR smokes are opt-in, skip safely by default, and release workflow has explicit real-model gate wiring | Remote release run evidence still needed before claiming release artifact quality |
 | Kreuzberg | Token-efficient wire format and GFM-quality output | Complete for local contracts | Compact LLM output, JSONL/Markdown renderers, source maps, streaming writer paths, GFM table rendering, HTML review anchors | Exact Kreuzberg TOON format is not copied or claimed |
 | Kreuzberg | Streaming and large-document posture | Partial | Writer-based render paths and Rust sidecar protocol exist | True streaming parse for multi-GB documents is not complete |
@@ -402,7 +428,7 @@ open.
 | OpenDataLoader PDF | Parser safety/content filters | Complete for Rust MVP, partial for broad visual validation | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters duplicate, whitespace-only, off-page, tiny, near-white/background-like, and invisible render-mode text-layer spans, emits severe parser-safety warnings, and blocks audit-grade output | Add robust rendered-page background comparison and broaden warning taxonomy against labeled real-world fixtures |
 | OpenDataLoader PDF | Table border/cluster heuristics | Complete for Rust MVP, partial for broad table accuracy | Rust runtime normalizes `pdf_oxide` text-spatial borderless table detection plus `pdf_oxide` content-stream line-table extraction into `TrustDocument` tables; covered behavior includes bordered grids, merged cells, row spans, and adjacent-page continuations | Broaden table metrics against labeled real-world fixtures and calibrate model-assisted table recognition |
 | OpenDataLoader Bench | Parser-quality foundation | Vendored, runner wired, first full baseline recorded locally | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics. `scripts/run-doctruth-opendataloader-bench.sh` exports DocTruth Rust runtime predictions into OpenDataLoader Bench shape and runs the Rust evaluator by default; the official evaluator is explicit oracle-only. | Improve DocTruth Markdown/table/heading export and parser robustness until the real OpenDataLoader Bench baseline is competitive enough to act as an audit-grade parser-quality gate |
-| RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for adapter/runtime protocol and generated real Rust-route OCR smoke, partial for MNN/labeled quality | Packaged RapidOCR worker, fake readiness tests, isolated RapidOCR + ONNXRuntime smoke, generated OCR corpus gate, Rust runtime OCR worker smoke, and `DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1` through `doctruth-runtime parse_pdf` | MNN backend install path and labeled real-world scanned-PDF OCR corpus |
+| RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for Rust-owned production protocol and packaging, partial for real MNN/labeled quality | `doctruth-mnn-model-worker` doctor, default discovery, source install/release packaging, Rust runtime model-worker smoke, and Python-free production worker metadata | Real MNN OCR inference and labeled real-world scanned-PDF OCR corpus |
 | DocTruth-specific | Evidence-grade audit and replay boundary | Complete for v1 contracts | Severe warning taxonomy, audit-grade blocking, source hash, bbox/table-cell evidence, review package, MCP document evidence tools | Parser accuracy still depends on broad labeled corpus and Rust-core migration |
 
 ## 5. Goals
@@ -1068,26 +1094,16 @@ runtime is the control point for model-assisted parsing. It does not by itself
 prove production RT-DETR, TATR, SLANeXT, or OCR model accuracy; those still
 require opt-in real artifact runs and labeled corpus reports.
 
-Current Rust runtime SLANeXT/OCR status: `doctruth-runtime` can route
-`table-server` to `doctruth-slanext-table-worker` and `ocr` to
-`doctruth-rapidocr-mnn-worker`. The RapidOCR worker now supports both its
-original image OCR protocol and a `parse_pdf` worker protocol that returns
-`{ok:true, document}` for Rust runtime consumption. The local smokes
-`scripts/smoke-doctruth-runtime-slanext-worker.sh` and
-`scripts/smoke-doctruth-runtime-ocr-worker.sh` verify TrustDocument output,
-`TABLE_CELL`/`OCR_REGION` units, runtime-normalized
-`parserRun.backend=rust-sidecar+model-worker`, and packaged distribution.
-These protocol and local-runtime gates use fake PaddleOCR/RapidOCR modules.
-They are supplemented by
-`scripts/smoke-doctruth-runtime-real-ocr-corpus.sh`, which runs a generated
-scanned-PDF fixture through real RapidOCR + ONNXRuntime via
-`doctruth-runtime parse_pdf` and has been recorded locally with
-`DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1`. The analogous real SLANeXT Rust
-route script, `scripts/smoke-doctruth-runtime-real-slanext-artifact.sh`, now
-creates or reuses an isolated Python environment, installs `paddleocr` and
-`paddlepaddle`, and has been recorded locally with
-`DOCTRUTH_RUNTIME_REAL_SLANEXT_SMOKE=1`. Neither generated OCR nor the
-SLANeXT single-fixture hook replaces labeled accuracy reports.
+Current Rust runtime model-worker status: `doctruth-runtime` defaults
+model-assisted `table-lite`, `table-server`, and `ocr` routes to
+`doctruth-mnn-model-worker` when a model route is selected and no explicit
+worker command is configured. The production install and release package include
+the Rust runtime and Rust MNN worker only. Legacy Python RapidOCR,
+SLANeXT/PaddleOCR, and ONNXRuntime scripts remain source-tree oracle tools for
+migration comparison and opt-in historical smokes. The current Rust MNN worker
+locks the protocol, default discovery, fail-closed MNN-only model acceptance,
+and `TrustDocument` normalization. Real MNN inference and broad labeled OCR/table
+accuracy are still open implementation and evaluation work.
 
 Current parser-accuracy corpus status: JSON and readable
 `benchmark-corpus` output expose `kind`, `qualityProfile`, `reviewType`,
@@ -1378,16 +1394,13 @@ smoke covers both success and low-confidence paths with the real adapter contrac
 raw rapidocr CLI failures are surfaced as structured worker_unavailable or worker_protocol_error warnings
 ```
 
-Current adapter status: `scripts/doctruth-rapidocr-mnn-worker` is a DocTruth-owned
-JSON worker adapter around RapidOCR. It is packaged into source installs and CLI
-release tarballs as `bin/doctruth-rapidocr-mnn-worker`, is discoverable by
-`doctruth doctor --json` when on `PATH`, and exposes a `--doctor` self-test that
-imports and initializes RapidOCR before reporting `ready=true`. Doctor JSON now
-separates executable availability from runtime readiness. A fake RapidOCR Python
-module plus Java CLI `parse --preset ocr` smoke proves the
-adapter/protocol/package boundary and self-test contract. The adapter also
-handles RapidOCR 3.8-style array-like `boxes` / `txts` / `scores` output without
-NumPy truth-value failures. `scripts/smoke-doctruth-rapidocr-real.sh` is an
+Legacy adapter status: `scripts/doctruth-rapidocr-mnn-worker` is a DocTruth-owned
+JSON worker adapter around RapidOCR kept for migration comparison and source-only
+oracle smokes. It is not packaged by the default source install or release
+tarball. Its `--doctor` self-test still separates executable availability from
+runtime readiness, and the adapter still handles RapidOCR 3.8-style array-like
+`boxes` / `txts` / `scores` output without NumPy truth-value failures.
+`scripts/smoke-doctruth-rapidocr-real.sh` is an
 opt-in real runtime smoke: when `DOCTRUTH_RAPIDOCR_REAL_SMOKE=1` is set, it
 creates or reuses an isolated venv, installs RapidOCR plus the ONNXRuntime
 backend, checks worker `--doctor`, runs direct OCR, then verifies Java CLI

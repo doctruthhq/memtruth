@@ -50,11 +50,11 @@ Run it directly:
 java -jar target/doctruth-java-0.2.0-alpha-all.jar --help
 ```
 
-Install a `doctruth` launcher, the Rust parser runtime, and the optional local
-worker adapters:
+Install a `doctruth` launcher, the Rust parser runtime, and the Rust MNN model
+worker:
 
 ```bash
-cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --release
+cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --release --bins
 scripts/install-cli.sh --prefix "$HOME/.local"
 ```
 
@@ -70,14 +70,14 @@ Check the install:
 doctruth version
 doctruth doctor
 doctruth-runtime --doctor
-doctruth-rapidocr-mnn-worker < request.json
-DOCTRUTH_RAPIDOCR_BACKEND=mnn doctruth-rapidocr-mnn-worker --doctor
-doctruth-onnx-model-worker --doctor
+doctruth-mnn-model-worker --doctor
 doctruth parse fixtures/pdf/ResumeAFIQDANISH.pdf --format json
 ```
 
 The installed `doctruth` launcher discovers `bin/doctruth-runtime` and exports
-`DOCTRUTH_RUNTIME_COMMAND` automatically. TrustDocument parse formats use the
+`DOCTRUTH_RUNTIME_COMMAND` automatically. It also discovers
+`bin/doctruth-mnn-model-worker` and exports `DOCTRUTH_RUNTIME_MODEL_COMMAND`
+and `DOCTRUTH_MODEL_COMMAND` automatically. TrustDocument parse formats use the
 Rust runtime by default after install. Use `--backend pdfbox` only for
 legacy/oracle comparison during migration or regression debugging.
 
@@ -137,26 +137,24 @@ doctruth.rb
 ```
 
 Use the tarball when you want a `bin/doctruth` launcher, `bin/doctruth-runtime`,
-optional worker adapters, and the bundled jar:
+`bin/doctruth-mnn-model-worker`, and the bundled jar:
 
 ```bash
 tar -xzf doctruth-0.2.0-alpha.tar.gz
 JAVA=/path/to/java ./doctruth-0.2.0-alpha/bin/doctruth version
 ```
 
-The RapidOCR and ONNX adapters are Python worker scripts. The ONNX adapter also
-ships a same-directory `doctruth_onnx_worker_lib.py` support module used by the
-`doctruth-onnx-model-worker` shim. They are only used when the relevant
-preset/worker command is configured and Python can import their runtime packages
-(`rapidocr` or `onnxruntime`). OCR/model files and Python packages are not
-bundled inside the Java jar. Set
-`DOCTRUTH_RAPIDOCR_BACKEND=mnn` when you want the RapidOCR worker doctor to
-verify that the local MNN Python backend module is importable instead of only
-checking RapidOCR initialization.
+Release tarballs do not include RapidOCR, SLANeXT/PaddleOCR, or ONNXRuntime
+Python worker scripts. Those scripts remain in the source tree only as
+legacy/oracle tools for migration comparisons. Production release packaging is
+Rust runtime plus Rust MNN model worker. OCR/model files are not bundled inside
+the Java jar; provide them through the local runtime package or
+`DOCTRUTH_MODEL_CACHE` plus `DOCTRUTH_MODEL_MANIFEST`.
 
 The release launcher also discovers its same-directory `doctruth-runtime` and
-sets `DOCTRUTH_RUNTIME_COMMAND` automatically, so packaged CLI parsing is
-Rust-first without extra environment setup.
+`doctruth-mnn-model-worker`, then sets `DOCTRUTH_RUNTIME_COMMAND`,
+`DOCTRUTH_RUNTIME_MODEL_COMMAND`, and `DOCTRUTH_MODEL_COMMAND` automatically,
+so packaged CLI parsing is Rust-first without extra environment setup.
 
 Real layout/table model artifacts are not bundled. Use a manifest and the
 opt-in real model smoke to validate a local artifact before relying on it:

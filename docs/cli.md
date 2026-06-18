@@ -262,10 +262,11 @@ metrics and exits non-zero when any configured minimum threshold fails.
 
 `doctruth parse` uses the Rust runtime path by default for both normal
 text-layer PDFs and OCR/model-assisted presets. For OCR work, the Rust runtime
-routes through the local OCR worker protocol before DocTruth block assembly.
-The worker protocol is JSON over stdin/stdout. The source install and release
-tarball include `doctruth-rapidocr-mnn-worker`, a thin Python adapter around
-RapidOCR that keeps OCR outside the Java jar.
+routes through the local model worker protocol before DocTruth block assembly.
+The production worker protocol is JSON over stdin/stdout and is owned by the
+Rust runtime. Source installs and release tarballs include
+`doctruth-mnn-model-worker`; they do not package Python RapidOCR, SLANeXT, or
+ONNX workers as production entrypoints.
 
 For v1 `TrustDocument` outputs, use the OCR preset explicitly:
 
@@ -275,42 +276,36 @@ doctruth review-package scanned.pdf --preset ocr -o .doctruth/reviews/scanned
 ```
 
 Those commands emit `parserRun.backend=rust-sidecar+model-worker` when routed
-through the Rust runtime, include `rapidocr-mnn:local` in parser models, and
-mark recovered text units as
-`OCR_REGION`. OCR page confidence is copied into the unit evidence. If the
-worker returns confidence below `0.85`, the unit receives a severe
-`ocr_low_confidence` warning and the document is `NOT_AUDIT_GRADE`; the text is
-still present for review and replay.
+through the Rust runtime, include the selected MNN model identity in parser
+models, and mark recovered text units as `OCR_REGION`. OCR page confidence is
+copied into the unit evidence. If the worker returns confidence below `0.85`,
+the unit receives a severe `ocr_low_confidence` warning and the document is
+`NOT_AUDIT_GRADE`; the text is still present for review and replay.
 
 Discovery order:
 
 ```bash
-DOCTRUTH_OCR_COMMAND=/path/to/doctruth-rapidocr-mnn-worker
-doctruth-rapidocr-mnn-worker on PATH
-tradebot-ocr-worker-rs on PATH
-tradebot-ocr-worker on PATH
-DOCTRUTH_OCR_ENGINE=mnn
-DOCTRUTH_OCR_FALLBACK_ENGINE=onnxruntime
+DOCTRUTH_RUNTIME_MODEL_COMMAND=/path/to/doctruth-mnn-model-worker
+DOCTRUTH_MODEL_COMMAND=/path/to/doctruth-mnn-model-worker
+doctruth-mnn-model-worker on PATH
+DOCTRUTH_MODEL_CACHE=/path/to/model-cache
+DOCTRUTH_MODEL_MANIFEST=/path/to/models.json
 DOCTRUTH_OCR_TIMEOUT_MS=30000
 ```
 
 The same values can be supplied as JVM properties, for example
-`-Ddoctruth.ocr.command=/path/to/doctruth-rapidocr-mnn-worker`.
+`-Ddoctruth.model.command=/path/to/doctruth-mnn-model-worker`.
 
-The worker `--doctor` command can also verify strict MNN backend readiness:
+The worker `--doctor` command verifies the Rust MNN protocol entrypoint:
 
 ```bash
-DOCTRUTH_RAPIDOCR_BACKEND=mnn doctruth-rapidocr-mnn-worker --doctor
+doctruth-mnn-model-worker --doctor
 ```
 
-In that mode the worker reports `backend=mnn`, `backendReady`, and
-`backendVersion`. RapidOCR import success alone is not treated as proof that the
-MNN backend is available.
-
-The adapter expects Python to be able to import `rapidocr`. The raw `rapidocr`
-CLI is not treated as a worker unless it is wrapped behind DocTruth's JSON
-stdin/stdout protocol. Package OCR model files with the client runtime or local
-Python environment; they are not bundled in the generic Java jar.
+The doctor reports `runtime=mnn`, `engine=mnn`, protocol version, and
+`productionPythonResidency=false`. Model files are packaged with the client
+runtime or supplied through `DOCTRUTH_MODEL_CACHE` and `DOCTRUTH_MODEL_MANIFEST`;
+they are not bundled in the generic Java jar.
 
 For a Rust MNN worker, package these model files with the client runtime:
 
@@ -320,43 +315,17 @@ TRADEBOT_OCR_REC_MODEL=/path/to/ocr/rec_model.mnn
 TRADEBOT_OCR_KEYS_PATH=/path/to/ocr/ppocr_keys.txt
 ```
 
-### Local ONNX Model Worker
+### Legacy Python Model Workers
 
-The source install and release tarball also include
-`doctruth-onnx-model-worker`, a JSON stdin/stdout adapter for local
-ONNXRuntime parser-model experiments. The executable is a small shim over the
-packaged `doctruth_onnx_worker_lib.py` support module, and both files must be
-present in the same `bin/` directory:
+The repository still keeps RapidOCR, SLANeXT/PaddleOCR, and ONNXRuntime Python
+worker scripts as legacy migration or differential-oracle tools. They are not
+installed by `scripts/install-cli.sh`, are not included in release tarballs, and
+are not the production parser path. Use them only when explicitly comparing old
+behavior or validating a migration fixture.
 
-```bash
-doctruth-onnx-model-worker --doctor
-```
-
-When used through `DOCTRUTH_MODEL_COMMAND` or
-`-Ddoctruth.model.command=...`, the worker expects `cache warm`/doctor-verified
-ONNX artifacts with `backend: "onnxruntime"` and `format: "onnx"`. The current
-adapter proves local ONNXRuntime loading and one inference pass over a cached
-artifact. For `task: "table-structure-recognition"`, it also decodes
-TATR/DETR-like `pred_logits` and `pred_boxes` outputs into `TrustTable` and
-`TABLE_CELL` units. Table detections below `0.85` emit a severe
-`table_structure_low_confidence` parser warning and make the returned document
-`NOT_AUDIT_GRADE` while preserving the table for review/replay. For
-`task: "layout-detection"`, it decodes RT-DETR/
-DETR-like `pred_logits` and `pred_boxes` outputs into bbox-bearing layout
-`TEXT_BLOCK` units sorted by reading order. These are local decoder contracts,
-not a claim that bundled RT-DETR/TATR/SLANeXT production weights are available.
-Layout detections below `0.85` emit a severe `layout_low_confidence` unit
-warning and make the returned document `NOT_AUDIT_GRADE` while preserving the
-region for review/replay.
-
-Direct worker calls include a `metrics` object with `wallMs`,
-`inferenceWallMs`, `rssMb`, and `peakMemoryMb`. The Java parser currently uses
-the returned `document`; the metrics are available for smoke tests and worker
-diagnostics.
-
-To validate a user-supplied real model artifact against the same runtime path,
-write a model manifest with `source`, `sha256`, `task`, `backend:
-"onnxruntime"`, and `format: "onnx"`, then run the opt-in smoke:
+To validate a user-supplied legacy model artifact, write a model manifest with
+`source`, `sha256`, `task`, and the legacy runtime fields, then run the opt-in
+source-tree smoke:
 
 ```bash
 DOCTRUTH_REAL_MODEL_MANIFEST=models.json \
@@ -366,13 +335,10 @@ DOCTRUTH_REAL_MODEL_EXPECTED_TASK=table-structure-recognition \
 scripts/smoke-doctruth-real-model-artifact.sh
 ```
 
-The smoke skips when `DOCTRUTH_REAL_MODEL_MANIFEST` is not set. When it is set,
-it warms the local cache, checks `doctruth-onnx-model-worker --doctor`, runs
-`doctruth parse` with the configured model worker, and asserts that the returned
-`TrustDocument` came from `rust-sidecar+model-worker`, with worker-level
-provenance preserved separately when present. This is the acceptance harness
-for real RT-DETR/TATR/SLANeXT-compatible artifacts; the repository still does
-not bundle those model weights.
+The smoke skips when `DOCTRUTH_REAL_MODEL_MANIFEST` is not set. These legacy
+smokes do not change the production contract: parser quality and release
+packaging must flow through Rust-owned runtime behavior normalized into
+`TrustDocument`.
 
 ### Schema
 

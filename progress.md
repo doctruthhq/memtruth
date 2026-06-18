@@ -7423,3 +7423,27 @@
   -> `26 passed`.
 - Remaining gap: this is still a worker-routing contract using a fake worker,
   not real RapidOCR/MNN inference or full OpenDataLoader Bench MNN promotion.
+
+## 2026-06-18 Packaged RapidOCR/MNN Worker Discovery MVP
+
+- Added RED/GREEN test
+  `parse_pdf_auto_ocr_route_discovers_packaged_rapidocr_mnn_worker`.
+- RED failure: with only `doctruth-rapidocr-mnn-worker` on `PATH` and no
+  explicit `DOCTRUTH_RUNTIME_MODEL_COMMAND`, the runtime still returned
+  `PDF_EXTRACTION_FAILED` for an empty-text-layer PDF.
+- Implemented route-scoped worker discovery:
+  explicit `DOCTRUTH_RUNTIME_MODEL_COMMAND`/`DOCTRUTH_MODEL_COMMAND` still wins;
+  otherwise only `route=ocr-model` searches `PATH` for
+  `doctruth-rapidocr-mnn-worker`.
+- Table/layout routes do not get implicit worker discovery, so this does not
+  create a general automatic fallback chain.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `26 passed`.
+- Remaining gap: discovery still delegates to the existing Python RapidOCR/MNN
+  worker. The full plan still needs measured real MNN inference and
+  OpenDataLoader Bench quality/resource promotion.

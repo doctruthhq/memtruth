@@ -1679,3 +1679,17 @@
 - The same `parserRun.modelRouting` shape works for simple, table, and OCR
   routes. That keeps page-level routing auditable without introducing another
   reporting schema.
+
+## 2026-06-18 Packaged OCR Worker Discovery Finding
+
+- OCR is the one route where a packaged local worker is already part of the
+  DocTruth distribution story (`doctruth-rapidocr-mnn-worker`). Requiring every
+  local user or agent skill install to also set `DOCTRUTH_RUNTIME_MODEL_COMMAND`
+  would make the bundled worker less useful.
+- Discovery should be route-scoped. Searching PATH for the packaged OCR worker
+  when `route=ocr-model` is acceptable because OCR already has a named
+  `ocr-router:v1` MNN artifact gate. Applying the same behavior to table/layout
+  would create a broad fallback chain and would violate the plan.
+- The current discovery closes a packaging ergonomics gap, not the final model
+  runtime gap. Real MNN inference, resource measurement, and OpenDataLoader
+  Bench promotion remain separate acceptance work.

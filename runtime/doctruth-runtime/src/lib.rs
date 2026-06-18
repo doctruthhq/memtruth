@@ -1334,7 +1334,7 @@ fn configured_model_worker_parse(
     model_artifacts: &[Value],
     request: &Value,
 ) -> Result<Option<Value>, String> {
-    let Some(command) = configured_model_worker_command() else {
+    let Some(command) = configured_model_worker_command(route) else {
         return Ok(None);
     };
     let worker_request = json!({
@@ -1467,11 +1467,33 @@ fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
     runtime
 }
 
-fn configured_model_worker_command() -> Option<String> {
+fn configured_model_worker_command(route: &ModelRouteDecision) -> Option<String> {
+    explicit_model_worker_command().or_else(|| route_default_model_worker_command(route))
+}
+
+fn explicit_model_worker_command() -> Option<String> {
     env::var("DOCTRUTH_RUNTIME_MODEL_COMMAND")
         .ok()
         .or_else(|| env::var("DOCTRUTH_MODEL_COMMAND").ok())
         .filter(|command| !command.trim().is_empty())
+}
+
+fn route_default_model_worker_command(route: &ModelRouteDecision) -> Option<String> {
+    if route.decision != "ocr-model" {
+        return None;
+    }
+    find_executable_on_path("doctruth-rapidocr-mnn-worker")
+}
+
+fn find_executable_on_path(name: &str) -> Option<String> {
+    let paths = env::var_os("PATH")?;
+    for directory in env::split_paths(&paths) {
+        let candidate = directory.join(name);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
 }
 
 fn run_model_worker(command: &str, request: &Value) -> Result<String, String> {
@@ -1583,7 +1605,7 @@ fn preset_doctor_json(preset: &str, cache_dir: &str) -> Value {
 }
 
 fn model_worker_doctor_json() -> Value {
-    let Some(command) = configured_model_worker_command() else {
+    let Some(command) = explicit_model_worker_command() else {
         return json!({
             "configured": false,
             "available": false,

@@ -209,6 +209,40 @@ fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
 }
 
 #[test]
+fn parse_pdf_auto_ocr_route_discovers_packaged_rapidocr_mnn_worker() {
+    let pdf = write_empty_text_layer_pdf();
+    let bin_dir = temp_dir("doctruth-runtime-packaged-ocr-bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let worker = bin_dir.join("doctruth-rapidocr-mnn-worker");
+    fs::write(&worker, auto_ocr_worker_script_body()).unwrap();
+    make_executable(&worker);
+    let (cache_dir, manifest) =
+        ready_mnn_ocr_model_manifest("doctruth-runtime-auto-ocr-path-cache");
+    let path = prepend_path(&bin_dir);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("PATH", path)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "auto"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(json["parserRun"]["workerBackend"], "rapidocr-worker");
+    assert_eq!(json["parserRun"]["preset"], "ocr");
+    assert_eq!(json["parserRun"]["modelRouting"]["route"], "ocr-model");
+    assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");
+    assert_eq!(json["body"]["units"][0]["text"], "Auto OCR evidence");
+}
+
+#[test]
 fn parse_pdf_reports_configured_worker_bad_json_as_stable_error() {
     let pdf = write_pdf_fixture("Fallback text should not be used.");
     let worker = write_bad_model_worker();
@@ -693,7 +727,12 @@ print(json.dumps({
 fn write_auto_ocr_model_worker() -> PathBuf {
     write_worker_script(
         "doctruth-runtime-auto-ocr-model-worker",
-        r#"#!/usr/bin/env python3
+        auto_ocr_worker_script_body(),
+    )
+}
+
+fn auto_ocr_worker_script_body() -> &'static str {
+    r#"#!/usr/bin/env python3
 import json
 import sys
 
@@ -740,7 +779,7 @@ print(json.dumps({
     "parserRun": {
         "parserVersion": "test-worker",
         "preset": request["preset"],
-        "backend": "rust-sidecar+model-worker",
+        "backend": "rapidocr-worker",
         "models": ["ocr-router:v1"],
         "warnings": []
     },
@@ -753,8 +792,22 @@ print(json.dumps({
         "unload": {"status": "scheduled", "policy": "idle-after-request"}
     }
 }))
-"#,
-    )
+"#
+}
+
+fn prepend_path(bin_dir: &Path) -> String {
+    let existing = std::env::var("PATH").unwrap_or_default();
+    format!("{}:{}", bin_dir.display(), existing)
+}
+
+fn make_executable(path: &Path) {
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
 }
 
 fn write_fake_model_worker() -> PathBuf {
@@ -825,13 +878,7 @@ fn write_bad_model_worker() -> PathBuf {
 fn write_worker_script(prefix: &str, body: &str) -> PathBuf {
     let path = temp_path(prefix, "py");
     fs::write(&path, body).unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
-    }
+    make_executable(&path);
     path
 }
 

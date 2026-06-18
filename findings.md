@@ -1810,3 +1810,16 @@
   Markdown table conversion behavior. Until those are tested against upstream
   fixture outputs, use the Rust evaluator as an MVP lane and keep upstream
   Python evaluator as the full-corpus oracle.
+
+## 2026-06-18 Rust Evaluator Normalization Parity Finding
+
+- Upstream MHS intentionally treats Markdown heading levels as equivalent in
+  its current flat tree model. Rust evaluator parity must therefore not
+  penalize `# Title` vs `### Title` when the heading text and structure match.
+- Upstream TEDS normalizes table headers and wrappers before tree comparison:
+  `th` is converted to `td`, and `thead` / `tbody` wrappers are stripped. Rust
+  evaluator table normalization now mirrors that behavior for simple HTML table
+  cases.
+- Replacing Levenshtein/max-length similarity with LCS/Indel-style similarity
+  moves Rust reading-order scoring closer to `rapidfuzz.fuzz.ratio`, but it
+  still needs explicit upstream fixture parity before becoming authoritative.

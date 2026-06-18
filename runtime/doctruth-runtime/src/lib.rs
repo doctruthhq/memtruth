@@ -2510,8 +2510,8 @@ fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f
     if pred_tables.is_empty() {
         return (Some(0.0), Some(0.0));
     }
-    let gt_joined = normalize_markdown_for_evaluator(&gt_tables.join("\n"));
-    let pred_joined = normalize_markdown_for_evaluator(&pred_tables.join("\n"));
+    let gt_joined = normalize_table_markup(&gt_tables.join("\n"));
+    let pred_joined = normalize_table_markup(&pred_tables.join("\n"));
     let score = markdown_similarity(&gt_joined, &pred_joined);
     (Some(score), Some(score))
 }
@@ -2612,8 +2612,31 @@ fn markdown_similarity(left: &str, right: &str) -> f64 {
     if left.is_empty() && right.is_empty() {
         return 1.0;
     }
-    let max_len = left.chars().count().max(right.chars().count()).max(1);
-    round_metric(1.0 - levenshtein(left, right) as f64 / max_len as f64)
+    let left_chars = left.chars().collect::<Vec<_>>();
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let denominator = left_chars.len() + right_chars.len();
+    if denominator == 0 {
+        return 1.0;
+    }
+    let lcs = longest_common_subsequence_len(&left_chars, &right_chars);
+    round_metric((2 * lcs) as f64 / denominator as f64)
+}
+
+fn longest_common_subsequence_len(left: &[char], right: &[char]) -> usize {
+    let mut previous = vec![0; right.len() + 1];
+    let mut current = vec![0; right.len() + 1];
+    for left_char in left {
+        for (index, right_char) in right.iter().enumerate() {
+            current[index + 1] = if left_char == right_char {
+                previous[index] + 1
+            } else {
+                previous[index + 1].max(current[index])
+            };
+        }
+        std::mem::swap(&mut previous, &mut current);
+        current.fill(0);
+    }
+    previous[right.len()]
 }
 
 fn normalize_markdown_for_evaluator(text: &str) -> String {
@@ -2658,6 +2681,21 @@ fn html_tables(text: &str) -> Vec<String> {
     tables
 }
 
+fn normalize_table_markup(markup: &str) -> String {
+    let mut normalized = normalize_markdown_for_evaluator(markup).to_lowercase();
+    for (from, to) in [
+        ("<th>", "<td>"),
+        ("</th>", "</td>"),
+        ("<thead>", ""),
+        ("</thead>", ""),
+        ("<tbody>", ""),
+        ("</tbody>", ""),
+    ] {
+        normalized = normalized.replace(from, to);
+    }
+    normalized.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn markdown_heading_structure(markdown: &str) -> Vec<String> {
     markdown
         .lines()
@@ -2676,7 +2714,7 @@ fn markdown_heading_entry(line: &str) -> Option<String> {
         None
     } else {
         Some(format!(
-            "h{level}:{}",
+            "heading:{}",
             normalize_markdown_for_evaluator(text)
         ))
     }

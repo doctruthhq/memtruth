@@ -644,6 +644,50 @@ fn opendataloader_evaluate_prediction_writes_rust_evaluation_without_python() {
 }
 
 #[test]
+fn opendataloader_evaluator_matches_upstream_heading_and_table_normalization() {
+    let root = temp_dir("doctruth-runtime-opendataloader-evaluator-normalization");
+    let gt = root.join("ground-truth/markdown");
+    let prediction = root.join("prediction/doctruth-rust-eval");
+    let markdown = prediction.join("markdown");
+    fs::create_dir_all(&gt).unwrap();
+    fs::create_dir_all(&markdown).unwrap();
+    fs::write(gt.join("heading.md"), "# Same Heading\n\nBody.\n").unwrap();
+    fs::write(markdown.join("heading.md"), "### Same Heading\n\nBody.\n").unwrap();
+    fs::write(
+        gt.join("table.md"),
+        "<table><thead><tr><th>Name</th></tr></thead><tbody><tr><td>Ada</td></tr></tbody></table>\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("table.md"),
+        "<table><tr><td>Name</td></tr><tr><td>Ada</td></tr></table>\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_evaluate_prediction",
+                "ground_truth_dir": gt,
+                "prediction_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["metrics"]["score"]["mhs_mean"], 1.0);
+    assert_eq!(report["metrics"]["score"]["mhs_s_mean"], 1.0);
+    assert_eq!(report["metrics"]["score"]["teds_mean"], 1.0);
+    assert_eq!(report["metrics"]["score"]["teds_s_mean"], 1.0);
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

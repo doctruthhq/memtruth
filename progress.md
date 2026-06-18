@@ -7702,3 +7702,33 @@
   Python `rapidfuzz` ratio, APTED tree edit distance, lxml HTML parsing, or
   BeautifulSoup table extraction. Full metric parity must be proven before
   replacing the upstream evaluator as the authoritative full-corpus gate.
+
+## 2026-06-18 Rust Evaluator Upstream Normalization Parity Slice
+
+- Added RED test
+  `opendataloader_evaluator_matches_upstream_heading_and_table_normalization`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_matches_upstream_heading_and_table_normalization`.
+- RED result: `mhs_mean` was `0.933333` instead of `1.0` because the Rust MVP
+  penalized `# Heading` vs `### Heading`, while upstream MHS treats heading
+  levels as equivalent.
+- Implemented evaluator normalization improvements:
+  - Markdown headings normalize to `heading:<text>` instead of `h1:<text>`.
+  - Table markup lowercases, converts `th` to `td`, and removes `thead` /
+    `tbody` wrappers before simple TEDS comparison.
+  - String similarity now uses an LCS/Indel-style ratio closer to
+    `rapidfuzz.fuzz.ratio`, replacing Levenshtein divided by max length.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_matches_upstream_heading_and_table_normalization`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `33 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: table and heading metrics still do not implement full APTED
+  tree-edit parity or full HTML/Markdown conversion parity. This slice closes
+  specific upstream normalization gaps, not the whole evaluator replacement.

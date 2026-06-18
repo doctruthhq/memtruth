@@ -2508,13 +2508,15 @@ fn evaluate_opendataloader_document(
 }
 
 fn evaluate_opendataloader_reading_order(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
-    let gt_normalized = normalize_markdown_for_evaluator(gt);
+    let gt_with_html = convert_markdown_tables_to_html(gt);
+    let pred_with_html = convert_markdown_tables_to_html(pred);
+    let gt_normalized = normalize_markdown_for_evaluator(&gt_with_html);
     if gt_normalized.is_empty() {
         return (None, None);
     }
-    let pred_normalized = normalize_markdown_for_evaluator(pred);
-    let gt_stripped = strip_html_tables(gt);
-    let pred_stripped = strip_html_tables(pred);
+    let pred_normalized = normalize_markdown_for_evaluator(&pred_with_html);
+    let gt_stripped = strip_html_tables(&gt_with_html);
+    let pred_stripped = strip_html_tables(&pred_with_html);
     (
         Some(markdown_similarity(&gt_normalized, &pred_normalized)),
         Some(markdown_similarity(
@@ -2525,18 +2527,20 @@ fn evaluate_opendataloader_reading_order(gt: &str, pred: &str) -> (Option<f64>, 
 }
 
 fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
-    let gt_tables = evaluator_tables(gt);
+    let gt_with_html = convert_markdown_tables_to_html(gt);
+    let pred_with_html = convert_markdown_tables_to_html(pred);
+    let gt_tables = evaluator_tables(&gt_with_html);
     if gt_tables.is_empty() {
         return (None, None);
     }
-    let pred_tables = evaluator_tables(pred);
+    let pred_tables = evaluator_tables(&pred_with_html);
     if pred_tables.is_empty() {
         return (Some(0.0), Some(0.0));
     }
     let gt_tree = table_eval_tree(&gt_tables);
     let pred_tree = table_eval_tree(&pred_tables);
-    let max_nodes = table_tree_size(&gt_tree)
-        .max(table_tree_size(&pred_tree))
+    let max_nodes = table_eval_scoring_size(&gt_tree)
+        .max(table_eval_scoring_size(&pred_tree))
         .max(1);
     (
         Some(table_tree_similarity(&gt_tree, &pred_tree, true, max_nodes)),
@@ -2547,11 +2551,13 @@ fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f
 }
 
 fn evaluate_opendataloader_heading(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
-    let gt_tree = markdown_heading_tree(gt);
+    let gt_with_html = convert_markdown_tables_to_html(gt);
+    let pred_with_html = convert_markdown_tables_to_html(pred);
+    let gt_tree = markdown_heading_tree(&gt_with_html);
     if !heading_tree_has_heading(&gt_tree) {
         return (None, None);
     }
-    let pred_tree = markdown_heading_tree(pred);
+    let pred_tree = markdown_heading_tree(&pred_with_html);
     if !heading_tree_has_heading(&pred_tree) {
         return (Some(0.0), Some(0.0));
     }
@@ -2705,56 +2711,115 @@ fn html_tables(text: &str) -> Vec<String> {
 }
 
 fn evaluator_tables(text: &str) -> Vec<String> {
-    let mut tables = html_tables(text);
-    tables.extend(markdown_pipe_tables_as_html(text));
-    tables
+    html_tables(text)
 }
 
-fn markdown_pipe_tables_as_html(markdown: &str) -> Vec<String> {
+fn convert_markdown_tables_to_html(markdown: &str) -> String {
+    if markdown.is_empty() {
+        return markdown.to_string();
+    }
     let lines = markdown.lines().collect::<Vec<_>>();
-    let mut tables = Vec::new();
+    let mut converted = Vec::new();
     let mut index = 0;
-    while index + 1 < lines.len() {
-        if !is_markdown_table_row(lines[index]) || !is_markdown_separator_row(lines[index + 1]) {
+    while index < lines.len() {
+        let Some(mut header) = official_markdown_row_cells(lines[index]) else {
+            converted.push(lines[index].to_string());
+            index += 1;
+            continue;
+        };
+        if index + 1 >= lines.len() {
+            converted.push(lines[index].to_string());
             index += 1;
             continue;
         }
-        let mut rows = vec![markdown_table_cells(lines[index])];
+        let Some(separator) = official_markdown_row_cells(lines[index + 1]) else {
+            converted.push(lines[index].to_string());
+            index += 1;
+            continue;
+        };
+        if !official_markdown_separator_row(&separator) {
+            converted.push(lines[index].to_string());
+            index += 1;
+            continue;
+        }
+        let target_width = header.len().max(separator.len());
+        header = official_normalize_markdown_cells(header, target_width);
         index += 2;
+        let mut rows = Vec::new();
         while index < lines.len() && is_markdown_table_row(lines[index]) {
-            rows.push(markdown_table_cells(lines[index]));
+            if let Some(row) = official_markdown_row_cells(lines[index]) {
+                rows.push(official_normalize_markdown_cells(row, target_width));
+            }
             index += 1;
         }
-        if rows.iter().any(|row| !row.is_empty()) {
-            tables.push(markdown_rows_to_html_table(&rows));
+        if header.iter().all(|cell| cell.is_empty()) && !rows.is_empty() {
+            header = rows.remove(0);
         }
+        converted.push(markdown_rows_to_html_table(&header, &rows));
     }
-    tables
+    converted.join("\n")
 }
 
 fn is_markdown_table_row(line: &str) -> bool {
-    line.trim().contains('|') && markdown_table_cells(line).len() >= 2
+    official_markdown_row_cells(line)
+        .map(|cells| cells.len() >= 2)
+        .unwrap_or(false)
 }
 
-fn is_markdown_separator_row(line: &str) -> bool {
-    let cells = markdown_table_cells(line);
-    cells.len() >= 2
+fn official_markdown_separator_row(cells: &[String]) -> bool {
+    !cells.is_empty()
         && cells.iter().all(|cell| {
-            let trimmed = cell.trim_matches(':').trim();
-            trimmed.len() >= 3 && trimmed.chars().all(|char| char == '-')
+            let content = cell.replace(' ', "");
+            !content.is_empty() && content.chars().all(|char| char == '-' || char == ':')
         })
 }
 
-fn markdown_table_cells(line: &str) -> Vec<String> {
-    let trimmed = line.trim().trim_matches('|');
-    trimmed
+fn official_markdown_row_cells(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || !trimmed.contains('|') {
+        return None;
+    }
+    let mut cells = trimmed
         .split('|')
-        .map(|cell| normalize_markdown_for_evaluator(cell))
-        .collect::<Vec<_>>()
+        .map(|cell| cell.trim().to_string())
+        .collect::<Vec<_>>();
+    if trimmed.starts_with('|') && !cells.is_empty() {
+        cells.remove(0);
+    }
+    if trimmed.ends_with('|') && !cells.is_empty() {
+        cells.pop();
+    }
+    if cells.is_empty() { None } else { Some(cells) }
 }
 
-fn markdown_rows_to_html_table(rows: &[Vec<String>]) -> String {
+fn official_normalize_markdown_cells(cells: Vec<String>, target_width: usize) -> Vec<String> {
+    if target_width == 0 || cells.len() == target_width {
+        return cells;
+    }
+    if cells.len() == 3 && target_width > 3 {
+        let mut normalized = Vec::with_capacity(target_width);
+        normalized.push(cells[0].clone());
+        normalized.extend(std::iter::repeat_n(cells[1].clone(), target_width - 2));
+        normalized.push(cells[2].clone());
+        return normalized;
+    }
+    if cells.len() < target_width {
+        let mut normalized = cells;
+        normalized.resize(target_width, String::new());
+        return normalized;
+    }
+    cells.into_iter().take(target_width).collect()
+}
+
+fn markdown_rows_to_html_table(header: &[String], rows: &[Vec<String>]) -> String {
     let mut html = String::from("<table>");
+    html.push_str("<tr>");
+    for cell in header {
+        html.push_str("<th>");
+        html.push_str(&escape_table_text(cell));
+        html.push_str("</th>");
+    }
+    html.push_str("</tr>");
     for row in rows {
         html.push_str("<tr>");
         for cell in row {
@@ -2921,6 +2986,14 @@ fn strip_html_tags(markup: &str) -> String {
 
 fn table_tree_size(node: &TableEvalNode) -> usize {
     1 + node.children.iter().map(table_tree_size).sum::<usize>()
+}
+
+fn table_eval_scoring_size(node: &TableEvalNode) -> usize {
+    if node.tag == "body" {
+        node.children.iter().map(table_tree_size).sum()
+    } else {
+        table_tree_size(node)
+    }
 }
 
 fn table_tree_similarity(

@@ -81,13 +81,22 @@ cat > "$MARKDOWN_DIR/table-attrs.md" <<'EOF_PRED'
 <table><tr><td colspan='2'>Profile</td></tr><tr><td>Ada</td><td>Engineer</td></tr></table>
 EOF_PRED
 
+cat > "$GT_DIR/escaped-pipe-table.md" <<'EOF_GT'
+| Field | Value |
+| --- | --- |
+| Formula | A \| B |
+EOF_GT
+cat > "$MARKDOWN_DIR/escaped-pipe-table.md" <<'EOF_PRED'
+<table><tr><td>Field</td><td>Value</td></tr><tr><td>Formula</td><td>A | B</td></tr></table>
+EOF_PRED
+
 cat > "$PRED_DIR/summary.json" <<EOF_SUMMARY
 {
   "engine_name": "$ENGINE",
   "engine_version": "parity-smoke",
   "runtime_contract": "TrustDocument",
-  "document_count": 4,
-  "parsed_count": 4,
+  "document_count": 5,
+  "parsed_count": 5,
   "failed_count": 0
 }
 EOF_SUMMARY

@@ -1933,3 +1933,15 @@
 - Attribute-aware normalization closes this evaluator gap without changing
   parser output. It improves benchmark scoring fidelity, not document parsing
   quality by itself.
+
+## 2026-06-18 Official Markdown Table Conversion Finding
+
+- OpenDataLoader's official Markdown table converter intentionally uses a
+  simple row split on `|`; it does not preserve escaped pipes as in-cell pipe
+  characters.
+- Rust evaluator parity therefore requires matching that simple behavior for
+  benchmark fidelity, even if a richer GFM parser might be more semantically
+  correct for other product surfaces.
+- The official evaluator converts Markdown tables before reading-order,
+  heading, and table scoring. Rust previously converted them only for TEDS,
+  which made aggregate parity drift on Markdown-table fixtures.

@@ -7997,3 +7997,31 @@
   `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
   `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
   `git diff --check`.
+
+## 2026-06-18 Rust Evaluator Official Markdown-Table Conversion Slice
+
+- Added RED contract
+  `opendataloader_evaluator_keeps_escaped_pipes_inside_markdown_table_cells`.
+- Initial Rust fix made escaped `\|` behave like a semantic in-cell pipe, but
+  the official OpenDataLoader converter does not handle escaped pipes; it uses
+  a simple `split("|")`.
+- RED parity result: `scripts/smoke-doctruth-opendataloader-evaluator-parity.sh`
+  failed with `overall_mean mismatch: official=0.9117213096000732 rust=0.857729`.
+- Reworked Rust evaluator conversion so Markdown tables are converted before
+  reading-order, heading, and table scoring, matching the official evaluator
+  pipeline.
+- Matched official converter details:
+  - simple pipe split, no escaped-pipe handling;
+  - separator rows accept only `-`, `:`, and spaces;
+  - target-width normalization including 3-cell colspan-style expansion;
+  - blank header row promotion from first body row;
+  - header rows render as `th`.
+- Adjusted the Rust TEDS denominator to exclude the synthetic `body` wrapper,
+  matching the official escaped-pipe fixture score.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_keeps_escaped_pipes_inside_markdown_table_cells -- --nocapture`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_`;
+  `sh scripts/smoke-doctruth-opendataloader-evaluator-parity.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.

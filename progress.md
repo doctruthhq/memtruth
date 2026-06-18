@@ -7940,3 +7940,21 @@
   test/helpers, while keeping default prediction/evaluation runners Rust-owned.
 - GREEN verification passed:
   `sh scripts/smoke-doctruth-python-boundary.sh`.
+
+## 2026-06-18 Direct Python Adapter Fail-Closed Slice
+
+- Extended `scripts/smoke-doctruth-python-boundary.sh` so it also executes
+  `python3 scripts/doctruth_opendataloader_prediction.py --help` and expects a
+  fail-closed oracle opt-in error.
+- RED result: the adapter still exited successfully, proving direct execution
+  could bypass the Rust default runner.
+- Added `require_python_oracle_opt_in()` to the adapter's `main()` path. The
+  guard only affects direct command-line execution; import-based legacy smoke
+  tests can still use helper functions without launching the adapter as a
+  production-like runner.
+- GREEN verification passed:
+  `sh scripts/smoke-doctruth-python-boundary.sh`;
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py`;
+  `sh scripts/smoke-doctruth-opendataloader-bench-runner.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
+  `git diff --check`.

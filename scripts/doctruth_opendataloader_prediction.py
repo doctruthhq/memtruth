@@ -17,6 +17,23 @@ from pathlib import Path
 from typing import Any
 
 
+ORACLE_OPT_IN = "DOCTRUTH_ALLOW_PYTHON_ORACLE"
+
+
+def require_python_oracle_opt_in() -> None:
+    if os.environ.get(ORACLE_OPT_IN) == "1":
+        return
+    raise SystemExit(
+        "refusing to start Python/OpenDataLoader prediction adapter.\n\n"
+        "This script is oracle-only legacy benchmark infrastructure. It is not "
+        "the default DocTruth parser, OpenDataLoader prediction, or MNN "
+        "promotion path.\n\n"
+        "Use scripts/run-doctruth-opendataloader-bench.sh for the default Rust "
+        "runner. Set DOCTRUTH_ALLOW_PYTHON_ORACLE=1 only when intentionally "
+        "reproducing the heavy OpenDataLoader/docling-fast oracle baseline."
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run DocTruth runtime against OpenDataLoader Bench PDFs."
@@ -1248,6 +1265,7 @@ def run_evaluator(bench_dir: Path, engine: str, doc_ids: list[str]) -> None:
 
 
 def main() -> int:
+    require_python_oracle_opt_in()
     args = parse_args()
     output_root = write_predictions(args)
     if not args.skip_eval:

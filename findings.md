@@ -1917,3 +1917,5 @@
   because it looked like a normal runnable benchmark script while launching the
   legacy Python adapter. It is now fail-closed behind
   `DOCTRUTH_ALLOW_PYTHON_ORACLE=1`.
+- The direct Python prediction adapter had the same confusion risk when invoked
+  from the command line. It now shares the same fail-closed opt-in boundary.

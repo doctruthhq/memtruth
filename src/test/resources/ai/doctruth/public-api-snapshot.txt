@@ -465,11 +465,15 @@ TYPE record ai.doctruth.ParserRequest [public final]
   method java.nio.file.Path sourcePath() [public]
 
 TYPE record ai.doctruth.ParserRun [public final]
-  record-components java.lang.String parserRunId, java.lang.String parserVersion, java.lang.String preset, java.lang.String backend, java.util.List models, java.util.List warnings
+  record-components java.lang.String parserRunId, java.lang.String parserVersion, java.lang.String preset, java.lang.String backend, ai.doctruth.ParserRunDetails details
+  ctor ParserRun(java.lang.String, java.lang.String, java.lang.String, java.lang.String, ai.doctruth.ParserRunDetails)
   ctor ParserRun(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List)
+  ctor ParserRun(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List, java.util.Map, java.lang.Long)
   ctor ParserRun(java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List)
+  method ai.doctruth.ParserRunDetails details() [public]
   method boolean equals(java.lang.Object) [public final]
   method int hashCode() [public final]
+  method java.lang.Long elapsedMs() [public]
   method java.lang.String backend() [public]
   method java.lang.String parserRunId() [public]
   method java.lang.String parserVersion() [public]
@@ -477,6 +481,19 @@ TYPE record ai.doctruth.ParserRun [public final]
   method java.lang.String toString() [public final]
   method java.util.List models() [public]
   method java.util.List warnings() [public]
+  method java.util.Map externalBackend() [public]
+
+TYPE record ai.doctruth.ParserRunDetails [public final]
+  record-components java.util.List models, java.util.List warnings, java.util.Map externalBackend, java.lang.Long elapsedMs
+  ctor ParserRunDetails(java.util.List, java.util.List)
+  ctor ParserRunDetails(java.util.List, java.util.List, java.util.Map, java.lang.Long)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.Long elapsedMs() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List models() [public]
+  method java.util.List warnings() [public]
+  method java.util.Map externalBackend() [public]
 
 TYPE record ai.doctruth.ParserWarning [public final]
   record-components java.lang.String code, ai.doctruth.ParserWarningSeverity severity, java.lang.String message
@@ -683,6 +700,7 @@ TYPE record ai.doctruth.TrustDocument [public final]
   method ai.doctruth.TrustDocument fromJsonFull(java.lang.String) [public static]
   method ai.doctruth.TrustDocument fromParsed(ai.doctruth.ParsedDocument, java.lang.String, ai.doctruth.ParserRun) [public static]
   method ai.doctruth.TrustDocument withEvaluatedAuditGrade() [public]
+  method ai.doctruth.TrustDocument withLayeredOutputs(com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.JsonNode) [public]
   method ai.doctruth.TrustDocumentBody body() [public]
   method ai.doctruth.TrustDocumentSource source() [public]
   method ai.doctruth.TrustRenderedDocument toCompactLlmWithSourceMap() [public]

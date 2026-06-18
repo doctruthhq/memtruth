@@ -108,7 +108,23 @@ final class TrustDocumentJson {
                 text(node, "preset"),
                 text(node, "backend"),
                 strings(node.path("models")),
-                warnings(node.path("warnings")));
+                warnings(node.path("warnings")),
+                stringMap(node.path("externalBackend")),
+                optionalLong(node, "elapsedMs"));
+    }
+
+    private static java.util.Map<String, String> stringMap(JsonNode node) {
+        if (node.isMissingNode() || node.isNull()) {
+            return java.util.Map.of();
+        }
+        var values = new java.util.LinkedHashMap<String, String>();
+        node.fields().forEachRemaining(entry -> values.put(entry.getKey(), entry.getValue().asText()));
+        return java.util.Map.copyOf(values);
+    }
+
+    private static Long optionalLong(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asLong();
     }
 
     private static List<ParserWarning> warnings(JsonNode nodes) {

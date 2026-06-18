@@ -13,7 +13,6 @@ import java.util.List;
 import javax.imageio.ImageIO;
 
 import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 
 final class PdfPageImages {

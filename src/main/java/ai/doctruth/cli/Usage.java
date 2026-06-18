@@ -17,6 +17,7 @@ final class Usage {
                   doctruth review-package <document> [--preset <preset>] -o <dir>
                   doctruth ingest-audit <pdf-dir> [--json] [--limit N] [-o audit.json]
                   doctruth benchmark-corpus <manifest.json> [--json] [--offline] [--report-out <report.json>]
+                  doctruth benchmark-oracle --engine opendataloader-hybrid <document> [--json|--format <format>]
                   doctruth cache warm <manifest.json> --preset <preset> [--cache <dir>] [--offline] [--json]
                   doctruth schema <schema.json> [--json]
                   doctruth extract <document> -s <schema.json> [-o out/]
@@ -43,6 +44,8 @@ final class Usage {
                   doctruth benchmark-corpus parser-corpus.json --json
                   doctruth benchmark-corpus parser-corpus.json --json --report-out parser-report.json
                   doctruth benchmark-corpus parser-corpus.json --offline
+                  doctruth benchmark-oracle --engine opendataloader-hybrid resume.pdf --json
+                  doctruth benchmark-oracle --engine opendataloader-hybrid resume.pdf --format content_blocks
                   doctruth cache warm models.json --preset table-lite --cache .doctruth/models --json
                   doctruth schema contract.schema.json
                   doctruth extract contract.pdf -s contract.schema.json

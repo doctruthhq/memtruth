@@ -11,6 +11,8 @@ import java.util.Optional;
 
 import ai.doctruth.spi.SignatureProvider;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 /**
  * Canonical v1 document representation carrying parser provenance and trust evidence.
  *
@@ -127,6 +129,11 @@ public record TrustDocument(
 
     public void writeParseTrace(Writer writer) throws IOException {
         TrustDocumentRenderers.writeParseTrace(this, Objects.requireNonNull(writer, "writer"));
+    }
+
+    public TrustDocument withLayeredOutputs(JsonNode contentBlocks, JsonNode parseTrace) {
+        TrustDocumentLayeredOutputs.attach(this, contentBlocks, parseTrace);
+        return this;
     }
 
     public String toAuditJson() {

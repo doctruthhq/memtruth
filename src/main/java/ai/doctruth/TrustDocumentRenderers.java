@@ -573,6 +573,12 @@ final class TrustDocumentRenderers {
         node.put("backend", parserRun.backend());
         node.set("models", MAPPER.valueToTree(parserRun.models()));
         node.set("warnings", MAPPER.valueToTree(parserRun.warnings()));
+        if (!parserRun.externalBackend().isEmpty()) {
+            node.set("externalBackend", MAPPER.valueToTree(parserRun.externalBackend()));
+        }
+        if (parserRun.elapsedMs() != null) {
+            node.put("elapsedMs", parserRun.elapsedMs());
+        }
         return node;
     }
 

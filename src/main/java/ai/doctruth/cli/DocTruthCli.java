@@ -79,6 +79,7 @@ public final class DocTruthCli {
             case "review-package" -> new ReviewPackageCommand(context).run(args);
             case "ingest-audit" -> new IngestAuditCommand(context).run(args);
             case "benchmark-corpus" -> new BenchmarkCorpusCommand(context).run(args);
+            case "benchmark-oracle" -> new BenchmarkOracleCommand(context).run(args);
             case "cache" -> new CacheCommand(context).run(args);
             case "schema" -> new SchemaCommand(context).run(args);
             case "extract" -> new ExtractCommand(context).run(args);

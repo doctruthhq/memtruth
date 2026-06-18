@@ -2,8 +2,6 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-MANIFEST="$ROOT/runtime/doctruth-runtime/Cargo.toml"
-BIN="$ROOT/runtime/doctruth-runtime/target/debug/doctruth-runtime"
 
 if [ -z "${DOCTRUTH_MODEL_MANIFEST:-}" ]; then
   echo "DOCTRUTH_MODEL_MANIFEST is required for the MNN promotion bench lane" >&2
@@ -25,9 +23,6 @@ if [ ! -d "$DOCTRUTH_MODEL_CACHE" ]; then
   exit 2
 fi
 
-cargo build --manifest-path "$MANIFEST" >/dev/null
-
-DOCTRUTH_RUNTIME_BIN="$BIN" python3 "$ROOT/scripts/doctruth_opendataloader_prediction.py" \
-  --bench-dir "$ROOT/third_party/opendataloader-bench" \
+sh "$ROOT/scripts/run-doctruth-opendataloader-bench.sh" \
   --runtime-profile edge-model \
   "$@"

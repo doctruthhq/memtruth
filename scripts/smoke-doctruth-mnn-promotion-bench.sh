@@ -36,24 +36,29 @@ DOCTRUTH_RUNTIME_MODEL_COMMAND="$WORKER" \
 
 test -s "$OUT_DIR/markdown/$DOC_ID.md"
 test -s "$OUT_DIR/summary.json"
+test -s "$OUT_DIR/prediction-report.json"
 
-python3 - "$OUT_DIR/summary.json" <<'PY'
+python3 - "$OUT_DIR/summary.json" "$OUT_DIR/prediction-report.json" <<'PY'
 import json
 import pathlib
 import sys
 
 summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+report = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 assert summary["engine_name"] == "doctruth-mnn-promotion-smoke", summary
 assert summary["runtime_profile"] == "edge-model", summary
-assert summary["mnn_promotion_candidate"] is True, summary
-assert summary["model_manifest"], summary
-assert summary["model_cache"], summary
 assert summary["production_residency"]["python_torch_docling"] is False, summary
 assert summary["documents"][0]["runtimeProfile"] == "edge-model", summary["documents"][0]
 runtime = summary["documents"][0]["modelRuntime"]
 assert runtime["runtime"] == "mnn", runtime
 assert runtime["coldStartMs"] == 12.0, runtime
 assert runtime["peakMemoryMb"] == 123.0, runtime
+assert report["runtime"] == "doctruth-runtime", report
+assert report["prediction"]["engine"] == "doctruth-mnn-promotion-smoke", report
+assert report["resourceProfile"]["profile"] == "edge-model", report["resourceProfile"]
+assert report["resourceProfile"]["pythonTorchDoclingProductionResidency"] is False, report["resourceProfile"]
+assert report["resourceProfile"]["modelRuntime"]["runtime"] == "mnn", report["resourceProfile"]
+assert report["mnnPromotion"]["evaluated"] is False, report["mnnPromotion"]
 PY
 
 rm -rf "$OUT_DIR" "$WORK_DIR"

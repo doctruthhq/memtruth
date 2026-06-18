@@ -7836,3 +7836,38 @@
   parity still needs multiline cells, escaped pipes, alignment metadata,
   malformed table recovery, and fixture-level comparison against the Python
   converter.
+
+## 2026-06-18 Default OpenDataLoader Runner Rustification Slice
+
+- Added a RED content-contract check for the two default OpenDataLoader runner
+  scripts:
+  `if rg -n "python3 .*doctruth_opendataloader_prediction\\.py|DOCTRUTH_RUNTIME_BIN=.*python3" scripts/run-doctruth-opendataloader-bench.sh scripts/run-doctruth-mnn-promotion-bench.sh; then exit 1; fi`.
+- RED result: both scripts still invoked
+  `scripts/doctruth_opendataloader_prediction.py`, proving the default bench
+  lane still went through the Python prediction adapter.
+- Replaced `scripts/run-doctruth-opendataloader-bench.sh` with a Rust-owned
+  protocol runner:
+  - builds `doctruth-runtime`
+  - sends `opendataloader_prediction`
+  - writes `summary.json`, `errors.json`, markdown, and the new
+    `prediction-report.json`
+  - runs Rust `opendataloader_evaluate_prediction` by default
+  - supports `--evaluator official` / `--official-eval` only as an explicit
+    upstream oracle path
+  - rejects `--reference-engine` as oracle-only and points callers to the
+    hybrid baseline script
+- Updated `scripts/run-doctruth-mnn-promotion-bench.sh` to delegate to the
+  Rust-owned runner after validating `DOCTRUTH_MODEL_MANIFEST` and
+  `DOCTRUTH_MODEL_CACHE`.
+- Updated smoke assertions to read `prediction-report.json` instead of legacy
+  Python adapter-only summary fields.
+- GREEN verification passed:
+  `sh scripts/smoke-doctruth-opendataloader-bench-runner.sh`;
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `36 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  default-runner grep found no Python prediction adapter invocation.
+- Remaining gap: the old Python adapter's per-document `--timeout-seconds`
+  behavior is not silently preserved. The Rust direct command needs an explicit
+  per-document timeout implementation before that flag can return.

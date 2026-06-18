@@ -1860,3 +1860,25 @@
 - This is still a subset of upstream conversion behavior. Escaped pipes,
   multiline cells, alignment details, and malformed Markdown need explicit
   parity fixtures before the Rust evaluator can replace the Python converter.
+
+## 2026-06-18 Default Runner Python Boundary Finding
+
+- The important Python boundary is not "no Python files may exist." The
+  enforceable boundary is that the default DocTruth/OpenDataLoader prediction,
+  evaluation, promotion, and local runtime path must not require Python/Torch/
+  Docling residency.
+- `scripts/doctruth_opendataloader_prediction.py` is now legacy/compatibility
+  tooling. The default OpenDataLoader runner calls Rust
+  `opendataloader_prediction` directly and writes the Rust runtime's
+  `prediction-report.json` beside `summary.json` and `errors.json`.
+- The official upstream OpenDataLoader evaluator may still be invoked
+  explicitly with `--evaluator official`; that is an oracle/comparison boundary,
+  not the default DocTruth runner. The default evaluator is Rust
+  `opendataloader_evaluate_prediction`.
+- MNN promotion smoke should assert Rust `resourceProfile` and
+  `modelRuntime` evidence from `prediction-report.json`, not Python-adapter-only
+  fields such as `mnn_promotion_candidate`.
+- The old Python adapter supported per-document timeout by spawning the runtime
+  per PDF. The direct Rust command currently does not provide equivalent
+  per-document timeout isolation, so `--timeout-seconds` must remain unsupported
+  until implemented in Rust rather than being accepted as a no-op.

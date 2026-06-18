@@ -401,7 +401,7 @@ open.
 | OpenDataLoader PDF | Tagged-PDF structure tree preference | Complete for Rust MVP, partial for broad semantic tag export | Rust runtime uses `pdf_oxide` canonical page reading order so trustworthy Tagged-PDF structure trees beat geometric ordering, emits `parserRun.readingOrder` and `parseTrace.readingOrder`, and falls back to XY-Cut with a structured warning when `/MarkInfo /Suspects true` marks the tree unreliable | Broaden against real tagged PDFs and expose richer role/heading/list/table semantics through `TrustDocument` without making external parser schemas canonical |
 | OpenDataLoader PDF | Parser safety/content filters | Complete for Rust MVP, partial for broad visual validation | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters duplicate, whitespace-only, off-page, tiny, near-white/background-like, and invisible render-mode text-layer spans, emits severe parser-safety warnings, and blocks audit-grade output | Add robust rendered-page background comparison and broaden warning taxonomy against labeled real-world fixtures |
 | OpenDataLoader PDF | Table border/cluster heuristics | Complete for Rust MVP, partial for broad table accuracy | Rust runtime normalizes `pdf_oxide` text-spatial borderless table detection plus `pdf_oxide` content-stream line-table extraction into `TrustDocument` tables; covered behavior includes bordered grids, merged cells, row spans, and adjacent-page continuations | Broaden table metrics against labeled real-world fixtures and calibrate model-assisted table recognition |
-| OpenDataLoader Bench | Parser-quality foundation | Vendored, runner wired, first full baseline recorded locally | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics. `scripts/run-doctruth-opendataloader-bench.sh` exports DocTruth Rust runtime predictions into OpenDataLoader Bench shape and can invoke the official evaluator. | Improve DocTruth Markdown/table/heading export and parser robustness until the real OpenDataLoader Bench baseline is competitive enough to act as an audit-grade parser-quality gate |
+| OpenDataLoader Bench | Parser-quality foundation | Vendored, runner wired, first full baseline recorded locally | `third_party/opendataloader-bench/` supplies public parser-quality concepts for reading order, table fidelity, heading hierarchy, speed, ground-truth/prediction/evaluation artifacts, and NID/TEDS/MHS-style metrics. `scripts/run-doctruth-opendataloader-bench.sh` exports DocTruth Rust runtime predictions into OpenDataLoader Bench shape and runs the Rust evaluator by default; the official evaluator is explicit oracle-only. | Improve DocTruth Markdown/table/heading export and parser robustness until the real OpenDataLoader Bench baseline is competitive enough to act as an audit-grade parser-quality gate |
 | RapidOCR/MNN | Local OCR worker behind strict protocol | Complete for adapter/runtime protocol and generated real Rust-route OCR smoke, partial for MNN/labeled quality | Packaged RapidOCR worker, fake readiness tests, isolated RapidOCR + ONNXRuntime smoke, generated OCR corpus gate, Rust runtime OCR worker smoke, and `DOCTRUTH_RUNTIME_REAL_OCR_CORPUS_SMOKE=1` through `doctruth-runtime parse_pdf` | MNN backend install path and labeled real-world scanned-PDF OCR corpus |
 | DocTruth-specific | Evidence-grade audit and replay boundary | Complete for v1 contracts | Severe warning taxonomy, audit-grade blocking, source hash, bbox/table-cell evidence, review package, MCP document evidence tools | Parser accuracy still depends on broad labeled corpus and Rust-core migration |
 
@@ -2247,11 +2247,14 @@ and replay claims are bound to the real parsed document, not only copied
 metrics.
 
 Current OpenDataLoader Bench runner status: `scripts/run-doctruth-opendataloader-bench.sh`
-builds `doctruth-runtime`, runs it over the vendored
-`third_party/opendataloader-bench/pdfs/` corpus, writes
-`prediction/doctruth-runtime/markdown/*.md`, `summary.json`, and `errors.json`,
-and then invokes the vendored evaluator to produce `evaluation.json` and
-`evaluation.csv`. The first full local baseline on 200 vendored PDFs parsed 199
+builds `doctruth-runtime`, runs Rust `opendataloader_prediction` over the
+vendored `third_party/opendataloader-bench/pdfs/` corpus, writes
+`prediction/doctruth-runtime/markdown/*.md`, `summary.json`, `errors.json`, and
+`prediction-report.json`, and then runs Rust `opendataloader_evaluate_prediction`
+by default to produce `evaluation.json`. The official upstream OpenDataLoader
+Python evaluator remains available only through explicit `--evaluator official`
+or oracle/baseline scripts; it is not the default DocTruth prediction/evaluation
+path. The first full local baseline on 200 vendored PDFs parsed 199
 documents and failed one scanned/no-text-layer document. It reported
 `overall_mean=0.509092484964239`, `nid_mean=0.7591850124827885`,
 `teds_mean=0.0`, and `mhs_mean=0.0025571766718785185`, with
@@ -2269,13 +2272,16 @@ text-layer foundation, while table fidelity, heading hierarchy, OCR fallback,
 and slow-sample timeout/parallelism remain required parser-quality work before
 DocTruth can claim OpenDataLoader/Docling level extraction quality.
 
-The runner also supports `--timeout-seconds` to keep full-corpus iteration from
-being dominated by a single pathological PDF. With `--timeout-seconds 30`, the
-same optimized export run completed in `239.5388069152832` seconds, marked
-`01030000000141` as timed out, kept the scanned/no-text-layer failure
-`01030000000165`, and retained nearly identical aggregate quality:
-`overall_mean=0.549140667373931`, `nid_mean=0.7663393307030263`,
-`teds_mean=0.06498004117639267`, and `mhs_mean=0.12239636974611434`.
+Historical note: the legacy Python prediction adapter supported
+`--timeout-seconds` to keep full-corpus iteration from being dominated by a
+single pathological PDF. With `--timeout-seconds 30`, the same optimized export
+run completed in `239.5388069152832` seconds, marked `01030000000141` as timed
+out, kept the scanned/no-text-layer failure `01030000000165`, and retained
+nearly identical aggregate quality: `overall_mean=0.549140667373931`,
+`nid_mean=0.7663393307030263`, `teds_mean=0.06498004117639267`, and
+`mhs_mean=0.12239636974611434`. The Rust-owned runner no longer accepts this as
+a Python-adapter flag; per-document timeout needs a Rust command implementation
+before it can return as a default-runner feature.
 
 Current structure-tree preference status: the Rust runtime now asks `pdf_oxide`
 for canonical page reading order, which prefers a trustworthy Tagged-PDF

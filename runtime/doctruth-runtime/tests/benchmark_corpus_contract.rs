@@ -501,6 +501,85 @@ fn opendataloader_prediction_command_records_per_document_timeout() {
 }
 
 #[test]
+fn opendataloader_prediction_timeout_path_handles_large_trust_document_stdout() {
+    let root = temp_dir("doctruth-runtime-opendataloader-large-stdout");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-large-stdout");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::copy(
+        vendored_opendataloader_pdf("01030000000146.pdf"),
+        pdf_dir.join("large-doc.pdf"),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-large-stdout",
+                "preset": "lite",
+                "runtime_profile": "edge-fast",
+                "timeout_seconds": 10.0,
+                "output_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["prediction"]["documentCount"], 1);
+    assert_eq!(report["prediction"]["failedCount"], 0);
+    assert!(
+        fs::read_to_string(prediction.join("markdown/large-doc.md"))
+            .unwrap()
+            .contains("Reference frameworks")
+    );
+}
+
+#[test]
+fn opendataloader_prediction_renders_trust_document_tables_as_html() {
+    let root = temp_dir("doctruth-runtime-opendataloader-table-markdown");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-table-markdown");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::copy(
+        vendored_opendataloader_pdf("01030000000047.pdf"),
+        pdf_dir.join("party-table.pdf"),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": root,
+            "engine": "doctruth-table-markdown",
+            "preset": "lite",
+            "runtime_profile": "edge-fast",
+            "timeout_seconds": 10.0,
+            "output_dir": prediction
+        })
+        .to_string(),
+    )
+    .assert()
+    .success();
+
+    let markdown = fs::read_to_string(prediction.join("markdown/party-table.md")).unwrap();
+    assert!(markdown.contains("<table>"), "{markdown}");
+    assert!(
+        markdown.contains("<td rowspan=\"2\">Political party</td>"),
+        "{markdown}"
+    );
+    assert!(!markdown.contains("\nNo.\nPolitical party\n11\n12\n13\n"));
+}
+
+#[test]
 fn opendataloader_prediction_command_imports_evaluator_metrics_for_promotion_report() {
     let root = temp_dir("doctruth-runtime-opendataloader-direct-promotion");
     let pdf_dir = root.join("pdfs");
@@ -2330,6 +2409,12 @@ fn temp_dir(prefix: &str) -> PathBuf {
         "{prefix}-{}-{nanos}-{sequence}",
         std::process::id()
     ))
+}
+
+fn vendored_opendataloader_pdf(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../third_party/opendataloader-bench/pdfs")
+        .join(name)
 }
 
 fn write_recorded_report(manifest: &PathBuf, report_path: &PathBuf) {

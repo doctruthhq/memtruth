@@ -4,7 +4,8 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BENCH_DIR="$ROOT/third_party/opendataloader-bench"
 MANIFEST="$ROOT/runtime/doctruth-runtime/Cargo.toml"
-BIN="${DOCTRUTH_RUNTIME_BIN:-$ROOT/runtime/doctruth-runtime/target/debug/doctruth-runtime}"
+BUILD_PROFILE="${DOCTRUTH_RUNTIME_BUILD_PROFILE:-debug}"
+BIN="${DOCTRUTH_RUNTIME_BIN:-}"
 ENGINE="doctruth-runtime"
 DOC_ID=""
 LIMIT=""
@@ -28,6 +29,7 @@ Options:
   --preset NAME                DocTruth parser preset.
   --runtime-profile PROFILE    edge-fast or edge-model.
   --runtime-bin PATH           doctruth-runtime binary.
+  --release                    Build and run the release runtime binary.
   --output-dir DIR             Prediction output directory.
   --timeout-seconds SECONDS    Per-document Rust parse timeout.
   --skip-eval                  Do not run evaluator.
@@ -65,6 +67,10 @@ while [ "$#" -gt 0 ]; do
     --runtime-bin)
       BIN="$2"
       shift 2
+      ;;
+    --release)
+      BUILD_PROFILE="release"
+      shift
       ;;
     --output-dir)
       OUTPUT_DIR="$2"
@@ -119,7 +125,23 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-cargo build --manifest-path "$MANIFEST" >/dev/null
+case "$BUILD_PROFILE" in
+  debug|release) ;;
+  *)
+    echo "DOCTRUTH_RUNTIME_BUILD_PROFILE must be debug or release" >&2
+    exit 2
+    ;;
+esac
+
+if [ -z "$BIN" ]; then
+  BIN="$ROOT/runtime/doctruth-runtime/target/$BUILD_PROFILE/doctruth-runtime"
+fi
+
+if [ "$BUILD_PROFILE" = "release" ]; then
+  cargo build --release --manifest-path "$MANIFEST" >/dev/null
+else
+  cargo build --manifest-path "$MANIFEST" >/dev/null
+fi
 REPORT_TMP="$(mktemp "${TMPDIR:-/tmp}/doctruth-opendataloader-prediction-report.XXXXXX")"
 
 REQUEST="$(jq -n \

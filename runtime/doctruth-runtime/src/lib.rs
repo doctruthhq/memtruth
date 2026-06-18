@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -329,16 +329,18 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .iter()
         .map(|page| page.positioned_lines.clone())
         .collect::<Vec<_>>();
-    let mut tables = extract_tables(source_path, &positioned_lines).unwrap_or_default();
+    let table_extraction = extract_tables(source_path, &positioned_lines)
+        .unwrap_or_else(|_| TableExtractionResult::default());
+    let mut tables = table_extraction.tables;
     let page_metadata =
         extract_page_metadata(source_path).unwrap_or_else(|_| fallback_page_metadata(&page_lines));
     let mut units = unit_json(&page_lines, &positioned_lines);
     if let Some(table) = party_registration_table_from_units(&units, tables.len() + 1) {
-        push_non_overlapping_table(&mut tables, table);
+        push_non_overlapping_table_without_warnings(&mut tables, table);
         tables = renumber_tables(tables).unwrap_or_default();
     }
     if let Some(table) = table_of_contents_table_from_units(&units, tables.len() + 1) {
-        push_non_overlapping_table(&mut tables, table);
+        push_non_overlapping_table_without_warnings(&mut tables, table);
         tables = renumber_tables(tables).unwrap_or_default();
     }
     units.extend(table_unit_json(&tables, units.len() + 1));
@@ -347,6 +349,7 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .flat_map(|page| page.warnings.clone())
         .collect::<Vec<_>>();
     warnings.extend(extracted.warnings.clone());
+    warnings.extend(table_extraction.warnings);
     warnings.extend(model_unavailable_warnings(
         effective_preset,
         profile,
@@ -1236,6 +1239,16 @@ fn filter_positioned_lines(
             ));
             continue;
         }
+        if invalid_text_encoding_line(&line) {
+            warnings.push(parser_safety_warning(
+                "invalid_text_encoding_detected",
+                &format!(
+                    "Filtered text-layer span with invalid encoding artifacts: {}",
+                    line.text
+                ),
+            ));
+            continue;
+        }
         if near_white_positioned_line(&line) {
             warnings.push(parser_safety_warning(
                 "background_text_filtered",
@@ -1284,6 +1297,15 @@ fn tiny_positioned_line(line: &PositionedLine) -> bool {
 
 fn near_white_positioned_line(line: &PositionedLine) -> bool {
     line.color.r >= 0.98 && line.color.g >= 0.98 && line.color.b >= 0.98
+}
+
+fn invalid_text_encoding_line(line: &PositionedLine) -> bool {
+    invalid_text_encoding(&line.text)
+}
+
+fn invalid_text_encoding(text: &str) -> bool {
+    text.chars()
+        .any(|ch| ch == '\u{fffd}' || (ch.is_control() && !ch.is_whitespace()))
 }
 
 fn hidden_positioned_line(line: &PositionedLine, hidden_texts: &[String]) -> bool {
@@ -3476,10 +3498,16 @@ fn parse_pdf_for_prediction(
 fn parse_pdf_child_with_timeout(request: &Value, timeout_seconds: f64) -> Result<Value, String> {
     let exe = env::current_exe()
         .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
+    let stdout_path = temp_child_output_path("stdout");
+    let stderr_path = temp_child_output_path("stderr");
+    let stdout_file = fs::File::create(&stdout_path)
+        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
+    let stderr_file = fs::File::create(&stderr_path)
+        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
     let mut child = Command::new(exe)
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
     if let Some(mut stdin) = child.stdin.take() {
@@ -3492,14 +3520,10 @@ fn parse_pdf_child_with_timeout(request: &Value, timeout_seconds: f64) -> Result
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                if let Some(mut stream) = child.stdout.take() {
-                    let _ = stream.read_to_string(&mut stdout);
-                }
-                if let Some(mut stream) = child.stderr.take() {
-                    let _ = stream.read_to_string(&mut stderr);
-                }
+                let stdout = fs::read_to_string(&stdout_path).unwrap_or_default();
+                let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+                let _ = fs::remove_file(&stdout_path);
+                let _ = fs::remove_file(&stderr_path);
                 if !status.success() {
                     return Err(error_json(
                         "PDF_EXTRACTION_FAILED",
@@ -3514,6 +3538,8 @@ fn parse_pdf_child_with_timeout(request: &Value, timeout_seconds: f64) -> Result
             Ok(None) if started.elapsed() >= timeout => {
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = fs::remove_file(&stdout_path);
+                let _ = fs::remove_file(&stderr_path);
                 return Err(error_json(
                     "PARSE_TIMEOUT",
                     &format!("document parse exceeded {timeout_seconds} seconds"),
@@ -3524,10 +3550,23 @@ fn parse_pdf_child_with_timeout(request: &Value, timeout_seconds: f64) -> Result
             Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = fs::remove_file(&stdout_path);
+                let _ = fs::remove_file(&stderr_path);
                 return Err(error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string());
             }
         }
     }
+}
+
+fn temp_child_output_path(kind: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    env::temp_dir().join(format!(
+        "doctruth-runtime-child-{kind}-{}-{nanos}.json",
+        std::process::id()
+    ))
 }
 
 fn error_code_from_json(error: &str) -> String {
@@ -4687,17 +4726,282 @@ fn checked_source_sha(path: &Path, case: &Value) -> Result<String, String> {
 
 fn markdown_from_document(document: &Value) -> String {
     let mut lines = Vec::new();
+    let tables = document_tables_by_id(document);
+    let table_refs = renderable_table_refs(document);
+    let mut rendered_tables = BTreeSet::new();
+    let blocks = content_blocks_by_unit_id(document);
+    let mut rendered_blocks = BTreeSet::new();
     if let Some(units) = document.pointer("/body/units").and_then(Value::as_array) {
         for unit in units {
-            if let Some(text) = unit.get("text").and_then(Value::as_str) {
-                let text = normalize_text(text);
-                if !text.is_empty() {
-                    lines.push(text);
+            if page_number_noise_unit(unit) {
+                continue;
+            }
+            if unit.get("kind").and_then(Value::as_str) == Some("TABLE_CELL") {
+                let table_id = unit.get("tableId").and_then(Value::as_str).unwrap_or("");
+                if render_markdown_table_once(table_id, &tables, &mut rendered_tables, &mut lines) {
+                    continue;
                 }
+            }
+            if let Some(table_ref) = containing_table_ref(unit, &table_refs) {
+                render_markdown_table_once(
+                    &table_ref.table_id,
+                    &tables,
+                    &mut rendered_tables,
+                    &mut lines,
+                );
+                continue;
+            }
+            if let Some(block) = markdown_block_for_unit(unit, &blocks) {
+                let block_id = block.get("blockId").and_then(Value::as_str).unwrap_or("");
+                if !block_id.is_empty() && rendered_blocks.contains(block_id) {
+                    continue;
+                }
+                if let Some(text) = markdown_entry_text(unit, Some(block)) {
+                    lines.push(text);
+                    if !block_id.is_empty() {
+                        rendered_blocks.insert(block_id.to_string());
+                    }
+                }
+                continue;
+            }
+            if let Some(text) = markdown_entry_text(unit, None) {
+                lines.push(text);
             }
         }
     }
     lines.join("\n")
+}
+
+#[derive(Debug, Clone)]
+struct MarkdownTableRef {
+    table_id: String,
+    page: u64,
+    bbox: [f64; 4],
+}
+
+fn document_tables_by_id(document: &Value) -> BTreeMap<String, Value> {
+    document
+        .pointer("/body/tables")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|table| {
+            table
+                .get("tableId")
+                .and_then(Value::as_str)
+                .map(|id| (id.to_string(), table.clone()))
+        })
+        .collect()
+}
+
+fn content_blocks_by_unit_id(document: &Value) -> BTreeMap<String, Value> {
+    let mut blocks = BTreeMap::new();
+    if let Some(content_blocks) = document.get("contentBlocks").and_then(Value::as_array) {
+        for block in content_blocks {
+            let Some(unit_ids) = block.get("sourceUnitIds").and_then(Value::as_array) else {
+                continue;
+            };
+            for unit_id in unit_ids.iter().filter_map(Value::as_str) {
+                blocks.insert(unit_id.to_string(), block.clone());
+            }
+        }
+    }
+    blocks
+}
+
+fn markdown_block_for_unit<'a>(
+    unit: &Value,
+    blocks: &'a BTreeMap<String, Value>,
+) -> Option<&'a Value> {
+    let unit_id = unit.get("unitId").and_then(Value::as_str)?;
+    blocks.get(unit_id)
+}
+
+fn markdown_entry_text(unit: &Value, block: Option<&Value>) -> Option<String> {
+    let text = block
+        .and_then(|block| block.get("normalizedText").and_then(Value::as_str))
+        .or_else(|| unit.get("text").and_then(Value::as_str))?;
+    let text = normalize_text(&text.replace('\u{00ad}', ""));
+    if text.is_empty() {
+        return None;
+    }
+    if markdown_entry_is_heading(unit, block, &text) {
+        return Some(format!("# {text}"));
+    }
+    Some(text)
+}
+
+fn markdown_entry_is_heading(unit: &Value, block: Option<&Value>, text: &str) -> bool {
+    let block_type = block.and_then(|block| block.get("type").and_then(Value::as_str));
+    if block_type == Some("heading") {
+        return true;
+    }
+    if block_type.is_some() {
+        return false;
+    }
+    unit.get("kind").and_then(Value::as_str) == Some("HEADING") || likely_markdown_heading(text)
+}
+
+fn likely_markdown_heading(text: &str) -> bool {
+    let word_count = text.split_whitespace().count();
+    !text.ends_with('.') && word_count <= 10 && text.chars().any(char::is_alphabetic)
+}
+
+fn page_number_noise_unit(unit: &Value) -> bool {
+    let text = unit
+        .get("text")
+        .and_then(Value::as_str)
+        .map(normalize_text)
+        .unwrap_or_default();
+    if text.is_empty() || !text.chars().all(|ch| ch.is_ascii_digit()) || text.len() > 4 {
+        return false;
+    }
+    let Some(bbox) = bbox_at(unit, "/location/boundingBox") else {
+        return false;
+    };
+    bbox[1] < 75.0 || bbox[1] > 920.0
+}
+
+fn renderable_table_refs(document: &Value) -> Vec<MarkdownTableRef> {
+    document
+        .pointer("/body/tables")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|table| {
+            let table_id = table.get("tableId").and_then(Value::as_str)?;
+            let html = markdown_table_html(table);
+            if html.is_empty() {
+                return None;
+            }
+            let page = table.get("pageNumber").and_then(Value::as_u64).unwrap_or(1);
+            let bbox = bbox_at(table, "/boundingBox")?;
+            Some(MarkdownTableRef {
+                table_id: table_id.to_string(),
+                page,
+                bbox,
+            })
+        })
+        .collect()
+}
+
+fn containing_table_ref<'a>(
+    unit: &Value,
+    tables: &'a [MarkdownTableRef],
+) -> Option<&'a MarkdownTableRef> {
+    let unit_bbox = bbox_at(unit, "/location/boundingBox")?;
+    let page = unit_page_number(unit);
+    let center_x = (unit_bbox[0] + unit_bbox[2]) / 2.0;
+    let center_y = (unit_bbox[1] + unit_bbox[3]) / 2.0;
+    tables.iter().find(|table| {
+        if table.page != page {
+            return false;
+        }
+        let padding = 2.0;
+        table.bbox[0] - padding <= center_x
+            && center_x <= table.bbox[2] + padding
+            && table.bbox[1] - padding <= center_y
+            && center_y <= table.bbox[3] + padding
+    })
+}
+
+fn render_markdown_table_once(
+    table_id: &str,
+    tables: &BTreeMap<String, Value>,
+    rendered_tables: &mut BTreeSet<String>,
+    lines: &mut Vec<String>,
+) -> bool {
+    if table_id.is_empty() || rendered_tables.contains(table_id) {
+        return false;
+    }
+    let Some(table) = tables.get(table_id) else {
+        return false;
+    };
+    let html = markdown_table_html(table);
+    if html.is_empty() {
+        return false;
+    }
+    lines.push(html);
+    rendered_tables.insert(table_id.to_string());
+    true
+}
+
+fn unit_page_number(unit: &Value) -> u64 {
+    unit.get("page")
+        .and_then(Value::as_u64)
+        .or_else(|| unit.pointer("/location/page").and_then(Value::as_u64))
+        .unwrap_or(1)
+}
+
+fn markdown_table_html(table: &Value) -> String {
+    let Some(cells) = table.get("cells").and_then(Value::as_array) else {
+        return String::new();
+    };
+    if cells.is_empty() {
+        return String::new();
+    }
+    let row_count = cells
+        .iter()
+        .filter_map(|cell| cell.pointer("/rowRange/end").and_then(Value::as_u64))
+        .max()
+        .map(|end| end as usize + 1)
+        .unwrap_or(0);
+    let mut rows = vec![Vec::<String>::new(); row_count];
+    for cell in cells {
+        let row = cell.pointer("/rowRange/start").and_then(Value::as_u64);
+        let Some(row) = row.map(|value| value as usize) else {
+            continue;
+        };
+        if row >= rows.len() {
+            continue;
+        }
+        rows[row].push(markdown_table_cell_html(cell));
+    }
+    let mut output = Vec::new();
+    output.push("<table>".to_string());
+    for row in rows {
+        if row.is_empty() {
+            continue;
+        }
+        output.push(" <tr>".to_string());
+        output.extend(row.into_iter().map(|cell| format!("  {cell}")));
+        output.push(" </tr>".to_string());
+    }
+    output.push("</table>".to_string());
+    output.join("\n")
+}
+
+fn markdown_table_cell_html(cell: &Value) -> String {
+    let text = cell.get("text").and_then(Value::as_str).unwrap_or("");
+    let text = escape_html_text(&normalize_text(text));
+    let row_span = table_range_span(cell, "rowRange");
+    let column_span = table_range_span(cell, "columnRange");
+    let mut attrs = String::new();
+    if row_span > 1 {
+        attrs.push_str(&format!(" rowspan=\"{row_span}\""));
+    }
+    if column_span > 1 {
+        attrs.push_str(&format!(" colspan=\"{column_span}\""));
+    }
+    format!("<td{attrs}>{text}</td>")
+}
+
+fn table_range_span(cell: &Value, key: &str) -> u64 {
+    let start = cell
+        .pointer(&format!("/{key}/start"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let end = cell
+        .pointer(&format!("/{key}/end"))
+        .and_then(Value::as_u64)
+        .unwrap_or(start);
+    end.saturating_sub(start) + 1
+}
+
+fn escape_html_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn case_metrics(
@@ -7037,6 +7341,12 @@ struct TableExtraction {
     cells: Vec<TableCellExtraction>,
 }
 
+#[derive(Debug, Default)]
+struct TableExtractionResult {
+    tables: Vec<TableExtraction>,
+    warnings: Vec<Value>,
+}
+
 #[derive(Debug, Clone)]
 struct TableCellExtraction {
     page_number: usize,
@@ -7103,36 +7413,88 @@ struct RuntimeColor {
 fn extract_tables(
     source_path: &str,
     positioned_pages: &[Vec<PositionedLine>],
-) -> Result<Vec<TableExtraction>, String> {
+) -> Result<TableExtractionResult, String> {
     let mut tables = Vec::new();
+    let mut warnings = Vec::new();
     for table in extract_tables_with_pdf_oxide_lines(source_path).unwrap_or_default() {
-        push_non_overlapping_table(&mut tables, table);
+        push_non_overlapping_table(&mut tables, table, &mut warnings);
     }
     for table in extract_tables_with_pdf_oxide_spatial(source_path).unwrap_or_default() {
-        push_non_overlapping_table(&mut tables, table);
+        push_non_overlapping_table(&mut tables, table, &mut warnings);
     }
     for table in extract_tables_from_positioned_lines(positioned_pages, &tables) {
-        push_non_overlapping_table(&mut tables, table);
+        push_non_overlapping_table(&mut tables, table, &mut warnings);
     }
-    renumber_tables(tables)
+    Ok(TableExtractionResult {
+        tables: renumber_tables(tables)?,
+        warnings,
+    })
 }
 
-fn push_non_overlapping_table(tables: &mut Vec<TableExtraction>, table: TableExtraction) {
-    if table.cells.is_empty()
-        || suspect_full_page_line_table(&table)
-        || tables
-            .iter()
-            .any(|existing| duplicate_table(existing, &table))
+fn push_non_overlapping_table(
+    tables: &mut Vec<TableExtraction>,
+    table: TableExtraction,
+    warnings: &mut Vec<Value>,
+) {
+    if table.cells.is_empty() {
+        return;
+    }
+    if let Some(warning) = rejected_table_warning(&table) {
+        warnings.push(warning);
+        return;
+    }
+    if tables
+        .iter()
+        .any(|existing| duplicate_table(existing, &table))
     {
         return;
     }
     tables.push(table);
 }
 
-fn suspect_full_page_line_table(table: &TableExtraction) -> bool {
-    if !table.rationale.contains("line-table") {
+fn push_non_overlapping_table_without_warnings(
+    tables: &mut Vec<TableExtraction>,
+    table: TableExtraction,
+) {
+    let mut warnings = Vec::new();
+    push_non_overlapping_table(tables, table, &mut warnings);
+}
+
+fn rejected_table_warning(table: &TableExtraction) -> Option<Value> {
+    if suspect_full_page_table_false_positive(table) {
+        return Some(parser_safety_warning(
+            "full_page_table_false_positive_filtered",
+            "Rejected full-page line-table candidate that likely represents ordinary page text",
+        ));
+    }
+    suspect_noisy_full_page_table(table).then(|| {
+        parser_safety_warning(
+            "invalid_text_encoding_detected",
+            "Rejected noisy full-page table candidate produced from invalid PDF text encoding",
+        )
+    })
+}
+
+fn suspect_full_page_table_false_positive(table: &TableExtraction) -> bool {
+    if !table.rationale.contains("line-table") || !normalized_full_page_bbox(&table.bbox) {
         return false;
     }
+    let filled_cells = table
+        .cells
+        .iter()
+        .filter(|cell| !cell.text.trim().is_empty())
+        .collect::<Vec<_>>();
+    if filled_cells.len() > 4 {
+        return false;
+    }
+    filled_cells.iter().any(|cell| {
+        let row_span = cell.row_end.saturating_sub(cell.row) + 1;
+        let column_span = cell.column_end.saturating_sub(cell.column) + 1;
+        row_span > 10 || column_span > 8 || cell.text.len() > 500
+    })
+}
+
+fn suspect_noisy_full_page_table(table: &TableExtraction) -> bool {
     let filled_cells = table
         .cells
         .iter()
@@ -7144,7 +7506,11 @@ fn suspect_full_page_line_table(table: &TableExtraction) -> bool {
     let cell = filled_cells[0];
     let full_page = normalized_full_page_bbox(&table.bbox) || normalized_full_page_bbox(&cell.bbox);
     let spanned = cell.row_end > cell.row || cell.column_end > cell.column;
-    full_page && (spanned || noisy_table_text(&cell.text) || cell.text.len() > 500)
+    full_page
+        && (table.rationale.contains("line-table")
+            || spanned
+            || noisy_table_text(&cell.text)
+            || cell.text.len() > 500)
 }
 
 fn normalized_full_page_bbox(bbox: &RuntimeBox) -> bool {
@@ -7152,8 +7518,7 @@ fn normalized_full_page_bbox(bbox: &RuntimeBox) -> bool {
 }
 
 fn noisy_table_text(text: &str) -> bool {
-    text.chars()
-        .any(|ch| ch == '\u{fffd}' || (ch.is_control() && !ch.is_whitespace()))
+    invalid_text_encoding(text)
 }
 
 fn duplicate_table(left: &TableExtraction, right: &TableExtraction) -> bool {
@@ -7953,7 +8318,7 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
                 &segment.into_iter().flatten().collect::<Vec<_>>(),
                 tables.len() + 1,
             ) {
-                push_non_overlapping_table(&mut tables, table);
+                push_non_overlapping_table_without_warnings(&mut tables, table);
             }
         }
     }
@@ -9034,6 +9399,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn markdown_projection_renders_content_block_once() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "First line", 100.0, 100.0),
+                    markdown_unit("unit-2", "second line", 100.0, 120.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": [{
+                "blockId": "block-1",
+                "type": "paragraph",
+                "normalizedText": "First line second line",
+                "sourceUnitIds": ["unit-1", "unit-2"]
+            }]
+        });
+
+        assert_eq!(markdown_from_document(&document), "First line second line");
+    }
+
+    #[test]
+    fn markdown_projection_filters_page_number_noise() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "1", 300.0, 20.0),
+                    markdown_unit("unit-2", "body evidence.", 100.0, 120.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        assert_eq!(markdown_from_document(&document), "body evidence.");
+    }
+
+    #[test]
     fn xy_cut_orders_cross_layout_header_before_two_columns() {
         let lines = vec![
             line("Col2-A", 700.0, 250.0, 900.0, 280.0),
@@ -9143,5 +9545,24 @@ mod tests {
             .iter()
             .position(|value| value == needle)
             .expect("expected text")
+    }
+
+    fn markdown_unit(unit_id: &str, text: &str, x0: f64, y0: f64) -> Value {
+        json!({
+            "unitId": unit_id,
+            "kind": "LINE_SPAN",
+            "page": 1,
+            "text": text,
+            "location": {
+                "page": 1,
+                "readingOrder": 1,
+                "boundingBox": {
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x0 + 100.0,
+                    "y1": y0 + 20.0
+                }
+            }
+        })
     }
 }

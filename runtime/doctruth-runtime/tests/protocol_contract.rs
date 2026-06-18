@@ -32,6 +32,39 @@ fn parse_request_with_hash_and_preset(
     )
 }
 
+fn vendored_opendataloader_pdf(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../third_party/opendataloader-bench/pdfs")
+        .join(name)
+}
+
+fn looks_like_noisy_full_page_table(table: &Value) -> bool {
+    let cells = table["cells"].as_array().cloned().unwrap_or_default();
+    let noisy_text = cells.iter().any(|cell| {
+        cell["text"]
+            .as_str()
+            .map(text_has_invalid_encoding_noise)
+            .unwrap_or(false)
+    });
+    let large_span = cells.iter().any(|cell| {
+        let row = &cell["rowRange"];
+        let col = &cell["columnRange"];
+        range_span(row) > 10 || range_span(col) > 10
+    });
+    noisy_text && large_span
+}
+
+fn range_span(range: &Value) -> u64 {
+    let start = range["start"].as_u64().unwrap_or(0);
+    let end = range["end"].as_u64().unwrap_or(start);
+    end.saturating_sub(start) + 1
+}
+
+fn text_has_invalid_encoding_noise(text: &str) -> bool {
+    text.chars()
+        .any(|ch| ch == '\u{fffd}' || (ch.is_control() && !ch.is_whitespace()))
+}
+
 #[test]
 fn doctor_reports_local_runtime_readiness() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -188,6 +221,42 @@ fn parse_pdf_marks_model_assisted_preset_fallback_as_not_audit_grade() {
                     .is_some_and(|message| message.contains("slanet-plus:v1"))
         }),
         "expected severe model_unavailable_fallback warning with model identity, got {warnings:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_filters_full_page_line_table_false_positive() {
+    let pdf = vendored_opendataloader_pdf("01030000000146.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request_with_hash(
+            &pdf,
+            "sha256:invalid-text-encoding",
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+    assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
+    assert!(
+        warnings.iter().any(
+            |warning| warning["code"] == "full_page_table_false_positive_filtered"
+                && warning["severity"] == "SEVERE"
+        ),
+        "{warnings:?}"
+    );
+
+    let tables = json["body"]["tables"].as_array().unwrap();
+    assert!(
+        tables
+            .iter()
+            .all(|table| !looks_like_noisy_full_page_table(table)),
+        "{tables:?}"
     );
 }
 

@@ -7447,3 +7447,34 @@
 - Remaining gap: discovery still delegates to the existing Python RapidOCR/MNN
   worker. The full plan still needs measured real MNN inference and
   OpenDataLoader Bench quality/resource promotion.
+
+## 2026-06-18 MNN Promotion Gate Report MVP
+
+- Added RED/GREEN tests:
+  `benchmark_corpus_reports_mnn_promotion_gate_for_model_profile` and
+  `benchmark_corpus_rejects_mnn_promotion_when_quality_gate_fails`.
+- RED failure: report had no `mnnPromotion` field, so model-backed benchmark
+  runs could not explicitly prove or reject Rust+MNN promotion.
+- Added manifest-driven `promotionGates.mnn` evaluation to Rust
+  `benchmark_corpus`.
+- `mnnPromotion` combines:
+  OpenDataLoader imported quality metrics (`opendataloader_nid`,
+  `opendataloader_teds`, `opendataloader_mhs`, derived `overall`) and
+  `resourceProfile` evidence.
+- Acceptance requires all of:
+  quality thresholds pass, model runtime metrics exist, no
+  Python/Torch/Docling production residency, lazy startup is true, and model
+  peak RSS is lower than the declared heavy-oracle steady RSS.
+- Low-quality MNN runs can still pass the parser-corpus run itself while
+  reporting `mnnPromotion.accepted=false`; this prevents conflating "benchmark
+  executed" with "production MNN profile promoted."
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `28 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`.
+- Remaining gap: this is still benchmark/report gating with fake MNN metrics.
+  The final Phase 6 gate still needs a real MNN OpenDataLoader Bench run and
+  measured profile report.

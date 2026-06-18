@@ -1693,3 +1693,17 @@
 - The current discovery closes a packaging ergonomics gap, not the final model
   runtime gap. Real MNN inference, resource measurement, and OpenDataLoader
   Bench promotion remain separate acceptance work.
+
+## 2026-06-18 MNN Promotion Gate Finding
+
+- `benchmark_corpus.passed=true` is not strong enough to promote a Rust+MNN
+  runtime. It only proves that the benchmark ran and satisfied the manifest's
+  normal parser-corpus thresholds. Promotion needs a separate decision that
+  combines quality and resource evidence.
+- `mnnPromotion` should be manifest-driven so thresholds are explicit and
+  reviewable. This also keeps provisional profile measurements out of global
+  product policy.
+- A failed MNN promotion gate is still useful evidence. It tells us whether the
+  problem is quality (`nid`/`teds`/`mhs`/overall), missing model runtime
+  metrics, Python/Torch/Docling residency, lazy-load policy, or resource delta
+  against the heavy oracle.

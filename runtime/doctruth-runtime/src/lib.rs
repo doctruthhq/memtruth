@@ -1837,6 +1837,14 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
     let external_artifacts = write_opendataloader_prediction_if_requested(request, &case_reports)?;
     let public_case_reports = public_case_reports(&case_reports);
     let labeling = &manifest["labeling"];
+    let resource_profile = benchmark_resource_profile_json(
+        profile,
+        start_memory,
+        end_memory,
+        elapsed_ms,
+        &case_reports,
+    );
+    let mnn_promotion = mnn_promotion_json(&manifest, &metrics, &resource_profile);
 
     let report = json!({
         "runtime": RUNTIME,
@@ -1882,19 +1890,108 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
         "externalEvaluations": manifest.get("externalEvaluations").cloned().unwrap_or_else(|| json!({})),
         "externalArtifacts": external_artifacts,
         "externalMetrics": external.report,
-        "resourceProfile": benchmark_resource_profile_json(
-            profile,
-            start_memory,
-            end_memory,
-            elapsed_ms,
-            &case_reports
-        ),
+        "resourceProfile": resource_profile,
+        "mnnPromotion": mnn_promotion,
         "passed": true,
         "metrics": metrics,
         "cases": public_case_reports
     });
     write_benchmark_report_if_requested(request, manifest_path, &report)?;
     Ok(report)
+}
+
+fn mnn_promotion_json(manifest: &Value, metrics: &Value, resource_profile: &Value) -> Value {
+    let Some(gate) = manifest.pointer("/promotionGates/mnn") else {
+        return json!({
+            "evaluated": false,
+            "accepted": false,
+            "reason": "promotionGates.mnn not configured"
+        });
+    };
+    let quality = mnn_promotion_quality_json(gate, metrics);
+    let resources = mnn_promotion_resource_json(gate, resource_profile);
+    let accepted = quality.get("passed").and_then(Value::as_bool) == Some(true)
+        && resources.get("passed").and_then(Value::as_bool) == Some(true);
+    json!({
+        "evaluated": true,
+        "accepted": accepted,
+        "quality": quality,
+        "resources": resources
+    })
+}
+
+fn mnn_promotion_quality_json(gate: &Value, metrics: &Value) -> Value {
+    let thresholds = gate
+        .get("qualityMinimums")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let nid = metric_f64(metrics, "opendataloader_nid");
+    let teds = metric_f64(metrics, "opendataloader_teds");
+    let mhs = metric_f64(metrics, "opendataloader_mhs");
+    let overall = match (nid, teds, mhs) {
+        (Some(nid), Some(teds), Some(mhs)) => Some(round_metric((nid + teds + mhs) / 3.0)),
+        _ => None,
+    };
+    let passed = threshold_pass(overall, &thresholds, "overall")
+        && threshold_pass(nid, &thresholds, "nid")
+        && threshold_pass(teds, &thresholds, "teds")
+        && threshold_pass(mhs, &thresholds, "mhs");
+    json!({
+        "passed": passed,
+        "overall": optional_metric_json(overall),
+        "nid": optional_metric_json(nid),
+        "teds": optional_metric_json(teds),
+        "mhs": optional_metric_json(mhs),
+        "thresholds": thresholds
+    })
+}
+
+fn mnn_promotion_resource_json(gate: &Value, resource_profile: &Value) -> Value {
+    let no_python_torch_docling = resource_profile
+        .get("pythonTorchDoclingProductionResidency")
+        .and_then(Value::as_bool)
+        == Some(false);
+    let lazy = resource_profile
+        .get("lazyModelStartup")
+        .and_then(Value::as_bool)
+        == Some(true);
+    let heavy_oracle = gate.get("heavyOracleSteadyRssMb").and_then(Value::as_u64);
+    let model_peak = resource_profile
+        .pointer("/modelRuntime/peakMemoryMb")
+        .and_then(Value::as_u64);
+    let model_runtime_present = resource_profile
+        .get("modelRuntime")
+        .is_some_and(Value::is_object);
+    let materially_lower = match (model_peak, heavy_oracle) {
+        (Some(model_peak), Some(heavy_oracle)) => model_peak < heavy_oracle,
+        _ => false,
+    };
+    json!({
+        "passed": no_python_torch_docling && lazy && model_runtime_present && materially_lower,
+        "noPythonTorchDoclingResidency": no_python_torch_docling,
+        "lazyModelStartup": lazy,
+        "modelRuntimePresent": model_runtime_present,
+        "materiallyLowerThanHeavyOracle": materially_lower,
+        "heavyOracleSteadyRssMb": optional_u64_json(heavy_oracle),
+        "modelPeakMemoryMb": optional_u64_json(model_peak)
+    })
+}
+
+fn metric_f64(metrics: &Value, key: &str) -> Option<f64> {
+    metrics.get(key).and_then(Value::as_f64)
+}
+
+fn threshold_pass(value: Option<f64>, thresholds: &Value, key: &str) -> bool {
+    let threshold = thresholds.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    value.is_some_and(|value| value >= threshold)
+}
+
+fn optional_metric_json(value: Option<f64>) -> Value {
+    value.map_or(Value::Null, |value| json!(round_metric(value)))
+}
+
+fn optional_u64_json(value: Option<u64>) -> Value {
+    value.map_or(Value::Null, |value| json!(value))
 }
 
 fn cases_per_tag(case_reports: &[Value]) -> Value {

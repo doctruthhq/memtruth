@@ -1231,6 +1231,142 @@ fn benchmark_corpus_uses_case_preset_for_model_worker_cases() {
 }
 
 #[test]
+fn benchmark_corpus_reports_mnn_promotion_gate_for_model_profile() {
+    let root = temp_dir("doctruth-runtime-mnn-promotion");
+    fs::create_dir_all(&root).unwrap();
+    let pdf = root.join("fixture.pdf");
+    let expected_markdown = root.join("expected.md");
+    let expected_document = root.join("expected.json");
+    let manifest = root.join("corpus.json");
+    let worker = write_fake_model_worker();
+    let (cache_dir, model_manifest) = ready_mnn_model_manifest();
+    fs::write(&pdf, minimal_pdf("Fallback corpus evidence.")).unwrap();
+    fs::write(&expected_markdown, "Worker corpus evidence.\n").unwrap();
+    fs::write(&expected_document, "{}").unwrap();
+    write_high_quality_opendataloader_evaluation(&root);
+    let mut manifest_json: Value =
+        serde_json::from_str(&benchmark_manifest_with_external()).unwrap();
+    manifest_json["cases"].as_array_mut().unwrap()[0]["preset"] = json!("table-lite");
+    manifest_json["promotionGates"] = json!({
+        "mnn": {
+            "heavyOracleSteadyRssMb": 1400,
+            "qualityMinimums": {
+                "overall": 0.88,
+                "nid": 0.91,
+                "teds": 0.88,
+                "mhs": 0.78
+            }
+        }
+    });
+    fs::write(&manifest, manifest_json.to_string()).unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", worker)
+        .env("DOCTRUTH_MODEL_CACHE", cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", model_manifest)
+        .write_stdin(
+            json!({
+                "command": "benchmark_corpus",
+                "manifest_path": manifest,
+                "offline": true
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(report["mnnPromotion"]["evaluated"], true);
+    assert_eq!(report["mnnPromotion"]["accepted"], true);
+    assert_eq!(report["mnnPromotion"]["quality"]["passed"], true);
+    assert_eq!(report["mnnPromotion"]["quality"]["overall"], 0.91);
+    assert_eq!(
+        report["mnnPromotion"]["quality"]["thresholds"]["teds"],
+        0.88
+    );
+    assert_eq!(report["mnnPromotion"]["resources"]["passed"], true);
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["noPythonTorchDoclingResidency"],
+        true
+    );
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["lazyModelStartup"],
+        true
+    );
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["heavyOracleSteadyRssMb"],
+        1400
+    );
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["modelPeakMemoryMb"],
+        202
+    );
+}
+
+#[test]
+fn benchmark_corpus_rejects_mnn_promotion_when_quality_gate_fails() {
+    let root = temp_dir("doctruth-runtime-mnn-promotion-fail");
+    fs::create_dir_all(&root).unwrap();
+    let pdf = root.join("fixture.pdf");
+    let expected_markdown = root.join("expected.md");
+    let expected_document = root.join("expected.json");
+    let manifest = root.join("corpus.json");
+    let worker = write_fake_model_worker();
+    let (cache_dir, model_manifest) = ready_mnn_model_manifest();
+    fs::write(&pdf, minimal_pdf("Fallback corpus evidence.")).unwrap();
+    fs::write(&expected_markdown, "Worker corpus evidence.\n").unwrap();
+    fs::write(&expected_document, "{}").unwrap();
+    write_opendataloader_evaluation(&root);
+    let mut manifest_json: Value =
+        serde_json::from_str(&benchmark_manifest_with_external()).unwrap();
+    manifest_json["cases"].as_array_mut().unwrap()[0]["preset"] = json!("table-lite");
+    manifest_json["promotionGates"] = json!({
+        "mnn": {
+            "heavyOracleSteadyRssMb": 1400,
+            "qualityMinimums": {
+                "overall": 0.88,
+                "nid": 0.91,
+                "teds": 0.88,
+                "mhs": 0.78
+            }
+        }
+    });
+    fs::write(&manifest, manifest_json.to_string()).unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", worker)
+        .env("DOCTRUTH_MODEL_CACHE", cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", model_manifest)
+        .write_stdin(
+            json!({
+                "command": "benchmark_corpus",
+                "manifest_path": manifest,
+                "offline": true
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(report["mnnPromotion"]["evaluated"], true);
+    assert_eq!(report["mnnPromotion"]["accepted"], false);
+    assert_eq!(report["mnnPromotion"]["quality"]["passed"], false);
+    assert_eq!(report["mnnPromotion"]["quality"]["teds"], 0.52);
+    assert_eq!(report["mnnPromotion"]["resources"]["passed"], true);
+}
+
+#[test]
 fn benchmark_corpus_scores_expected_document_quality_metrics() {
     let root = temp_dir("doctruth-runtime-quality-corpus");
     fs::create_dir_all(&root).unwrap();
@@ -1407,6 +1543,29 @@ fn write_opendataloader_evaluation(root: &std::path::Path) {
                     "nid_mean": 0.91,
                     "teds_mean": 0.52,
                     "mhs_mean": 0.76
+                }
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
+fn write_high_quality_opendataloader_evaluation(root: &std::path::Path) {
+    fs::write(
+        root.join("opendataloader-evaluation.json"),
+        json!({
+            "summary": {
+                "engine_name": "doctruth-runtime-mnn",
+                "engine_version": "test",
+                "document_count": 1,
+                "elapsed_per_doc": 0.01
+            },
+            "metrics": {
+                "score": {
+                    "nid_mean": 0.93,
+                    "teds_mean": 0.90,
+                    "mhs_mean": 0.90
                 }
             }
         })

@@ -74,13 +74,20 @@ cat > "$MARKDOWN_DIR/table-wrapper.md" <<'EOF_PRED'
 <table><tr><td>Name</td><td>Score</td></tr><tr><td>Ada</td><td>10</td></tr></table>
 EOF_PRED
 
+cat > "$GT_DIR/table-attrs.md" <<'EOF_GT'
+<TABLE class='grid'><THEAD><TR><TH COLSPAN='2'>Profile</TH></TR></THEAD><TBODY><TR><TD>Ada</TD><TD>Engineer</TD></TR></TBODY></TABLE>
+EOF_GT
+cat > "$MARKDOWN_DIR/table-attrs.md" <<'EOF_PRED'
+<table><tr><td colspan='2'>Profile</td></tr><tr><td>Ada</td><td>Engineer</td></tr></table>
+EOF_PRED
+
 cat > "$PRED_DIR/summary.json" <<EOF_SUMMARY
 {
   "engine_name": "$ENGINE",
   "engine_version": "parity-smoke",
   "runtime_contract": "TrustDocument",
-  "document_count": 3,
-  "parsed_count": 3,
+  "document_count": 4,
+  "parsed_count": 4,
   "failed_count": 0
 }
 EOF_SUMMARY

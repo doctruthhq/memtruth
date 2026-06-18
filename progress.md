@@ -7975,3 +7975,25 @@
   `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`;
   `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
   `git diff --check`.
+
+## 2026-06-18 Rust Evaluator Table Attribute Parity Slice
+
+- Added RED contract
+  `opendataloader_evaluator_normalizes_table_section_and_header_attributes`.
+- RED result: GT table using uppercase `TABLE/THEAD/TBODY/TH COLSPAN='2'`
+  scored only `teds=0.857143` against an equivalent normalized prediction
+  using `td colspan='2'`.
+- Fixed Rust evaluator table markup normalization so:
+  - `th` tags with attributes are rewritten to `td` while preserving attrs;
+  - `thead`/`tbody` tags with attributes are removed;
+  - uppercase table markup is normalized before tree scoring.
+- Extended `scripts/smoke-doctruth-opendataloader-evaluator-parity.sh` with the
+  same `table-attrs.md` fixture and compared Rust output against the official
+  upstream evaluator.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_normalizes_table_section_and_header_attributes -- --nocapture`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_`;
+  `sh scripts/smoke-doctruth-opendataloader-evaluator-parity.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.

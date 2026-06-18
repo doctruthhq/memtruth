@@ -2776,17 +2776,37 @@ fn escape_table_text(text: &str) -> String {
 
 fn normalize_table_markup(markup: &str) -> String {
     let mut normalized = normalize_markdown_for_evaluator(markup).to_lowercase();
-    for (from, to) in [
-        ("<th>", "<td>"),
-        ("</th>", "</td>"),
-        ("<thead>", ""),
-        ("</thead>", ""),
-        ("<tbody>", ""),
-        ("</tbody>", ""),
-    ] {
-        normalized = normalized.replace(from, to);
+    normalized = rewrite_table_eval_tag(&normalized, "th", "td");
+    for tag in ["thead", "tbody"] {
+        normalized = remove_table_eval_tag(&normalized, tag);
     }
     normalized.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn rewrite_table_eval_tag(markup: &str, from_tag: &str, to_tag: &str) -> String {
+    markup
+        .replace(&format!("</{from_tag}>"), &format!("</{to_tag}>"))
+        .replace(&format!("<{from_tag}>"), &format!("<{to_tag}>"))
+        .replace(&format!("<{from_tag} "), &format!("<{to_tag} "))
+}
+
+fn remove_table_eval_tag(markup: &str, tag: &str) -> String {
+    let without_close = markup.replace(&format!("</{tag}>"), "");
+    let mut result = String::new();
+    let mut rest = without_close.as_str();
+    loop {
+        let Some(start) = rest.find(&format!("<{tag}")) else {
+            result.push_str(rest);
+            break;
+        };
+        result.push_str(&rest[..start]);
+        let after_start = &rest[start..];
+        let Some(end) = after_start.find('>') else {
+            break;
+        };
+        rest = &after_start[end + 1..];
+    }
+    result
 }
 
 #[derive(Clone)]

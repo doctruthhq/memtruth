@@ -1922,3 +1922,14 @@
 - The upstream OpenDataLoader official evaluator is still useful as a comparison
   oracle, but it is also Python/APTED/lxml/rapidfuzz-based and should not start
   as part of a normal run. `--evaluator official` now requires the same opt-in.
+
+## 2026-06-18 Evaluator Table Attribute Finding
+
+- Rust evaluator parity was still weaker than the upstream table normalizer for
+  attribute-bearing header/section tags.
+- The concrete gap was `TH COLSPAN='2'`: Rust's previous normalization only
+  rewrote exact `<th>` tags, so TEDS treated the GT and prediction as different
+  structure even when the table semantics matched.
+- Attribute-aware normalization closes this evaluator gap without changing
+  parser output. It improves benchmark scoring fidelity, not document parsing
+  quality by itself.

@@ -886,6 +886,46 @@ fn opendataloader_evaluator_converts_markdown_pipe_tables_for_teds() {
 }
 
 #[test]
+fn opendataloader_evaluator_normalizes_table_section_and_header_attributes() {
+    let root = temp_dir("doctruth-runtime-opendataloader-evaluator-table-attrs");
+    let gt = root.join("ground-truth/markdown");
+    let prediction = root.join("prediction/doctruth-rust-eval");
+    let markdown = prediction.join("markdown");
+    fs::create_dir_all(&gt).unwrap();
+    fs::create_dir_all(&markdown).unwrap();
+    fs::write(
+        gt.join("doc.md"),
+        "<TABLE class='grid'><THEAD><TR><TH COLSPAN='2'>Profile</TH></TR></THEAD><TBODY><TR><TD>Ada</TD><TD>Engineer</TD></TR></TBODY></TABLE>\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("doc.md"),
+        "<table><tr><td colspan='2'>Profile</td></tr><tr><td>Ada</td><td>Engineer</td></tr></table>\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_evaluate_prediction",
+                "ground_truth_dir": gt,
+                "prediction_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["metrics"]["score"]["teds_mean"], 1.0, "{report}");
+    assert_eq!(report["metrics"]["score"]["teds_s_mean"], 1.0, "{report}");
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

@@ -1,0 +1,120 @@
+/*
+ * Copyright 2025-2026 Hancom Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.opendataloader.pdf.processors;
+
+import org.verapdf.wcag.algorithms.entities.IObject;
+import org.verapdf.wcag.algorithms.entities.SemanticTextNode;
+import org.verapdf.wcag.algorithms.entities.content.TextChunk;
+import org.verapdf.wcag.algorithms.entities.enums.SemanticType;
+import org.verapdf.wcag.algorithms.entities.tables.Table;
+import org.verapdf.wcag.algorithms.entities.tables.TableToken;
+import org.verapdf.wcag.algorithms.entities.tables.tableBorders.TableBorder;
+import org.verapdf.wcag.algorithms.entities.tables.tableBorders.TableBorderCell;
+import org.verapdf.wcag.algorithms.semanticalgorithms.consumers.ClusterTableConsumer;
+import org.verapdf.wcag.algorithms.semanticalgorithms.utils.TextChunkUtils;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Table processor that uses clustering algorithms to detect tables.
+ * Identifies tables by analyzing spatial relationships between text chunks.
+ */
+public class ClusterTableProcessor extends AbstractTableProcessor {
+
+    @Override
+    protected List<List<TableBorder>> getTables(List<List<IObject>> contents, List<Integer> pageNumbers) {
+        List<List<TableBorder>> tables = new ArrayList<>();
+        for (int pageNumber : pageNumbers) {
+            tables.add(processClusterDetectionTables(contents.get(pageNumber)));
+        }
+        return tables;
+    }
+
+    /**
+     * Detects tables on a single page using cluster-based detection.
+     *
+     * @param contents the page contents to analyze
+     * @return a list of detected table borders
+     */
+    public static List<TableBorder> processClusterDetectionTables(List<IObject> contents) {
+        ClusterTableConsumer clusterTableConsumer = new ClusterTableConsumer();
+        for (IObject content : contents) {
+            if (content instanceof TextChunk) {
+                TextChunk textChunk = (TextChunk) content;
+                if (textChunk.isWhiteSpaceChunk() || textChunk.isEmpty()) {
+                    continue;
+                }
+                List<TextChunk> splitChunks = TextChunkUtils.splitTextChunkByWhiteSpaces(textChunk);
+                for (TextChunk splitChunk : splitChunks) {
+                    SemanticTextNode semanticTextNode = new SemanticTextNode(splitChunk);
+                    clusterTableConsumer.accept(new TableToken(splitChunk, semanticTextNode), semanticTextNode);
+                }
+//            } else if (content instanceof ImageChunk) {
+//                SemanticFigure semanticFigure = new SemanticFigure((ImageChunk) content);
+//                clusterTableConsumer.accept(new TableToken((ImageChunk) content, semanticFigure), semanticFigure);
+            }
+        }
+        clusterTableConsumer.processEnd();
+        List<TableBorder> result = new ArrayList<>();
+        for (Table table : clusterTableConsumer.getTables()) {
+            TableBorder tableBorder = table.createTableBorderFromTable();
+            if (tableBorder != null) {
+                setTableCellsSemanticTypes(tableBorder);
+                result.add(tableBorder);
+            }
+        }
+        return result;
+    }
+
+    private static void setTableCellsSemanticTypes(TableBorder table) {
+        for (int rowNumber = 0; rowNumber < table.getNumberOfRows(); rowNumber++) {
+            for (int colNumber = 0; colNumber < table.getNumberOfColumns(); colNumber++) {
+                TableBorderCell cell = table.getCell(rowNumber, colNumber);
+                if (cell.getColNumber() == colNumber && cell.getRowNumber() == rowNumber) {
+                    cell.setSemanticType(rowNumber == 0 ? SemanticType.TABLE_HEADER : SemanticType.TABLE_CELL);
+                }
+            }
+        }
+    }
+
+//    public static void findListAndTablesImageMethod(List<SemanticTextNode> nodes) {
+//        ClusterTableConsumer clusterTableConsumer = new ClusterTableConsumer();
+//        for (SemanticTextNode textNode : nodes) {
+//            ImageChunk imageChunk = new ImageChunk(textNode.getBoundingBox());
+//            SemanticFigure figure = new SemanticFigure(imageChunk);
+//            clusterTableConsumer.accept(new TableToken(imageChunk, figure), figure);
+////            if (chunk instanceof TextChunk) {
+////                SemanticTextNode semanticTextNode = new SemanticTextNode((TextChunk)chunk);
+////                clusterTableConsumer.accept(new TableToken((TextChunk)chunk, semanticTextNode), semanticTextNode);
+////            } else if (chunk instanceof ImageChunk) {
+////                SemanticFigure semanticFigure = new SemanticFigure((ImageChunk) chunk);
+////                clusterTableConsumer.accept(new TableToken((ImageChunk)chunk, semanticFigure), semanticFigure);
+////            }
+//
+//        }
+//        //        if (recognitionArea.isValid()) {
+////            List<INode> restNodes = new ArrayList<>(recognize());
+////            init();
+////            restNodes.add(root);
+////            for (INode restNode : restNodes) {
+////                accept(restNode);
+////            }
+////        }
+//        clusterTableConsumer.processEnd();
+//        System.out.println("test");
+//    }
+}

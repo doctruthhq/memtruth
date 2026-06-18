@@ -7522,3 +7522,45 @@
   final real MNN model run or full 200-document OpenDataLoader Bench promotion.
   Python remains at the external OpenDataLoader Bench adapter/evaluator edge
   for now; it is not part of the production Rust/MNN runtime proof.
+
+## 2026-06-18 Rust-Owned OpenDataLoader Prediction Artifacts MVP
+
+- Added RED assertions to
+  `benchmark_corpus_exports_opendataloader_prediction_artifacts` requiring the
+  Rust prediction writer to emit `runtime_contract`, `runtime_profile`,
+  parsed/failed counts, production residency evidence, per-document runtime
+  profile, model routing, model runtime, and `errors.json`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract benchmark_corpus_exports_opendataloader_prediction_artifacts`.
+- RED result: expected failure on missing `summary.runtime_contract`; existing
+  Rust writer only emitted engine name/version/document count.
+- Implemented richer Rust `write_opendataloader_prediction_if_requested(...)`:
+  it writes markdown artifacts, `summary.json`, and `errors.json`; the summary
+  is derived from Rust case reports and includes TrustDocument/runtime profile,
+  parsed/failed counts, `production_residency.python_torch_docling=false`,
+  per-document elapsed time, markdown path, runtime profile, model runtime, and
+  model routing.
+- Added `scripts/smoke-doctruth-rust-opendataloader-prediction.sh`.
+  The smoke uses:
+  - a real vendored OpenDataLoader Bench PDF as source
+  - Rust `benchmark_corpus`
+  - READY MNN manifest/cache
+  - Rust Cargo example `mnn_promotion_smoke_worker`
+  - `opendataloader_prediction_dir`
+  It does not call `scripts/doctruth_opendataloader_prediction.py`.
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract benchmark_corpus_exports_opendataloader_prediction_artifacts`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `28 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: OpenDataLoader's own evaluator is still Python, and the old
+  DocTruth Python prediction adapter still exists for compatibility. The new
+  Rust path now covers DocTruth-owned prediction artifact generation, but not
+  full evaluator replacement or real MNN full-corpus promotion.

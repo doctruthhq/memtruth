@@ -345,6 +345,25 @@ fn benchmark_corpus_exports_opendataloader_prediction_artifacts() {
             .unwrap();
     assert_eq!(summary["engine_name"], "doctruth");
     assert_eq!(summary["document_count"], 1);
+    assert_eq!(summary["runtime_contract"], "TrustDocument");
+    assert_eq!(summary["runtime_profile"], "edge-model");
+    assert_eq!(summary["parsed_count"], 1);
+    assert_eq!(summary["failed_count"], 0);
+    assert_eq!(
+        summary["production_residency"]["python_torch_docling"],
+        false
+    );
+    assert_eq!(summary["documents"][0]["document_id"], "rust-seed-v1-0001");
+    assert_eq!(summary["documents"][0]["status"], "parsed");
+    assert_eq!(summary["documents"][0]["runtimeProfile"], "edge-model");
+    assert_eq!(
+        summary["documents"][0]["modelRouting"]["route"],
+        "deterministic-only"
+    );
+    assert!(summary["documents"][0]["modelRuntime"].is_null());
+    let errors: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
+    assert_eq!(errors["documents"], json!([]));
     assert_eq!(
         report["externalArtifacts"]["opendataloaderPrediction"]["engine"],
         "doctruth"

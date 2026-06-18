@@ -2248,32 +2248,50 @@ fn write_opendataloader_prediction_if_requested(
     fs::create_dir_all(&markdown_dir).map_err(|error| {
         error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
     })?;
+    let mut documents = Vec::new();
     for case in case_reports {
         let id = case
             .get("labelId")
             .and_then(Value::as_str)
             .or_else(|| case.get("name").and_then(Value::as_str))
             .unwrap_or("document");
+        let document_id = safe_document_id(id);
+        let markdown_path = markdown_dir.join(format!("{document_id}.md"));
         let markdown = case
             .get("_actualMarkdown")
             .and_then(Value::as_str)
             .unwrap_or("");
-        fs::write(
-            markdown_dir.join(format!("{}.md", safe_document_id(id))),
-            markdown,
-        )
-        .map_err(|error| {
+        fs::write(&markdown_path, markdown).map_err(|error| {
             error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
         })?;
+        documents.push(opendataloader_prediction_document_summary(
+            case,
+            &document_id,
+            &markdown_path,
+        ));
     }
+    let parsed_count = documents.len();
     let summary = json!({
         "engine_name": "doctruth",
         "engine_version": env!("CARGO_PKG_VERSION"),
-        "document_count": case_reports.len()
+        "runtime_contract": "TrustDocument",
+        "runtime_profile": prediction_runtime_profile(case_reports),
+        "document_count": case_reports.len(),
+        "parsed_count": parsed_count,
+        "failed_count": 0,
+        "production_residency": {
+            "python_torch_docling": false
+        },
+        "documents": documents
     });
     fs::write(root.join("summary.json"), pretty_json(&summary)?).map_err(|error| {
         error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
     })?;
+    fs::write(
+        root.join("errors.json"),
+        pretty_json(&json!({"documents": []}))?,
+    )
+    .map_err(|error| error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string())?;
     Ok(json!({
         "opendataloaderPrediction": {
             "engine": "doctruth",
@@ -2282,6 +2300,30 @@ fn write_opendataloader_prediction_if_requested(
             "documentCount": case_reports.len()
         }
     }))
+}
+
+fn prediction_runtime_profile(case_reports: &[Value]) -> Value {
+    case_reports
+        .iter()
+        .find_map(|case| case.get("runtimeProfile").and_then(Value::as_str))
+        .map_or(Value::Null, |profile| json!(profile))
+}
+
+fn opendataloader_prediction_document_summary(
+    case: &Value,
+    document_id: &str,
+    markdown_path: &Path,
+) -> Value {
+    json!({
+        "document_id": document_id,
+        "status": "parsed",
+        "elapsed": case.get("elapsedMs").cloned().unwrap_or(Value::Null),
+        "markdown_path": markdown_path.to_string_lossy(),
+        "error": Value::Null,
+        "runtimeProfile": case.get("runtimeProfile").cloned().unwrap_or(Value::Null),
+        "modelRuntime": case.pointer("/actualTrustDocument/parserRun/modelRuntime").cloned().unwrap_or(Value::Null),
+        "modelRouting": case.pointer("/actualTrustDocument/parserRun/modelRouting").cloned().unwrap_or(Value::Null)
+    })
 }
 
 fn public_case_reports(case_reports: &[Value]) -> Vec<Value> {

@@ -1741,3 +1741,18 @@
 - The bench adapter summary now records enough evidence to audit a smoke run:
   requested runtime profile, model manifest/cache summaries, model command,
   production residency marker, and per-document runtime/model routing metrics.
+
+## 2026-06-18 Rust Prediction Writer Finding
+
+- DocTruth-owned OpenDataLoader prediction generation can now happen inside the
+  Rust `benchmark_corpus` command. It writes markdown, `summary.json`, and
+  `errors.json` directly from Rust case reports.
+- This closes a real Python boundary inside DocTruth's own artifact generation:
+  the smoke `scripts/smoke-doctruth-rust-opendataloader-prediction.sh` does not
+  call `scripts/doctruth_opendataloader_prediction.py`.
+- The remaining Python boundary is different: OpenDataLoader Bench's upstream
+  evaluator and the compatibility Python adapter still exist. They are external
+  benchmark/evaluator plumbing, not production parser runtime evidence.
+- The richer Rust summary is useful for MNN promotion because it records
+  per-document `runtimeProfile`, `modelRouting`, and `modelRuntime` alongside
+  `production_residency.python_torch_docling=false`.

@@ -2517,26 +2517,19 @@ fn evaluate_opendataloader_table(gt: &str, pred: &str) -> (Option<f64>, Option<f
 }
 
 fn evaluate_opendataloader_heading(gt: &str, pred: &str) -> (Option<f64>, Option<f64>) {
-    let gt_structure = markdown_heading_structure(gt);
-    if gt_structure.is_empty() {
+    let gt_tree = markdown_heading_tree(gt);
+    if !heading_tree_has_heading(&gt_tree) {
         return (None, None);
     }
-    let pred_structure = markdown_heading_structure(pred);
-    if pred_structure.is_empty() {
+    let pred_tree = markdown_heading_tree(pred);
+    if !heading_tree_has_heading(&pred_tree) {
         return (Some(0.0), Some(0.0));
     }
-    let with_text = markdown_similarity(&gt_structure.join("\n"), &pred_structure.join("\n"));
-    let gt_tags = gt_structure
-        .iter()
-        .map(|line| line.split_once(':').map_or(line.as_str(), |(tag, _)| tag))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let pred_tags = pred_structure
-        .iter()
-        .map(|line| line.split_once(':').map_or(line.as_str(), |(tag, _)| tag))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let structure_only = markdown_similarity(&gt_tags, &pred_tags);
+    let max_nodes = heading_tree_size(&gt_tree)
+        .max(heading_tree_size(&pred_tree))
+        .max(1);
+    let with_text = heading_tree_similarity(&gt_tree, &pred_tree, true, max_nodes);
+    let structure_only = heading_tree_similarity(&gt_tree, &pred_tree, false, max_nodes);
     (Some(with_text), Some(structure_only))
 }
 
@@ -2696,14 +2689,42 @@ fn normalize_table_markup(markup: &str) -> String {
     normalized.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn markdown_heading_structure(markdown: &str) -> Vec<String> {
-    markdown
-        .lines()
-        .filter_map(markdown_heading_entry)
-        .collect()
+#[derive(Clone)]
+struct HeadingEvalNode {
+    tag: &'static str,
+    text: String,
+    children: Vec<HeadingEvalNode>,
 }
 
-fn markdown_heading_entry(line: &str) -> Option<String> {
+fn markdown_heading_tree(markdown: &str) -> HeadingEvalNode {
+    let mut root = HeadingEvalNode {
+        tag: "document",
+        text: String::new(),
+        children: Vec::new(),
+    };
+    let mut current_heading: Option<usize> = None;
+    let mut pending_content = Vec::new();
+    for line in markdown.lines() {
+        if let Some(heading) = markdown_heading_text(line) {
+            flush_heading_content(&mut root, current_heading, &mut pending_content);
+            root.children.push(HeadingEvalNode {
+                tag: "heading",
+                text: heading,
+                children: Vec::new(),
+            });
+            current_heading = root.children.len().checked_sub(1);
+            continue;
+        }
+        let normalized = normalize_markdown_for_evaluator(line);
+        if !normalized.is_empty() {
+            pending_content.push(normalized);
+        }
+    }
+    flush_heading_content(&mut root, current_heading, &mut pending_content);
+    root
+}
+
+fn markdown_heading_text(line: &str) -> Option<String> {
     let trimmed = line.trim_start();
     let level = trimmed.chars().take_while(|char| *char == '#').count();
     if !(1..=6).contains(&level) {
@@ -2713,11 +2734,101 @@ fn markdown_heading_entry(line: &str) -> Option<String> {
     if text.is_empty() {
         None
     } else {
-        Some(format!(
-            "heading:{}",
-            normalize_markdown_for_evaluator(text)
-        ))
+        Some(normalize_markdown_for_evaluator(text))
     }
+}
+
+fn flush_heading_content(
+    root: &mut HeadingEvalNode,
+    current_heading: Option<usize>,
+    pending_content: &mut Vec<String>,
+) {
+    let text = normalize_markdown_for_evaluator(&pending_content.join(" "));
+    pending_content.clear();
+    if text.is_empty() {
+        return;
+    }
+    let content = HeadingEvalNode {
+        tag: "content",
+        text,
+        children: Vec::new(),
+    };
+    if let Some(index) = current_heading {
+        root.children[index].children.push(content);
+    } else {
+        root.children.push(content);
+    }
+}
+
+fn heading_tree_has_heading(node: &HeadingEvalNode) -> bool {
+    node.tag == "heading" || node.children.iter().any(heading_tree_has_heading)
+}
+
+fn heading_tree_size(node: &HeadingEvalNode) -> usize {
+    1 + node.children.iter().map(heading_tree_size).sum::<usize>()
+}
+
+fn heading_tree_similarity(
+    gt: &HeadingEvalNode,
+    pred: &HeadingEvalNode,
+    include_text: bool,
+    max_nodes: usize,
+) -> f64 {
+    let distance = heading_tree_distance(gt, pred, include_text);
+    round_metric((1.0 - distance / max_nodes as f64).clamp(0.0, 1.0))
+}
+
+fn heading_tree_distance(
+    left: &HeadingEvalNode,
+    right: &HeadingEvalNode,
+    include_text: bool,
+) -> f64 {
+    heading_rename_cost(left, right, include_text)
+        + heading_children_distance(&left.children, &right.children, include_text)
+}
+
+fn heading_children_distance(
+    left: &[HeadingEvalNode],
+    right: &[HeadingEvalNode],
+    include_text: bool,
+) -> f64 {
+    let mut dp = vec![vec![0.0; right.len() + 1]; left.len() + 1];
+    for index in 0..left.len() {
+        dp[index + 1][0] = dp[index][0] + heading_tree_size(&left[index]) as f64;
+    }
+    for index in 0..right.len() {
+        dp[0][index + 1] = dp[0][index] + heading_tree_size(&right[index]) as f64;
+    }
+    for left_index in 0..left.len() {
+        for right_index in 0..right.len() {
+            let delete =
+                dp[left_index][right_index + 1] + heading_tree_size(&left[left_index]) as f64;
+            let insert =
+                dp[left_index + 1][right_index] + heading_tree_size(&right[right_index]) as f64;
+            let rename = dp[left_index][right_index]
+                + heading_tree_distance(&left[left_index], &right[right_index], include_text);
+            dp[left_index + 1][right_index + 1] = delete.min(insert).min(rename);
+        }
+    }
+    dp[left.len()][right.len()]
+}
+
+fn heading_rename_cost(left: &HeadingEvalNode, right: &HeadingEvalNode, include_text: bool) -> f64 {
+    if left.tag != right.tag {
+        return 1.0;
+    }
+    if !include_text {
+        return 0.0;
+    }
+    normalized_string_distance(&left.text, &right.text)
+}
+
+fn normalized_string_distance(left: &str, right: &str) -> f64 {
+    if left.is_empty() && right.is_empty() {
+        return 0.0;
+    }
+    let max_len = left.chars().count().max(right.chars().count()).max(1);
+    levenshtein(left, right) as f64 / max_len as f64
 }
 
 fn write_pretty_json(path: &Path, value: &Value, code: &str) -> Result<(), String> {

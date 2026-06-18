@@ -7732,3 +7732,37 @@
 - Remaining gap: table and heading metrics still do not implement full APTED
   tree-edit parity or full HTML/Markdown conversion parity. This slice closes
   specific upstream normalization gaps, not the whole evaluator replacement.
+
+## 2026-06-18 Rust Evaluator MHS Tree Content Parity Slice
+
+- Added RED test
+  `opendataloader_evaluator_mhs_scores_content_separately_from_structure`.
+- RED command:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_mhs_scores_content_separately_from_structure`.
+- RED result: Rust evaluator returned `mhs=1.0` and `mhs_s=1.0` even though
+  one content paragraph differed. This proved the MVP compared heading labels
+  only and ignored content nodes.
+- Implemented a Rust heading evaluator tree:
+  - `document` root
+  - flat `heading` nodes with normalized heading text
+  - `content` child nodes flushed under the current heading
+  - ordered child sequence edit distance
+  - insert/delete cost = subtree size
+  - rename cost = tag mismatch or normalized text distance when MHS includes
+    text
+  - MHS-S uses the same tree but ignores node text
+- GREEN verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_mhs_scores_content_separately_from_structure`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract opendataloader_evaluator_matches_upstream_heading_and_table_normalization`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `34 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `sh scripts/smoke-doctruth-rust-opendataloader-prediction.sh`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `git diff --check`.
+- Remaining gap: this is an ordered-tree edit approximation shaped to the
+  upstream MHS tree contract. It still needs explicit upstream fixture parity
+  before replacing Python APTED as the authoritative full-corpus evaluator.

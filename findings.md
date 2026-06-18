@@ -1823,3 +1823,15 @@
 - Replacing Levenshtein/max-length similarity with LCS/Indel-style similarity
   moves Rust reading-order scoring closer to `rapidfuzz.fuzz.ratio`, but it
   still needs explicit upstream fixture parity before becoming authoritative.
+
+## 2026-06-18 Rust Evaluator MHS Tree Finding
+
+- MHS and MHS-S must diverge when only content text changes. Upstream MHS
+  includes content-node text in rename cost; MHS-S keeps the same structure but
+  ignores text. A heading-label-only evaluator silently misses this difference.
+- A small ordered tree-edit evaluator is enough to close this behavior for the
+  current flat heading/content tree shape: document root, heading nodes, and
+  content children under the nearest heading.
+- This is closer to upstream APTED semantics, but it is not yet a proof of full
+  APTED parity across arbitrary trees. Keep the upstream evaluator as the
+  authoritative oracle until Rust fixture parity covers the tricky cases.

@@ -688,6 +688,48 @@ fn opendataloader_evaluator_matches_upstream_heading_and_table_normalization() {
 }
 
 #[test]
+fn opendataloader_evaluator_mhs_scores_content_separately_from_structure() {
+    let root = temp_dir("doctruth-runtime-opendataloader-evaluator-mhs-content");
+    let gt = root.join("ground-truth/markdown");
+    let prediction = root.join("prediction/doctruth-rust-eval");
+    let markdown = prediction.join("markdown");
+    fs::create_dir_all(&gt).unwrap();
+    fs::create_dir_all(&markdown).unwrap();
+    fs::write(
+        gt.join("doc.md"),
+        "# Profile\n\nAlpha paragraph.\n\n# Skills\n\nRust and OCR.\n",
+    )
+    .unwrap();
+    fs::write(
+        markdown.join("doc.md"),
+        "# Profile\n\nChanged paragraph.\n\n# Skills\n\nRust and OCR.\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_evaluate_prediction",
+                "ground_truth_dir": gt,
+                "prediction_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    let mhs = report["metrics"]["score"]["mhs_mean"].as_f64().unwrap();
+    assert!(mhs < 1.0, "{report}");
+    assert!(mhs > 0.5, "{report}");
+    assert_eq!(report["metrics"]["score"]["mhs_s_mean"], 1.0);
+}
+
+#[test]
 fn verify_benchmark_report_rejects_tampered_coverage_thresholds() {
     let root = temp_dir("doctruth-runtime-report-verify-tampered");
     fs::create_dir_all(&root).unwrap();

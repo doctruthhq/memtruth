@@ -27,6 +27,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Run only the first N PDFs")
     parser.add_argument("--preset", default="lite", help="DocTruth parser preset")
     parser.add_argument(
+        "--runtime-profile",
+        default=os.environ.get("DOCTRUTH_RUNTIME_PROFILE", "edge-model"),
+        choices=("edge-fast", "edge-model"),
+        help="DocTruth runtime profile to send to parse_pdf.",
+    )
+    parser.add_argument(
         "--runtime-bin",
         default=os.environ.get("DOCTRUTH_RUNTIME_BIN"),
         help="Path to doctruth-runtime binary",
@@ -941,13 +947,20 @@ def markdown_from_document(document: dict[str, Any]) -> str:
 
 
 def run_runtime(
-    runtime_bin: Path, pdf_path: Path, preset: str, timeout_seconds: float
+    runtime_bin: Path,
+    pdf_path: Path,
+    preset: str,
+    runtime_profile: str,
+    timeout_seconds: float,
 ) -> dict[str, Any]:
     request = {
         "command": "parse_pdf",
         "source_path": str(pdf_path),
         "source_hash": sha256_file(pdf_path),
         "preset": preset,
+        "profile": runtime_profile,
+        "runtime_profile": runtime_profile,
+        "runtimeProfile": runtime_profile,
     }
     completed = subprocess.run(
         [str(runtime_bin)],
@@ -994,6 +1007,51 @@ def runtime_version(runtime_bin: Path) -> str:
         return "unknown"
 
 
+def optional_env_path(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value:
+        return str(Path(value).resolve())
+    return None
+
+
+def model_manifest_summary() -> dict[str, Any] | None:
+    value = os.environ.get("DOCTRUTH_MODEL_MANIFEST")
+    if not value:
+        return None
+    path = Path(value).resolve()
+    summary: dict[str, Any] = {"path": str(path)}
+    if path.is_file():
+        summary["sha256"] = sha256_file(path)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            summary["hasPromotionGate"] = isinstance(
+                payload.get("promotionGates", {}).get("mnn"), dict
+            )
+        except json.JSONDecodeError:
+            summary["hasPromotionGate"] = False
+    else:
+        summary["missing"] = True
+    return summary
+
+
+def model_cache_summary() -> dict[str, Any] | None:
+    value = os.environ.get("DOCTRUTH_MODEL_CACHE")
+    if not value:
+        return None
+    path = Path(value).resolve()
+    summary: dict[str, Any] = {"path": str(path), "exists": path.exists()}
+    if path.is_dir():
+        summary["artifactCount"] = sum(1 for child in path.iterdir() if child.is_file())
+    return summary
+
+
+def parser_run_field(document: dict[str, Any], field: str) -> Any:
+    parser_run = document.get("parserRun")
+    if isinstance(parser_run, dict):
+        return parser_run.get(field)
+    return None
+
+
 def write_predictions(args: argparse.Namespace) -> Path:
     bench_dir = Path(args.bench_dir).resolve()
     if args.reference_engine:
@@ -1017,15 +1075,27 @@ def write_predictions(args: argparse.Namespace) -> Path:
         doc_id = pdf_path.stem
         markdown_path = markdown_dir / f"{doc_id}.md"
         try:
-            document = run_runtime(runtime_bin, pdf_path, args.preset, args.timeout_seconds)
+            document = run_runtime(
+                runtime_bin,
+                pdf_path,
+                args.preset,
+                args.runtime_profile,
+                args.timeout_seconds,
+            )
             markdown_path.write_text(markdown_from_document(document), encoding="utf-8")
             status = "parsed"
             error = None
+            runtime_profile = parser_run_field(document, "profile") or args.runtime_profile
+            model_runtime = parser_run_field(document, "modelRuntime")
+            model_routing = parser_run_field(document, "modelRouting")
         except Exception as exc:  # pragma: no cover - exercised by real corpora.
             markdown_path.write_text("", encoding="utf-8")
             status = "failed"
             error = str(exc)
             errors.append({"document_id": doc_id, "error": error})
+            runtime_profile = args.runtime_profile
+            model_runtime = None
+            model_routing = None
         elapsed = time.time() - doc_start
         per_document.append(
             {
@@ -1034,6 +1104,9 @@ def write_predictions(args: argparse.Namespace) -> Path:
                 "elapsed": elapsed,
                 "markdown_path": str(markdown_path),
                 "error": error,
+                "runtimeProfile": runtime_profile,
+                "modelRuntime": model_runtime,
+                "modelRouting": model_routing,
             }
         )
 
@@ -1044,6 +1117,7 @@ def write_predictions(args: argparse.Namespace) -> Path:
         "engine_name": args.engine,
         "engine_version": runtime_version(runtime_bin),
         "runtime_contract": "TrustDocument",
+        "runtime_profile": args.runtime_profile,
         "processor": platform.processor() or platform.machine(),
         "document_count": len(per_document),
         "parsed_count": parsed_count,
@@ -1054,6 +1128,14 @@ def write_predictions(args: argparse.Namespace) -> Path:
         "preset": args.preset,
         "timeout_seconds": args.timeout_seconds,
         "runtime_bin": str(runtime_bin),
+        "model_manifest": model_manifest_summary(),
+        "model_cache": model_cache_summary(),
+        "model_command": optional_env_path("DOCTRUTH_RUNTIME_MODEL_COMMAND")
+        or optional_env_path("DOCTRUTH_MODEL_COMMAND"),
+        "mnn_promotion_candidate": args.runtime_profile == "edge-model"
+        and model_manifest_summary() is not None
+        and model_cache_summary() is not None,
+        "production_residency": {"python_torch_docling": False},
         "documents": per_document,
     }
     output_root.joinpath("summary.json").write_text(

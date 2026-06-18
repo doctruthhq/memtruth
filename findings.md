@@ -1707,3 +1707,37 @@
   problem is quality (`nid`/`teds`/`mhs`/overall), missing model runtime
   metrics, Python/Torch/Docling residency, lazy-load policy, or resource delta
   against the heavy oracle.
+
+## 2026-06-18 Python Boundary Finding
+
+- The Rustification target is the production parser/runtime/model path, not the
+  external benchmark ecosystem itself. OpenDataLoader Bench currently brings a
+  Python evaluator/adapter boundary; that boundary may remain as an oracle lane
+  until it is explicitly replaced, but it must not be used as evidence that the
+  production parser runtime is Rust/MNN.
+- New MNN runtime proof should not use a Python fake worker. The corrected
+  smoke uses a Rust Cargo example binary as the worker and validates the real
+  runtime request shape before emitting model metrics.
+- The current `scripts/doctruth_opendataloader_prediction.py` is still a
+  DocTruth-owned Python adapter for OpenDataLoader Bench prediction generation.
+  It is acceptable as benchmark harness plumbing for this slice, but it remains
+  a rustification gap if the final requirement is "DocTruth-owned benchmark
+  runner has no Python."
+
+## 2026-06-18 MNN Promotion Bench Lane Finding
+
+- A useful MNN promotion lane must be fail-closed before it runs: if
+  `DOCTRUTH_MODEL_MANIFEST` or `DOCTRUTH_MODEL_CACHE` is missing, the lane
+  should fail with a clear configuration error instead of silently running a
+  deterministic or Python/Torch path.
+- Runtime cache readiness is based on the cache filename convention
+  `<name>-<version>.bin`. A manifest `source` field does not override that
+  readiness check. The smoke therefore writes `slanet-plus-v1.bin` into the
+  model cache before expecting worker startup.
+- `preset=auto` is the right smoke preset for page-level routing evidence. It
+  proves the runtime made a routing decision and started MNN only for the
+  detected table-heavy page. Explicit model presets still need separate product
+  decisions before they should force startup.
+- The bench adapter summary now records enough evidence to audit a smoke run:
+  requested runtime profile, model manifest/cache summaries, model command,
+  production residency marker, and per-document runtime/model routing metrics.

@@ -7478,3 +7478,47 @@
 - Remaining gap: this is still benchmark/report gating with fake MNN metrics.
   The final Phase 6 gate still needs a real MNN OpenDataLoader Bench run and
   measured profile report.
+
+## 2026-06-18 MNN Promotion OpenDataLoader Bench Lane Smoke
+
+- Added RED smoke `scripts/smoke-doctruth-mnn-promotion-bench.sh`.
+- RED failure:
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh` failed because
+  `scripts/run-doctruth-mnn-promotion-bench.sh` did not exist.
+- Added `scripts/run-doctruth-mnn-promotion-bench.sh`, a fail-closed
+  OpenDataLoader Bench lane that requires `DOCTRUTH_MODEL_MANIFEST` and
+  `DOCTRUTH_MODEL_CACHE`, builds `doctruth-runtime`, and runs the bench adapter
+  with `--runtime-profile edge-model`.
+- Extended `scripts/doctruth_opendataloader_prediction.py` to send
+  `profile`/`runtime_profile`/`runtimeProfile` in every `parse_pdf` request and
+  record `runtime_profile`, model manifest/cache summaries, model command,
+  production residency marker, per-document `runtimeProfile`, `modelRuntime`,
+  and `modelRouting` in `summary.json`.
+- Initially wrote the smoke with a Python fake MNN worker, then corrected it:
+  the committed smoke uses the Rust Cargo example
+  `runtime/doctruth-runtime/examples/mnn_promotion_smoke_worker.rs`.
+- The Rust smoke worker validates the runtime request carries
+  `modelRuntime.runtime=mnn`, lazy load/unload policy, `edge-model` profile,
+  and READY MNN artifact metadata, then returns `{ok:true, document, metrics}`.
+- Debug finding during this slice: runtime verifies cache artifacts by
+  `DOCTRUTH_MODEL_CACHE/<name>-<version>.bin`; manifest `source` alone does not
+  make an artifact READY.
+- Debug finding during this slice: `preset=auto` is required to prove
+  page-level table routing. Explicit `table-lite` currently records
+  deterministic-only routing unless another model path selects it.
+- GREEN smoke:
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`.
+- Verification passed:
+  `python3 -m py_compile scripts/doctruth_opendataloader_prediction.py`;
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test protocol_contract`
+  -> `56 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  -> `10 passed`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  -> `28 passed`;
+  `git diff --check`.
+- Remaining gap: this is still a bench-lane and Rust-worker smoke, not the
+  final real MNN model run or full 200-document OpenDataLoader Bench promotion.
+  Python remains at the external OpenDataLoader Bench adapter/evaluator edge
+  for now; it is not part of the production Rust/MNN runtime proof.

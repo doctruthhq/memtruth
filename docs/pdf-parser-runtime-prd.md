@@ -2254,7 +2254,12 @@ vendored `third_party/opendataloader-bench/pdfs/` corpus, writes
 by default to produce `evaluation.json`. The official upstream OpenDataLoader
 Python evaluator remains available only through explicit `--evaluator official`
 or oracle/baseline scripts; it is not the default DocTruth prediction/evaluation
-path. The first full local baseline on 200 vendored PDFs parsed 199
+path. `scripts/smoke-doctruth-opendataloader-evaluator-parity.sh` provides a
+skip-safe fixture-level parity smoke between the Rust evaluator and the official
+upstream evaluator for exact text, heading-level normalization, and table
+wrapper/header normalization. This is not yet a full-corpus proof that the Rust
+evaluator can replace the official oracle for all APTED/lxml/rapidfuzz edge
+cases. The first full local baseline on 200 vendored PDFs parsed 199
 documents and failed one scanned/no-text-layer document. It reported
 `overall_mean=0.509092484964239`, `nid_mean=0.7591850124827885`,
 `teds_mean=0.0`, and `mhs_mean=0.0025571766718785185`, with

@@ -1887,3 +1887,17 @@
   `timeout_seconds`, prediction still calls `parse_pdf_json` in-process. With
   `timeout_seconds`, the child-process boundary is slower but protects
   full-corpus runs from pathological documents or stuck model workers.
+
+## 2026-06-18 Evaluator Parity Smoke Finding
+
+- Rust `opendataloader_evaluate_prediction` now has a repeatable parity smoke
+  against the official upstream evaluator for a small controlled fixture set.
+  This is valuable because it catches evaluator drift at the metric boundary,
+  not only through Rust-internal expectations.
+- The smoke intentionally lives outside the default runner because the upstream
+  evaluator is Python/APTED/lxml/rapidfuzz-based and remains an oracle, not the
+  default DocTruth evaluation path.
+- Current parity evidence covers exact text, heading-level normalization, and
+  table wrapper/header normalization. It does not yet prove full-corpus parity
+  for malformed HTML, nested table-cell inline markup, multiple tables,
+  escaped/multiline Markdown tables, or all APTED edge cases.

@@ -7903,3 +7903,24 @@
   correctly triggered `PARSE_TIMEOUT` in debug builds because timeout mode uses
   child-process isolation. The smoke was kept on the default fast in-process
   path; timeout behavior is covered by the dedicated slow-worker Rust test.
+
+## 2026-06-18 Rust/OpenDataLoader Evaluator Parity Smoke Slice
+
+- Added `scripts/smoke-doctruth-opendataloader-evaluator-parity.sh`.
+- The smoke builds a temporary OpenDataLoader Bench-shaped fixture tree with:
+  - exact Markdown parity
+  - heading-level normalization (`#` vs `###`)
+  - table wrapper/header normalization (`thead`/`tbody`/`th` vs plain `td`)
+- It runs the official upstream evaluator from the vendored bench checkout,
+  preferring `third_party/opendataloader-bench/.venv/bin/python` and falling
+  back to `uv run --project ...` when direct dependencies are unavailable.
+- It runs Rust `opendataloader_evaluate_prediction` on the same fixtures and
+  compares aggregate plus per-document `overall`, `nid`, `nid_s`, `teds`,
+  `teds_s`, `mhs`, and `mhs_s` metrics within a fixed tolerance.
+- GREEN verification passed:
+  `sh scripts/smoke-doctruth-opendataloader-evaluator-parity.sh`.
+- Remaining gap: this is a small fixture-level parity smoke, not a full
+  full-corpus replacement for the upstream evaluator. Complex APTED/lxml cases,
+  malformed HTML, escaped/multiline Markdown tables, multiple-table documents,
+  and broad OpenDataLoader Bench metric parity still need larger comparison
+  coverage.

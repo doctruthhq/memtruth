@@ -79,11 +79,6 @@ case "$launcher_output" in
         ;;
 esac
 
-if [ ! -x "$work/doctruth-${version}/bin/doctruth-rapidocr-mnn-worker" ]; then
-    echo "release tarball did not include executable RapidOCR worker adapter" >&2
-    exit 1
-fi
-
 if [ ! -x "$work/doctruth-${version}/bin/doctruth-runtime" ]; then
     echo "release tarball did not include executable Rust runtime" >&2
     exit 1
@@ -97,110 +92,19 @@ assert payload["runtime"] == "doctruth-runtime"
 assert payload["capabilities"]["parse_pdf"] is True
 '
 
-if [ ! -x "$work/doctruth-${version}/bin/doctruth-onnx-model-worker" ]; then
-    echo "release tarball did not include executable ONNX model worker adapter" >&2
+if [ ! -x "$work/doctruth-${version}/bin/doctruth-mnn-model-worker" ]; then
+    echo "release tarball did not include executable Rust MNN model worker" >&2
     exit 1
 fi
 
-if [ ! -x "$work/doctruth-${version}/bin/doctruth-slanext-table-worker" ]; then
-    echo "release tarball did not include executable SLANeXT table worker adapter" >&2
-    exit 1
-fi
-
-if [ ! -f "$work/doctruth-${version}/bin/doctruth_onnx_worker_lib.py" ]; then
-    echo "release tarball did not include ONNX model worker support module" >&2
-    exit 1
-fi
-
-if [ ! -x "$work/doctruth-${version}/bin/smoke-doctruth-real-model-suite.sh" ]; then
-    echo "release tarball did not include executable real model suite smoke" >&2
-    exit 1
-fi
-
-"$work/doctruth-${version}/bin/smoke-doctruth-real-model-suite.sh" \
-  | grep -q "skipping real model suite smoke"
-
-if [ ! -x "$work/doctruth-${version}/bin/smoke-doctruth-runtime-real-model-artifacts.sh" ]; then
-    echo "release tarball did not include executable Rust runtime real model artifact smoke" >&2
-    exit 1
-fi
-
-"$work/doctruth-${version}/bin/smoke-doctruth-runtime-real-model-artifacts.sh" \
-  | grep -q "skipping Rust runtime real model artifact smoke"
-
-if [ ! -x "$work/doctruth-${version}/bin/smoke-doctruth-runtime-real-ocr-corpus.sh" ]; then
-    echo "release tarball did not include executable Rust runtime real OCR corpus smoke" >&2
-    exit 1
-fi
-
-"$work/doctruth-${version}/bin/smoke-doctruth-runtime-real-ocr-corpus.sh" \
-  | grep -q "skipping Rust runtime real OCR corpus smoke"
-
-if [ ! -x "$work/doctruth-${version}/bin/smoke-doctruth-runtime-real-slanext-artifact.sh" ]; then
-    echo "release tarball did not include executable Rust runtime real SLANeXT artifact smoke" >&2
-    exit 1
-fi
-
-"$work/doctruth-${version}/bin/smoke-doctruth-runtime-real-slanext-artifact.sh" \
-  | grep -q "skipping Rust runtime real SLANeXT smoke"
-
-if [ ! -x "$work/doctruth-${version}/bin/smoke-doctruth-runtime-ocr-worker.sh" ]; then
-    echo "release tarball did not include executable Rust runtime OCR worker smoke" >&2
-    exit 1
-fi
-
-if [ ! -x "$work/doctruth-${version}/bin/smoke-doctruth-runtime-slanext-worker.sh" ]; then
-    echo "release tarball did not include executable Rust runtime SLANeXT worker smoke" >&2
-    exit 1
-fi
-
-fake_module_dir="$work/python"
-mkdir -p "$fake_module_dir/rapidocr"
-mkdir -p "$fake_module_dir/paddleocr"
-cat > "$fake_module_dir/rapidocr/__init__.py" <<'PY'
-class RapidOCR:
-    def __init__(self):
-        self.ready = True
-PY
-cat > "$fake_module_dir/paddleocr/__init__.py" <<'PY'
-__version__ = "release-smoke"
-
-class TableStructureRecognition:
-    def __init__(self, model_name="SLANeXt_wired"):
-        self.model_name = model_name
-PY
-cat > "$fake_module_dir/MNN.py" <<'PY'
-__version__ = "release-smoke"
-PY
-
-PYTHONPATH="$fake_module_dir" DOCTRUTH_RAPIDOCR_BACKEND=mnn \
-  "$work/doctruth-${version}/bin/doctruth-rapidocr-mnn-worker" --doctor \
+"$work/doctruth-${version}/bin/doctruth-mnn-model-worker" --doctor \
   | python3 -c '
 import json, sys
 payload = json.load(sys.stdin)
 assert payload["ok"] is True
-assert payload["runtime"] == "rapidocr"
-assert payload["backend"] == "mnn"
-assert payload["backendReady"] is True
-assert payload["code"] == "ready"
-'
-
-PYTHONPATH="$fake_module_dir" \
-  "$work/doctruth-${version}/bin/doctruth-slanext-table-worker" --doctor \
-  | python3 -c '
-import json, sys
-payload = json.load(sys.stdin)
-assert payload["ok"] is True
-assert payload["runtime"] == "paddleocr-slanext"
-assert payload["code"] == "ready"
-'
-
-"$work/doctruth-${version}/bin/doctruth-onnx-model-worker" --doctor \
-  | python3 -c '
-import json, sys
-payload = json.load(sys.stdin)
-assert payload["runtime"] == "onnxruntime"
-assert payload["code"] in {"ready", "onnxruntime_unavailable"}
+assert payload["runtime"] == "mnn"
+assert payload["engine"] == "mnn"
+assert payload["productionPythonResidency"] is False
 '
 
 doctor_output="$(JAVA="$java_bin" "$work/doctruth-${version}/bin/doctruth" doctor)"

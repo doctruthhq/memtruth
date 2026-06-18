@@ -54,6 +54,23 @@ fn looks_like_noisy_full_page_table(table: &Value) -> bool {
     noisy_text && large_span
 }
 
+fn looks_like_noisy_borderless_table(table: &Value) -> bool {
+    let cells = table["cells"].as_array().cloned().unwrap_or_default();
+    if cells.len() < 8 {
+        return false;
+    }
+    let noisy = cells
+        .iter()
+        .filter(|cell| {
+            cell["text"]
+                .as_str()
+                .map(text_has_invalid_encoding_noise)
+                .unwrap_or(false)
+        })
+        .count();
+    noisy * 2 >= cells.len()
+}
+
 fn range_span(range: &Value) -> u64 {
     let start = range["start"].as_u64().unwrap_or(0);
     let end = range["end"].as_u64().unwrap_or(start);
@@ -257,6 +274,42 @@ fn parse_pdf_filters_full_page_line_table_false_positive() {
             .iter()
             .all(|table| !looks_like_noisy_full_page_table(table)),
         "{tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_filters_noisy_borderless_table_false_positive() {
+    let pdf = vendored_opendataloader_pdf("01030000000101.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request_with_hash(
+            &pdf,
+            "sha256:noisy-borderless-table",
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+    assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
+    assert!(
+        warnings.iter().any(
+            |warning| warning["code"] == "invalid_text_encoding_detected"
+                && warning["severity"] == "SEVERE"
+        ),
+        "{warnings:?}"
+    );
+
+    let markdown = json["body"]["tables"].as_array().unwrap();
+    assert!(
+        markdown
+            .iter()
+            .all(|table| !looks_like_noisy_borderless_table(table)),
+        "{markdown:?}"
     );
 }
 

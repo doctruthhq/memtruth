@@ -73,7 +73,8 @@ fn library_api_doctor_verifies_model_manifest_cache_and_sha_status() {
                         "sizeBytes": ready_bytes.len(),
                         "required": true,
                         "task": "layout-detection",
-                        "backend": "onnxruntime"
+                        "backend": "mnn",
+                        "format": "mnn"
                     },
                     {
                         "name": "tatr",
@@ -82,7 +83,8 @@ fn library_api_doctor_verifies_model_manifest_cache_and_sha_status() {
                         "sizeBytes": mismatch_bytes.len(),
                         "required": true,
                         "task": "table-structure-recognition",
-                        "backend": "onnxruntime"
+                        "backend": "mnn",
+                        "format": "mnn"
                     },
                     {
                         "name": "ocr-router",
@@ -91,7 +93,8 @@ fn library_api_doctor_verifies_model_manifest_cache_and_sha_status() {
                         "sizeBytes": 42,
                         "required": true,
                         "task": "ocr",
-                        "backend": "mnn"
+                        "backend": "mnn",
+                        "format": "mnn"
                     }
                 ]
             }

@@ -5,6 +5,7 @@ version="${VERSION:-}"
 repo="${GITHUB_REPOSITORY:-doctruthhq/DocTruth}"
 jar="${JAR:-}"
 runtime="${RUNTIME:-}"
+mnn_worker="${MNN_WORKER:-}"
 dist="${DIST_DIR:-dist}"
 
 usage() {
@@ -20,16 +21,7 @@ Creates release-ready CLI artifacts:
 The tarball contains:
   bin/doctruth
   bin/doctruth-runtime
-  bin/doctruth-rapidocr-mnn-worker
-  bin/doctruth-slanext-table-worker
-  bin/doctruth-onnx-model-worker
-  bin/doctruth_onnx_worker_lib.py
-  bin/smoke-doctruth-real-model-suite.sh
-  bin/smoke-doctruth-runtime-real-model-artifacts.sh
-  bin/smoke-doctruth-runtime-real-ocr-corpus.sh
-  bin/smoke-doctruth-runtime-real-slanext-artifact.sh
-  bin/smoke-doctruth-runtime-ocr-worker.sh
-  bin/smoke-doctruth-runtime-slanext-worker.sh
+  bin/doctruth-mnn-model-worker
   lib/doctruth-java-all.jar
 EOF
 }
@@ -109,6 +101,23 @@ if [ -z "$runtime" ] || [ ! -x "$runtime" ]; then
     exit 1
 fi
 
+if [ -z "$mnn_worker" ]; then
+    runtime_dir="$(dirname "$runtime")"
+    if [ -x "${runtime_dir}/doctruth-mnn-model-worker" ]; then
+        mnn_worker="${runtime_dir}/doctruth-mnn-model-worker"
+    elif [ -x runtime/doctruth-runtime/target/release/doctruth-mnn-model-worker ]; then
+        mnn_worker="runtime/doctruth-runtime/target/release/doctruth-mnn-model-worker"
+    elif [ -x runtime/doctruth-runtime/target/debug/doctruth-mnn-model-worker ]; then
+        mnn_worker="runtime/doctruth-runtime/target/debug/doctruth-mnn-model-worker"
+    fi
+fi
+
+if [ -z "$mnn_worker" ] || [ ! -x "$mnn_worker" ]; then
+    echo "Rust MNN worker not found: $mnn_worker" >&2
+    echo "Build it first: cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --release --bins" >&2
+    exit 1
+fi
+
 mkdir -p "$dist/homebrew"
 
 package_dir="${dist}/doctruth-${version}"
@@ -117,16 +126,7 @@ mkdir -p "$package_dir/bin" "$package_dir/lib"
 
 cp "$jar" "$package_dir/lib/doctruth-java-all.jar"
 cp "$runtime" "$package_dir/bin/doctruth-runtime"
-cp scripts/doctruth-rapidocr-mnn-worker "$package_dir/bin/doctruth-rapidocr-mnn-worker"
-cp scripts/doctruth-slanext-table-worker "$package_dir/bin/doctruth-slanext-table-worker"
-cp scripts/doctruth-onnx-model-worker "$package_dir/bin/doctruth-onnx-model-worker"
-cp scripts/doctruth_onnx_worker_lib.py "$package_dir/bin/doctruth_onnx_worker_lib.py"
-cp scripts/smoke-doctruth-real-model-suite.sh "$package_dir/bin/smoke-doctruth-real-model-suite.sh"
-cp scripts/smoke-doctruth-runtime-real-model-artifacts.sh "$package_dir/bin/smoke-doctruth-runtime-real-model-artifacts.sh"
-cp scripts/smoke-doctruth-runtime-real-ocr-corpus.sh "$package_dir/bin/smoke-doctruth-runtime-real-ocr-corpus.sh"
-cp scripts/smoke-doctruth-runtime-real-slanext-artifact.sh "$package_dir/bin/smoke-doctruth-runtime-real-slanext-artifact.sh"
-cp scripts/smoke-doctruth-runtime-ocr-worker.sh "$package_dir/bin/smoke-doctruth-runtime-ocr-worker.sh"
-cp scripts/smoke-doctruth-runtime-slanext-worker.sh "$package_dir/bin/smoke-doctruth-runtime-slanext-worker.sh"
+cp "$mnn_worker" "$package_dir/bin/doctruth-mnn-model-worker"
 cat > "$package_dir/bin/doctruth" <<'EOF'
 #!/usr/bin/env sh
 set -eu
@@ -135,19 +135,17 @@ jar="${DOCTRUTH_JAR:-${script_dir}/../lib/doctruth-java-all.jar}"
 if [ -z "${DOCTRUTH_RUNTIME_COMMAND:-}" ] && [ -x "${script_dir}/doctruth-runtime" ]; then
   export DOCTRUTH_RUNTIME_COMMAND="${script_dir}/doctruth-runtime"
 fi
+if [ -z "${DOCTRUTH_RUNTIME_MODEL_COMMAND:-}" ] && [ -x "${script_dir}/doctruth-mnn-model-worker" ]; then
+  export DOCTRUTH_RUNTIME_MODEL_COMMAND="${script_dir}/doctruth-mnn-model-worker"
+fi
+if [ -z "${DOCTRUTH_MODEL_COMMAND:-}" ] && [ -n "${DOCTRUTH_RUNTIME_MODEL_COMMAND:-}" ]; then
+  export DOCTRUTH_MODEL_COMMAND="${DOCTRUTH_RUNTIME_MODEL_COMMAND}"
+fi
 exec "${JAVA:-java}" -jar "$jar" "$@"
 EOF
 chmod +x "$package_dir/bin/doctruth" \
     "$package_dir/bin/doctruth-runtime" \
-    "$package_dir/bin/doctruth-rapidocr-mnn-worker" \
-    "$package_dir/bin/doctruth-slanext-table-worker" \
-    "$package_dir/bin/doctruth-onnx-model-worker" \
-    "$package_dir/bin/smoke-doctruth-real-model-suite.sh" \
-    "$package_dir/bin/smoke-doctruth-runtime-real-model-artifacts.sh" \
-    "$package_dir/bin/smoke-doctruth-runtime-real-ocr-corpus.sh" \
-    "$package_dir/bin/smoke-doctruth-runtime-real-slanext-artifact.sh" \
-    "$package_dir/bin/smoke-doctruth-runtime-ocr-worker.sh" \
-    "$package_dir/bin/smoke-doctruth-runtime-slanext-worker.sh"
+    "$package_dir/bin/doctruth-mnn-model-worker"
 
 tarball="${dist}/doctruth-${version}.tar.gz"
 jar_out="${dist}/doctruth-java-${version}-all.jar"
@@ -180,19 +178,12 @@ class Doctruth < Formula
   def install
     libexec.install "lib/doctruth-java-all.jar"
     bin.install "bin/doctruth-runtime"
-    bin.install "bin/doctruth-rapidocr-mnn-worker"
-    bin.install "bin/doctruth-slanext-table-worker"
-    bin.install "bin/doctruth-onnx-model-worker"
-    bin.install "bin/doctruth_onnx_worker_lib.py"
-    bin.install "bin/smoke-doctruth-real-model-suite.sh"
-    bin.install "bin/smoke-doctruth-runtime-real-model-artifacts.sh"
-    bin.install "bin/smoke-doctruth-runtime-real-ocr-corpus.sh"
-    bin.install "bin/smoke-doctruth-runtime-real-slanext-artifact.sh"
-    bin.install "bin/smoke-doctruth-runtime-ocr-worker.sh"
-    bin.install "bin/smoke-doctruth-runtime-slanext-worker.sh"
+    bin.install "bin/doctruth-mnn-model-worker"
     (bin/"doctruth").write <<~EOS
       #!/bin/sh
       export DOCTRUTH_RUNTIME_COMMAND="\${DOCTRUTH_RUNTIME_COMMAND:-#{bin}/doctruth-runtime}"
+      export DOCTRUTH_RUNTIME_MODEL_COMMAND="\${DOCTRUTH_RUNTIME_MODEL_COMMAND:-#{bin}/doctruth-mnn-model-worker}"
+      export DOCTRUTH_MODEL_COMMAND="\${DOCTRUTH_MODEL_COMMAND:-\${DOCTRUTH_RUNTIME_MODEL_COMMAND}}"
       exec "#{Formula["openjdk@25"].opt_bin}/java" -jar "#{libexec}/doctruth-java-all.jar" "\$@"
     EOS
   end

@@ -1510,10 +1510,10 @@ fn explicit_model_worker_command() -> Option<String> {
 }
 
 fn route_default_model_worker_command(route: &ModelRouteDecision) -> Option<String> {
-    if route.decision != "ocr-model" {
+    if route.decision != "model-runtime" && route.decision != "ocr-model" {
         return None;
     }
-    find_executable_on_path("doctruth-rapidocr-mnn-worker")
+    find_executable_on_path("doctruth-mnn-model-worker")
 }
 
 fn find_executable_on_path(name: &str) -> Option<String> {
@@ -4732,7 +4732,11 @@ fn markdown_from_document(document: &Value) -> String {
     let blocks = content_blocks_by_unit_id(document);
     let mut rendered_blocks = BTreeSet::new();
     if let Some(units) = document.pointer("/body/units").and_then(Value::as_array) {
-        for unit in units {
+        let (spatial_tables, spatial_consumed) = spatial_markdown_tables_from_units(units, &tables);
+        for (index, unit) in units.iter().enumerate() {
+            if spatial_consumed.contains(&index) {
+                continue;
+            }
             if page_number_noise_unit(unit) {
                 continue;
             }
@@ -4768,6 +4772,15 @@ fn markdown_from_document(document: &Value) -> String {
                 lines.push(text);
             }
         }
+        if let Some((synthetic_table, consumed_lines)) = synthetic_table_html_from_lines(&lines) {
+            lines = lines
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, line)| (!consumed_lines.contains(&index)).then_some(line))
+                .collect();
+            lines.push(synthetic_table);
+        }
+        lines.extend(spatial_tables);
     }
     lines.join("\n")
 }
@@ -4843,8 +4856,137 @@ fn markdown_entry_is_heading(unit: &Value, block: Option<&Value>, text: &str) ->
 }
 
 fn likely_markdown_heading(text: &str) -> bool {
-    let word_count = text.split_whitespace().count();
-    !text.ends_with('.') && word_count <= 10 && text.chars().any(char::is_alphabetic)
+    let text = text.trim();
+    if text.is_empty() || text.len() > 90 {
+        return false;
+    }
+    if is_numeric_value_line(text) || text.starts_with("Figure ") || text.starts_with("Table ") {
+        return false;
+    }
+    if numbered_dot_markdown_heading(text) {
+        return true;
+    }
+    let letters = text
+        .chars()
+        .filter(|ch| ch.is_alphabetic())
+        .collect::<Vec<_>>();
+    if letters.is_empty() {
+        return false;
+    }
+    let uppercase_ratio =
+        letters.iter().filter(|ch| ch.is_uppercase()).count() as f64 / letters.len() as f64;
+    if uppercase_ratio >= 0.72 && letters.len() >= 4 {
+        return true;
+    }
+    if title_case_markdown_heading(text) {
+        return true;
+    }
+    chapter_section_appendix_markdown_heading(text)
+}
+
+fn numbered_dot_markdown_heading(text: &str) -> bool {
+    let Some((numbering, rest)) = text.split_once(". ") else {
+        return false;
+    };
+    if numbering.is_empty() || !numbering.chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+        return false;
+    }
+    rest.chars()
+        .next()
+        .map(|ch| ch.is_ascii_uppercase())
+        .unwrap_or(false)
+        && rest
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || " ,/()&:;'-".contains(ch))
+        && rest.chars().filter(|ch| ch.is_alphanumeric()).count() >= 4
+}
+
+fn title_case_markdown_heading(text: &str) -> bool {
+    if text.ends_with(['.', ',', ';', ':']) {
+        return false;
+    }
+    let words = text.split_whitespace().collect::<Vec<_>>();
+    if !(1..=8).contains(&words.len()) {
+        return false;
+    }
+    let content_words = words
+        .iter()
+        .map(|word| word.trim_matches(|ch| "()[]{}'\"".contains(ch)))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    if content_words.is_empty() {
+        return false;
+    }
+    let mut titleish = 0;
+    for word in &content_words {
+        if word.chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+            continue;
+        }
+        if markdown_heading_connector_word(word) {
+            continue;
+        }
+        if word
+            .chars()
+            .next()
+            .map(|ch| ch.is_uppercase())
+            .unwrap_or(false)
+            || word
+                .chars()
+                .all(|ch| !ch.is_alphabetic() || ch.is_uppercase())
+        {
+            titleish += 1;
+        }
+    }
+    if content_words.len() == 1 {
+        let word = content_words[0];
+        return word.contains('-')
+            || word
+                .chars()
+                .all(|ch| !ch.is_alphabetic() || ch.is_uppercase())
+            || common_single_word_markdown_heading(word);
+    }
+    titleish >= 1.max(content_words.len() / 2)
+}
+
+fn markdown_heading_connector_word(word: &str) -> bool {
+    matches!(
+        word.to_ascii_lowercase().as_str(),
+        "of" | "the" | "and" | "in" | "for" | "to" | "by" | "with"
+    )
+}
+
+fn common_single_word_markdown_heading(word: &str) -> bool {
+    matches!(
+        word.to_ascii_lowercase().as_str(),
+        "abstract"
+            | "acknowledgments"
+            | "appendix"
+            | "contents"
+            | "conclusion"
+            | "conclusions"
+            | "introduction"
+            | "overview"
+            | "preface"
+            | "references"
+            | "summary"
+    )
+}
+
+fn chapter_section_appendix_markdown_heading(text: &str) -> bool {
+    let mut words = text.split_whitespace();
+    let Some(prefix) = words.next() else {
+        return false;
+    };
+    if !matches!(
+        prefix.to_ascii_lowercase().as_str(),
+        "chapter" | "section" | "appendix"
+    ) {
+        return false;
+    }
+    words
+        .next()
+        .map(|word| word.chars().any(|ch| ch.is_ascii_digit()))
+        .unwrap_or(false)
 }
 
 fn page_number_noise_unit(unit: &Value) -> bool {
@@ -4931,6 +5073,438 @@ fn unit_page_number(unit: &Value) -> u64 {
         .and_then(Value::as_u64)
         .or_else(|| unit.pointer("/location/page").and_then(Value::as_u64))
         .unwrap_or(1)
+}
+
+#[derive(Debug, Clone)]
+struct MarkdownUnitEntry {
+    index: usize,
+    text: String,
+    page: u64,
+    bbox: [f64; 4],
+}
+
+fn spatial_markdown_tables_from_units(
+    units: &[Value],
+    tables: &BTreeMap<String, Value>,
+) -> (Vec<String>, BTreeSet<usize>) {
+    if !tables.is_empty() {
+        return (Vec::new(), BTreeSet::new());
+    }
+    let entries = markdown_unit_entries(units);
+    let mut table_html = Vec::new();
+    let mut consumed = BTreeSet::new();
+    let pages = entries
+        .iter()
+        .map(|entry| entry.page)
+        .collect::<BTreeSet<_>>();
+    for page in pages {
+        let page_entries = entries
+            .iter()
+            .filter(|entry| entry.page == page && !consumed.contains(&entry.index))
+            .cloned()
+            .collect::<Vec<_>>();
+        for segment in split_spatial_table_segments(group_spatial_rows(page_entries)) {
+            let Some((html, indexes)) = spatial_table_html(segment) else {
+                continue;
+            };
+            if indexes.is_empty() {
+                continue;
+            }
+            consumed.extend(indexes);
+            table_html.push(html);
+        }
+    }
+    (table_html, consumed)
+}
+
+fn markdown_unit_entries(units: &[Value]) -> Vec<MarkdownUnitEntry> {
+    units
+        .iter()
+        .enumerate()
+        .filter_map(|(index, unit)| {
+            let text = unit
+                .get("text")
+                .and_then(Value::as_str)
+                .map(normalize_text)?;
+            if text.is_empty() {
+                return None;
+            }
+            let bbox = bbox_at(unit, "/location/boundingBox")?;
+            Some(MarkdownUnitEntry {
+                index,
+                text,
+                page: unit_page_number(unit),
+                bbox,
+            })
+        })
+        .collect()
+}
+
+fn group_spatial_rows(mut entries: Vec<MarkdownUnitEntry>) -> Vec<Vec<MarkdownUnitEntry>> {
+    entries.sort_by(|left, right| {
+        spatial_y_center(left)
+            .total_cmp(&spatial_y_center(right))
+            .then_with(|| left.bbox[0].total_cmp(&right.bbox[0]))
+    });
+    let mut rows: Vec<Vec<MarkdownUnitEntry>> = Vec::new();
+    for entry in entries {
+        if let Some(row) = rows
+            .last_mut()
+            .filter(|row| (spatial_y_center(&row[0]) - spatial_y_center(&entry)).abs() <= 7.5)
+        {
+            row.push(entry);
+            row.sort_by(|left, right| left.bbox[0].total_cmp(&right.bbox[0]));
+        } else {
+            rows.push(vec![entry]);
+        }
+    }
+    rows
+}
+
+fn split_spatial_table_segments(
+    rows: Vec<Vec<MarkdownUnitEntry>>,
+) -> Vec<Vec<Vec<MarkdownUnitEntry>>> {
+    let mut segments = Vec::new();
+    let mut current = Vec::new();
+    let mut weak_rows = 0;
+    let mut previous_y: Option<f64> = None;
+    for row in rows {
+        let row_y = spatial_y_center(&row[0]);
+        let has_cells = row.len() >= 2;
+        let close = previous_y.is_none_or(|previous| row_y - previous <= 45.0);
+        if has_cells && close {
+            current.push(row);
+            weak_rows = 0;
+        } else if !current.is_empty() && row.len() == 1 && close && weak_rows == 0 {
+            current.push(row);
+            weak_rows += 1;
+        } else {
+            maybe_push_spatial_segment(&mut segments, std::mem::take(&mut current));
+            current = if has_cells { vec![row] } else { Vec::new() };
+            weak_rows = 0;
+        }
+        previous_y = Some(row_y);
+    }
+    maybe_push_spatial_segment(&mut segments, current);
+    segments
+}
+
+fn maybe_push_spatial_segment(
+    segments: &mut Vec<Vec<Vec<MarkdownUnitEntry>>>,
+    segment: Vec<Vec<MarkdownUnitEntry>>,
+) {
+    let strong_rows = segment.iter().filter(|row| row.len() >= 2).count();
+    let columnish = segment
+        .iter()
+        .filter(|row| row.len() >= 2)
+        .map(Vec::len)
+        .sum::<usize>() as f64
+        / strong_rows.max(1) as f64;
+    if strong_rows >= 4 && columnish >= 2.2 {
+        segments.push(segment);
+    }
+}
+
+fn spatial_table_html(segment: Vec<Vec<MarkdownUnitEntry>>) -> Option<(String, BTreeSet<usize>)> {
+    let centers = spatial_column_centers(&segment);
+    if !spatial_segment_is_table_like(&segment, &centers) {
+        return None;
+    }
+    let mut consumed = BTreeSet::new();
+    let mut lines = vec!["<table>".to_string()];
+    for row in segment {
+        if spatial_weak_prose_row(&row) {
+            continue;
+        }
+        let mut cells = vec![String::new(); centers.len()];
+        for entry in row {
+            let column = nearest_spatial_column(&centers, &entry);
+            cells[column] = normalize_text(&format!("{} {}", cells[column], entry.text));
+            consumed.insert(entry.index);
+        }
+        if cells.iter().all(|cell| cell.is_empty()) {
+            continue;
+        }
+        lines.push(" <tr>".to_string());
+        lines.extend(
+            cells
+                .into_iter()
+                .map(|cell| format!("  <td>{}</td>", escape_html_text(&cell))),
+        );
+        lines.push(" </tr>".to_string());
+    }
+    lines.push("</table>".to_string());
+    Some((lines.join("\n"), consumed))
+}
+
+fn spatial_weak_prose_row(row: &[MarkdownUnitEntry]) -> bool {
+    row.len() == 1 && row[0].text.len() > 42 && row[0].text.split_whitespace().count() >= 6
+}
+
+fn spatial_segment_is_table_like(segment: &[Vec<MarkdownUnitEntry>], centers: &[f64]) -> bool {
+    if !(2..=8).contains(&centers.len()) {
+        return false;
+    }
+    let strong_rows = segment
+        .iter()
+        .filter(|row| row.len() >= 2)
+        .collect::<Vec<_>>();
+    if strong_rows.len() < 3 {
+        return false;
+    }
+    if spatial_formula_like_segment(segment) {
+        return false;
+    }
+    let cells = strong_rows
+        .iter()
+        .flat_map(|row| row.iter())
+        .collect::<Vec<_>>();
+    let average_cells = cells.len() as f64 / strong_rows.len() as f64;
+    if average_cells / (centers.len() as f64) < 0.28 {
+        return false;
+    }
+    if median_usize(cells.iter().map(|entry| entry.text.len()).collect()) > 28 {
+        return false;
+    }
+    let row_widths = strong_rows
+        .iter()
+        .map(|row| row.last().unwrap().bbox[2] - row[0].bbox[0])
+        .collect::<Vec<_>>();
+    median_f64(row_widths) >= 120.0
+}
+
+fn spatial_formula_like_segment(segment: &[Vec<MarkdownUnitEntry>]) -> bool {
+    let texts = segment
+        .iter()
+        .flat_map(|row| row.iter())
+        .map(|entry| entry.text.as_str())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>();
+    if texts.is_empty() {
+        return false;
+    }
+    let joined = texts.join(" ");
+    let equation_numbers = texts
+        .iter()
+        .filter(|text| formula_equation_number(text))
+        .count();
+    let formula_context = ["or inversely", "Boltzmann", "lnΩ", "Ω", "¼", "k B", "WS"]
+        .iter()
+        .any(|marker| joined.contains(marker));
+    let math_fragments = texts
+        .iter()
+        .filter(|text| spatial_formula_fragment(text))
+        .count();
+    let prose_fragments = texts
+        .iter()
+        .filter(|text| text.split_whitespace().count() >= 5)
+        .count();
+    formula_context && equation_numbers >= 1 && math_fragments >= 3 && prose_fragments >= 1
+}
+
+fn spatial_formula_fragment(text: &str) -> bool {
+    let stripped = text.trim();
+    if stripped.is_empty() {
+        return false;
+    }
+    if ["Ω", "¼", "ln", "k B", "WS"]
+        .iter()
+        .any(|marker| stripped.contains(marker))
+    {
+        return true;
+    }
+    if stripped.chars().count() == 1 && stripped.chars().all(|ch| ch.is_ascii_uppercase()) {
+        return true;
+    }
+    formula_equation_number(stripped)
+}
+
+fn formula_equation_number(text: &str) -> bool {
+    let stripped = text.trim();
+    stripped.len() >= 3
+        && stripped.starts_with('(')
+        && stripped.ends_with(')')
+        && stripped[1..stripped.len() - 1]
+            .chars()
+            .all(|ch| ch.is_ascii_digit())
+}
+
+fn spatial_column_centers(segment: &[Vec<MarkdownUnitEntry>]) -> Vec<f64> {
+    let mut entries = segment
+        .iter()
+        .flat_map(|row| row.iter())
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.bbox[0].total_cmp(&right.bbox[0]));
+    let mut centers: Vec<f64> = Vec::new();
+    for entry in entries {
+        let center = spatial_x_center(entry);
+        if let Some(last) = centers.last_mut() {
+            if (center - *last).abs() <= 42.0 {
+                *last = (*last + center) / 2.0;
+                continue;
+            }
+        }
+        centers.push(center);
+    }
+    centers
+}
+
+fn nearest_spatial_column(centers: &[f64], entry: &MarkdownUnitEntry) -> usize {
+    centers
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            (spatial_x_center(entry) - **left)
+                .abs()
+                .total_cmp(&(spatial_x_center(entry) - **right).abs())
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+fn spatial_x_center(entry: &MarkdownUnitEntry) -> f64 {
+    (entry.bbox[0] + entry.bbox[2]) / 2.0
+}
+
+fn spatial_y_center(entry: &MarkdownUnitEntry) -> f64 {
+    (entry.bbox[1] + entry.bbox[3]) / 2.0
+}
+
+fn median_usize(mut values: Vec<usize>) -> usize {
+    values.sort_unstable();
+    values.get(values.len() / 2).copied().unwrap_or(0)
+}
+
+fn median_f64(mut values: Vec<f64>) -> f64 {
+    values.sort_by(f64::total_cmp);
+    values.get(values.len() / 2).copied().unwrap_or(0.0)
+}
+
+fn synthetic_table_html_from_lines(lines: &[String]) -> Option<(String, BTreeSet<usize>)> {
+    let normalized = lines
+        .iter()
+        .map(|line| strip_markdown_heading_marker(line))
+        .collect::<Vec<_>>();
+    let no_index = normalized
+        .iter()
+        .position(|line| matches!(line.to_ascii_lowercase().as_str(), "no." | "no"))?;
+    if no_index + 3 >= normalized.len() {
+        return None;
+    }
+    let mut numbers = Vec::new();
+    let mut cursor = no_index + 2;
+    while cursor < normalized.len() && is_integer_line(&normalized[cursor]) {
+        numbers.push(normalized[cursor].clone());
+        cursor += 1;
+    }
+    if numbers.len() < 2 {
+        return None;
+    }
+    let mut value_start = None;
+    for index in cursor + numbers.len()..=normalized.len().saturating_sub(numbers.len()) {
+        let candidate = &normalized[index..index + numbers.len()];
+        if candidate.iter().all(|value| is_numeric_value_line(value)) {
+            value_start = Some(index);
+            break;
+        }
+    }
+    let value_start = value_start?;
+    let raw_name_lines = &normalized[cursor..value_start];
+    let value_lines = &normalized[value_start..value_start + numbers.len()];
+    if raw_name_lines.len() < numbers.len() {
+        return None;
+    }
+    let mut header_three = "Value".to_string();
+    let mut name_lines = raw_name_lines.to_vec();
+    if raw_name_lines.len() >= numbers.len() + 2 {
+        let possible_header = &raw_name_lines[raw_name_lines.len() - 2..];
+        let header_text = possible_header.join(" ").to_ascii_lowercase();
+        if ["number", "amount", "total", "value"]
+            .iter()
+            .any(|keyword| header_text.contains(keyword))
+        {
+            header_three = possible_header.join(" ");
+            name_lines = raw_name_lines[..raw_name_lines.len() - 2].to_vec();
+        }
+    }
+    let names = split_name_lines(name_lines, numbers.len());
+    if names.len() != numbers.len() {
+        return None;
+    }
+    let mut rows = vec![vec![
+        "No.".to_string(),
+        normalized[no_index + 1].clone(),
+        header_three,
+    ]];
+    rows.extend(
+        numbers
+            .into_iter()
+            .zip(names)
+            .zip(value_lines.iter().cloned())
+            .map(|((number, name), value)| vec![number, name, value]),
+    );
+    let mut html_lines = vec!["<table>".to_string()];
+    for row in rows {
+        html_lines.push(" <tr>".to_string());
+        html_lines.extend(
+            row.into_iter()
+                .map(|cell| format!("  <td>{}</td>", escape_html_text(&cell))),
+        );
+        html_lines.push(" </tr>".to_string());
+    }
+    html_lines.push("</table>".to_string());
+    Some((
+        html_lines.join("\n"),
+        (no_index..value_start + value_lines.len()).collect(),
+    ))
+}
+
+fn strip_markdown_heading_marker(line: &str) -> String {
+    let trimmed = line.trim();
+    let stripped = trimmed.trim_start_matches('#').trim_start();
+    normalize_text(stripped)
+}
+
+fn split_name_lines(name_lines: Vec<String>, row_count: usize) -> Vec<String> {
+    if name_lines.len() == row_count {
+        return name_lines;
+    }
+    if name_lines.len() <= row_count {
+        return Vec::new();
+    }
+    let long_names = name_lines
+        .into_iter()
+        .filter(|line| !is_numeric_value_line(line))
+        .collect::<Vec<_>>();
+    if long_names.len() == row_count {
+        return long_names;
+    }
+    let mut names = long_names
+        .iter()
+        .take(row_count)
+        .cloned()
+        .collect::<Vec<_>>();
+    for (index, extra) in long_names.into_iter().skip(row_count).enumerate() {
+        let target = index.min(row_count.saturating_sub(1));
+        names[target] = normalize_text(&format!("{} {}", names[target], extra));
+    }
+    if names.len() == row_count {
+        names
+    } else {
+        Vec::new()
+    }
+}
+
+fn is_integer_line(value: &str) -> bool {
+    let stripped = value.trim();
+    (1..=3).contains(&stripped.len()) && stripped.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn is_numeric_value_line(value: &str) -> bool {
+    let stripped = value.trim().trim_end_matches('%').replace(',', "");
+    !stripped.is_empty()
+        && stripped.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+        && stripped.chars().any(|ch| ch.is_ascii_digit())
 }
 
 fn markdown_table_html(table: &Value) -> String {
@@ -7500,6 +8074,9 @@ fn suspect_noisy_full_page_table(table: &TableExtraction) -> bool {
         .iter()
         .filter(|cell| !cell.text.trim().is_empty())
         .collect::<Vec<_>>();
+    if noisy_table_cell_ratio(&filled_cells) {
+        return true;
+    }
     if filled_cells.len() != 1 {
         return false;
     }
@@ -7515,6 +8092,17 @@ fn suspect_noisy_full_page_table(table: &TableExtraction) -> bool {
 
 fn normalized_full_page_bbox(bbox: &RuntimeBox) -> bool {
     bbox.x0 <= 1.0 && bbox.y0 <= 1.0 && bbox.x1 >= 999.0 && bbox.y1 >= 999.0
+}
+
+fn noisy_table_cell_ratio(cells: &[&TableCellExtraction]) -> bool {
+    if cells.len() < 8 {
+        return false;
+    }
+    let noisy = cells
+        .iter()
+        .filter(|cell| noisy_table_text(&cell.text))
+        .count();
+    noisy * 2 >= cells.len()
 }
 
 fn noisy_table_text(text: &str) -> bool {
@@ -9433,6 +10021,245 @@ mod tests {
         });
 
         assert_eq!(markdown_from_document(&document), "body evidence.");
+    }
+
+    #[test]
+    fn markdown_projection_builds_spatial_table_from_units() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Year", 100.0, 100.0),
+                    markdown_unit("unit-2", "Rate", 220.0, 100.0),
+                    markdown_unit("unit-3", "Value", 340.0, 100.0),
+                    markdown_unit("unit-4", "1", 100.0, 130.0),
+                    markdown_unit("unit-5", "10%", 220.0, 130.0),
+                    markdown_unit("unit-6", "$100", 340.0, 130.0),
+                    markdown_unit("unit-7", "2", 100.0, 160.0),
+                    markdown_unit("unit-8", "20%", 220.0, 160.0),
+                    markdown_unit("unit-9", "$200", 340.0, 160.0),
+                    markdown_unit("unit-10", "3", 100.0, 190.0),
+                    markdown_unit("unit-11", "30%", 220.0, 190.0),
+                    markdown_unit("unit-12", "$300", 340.0, 190.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(markdown.contains("<table>"), "{markdown}");
+        assert!(markdown.contains("<td>Year</td>"), "{markdown}");
+        assert!(markdown.contains("<td>$200</td>"), "{markdown}");
+        assert!(!markdown.contains("Year\nRate\nValue"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_requires_python_minimum_spatial_rows() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Year", 100.0, 100.0),
+                    markdown_unit("unit-2", "Rate", 220.0, 100.0),
+                    markdown_unit("unit-3", "1", 100.0, 130.0),
+                    markdown_unit("unit-4", "10%", 220.0, 130.0),
+                    markdown_unit("unit-5", "2", 100.0, 160.0),
+                    markdown_unit("unit-6", "20%", 220.0, 160.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(!markdown.contains("<table>"), "{markdown}");
+        assert!(markdown.contains("Year"), "{markdown}");
+        assert!(markdown.contains("20%"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_rejects_formula_like_spatial_segment() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "or inversely", 90.0, 100.0),
+                    markdown_unit("unit-2", "(12)", 430.0, 100.0),
+                    markdown_unit("unit-3", "Boltzmann", 90.0, 130.0),
+                    markdown_unit("unit-4", "k B", 430.0, 130.0),
+                    markdown_unit("unit-5", "lnΩ", 90.0, 160.0),
+                    markdown_unit("unit-6", "Ω", 430.0, 160.0),
+                    markdown_unit("unit-7", "This explanatory sentence is prose.", 90.0, 190.0),
+                    markdown_unit("unit-8", "WS", 430.0, 190.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(!markdown.contains("<table>"), "{markdown}");
+        assert!(markdown.contains("Boltzmann"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_appends_spatial_tables_after_text_projection() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Intro paragraph.", 80.0, 60.0),
+                    markdown_unit("unit-2", "Year", 100.0, 100.0),
+                    markdown_unit("unit-3", "Rate", 220.0, 100.0),
+                    markdown_unit("unit-4", "Value", 340.0, 100.0),
+                    markdown_unit("unit-5", "1", 100.0, 130.0),
+                    markdown_unit("unit-6", "10%", 220.0, 130.0),
+                    markdown_unit("unit-7", "$100", 340.0, 130.0),
+                    markdown_unit("unit-8", "2", 100.0, 160.0),
+                    markdown_unit("unit-9", "20%", 220.0, 160.0),
+                    markdown_unit("unit-10", "$200", 340.0, 160.0),
+                    markdown_unit("unit-11", "3", 100.0, 190.0),
+                    markdown_unit("unit-12", "30%", 220.0, 190.0),
+                    markdown_unit("unit-13", "$300", 340.0, 190.0),
+                    markdown_unit("unit-14", "Outro paragraph.", 80.0, 240.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(
+            markdown.starts_with("Intro paragraph.\nOutro paragraph.\n<table>"),
+            "{markdown}"
+        );
+    }
+
+    #[test]
+    fn markdown_projection_builds_synthetic_table_from_lines() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "No.", 100.0, 100.0),
+                    markdown_unit("unit-2", "Name", 100.0, 130.0),
+                    markdown_unit("unit-3", "1", 100.0, 160.0),
+                    markdown_unit("unit-4", "2", 100.0, 190.0),
+                    markdown_unit("unit-5", "Alpha Company", 100.0, 220.0),
+                    markdown_unit("unit-6", "Beta Company", 100.0, 250.0),
+                    markdown_unit("unit-7", "Total", 100.0, 280.0),
+                    markdown_unit("unit-8", "amount", 100.0, 310.0),
+                    markdown_unit("unit-9", "100", 100.0, 340.0),
+                    markdown_unit("unit-10", "200", 100.0, 370.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(markdown.contains("<td>No.</td>"), "{markdown}");
+        assert!(markdown.contains("<td>Name</td>"), "{markdown}");
+        assert!(markdown.contains("<td>Total amount</td>"), "{markdown}");
+        assert!(markdown.contains("<td>Beta Company</td>"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_matches_python_heading_promotion() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "1. Introduction to Evidence", 100.0, 100.0),
+                    markdown_unit("unit-2", "Figure 1 Results", 100.0, 130.0),
+                    markdown_unit("unit-3", "100%", 100.0, 160.0),
+                    markdown_unit("unit-4", "References", 100.0, 190.0),
+                    markdown_unit("unit-5", "ordinary short phrase", 100.0, 220.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(
+            markdown.contains("# 1. Introduction to Evidence"),
+            "{markdown}"
+        );
+        assert!(markdown.contains("# References"), "{markdown}");
+        assert!(markdown.contains("Figure 1 Results"), "{markdown}");
+        assert!(!markdown.contains("# Figure 1 Results"), "{markdown}");
+        assert!(markdown.contains("100%"), "{markdown}");
+        assert!(!markdown.contains("# 100%"), "{markdown}");
+        assert!(markdown.contains("ordinary short phrase"), "{markdown}");
+        assert!(!markdown.contains("# ordinary short phrase"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_keeps_long_weak_rows_outside_spatial_tables() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Year", 100.0, 100.0),
+                    markdown_unit("unit-2", "Rate", 220.0, 100.0),
+                    markdown_unit("unit-3", "Value", 340.0, 100.0),
+                    markdown_unit("unit-4", "1", 100.0, 130.0),
+                    markdown_unit("unit-5", "10%", 220.0, 130.0),
+                    markdown_unit("unit-6", "$100", 340.0, 130.0),
+                    markdown_unit("unit-7", "2", 100.0, 160.0),
+                    markdown_unit("unit-8", "20%", 220.0, 160.0),
+                    markdown_unit("unit-9", "$200", 340.0, 160.0),
+                    markdown_unit("unit-10", "3", 100.0, 190.0),
+                    markdown_unit("unit-11", "30%", 220.0, 190.0),
+                    markdown_unit("unit-12", "$300", 340.0, 190.0),
+                    markdown_unit(
+                        "unit-13",
+                        "This sentence belongs to the paragraph after the table.",
+                        100.0,
+                        220.0
+                    )
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(
+            markdown.contains("This sentence belongs to the paragraph after the table.\n<table>"),
+            "{markdown}"
+        );
+        assert!(
+            !markdown.contains("<td>This sentence belongs"),
+            "{markdown}"
+        );
+    }
+
+    #[test]
+    fn markdown_projection_does_not_turn_two_column_prose_into_table() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "this content very often was from", 100.0, 100.0),
+                    markdown_unit("unit-2", "tremist groups. Most respondents", 440.0, 100.0),
+                    markdown_unit("unit-3", "Indonesia and Thailand were represented.", 100.0, 130.0),
+                    markdown_unit("unit-4", "agreed that they were worried about", 440.0, 130.0),
+                    markdown_unit("unit-5", "When asked about how often participants", 100.0, 160.0),
+                    markdown_unit("unit-6", "intolerance in their communities", 440.0, 160.0),
+                    markdown_unit("unit-7", "had heard groups expressing the importance", 100.0, 190.0),
+                    markdown_unit("unit-8", "particularly respondents from Indonesia", 440.0, 190.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(!markdown.contains("<table>"), "{markdown}");
+        assert!(markdown.contains("this content very often"), "{markdown}");
     }
 
     #[test]

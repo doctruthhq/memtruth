@@ -209,12 +209,86 @@ fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
 }
 
 #[test]
-fn parse_pdf_auto_ocr_route_discovers_packaged_rapidocr_mnn_worker() {
+fn rust_mnn_model_worker_doctor_is_python_free() {
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    let output = cmd
+        .arg("--doctor")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["runtime"], "mnn");
+    assert_eq!(json["engine"], "mnn");
+    assert_eq!(json["productionPythonResidency"], false);
+}
+
+#[test]
+fn rust_mnn_model_worker_rejects_non_mnn_artifacts() {
+    let model_path = temp_path("doctruth-runtime-worker-onnx", "onnx");
+    fs::write(&model_path, b"onnx").unwrap();
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "parse_pdf",
+            "source_path": "document.pdf",
+            "source_hash": "sha256:model-worker",
+            "preset": "table-lite",
+            "models": [{
+                "name": "slanet-plus",
+                "version": "v1",
+                "backend": "onnxruntime",
+                "format": "onnx",
+                "cacheStatus": "READY",
+                "cachePath": model_path
+            }]
+        })
+        .to_string(),
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("unsupported_model_runtime"));
+}
+
+#[test]
+fn parse_pdf_routes_to_rust_mnn_model_worker_binary() {
+    let pdf = write_pdf_fixture("Fallback text should not be used.");
+    let worker = assert_cmd::cargo::cargo_bin("doctruth-mnn-model-worker");
+    let (cache_dir, manifest) = ready_mnn_model_manifest("doctruth-runtime-rust-mnn-cache");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "table-lite"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker");
+    assert_eq!(json["parserRun"]["modelRuntime"]["runtime"], "mnn");
+    assert_eq!(json["body"]["units"][0]["kind"], "TABLE_CELL");
+    assert_eq!(json["body"]["units"][0]["text"], "Auto table MNN evidence");
+}
+
+#[test]
+fn parse_pdf_auto_ocr_route_discovers_packaged_rust_mnn_worker() {
     let pdf = write_empty_text_layer_pdf();
     let bin_dir = temp_dir("doctruth-runtime-packaged-ocr-bin");
     fs::create_dir_all(&bin_dir).unwrap();
-    let worker = bin_dir.join("doctruth-rapidocr-mnn-worker");
-    fs::write(&worker, auto_ocr_worker_script_body()).unwrap();
+    let source_worker = assert_cmd::cargo::cargo_bin("doctruth-mnn-model-worker");
+    let worker = bin_dir.join("doctruth-mnn-model-worker");
+    fs::copy(&source_worker, &worker).unwrap();
     make_executable(&worker);
     let (cache_dir, manifest) =
         ready_mnn_ocr_model_manifest("doctruth-runtime-auto-ocr-path-cache");
@@ -235,7 +309,7 @@ fn parse_pdf_auto_ocr_route_discovers_packaged_rapidocr_mnn_worker() {
     let json: Value = serde_json::from_slice(&output).unwrap();
 
     assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
-    assert_eq!(json["parserRun"]["workerBackend"], "rapidocr-worker");
+    assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker");
     assert_eq!(json["parserRun"]["preset"], "ocr");
     assert_eq!(json["parserRun"]["modelRouting"]["route"], "ocr-model");
     assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");

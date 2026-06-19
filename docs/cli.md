@@ -335,6 +335,10 @@ TRADEBOT_OCR_KEYS_PATH=/path/to/ocr/ppocr_keys.txt
 
 ### Legacy Python Model Workers
 
+Legacy Python model workers in `scripts/` are oracle-only migration tools. They
+fail closed unless `DOCTRUTH_ALLOW_PYTHON_ORACLE=1` is set by an explicit test
+or comparison harness. Do not configure them as production local workers.
+
 The repository still keeps RapidOCR, SLANeXT/PaddleOCR, and ONNXRuntime Python
 worker scripts as legacy migration or differential-oracle tools. They are not
 installed by `scripts/install-cli.sh`, are not included in release tarballs, and

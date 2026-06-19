@@ -49,7 +49,7 @@ before OpenDataLoader Bench is used as a final acceptance gate.
 - [ ] Implement real MNN table/layout inference inside `doctruth-mnn-model-worker`.
 - [x] Replace Python ONNX model worker with Rust/MNN model worker or remove it
   from production packaging.
-- [ ] Keep Python model workers available only behind oracle/test opt-in if they
+- [x] Keep Python model workers available only behind oracle/test opt-in if they
   remain in the repository.
 - [ ] Record model manifest, model SHA, profile, RSS, latency, and unload
   behavior for each accepted edge-model profile.

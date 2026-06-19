@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
-from doctruth_onnx_worker_lib import main
+import json
+import os
+import sys
 
 
 if __name__ == "__main__":
+    if os.environ.get("DOCTRUTH_ALLOW_PYTHON_ORACLE") != "1":
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "runtime": "python",
+                    "error_code": "python_oracle_disabled",
+                    "message": "legacy Python worker is oracle-only; set DOCTRUTH_ALLOW_PYTHON_ORACLE=1 for migration tests",
+                },
+                separators=(",", ":"),
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    from doctruth_onnx_worker_lib import main
+
     raise SystemExit(main())

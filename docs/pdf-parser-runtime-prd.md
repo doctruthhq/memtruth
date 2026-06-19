@@ -51,7 +51,9 @@ Legacy/source-only oracle:
 RapidOCR, SLANeXT/PaddleOCR, and ONNXRuntime Python worker scripts are no longer
 source-install or release-tarball production entrypoints. They can remain in the
 source tree only for migration comparison, differential oracle tests, or
-explicit opt-in historical smokes. Real MNN OCR/table/layout inference inside
+explicit opt-in historical smokes, and they fail closed unless
+`DOCTRUTH_ALLOW_PYTHON_ORACLE=1` is set by that test/oracle harness. Real MNN
+OCR/table/layout inference inside
 `doctruth-mnn-model-worker` is still an implementation task; the current Rust
 worker locks the production protocol, packaging, discovery, and fail-closed
 runtime boundary. Its doctor reports `protocolReady=true` and
@@ -1110,7 +1112,8 @@ model-assisted `table-lite`, `table-server`, and `ocr` routes to
 worker command is configured. The production install and release package include
 the Rust runtime and Rust MNN worker only. Legacy Python RapidOCR,
 SLANeXT/PaddleOCR, and ONNXRuntime scripts remain source-tree oracle tools for
-migration comparison and opt-in historical smokes. The current Rust MNN worker
+migration comparison and opt-in historical smokes, and their entrypoints require
+`DOCTRUTH_ALLOW_PYTHON_ORACLE=1`. The current Rust MNN worker
 locks the protocol, default discovery, fail-closed MNN-only model acceptance,
 and `TrustDocument` normalization. Without explicit stub mode it rejects
 model-assisted parse requests with `mnn_inference_unavailable` until real MNN

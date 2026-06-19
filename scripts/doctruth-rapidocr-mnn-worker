@@ -14,6 +14,8 @@ import time
 
 
 def main() -> int:
+    if not python_oracle_allowed():
+        return emit_oracle_disabled()
     if len(sys.argv) > 1 and sys.argv[1] == "--doctor":
         return doctor()
 
@@ -62,6 +64,20 @@ def main() -> int:
     }
     print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     return 0
+
+
+def python_oracle_allowed() -> bool:
+    return os.environ.get("DOCTRUTH_ALLOW_PYTHON_ORACLE") == "1"
+
+
+def emit_oracle_disabled() -> int:
+    print(json.dumps({
+        "ok": False,
+        "runtime": "python",
+        "error_code": "python_oracle_disabled",
+        "message": "legacy Python worker is oracle-only; set DOCTRUTH_ALLOW_PYTHON_ORACLE=1 for migration tests",
+    }, ensure_ascii=False, separators=(",", ":")), file=sys.stderr)
+    return 2
 
 
 def parse_pdf_request(request: dict) -> int:

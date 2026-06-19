@@ -6,6 +6,11 @@ DEFAULT_BENCH="$ROOT/scripts/run-doctruth-opendataloader-bench.sh"
 MNN_BENCH="$ROOT/scripts/run-doctruth-mnn-promotion-bench.sh"
 LEGACY_BASELINE="$ROOT/scripts/run-doctruth-opendataloader-hybrid-baseline.sh"
 LEGACY_ADAPTER="$ROOT/scripts/doctruth_opendataloader_prediction.py"
+LEGACY_WORKERS="
+$ROOT/scripts/doctruth-onnx-model-worker
+$ROOT/scripts/doctruth-slanext-table-worker
+$ROOT/scripts/doctruth-rapidocr-mnn-worker
+"
 
 if rg -n "python3 .*doctruth_opendataloader_prediction\\.py|python .*doctruth_opendataloader_prediction\\.py" "$DEFAULT_BENCH" "$MNN_BENCH"; then
   echo "default OpenDataLoader benchmark runners must not call the Python prediction adapter" >&2
@@ -52,5 +57,17 @@ if [ "$OFFICIAL_STATUS" -eq 0 ]; then
 fi
 
 printf '%s' "$OFFICIAL_OUT" | rg -n "oracle-only|DOCTRUTH_ALLOW_PYTHON_ORACLE" >/dev/null
+
+for worker in $LEGACY_WORKERS; do
+  set +e
+  WORKER_OUT="$("$worker" --doctor 2>&1)"
+  WORKER_STATUS="$?"
+  set -e
+  if [ "$WORKER_STATUS" -eq 0 ]; then
+    echo "legacy Python worker should fail closed without DOCTRUTH_ALLOW_PYTHON_ORACLE=1: $worker" >&2
+    exit 1
+  fi
+  printf '%s' "$WORKER_OUT" | rg -n "oracle-only|DOCTRUTH_ALLOW_PYTHON_ORACLE" >/dev/null
+done
 
 echo "doctruth python boundary smoke passed"

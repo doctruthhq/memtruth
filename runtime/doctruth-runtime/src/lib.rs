@@ -801,11 +801,6 @@ fn positioned_line_from_span(
         page_width,
         page_height,
         font_size: span.font_size as f64,
-        color: RuntimeColor {
-            r: span.color.r as f64,
-            g: span.color.g as f64,
-            b: span.color.b as f64,
-        },
     }
 }
 
@@ -1291,16 +1286,6 @@ fn filter_positioned_lines(
             ));
             continue;
         }
-        if near_white_positioned_line(&line) {
-            warnings.push(parser_safety_warning(
-                "background_text_filtered",
-                &format!(
-                    "Filtered near-white/background-like text-layer span: {}",
-                    line.text
-                ),
-            ));
-            continue;
-        }
         if hidden_positioned_line(&line, hidden_texts) {
             warnings.push(parser_safety_warning(
                 "hidden_text_filtered",
@@ -1335,10 +1320,6 @@ fn off_page_positioned_line(line: &PositionedLine) -> bool {
 
 fn tiny_positioned_line(line: &PositionedLine) -> bool {
     line.font_size <= 2.0 || bbox_width(&line.bbox) <= 2.0 || bbox_height(&line.bbox) <= 2.0
-}
-
-fn near_white_positioned_line(line: &PositionedLine) -> bool {
-    line.color.r >= 0.98 && line.color.g >= 0.98 && line.color.b >= 0.98
 }
 
 fn invalid_text_encoding_line(line: &PositionedLine) -> bool {
@@ -8089,7 +8070,6 @@ struct PositionedLine {
     page_width: f64,
     page_height: f64,
     font_size: f64,
-    color: RuntimeColor,
 }
 
 #[derive(Debug, Clone)]
@@ -8098,13 +8078,6 @@ struct RawPdfBox {
     y0: f64,
     x1: f64,
     y1: f64,
-}
-
-#[derive(Debug, Clone)]
-struct RuntimeColor {
-    r: f64,
-    g: f64,
-    b: f64,
 }
 
 fn extract_tables(
@@ -10988,11 +10961,6 @@ mod tests {
             page_width: 1000.0,
             page_height: 1000.0,
             font_size: 12.0,
-            color: RuntimeColor {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-            },
         }
     }
 

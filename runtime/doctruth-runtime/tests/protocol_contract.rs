@@ -1836,7 +1836,7 @@ fn parse_pdf_filters_duplicate_positioned_text_and_marks_not_audit_grade() {
 }
 
 #[test]
-fn parse_pdf_filters_off_page_tiny_whitespace_and_background_text() {
+fn parse_pdf_filters_off_page_tiny_whitespace_and_keeps_light_visible_text() {
     let pdf = write_safety_filter_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
 
@@ -1857,12 +1857,44 @@ fn parse_pdf_filters_off_page_tiny_whitespace_and_background_text() {
         .collect();
     let warnings = json["parserRun"]["warnings"].as_array().unwrap();
 
-    assert_eq!(texts, vec!["Visible evidence."]);
+    assert_eq!(texts, vec!["Visible evidence.", "Background evidence."]);
     assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
     assert_warning(warnings, "off_page_text_filtered", "Off page evidence");
     assert_warning(warnings, "tiny_text_filtered", "Tiny evidence");
-    assert_warning(warnings, "background_text_filtered", "Background evidence");
     assert_warning(warnings, "whitespace_text_filtered", "whitespace-only");
+}
+
+#[test]
+fn parse_pdf_keeps_low_contrast_body_text_from_real_report_case() {
+    let pdf = vendored_opendataloader_pdf("01030000000079.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request_with_hash(&pdf, "sha256:light-body-text"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let text = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|unit| unit["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+    assert!(text.contains("India suffers from"));
+    assert!(text.contains("regulatory cholesterol"));
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning["code"] != "background_text_filtered"),
+        "{warnings:?}"
+    );
 }
 
 #[test]

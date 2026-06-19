@@ -36,24 +36,26 @@ fn main() {
     if request.get("command").and_then(Value::as_str) != Some("parse_pdf") {
         fail("worker_protocol_error", "unsupported worker command");
     }
-    let model = ready_mnn_model(&request);
+    let model_pack = ready_mnn_model_pack(&request);
     if !stub_mode_enabled() {
         fail(
             "mnn_inference_unavailable",
             "Rust MNN worker protocol is ready, but real MNN inference is not wired yet",
         );
     }
-    let document = trust_document(&request, &model);
+    let document = trust_document(&request, &model_pack);
     print_json(json!({
         "ok": true,
         "document": document,
         "metrics": {
             "runtime": "mnn",
+            "decoder": model_pack.decoder,
             "inputSource": "rust_mnn_worker_stub",
             "stubMode": true,
             "coldStartMs": 0.0,
             "inferenceMs": elapsed_ms(started),
-            "loadedModels": [model_identity(&model)],
+            "loadedModels": model_pack.model_identities(),
+            "auxiliaryArtifacts": model_pack.auxiliary_identities(),
             "unload": {
                 "status": "completed",
                 "policy": "idle-after-request"
@@ -79,6 +81,7 @@ fn doctor_json() -> Value {
         "protocolReady": true,
         "inferenceReady": false,
         "nativeBackend": native_backend_json(),
+        "decoders": decoder_json(),
         "stubMode": stub_mode_enabled(),
         "productionPythonResidency": false
     })
@@ -178,10 +181,46 @@ fn probe_model(_model_path: &str) -> Result<Value, (&'static str, String)> {
     ))
 }
 
-fn ready_mnn_model(request: &Value) -> Value {
+#[derive(Clone)]
+struct ReadyModelPack {
+    decoder: &'static str,
+    models: Vec<Value>,
+    auxiliary: Vec<Value>,
+}
+
+impl ReadyModelPack {
+    fn model_identities(&self) -> Vec<String> {
+        self.models.iter().map(model_identity).collect()
+    }
+
+    fn auxiliary_identities(&self) -> Vec<String> {
+        self.auxiliary.iter().map(model_identity).collect()
+    }
+}
+
+fn ready_mnn_model_pack(request: &Value) -> ReadyModelPack {
     let Some(models) = request.get("models").and_then(Value::as_array) else {
         fail("model_unavailable", "request has no models");
     };
+    let ready_models = ready_mnn_models(models);
+    if ready_models.is_empty() {
+        fail(
+            "unsupported_model_runtime",
+            "Rust worker accepts READY MNN artifacts only",
+        );
+    }
+    if requested_decoder(request, &ready_models) == "ocr" {
+        return ready_ocr_model_pack(request, ready_models);
+    }
+    ReadyModelPack {
+        decoder: requested_decoder(request, &ready_models),
+        models: vec![ready_models[0].clone()],
+        auxiliary: Vec::new(),
+    }
+}
+
+fn ready_mnn_models(models: &[Value]) -> Vec<Value> {
+    let mut ready = Vec::new();
     for model in models {
         let backend = model.get("backend").and_then(Value::as_str);
         let format = model.get("format").and_then(Value::as_str);
@@ -197,15 +236,77 @@ fn ready_mnn_model(request: &Value) -> Value {
         if !Path::new(path).is_file() {
             fail("model_unavailable", "MNN model cachePath does not exist");
         }
-        return model.clone();
+        ready.push(model.clone());
     }
-    fail(
-        "unsupported_model_runtime",
-        "Rust worker accepts READY MNN artifacts only",
-    )
+    ready
 }
 
-fn trust_document(request: &Value, model: &Value) -> Value {
+fn ready_ocr_model_pack(request: &Value, ready_models: Vec<Value>) -> ReadyModelPack {
+    let detection = find_model_role(&ready_models, "text-detection");
+    let recognition = find_model_role(&ready_models, "text-recognition");
+    if detection.is_none() || recognition.is_none() {
+        fail(
+            "model_unavailable",
+            "OCR MNN decoder requires text-detection and text-recognition models",
+        );
+    }
+    let auxiliary = ready_auxiliary_artifacts(request);
+    if find_model_role(&auxiliary, "recognition-charset").is_none() {
+        fail(
+            "model_unavailable",
+            "OCR MNN decoder requires recognition-charset auxiliary artifact",
+        );
+    }
+    ReadyModelPack {
+        decoder: "ocr",
+        models: vec![detection.unwrap().clone(), recognition.unwrap().clone()],
+        auxiliary,
+    }
+}
+
+fn ready_auxiliary_artifacts(request: &Value) -> Vec<Value> {
+    let Some(artifacts) = request.get("auxiliaryArtifacts").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut ready = Vec::new();
+    for artifact in artifacts {
+        if artifact.get("cacheStatus").and_then(Value::as_str) != Some("READY") {
+            continue;
+        }
+        let Some(path) = artifact.get("cachePath").and_then(Value::as_str) else {
+            continue;
+        };
+        if Path::new(path).is_file() {
+            ready.push(artifact.clone());
+        }
+    }
+    ready
+}
+
+fn requested_decoder(request: &Value, models: &[Value]) -> &'static str {
+    if request.get("preset").and_then(Value::as_str) == Some("ocr")
+        || models
+            .iter()
+            .any(|model| model.get("task").and_then(Value::as_str) == Some("ocr"))
+    {
+        return "ocr";
+    }
+    if models
+        .iter()
+        .any(|model| model.get("task").and_then(Value::as_str) == Some("layout-detection"))
+    {
+        return "layout";
+    }
+    "table"
+}
+
+fn find_model_role<'a>(models: &'a [Value], role: &str) -> Option<&'a Value> {
+    models
+        .iter()
+        .find(|model| model.get("role").and_then(Value::as_str) == Some(role))
+}
+
+fn trust_document(request: &Value, model_pack: &ReadyModelPack) -> Value {
     let source_hash = request
         .get("source_hash")
         .or_else(|| request.get("sourceHash"))
@@ -229,10 +330,15 @@ fn trust_document(request: &Value, model: &Value) -> Value {
         .get("preset")
         .and_then(Value::as_str)
         .unwrap_or("table-lite");
-    let task = model.get("task").and_then(Value::as_str).unwrap_or("");
-    let model_id = model_identity(model);
-    let (kind, text, source_object) = if task == "ocr" {
+    let model_ids = model_pack.model_identities();
+    let (kind, text, source_object) = if model_pack.decoder == "ocr" {
         ("OCR_REGION", "Auto OCR evidence", "mnn-ocr-region-1")
+    } else if model_pack.decoder == "layout" {
+        (
+            "TEXT_BLOCK",
+            "Auto layout MNN evidence",
+            "mnn-layout-region-1",
+        )
     } else {
         ("TABLE_CELL", "Auto table MNN evidence", "mnn-table-cell-1")
     };
@@ -251,7 +357,7 @@ fn trust_document(request: &Value, model: &Value) -> Value {
                 "pageNumber": 1,
                 "width": 612.0,
                 "height": 792.0,
-                "textLayerAvailable": task != "ocr",
+                "textLayerAvailable": model_pack.decoder != "ocr",
                 "imageHash": format!("sha256:{}", "0".repeat(64))
             }],
             "units": [{
@@ -277,7 +383,7 @@ fn trust_document(request: &Value, model: &Value) -> Value {
             "preset": preset,
             "backend": "mnn-model-worker-stub",
             "workerBackend": "mnn-model-worker-stub",
-            "models": [model_id],
+            "models": model_ids,
             "warnings": [{
                 "code": "mnn_worker_stub_output",
                 "severity": "SEVERE",
@@ -389,6 +495,30 @@ fn native_backend_json() -> Value {
         "crate": "mnn-rs",
         "binding": Value::Null,
         "mode": "feature-disabled"
+    })
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn decoder_json() -> Value {
+    json!({
+        "ocr": {
+            "compiled": true,
+            "backend": "ocr-rs",
+            "modelFormat": "mnn",
+            "binding": std::any::type_name::<ocr_rs::OcrEngine>()
+        }
+    })
+}
+
+#[cfg(not(feature = "mnn-ocr"))]
+fn decoder_json() -> Value {
+    json!({
+        "ocr": {
+            "compiled": false,
+            "backend": Value::Null,
+            "modelFormat": "mnn",
+            "binding": Value::Null
+        }
     })
 }
 

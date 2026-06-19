@@ -315,10 +315,13 @@ fn parse_pdf_filters_noisy_borderless_table_false_positive() {
 
 #[test]
 fn parse_pdf_gracefully_falls_back_for_missing_layout_table_and_ocr_models() {
-    for (preset, model_identity) in [
-        ("standard", "layout-rtdetr:v2"),
-        ("table-server", "slanext-auto:v1"),
-        ("ocr", "ocr-router:v1"),
+    for (preset, model_identities) in [
+        ("standard", vec!["layout-rtdetr:v2"]),
+        ("table-server", vec!["slanext-auto:v1"]),
+        (
+            "ocr",
+            vec!["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
+        ),
     ] {
         let pdf = write_pdf_fixture(&format!("Missing {preset} model fallback evidence."));
         let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -346,24 +349,26 @@ fn parse_pdf_gracefully_falls_back_for_missing_layout_table_and_ocr_models() {
                 .unwrap()
                 .contains(preset)
         );
-        assert!(
-            json["parserRun"]["models"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|model| model == model_identity),
-            "expected {model_identity} in parserRun.models for {preset}: {json}"
-        );
-        assert!(
-            warnings.iter().any(|warning| {
-                warning["code"] == "model_unavailable_fallback"
-                    && warning["severity"] == "SEVERE"
-                    && warning["message"]
-                        .as_str()
-                        .is_some_and(|message| message.contains(model_identity))
-            }),
-            "expected severe missing-model warning for {preset}/{model_identity}, got {warnings:?}"
-        );
+        for model_identity in model_identities {
+            assert!(
+                json["parserRun"]["models"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|model| model == model_identity),
+                "expected {model_identity} in parserRun.models for {preset}: {json}"
+            );
+            assert!(
+                warnings.iter().any(|warning| {
+                    warning["code"] == "model_unavailable_fallback"
+                        && warning["severity"] == "SEVERE"
+                        && warning["message"]
+                            .as_str()
+                            .is_some_and(|message| message.contains(model_identity))
+                }),
+                "expected severe missing-model warning for {preset}/{model_identity}, got {warnings:?}"
+            );
+        }
     }
 }
 

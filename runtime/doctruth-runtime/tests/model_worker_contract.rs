@@ -170,7 +170,8 @@ fn parse_pdf_auto_preset_table_heavy_routes_to_table_mnn_worker() {
 fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
     let pdf = write_empty_text_layer_pdf();
     let worker = write_auto_ocr_model_worker();
-    let (cache_dir, manifest) = ready_mnn_ocr_model_manifest("doctruth-runtime-auto-ocr-cache");
+    let (cache_dir, manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-auto-ocr-cache");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
 
     let output = cmd
@@ -202,7 +203,7 @@ fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
     assert_eq!(json["parserRun"]["modelRouting"]["routedPages"], json!([1]));
     assert_eq!(
         json["parserRun"]["modelRouting"]["models"],
-        json!(["ocr-router:v1"])
+        json!(["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"])
     );
     assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");
     assert_eq!(json["body"]["units"][0]["text"], "Auto OCR evidence");
@@ -231,6 +232,25 @@ fn rust_mnn_model_worker_doctor_is_python_free() {
     assert_eq!(json["nativeBackend"]["crate"], "mnn-rs");
     assert_eq!(json["stubMode"], false);
     assert_eq!(json["productionPythonResidency"], false);
+}
+
+#[cfg(feature = "mnn-ocr")]
+#[test]
+fn rust_mnn_model_worker_doctor_reports_ocr_rs_decoder_when_feature_enabled() {
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    let output = cmd
+        .arg("--doctor")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["decoders"]["ocr"]["compiled"], true);
+    assert_eq!(json["decoders"]["ocr"]["backend"], "ocr-rs");
+    assert_eq!(json["decoders"]["ocr"]["modelFormat"], "mnn");
 }
 
 #[test]
@@ -343,6 +363,83 @@ fn rust_mnn_model_worker_stub_mode_is_explicit() {
 }
 
 #[test]
+fn rust_mnn_model_worker_stub_mode_reports_complete_ocr_pack_readiness() {
+    let cache_dir = temp_dir("doctruth-runtime-worker-ocr-pack");
+    fs::create_dir_all(&cache_dir).unwrap();
+    let det_path = cache_dir.join("ppocr-v5-mobile-det-v0.1.3.bin");
+    let rec_path = cache_dir.join("ppocr-v5-mobile-rec-v0.1.3.bin");
+    let keys_path = cache_dir.join("ppocr-keys-v5-v0.1.3.bin");
+    fs::write(&det_path, b"det").unwrap();
+    fs::write(&rec_path, b"rec").unwrap();
+    fs::write(&keys_path, b"abc\n").unwrap();
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_MNN_WORKER_STUB", "1")
+        .write_stdin(
+            json!({
+                "command": "parse_pdf",
+                "source_path": "document.pdf",
+                "source_hash": "sha256:model-worker",
+                "preset": "ocr",
+                "models": [
+                    {
+                        "name": "ppocr-v5-mobile-det",
+                        "version": "v0.1.3",
+                        "role": "text-detection",
+                        "task": "ocr",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "cacheStatus": "READY",
+                        "cachePath": det_path
+                    },
+                    {
+                        "name": "ppocr-v5-mobile-rec",
+                        "version": "v0.1.3",
+                        "role": "text-recognition",
+                        "task": "ocr",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "cacheStatus": "READY",
+                        "cachePath": rec_path
+                    }
+                ],
+                "auxiliaryArtifacts": [
+                    {
+                        "name": "ppocr-keys-v5",
+                        "version": "v0.1.3",
+                        "role": "recognition-charset",
+                        "cacheStatus": "READY",
+                        "cachePath": keys_path
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["metrics"]["decoder"], "ocr");
+    assert_eq!(
+        json["metrics"]["loadedModels"],
+        json!(["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"])
+    );
+    assert_eq!(
+        json["metrics"]["auxiliaryArtifacts"],
+        json!(["ppocr-keys-v5:v0.1.3"])
+    );
+    assert_eq!(
+        json["document"]["parserRun"]["models"],
+        json!(["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"])
+    );
+    assert_eq!(json["document"]["body"]["units"][0]["kind"], "OCR_REGION");
+}
+
+#[test]
 fn parse_pdf_routes_to_rust_mnn_model_worker_binary() {
     let pdf = write_pdf_fixture("Fallback text should not be used.");
     let worker = assert_cmd::cargo::cargo_bin("doctruth-mnn-model-worker");
@@ -379,7 +476,7 @@ fn parse_pdf_auto_ocr_route_discovers_packaged_rust_mnn_worker() {
     fs::copy(&source_worker, &worker).unwrap();
     make_executable(&worker);
     let (cache_dir, manifest) =
-        ready_mnn_ocr_model_manifest("doctruth-runtime-auto-ocr-path-cache");
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-auto-ocr-path-cache");
     let path = prepend_path(&bin_dir);
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
 
@@ -481,6 +578,34 @@ fn parse_pdf_sends_manifest_cache_metadata_to_configured_worker() {
         json["parserRun"]["modelRuntime"]["unloadPolicy"],
         "idle-after-request"
     );
+}
+
+#[test]
+fn parse_pdf_sends_ocr_model_pack_auxiliary_artifacts_to_worker() {
+    let pdf = write_empty_text_layer_pdf();
+    let worker = write_ocr_pack_asserting_model_worker();
+    let (cache_dir, manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-ocr-pack-cache");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "ocr"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(
+        json["parserRun"]["models"],
+        json!(["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"])
+    );
+    assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");
 }
 
 #[test]
@@ -638,13 +763,15 @@ fn ready_mnn_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
     (cache_dir, manifest)
 }
 
-fn ready_mnn_ocr_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
+fn ready_mnn_ocr_model_pack_manifest(prefix: &str) -> (PathBuf, PathBuf) {
     let cache_dir = temp_dir(prefix);
     fs::create_dir_all(&cache_dir).unwrap();
-    let artifact = b"ready mnn ocr model artifact";
-    let artifact_sha = sha256(artifact);
-    let artifact_path = cache_dir.join("ocr-router-v1.bin");
-    fs::write(&artifact_path, artifact).unwrap();
+    let det = b"ready mnn ppocr det";
+    let rec = b"ready mnn ppocr rec";
+    let keys = b"abc\n";
+    fs::write(cache_dir.join("ppocr-v5-mobile-det-v0.1.3.bin"), det).unwrap();
+    fs::write(cache_dir.join("ppocr-v5-mobile-rec-v0.1.3.bin"), rec).unwrap();
+    fs::write(cache_dir.join("ppocr-keys-v5-v0.1.3.bin"), keys).unwrap();
     let manifest = temp_path(&format!("{prefix}-manifest"), "json");
     fs::write(
         &manifest,
@@ -652,19 +779,43 @@ fn ready_mnn_ocr_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
             "presets": {
                 "ocr": [
                     {
-                        "name": "ocr-router",
-                        "version": "v1",
-                        "sha256": artifact_sha,
-                        "sizeBytes": artifact.len(),
+                        "name": "ppocr-v5-mobile-det",
+                        "version": "v0.1.3",
+                        "sha256": sha256(det),
+                        "sizeBytes": det.len(),
                         "required": true,
                         "task": "ocr",
+                        "role": "text-detection",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "precision": "fp32",
+                        "license": "test"
+                    },
+                    {
+                        "name": "ppocr-v5-mobile-rec",
+                        "version": "v0.1.3",
+                        "sha256": sha256(rec),
+                        "sizeBytes": rec.len(),
+                        "required": true,
+                        "task": "ocr",
+                        "role": "text-recognition",
                         "backend": "mnn",
                         "format": "mnn",
                         "precision": "fp32",
                         "license": "test"
                     }
                 ]
-            }
+            },
+            "auxiliary": [
+                {
+                    "name": "ppocr-keys-v5",
+                    "version": "v0.1.3",
+                    "sha256": sha256(keys),
+                    "sizeBytes": keys.len(),
+                    "role": "recognition-charset",
+                    "license": "test"
+                }
+            ]
         })
         .to_string(),
     )
@@ -894,6 +1045,71 @@ fn write_auto_ocr_model_worker() -> PathBuf {
     )
 }
 
+fn write_ocr_pack_asserting_model_worker() -> PathBuf {
+    write_worker_script(
+        "doctruth-runtime-ocr-pack-model-worker",
+        r#"#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+request = json.load(sys.stdin)
+models = request["models"]
+auxiliary = request["auxiliaryArtifacts"]
+assert request["preset"] == "ocr"
+assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
+assert all(model["backend"] == "mnn" and model["format"] == "mnn" for model in models), models
+assert all(model["cacheStatus"] == "READY" for model in models), models
+assert all(pathlib.Path(model["cachePath"]).is_file() for model in models), models
+assert len(auxiliary) == 1, auxiliary
+assert auxiliary[0]["role"] == "recognition-charset", auxiliary
+assert auxiliary[0]["cacheStatus"] == "READY", auxiliary
+assert pathlib.Path(auxiliary[0]["cachePath"]).is_file(), auxiliary
+print(json.dumps({
+    "docId": request["source_hash"],
+    "source": {
+        "sourceFilename": "ocr-pack-worker.pdf",
+        "sourceHash": request["source_hash"],
+        "metadata": {"sourceFilename": "ocr-pack-worker.pdf", "pageCount": 1}
+    },
+    "body": {
+        "pages": [{
+            "pageNumber": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "textLayerAvailable": False,
+            "imageHash": "sha256:" + "0" * 64
+        }],
+        "units": [{
+            "unitId": "unit-0001",
+            "kind": "OCR_REGION",
+            "page": 1,
+            "text": "OCR pack evidence",
+            "evidenceSpanIds": ["span-0001"],
+            "location": {
+                "page": 1,
+                "readingOrder": 1,
+                "boundingBox": {"x0": 20.0, "y0": 20.0, "x1": 200.0, "y1": 80.0}
+            },
+            "sourceObjectId": "ocr-pack-region-1",
+            "confidence": {"score": 0.91, "rationale": "fake ocr pack worker"},
+            "warnings": []
+        }],
+        "tables": []
+    },
+    "parserRun": {
+        "parserVersion": "test-worker",
+        "preset": request["preset"],
+        "backend": "rust-sidecar+model-worker",
+        "models": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
+        "warnings": []
+    },
+    "auditGradeStatus": "AUDIT_GRADE"
+}))
+"#,
+    )
+}
+
 fn auto_ocr_worker_script_body() -> &'static str {
     r#"#!/usr/bin/env python3
 import json
@@ -904,9 +1120,12 @@ assert request["preset"] == "ocr"
 assert request["modelRouting"]["mode"] == "auto"
 assert request["modelRouting"]["decision"] == "model-runtime"
 assert request["modelRouting"]["route"] == "ocr-model"
-assert request["models"][0]["name"] == "ocr-router"
-assert request["models"][0]["backend"] == "mnn"
-assert request["models"][0]["format"] == "mnn"
+models = request["models"]
+auxiliary = request["auxiliaryArtifacts"]
+assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
+assert all(model["backend"] == "mnn" and model["format"] == "mnn" for model in models), models
+assert len(auxiliary) == 1, auxiliary
+assert auxiliary[0]["role"] == "recognition-charset", auxiliary
 print(json.dumps({
     "docId": request["source_hash"],
     "source": {
@@ -943,7 +1162,7 @@ print(json.dumps({
         "parserVersion": "test-worker",
         "preset": request["preset"],
         "backend": "rapidocr-worker",
-        "models": ["ocr-router:v1"],
+        "models": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
         "warnings": []
     },
     "auditGradeStatus": "AUDIT_GRADE",
@@ -951,7 +1170,7 @@ print(json.dumps({
         "runtime": "mnn",
         "coldStartMs": 10.0,
         "inferenceMs": 5.0,
-        "loadedModels": ["ocr-router:v1"],
+        "loadedModels": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
         "unload": {"status": "scheduled", "policy": "idle-after-request"}
     }
 }))

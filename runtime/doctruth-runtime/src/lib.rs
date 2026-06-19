@@ -1389,6 +1389,10 @@ fn configured_model_worker_parse(
         "modelCacheDirectory": model_cache_directory(),
         "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
         "models": model_artifacts,
+        "auxiliaryArtifacts": model_manifest_auxiliary_artifacts()
+            .into_iter()
+            .map(|artifact| model_with_cache_status(artifact, &model_cache_directory()))
+            .collect::<Vec<_>>(),
         "modelRuntime": model_runtime_request_json(profile),
         "modelRouting": route.to_json(true, &required_models.iter().map(RequiredModel::identity).collect::<Vec<_>>())
     });
@@ -1728,6 +1732,20 @@ fn model_manifest_artifacts(preset: &str) -> Vec<Value> {
     };
     manifest
         .pointer(&format!("/presets/{preset}"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn model_manifest_auxiliary_artifacts() -> Vec<Value> {
+    let Some(manifest_path) = configured_model_manifest_path() else {
+        return Vec::new();
+    };
+    let Ok(manifest) = read_json_file(Path::new(&manifest_path), "MODEL_MANIFEST_INVALID") else {
+        return Vec::new();
+    };
+    manifest
+        .pointer("/auxiliary")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
@@ -5998,11 +6016,18 @@ fn required_model_descriptors(preset: &str) -> Vec<RequiredModel> {
             version: "v1",
             expected_sha: "sha256:pending-slanext-auto-v1",
         }],
-        "ocr" => vec![RequiredModel {
-            name: "ocr-router",
-            version: "v1",
-            expected_sha: "sha256:pending-ocr-router-v1",
-        }],
+        "ocr" => vec![
+            RequiredModel {
+                name: "ppocr-v5-mobile-det",
+                version: "v0.1.3",
+                expected_sha: "sha256:pending-ppocr-v5-mobile-det-v0.1.3",
+            },
+            RequiredModel {
+                name: "ppocr-v5-mobile-rec",
+                version: "v0.1.3",
+                expected_sha: "sha256:pending-ppocr-v5-mobile-rec-v0.1.3",
+            },
+        ],
         _ => Vec::new(),
     }
 }

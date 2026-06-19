@@ -40,7 +40,11 @@ fn library_api_reports_doctor_readiness_without_spawning_binary() {
     );
     assert_eq!(
         doctor["models"]["presets"]["ocr"]["models"][0]["identity"],
-        "ocr-router:v1"
+        "ppocr-v5-mobile-det:v0.1.3"
+    );
+    assert_eq!(
+        doctor["models"]["presets"]["ocr"]["models"][1]["identity"],
+        "ppocr-v5-mobile-rec:v0.1.3"
     );
     assert_eq!(doctor["capabilities"]["ocr"]["available"], false);
     assert_eq!(doctor["capabilities"]["tables"]["available"], false);
@@ -87,12 +91,13 @@ fn library_api_doctor_verifies_model_manifest_cache_and_sha_status() {
                         "format": "mnn"
                     },
                     {
-                        "name": "ocr-router",
-                        "version": "v1",
+                        "name": "ppocr-v5-mobile-det",
+                        "version": "v0.1.3",
                         "sha256": "sha256:missing",
                         "sizeBytes": 42,
                         "required": true,
                         "task": "ocr",
+                        "role": "text-detection",
                         "backend": "mnn",
                         "format": "mnn"
                     }

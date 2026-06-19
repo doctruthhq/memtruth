@@ -209,6 +209,23 @@ fn parse_pdf_does_not_emit_dense_cluster_table_for_article_prose_real_case() {
 }
 
 #[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_formula_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000028.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "formula prose");
+}
+
+#[test]
 fn parse_pdf_does_not_emit_dense_cluster_table_for_bibliography_prose_real_case() {
     let pdf = opendataloader_fixture("01030000000193.pdf");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

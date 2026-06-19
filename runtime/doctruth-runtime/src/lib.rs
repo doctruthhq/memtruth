@@ -10104,6 +10104,11 @@ fn table_from_aligned_rows(
     if rationale.contains("dense cluster") && !opendataloader_dense_output_has_header(&rows) {
         return None;
     }
+    if rationale.contains("dense cluster")
+        && opendataloader_dense_output_has_prose_header(&rows, anchors)
+    {
+        return None;
+    }
     let row_centers = rows
         .iter()
         .map(|row| row.iter().map(|point| point.y).sum::<f64>() / row.len() as f64)
@@ -10355,7 +10360,7 @@ fn opendataloader_dense_candidate_passes_quality_gate(
 }
 
 fn opendataloader_dense_column_anchors(rows: &[Vec<TextPoint>]) -> Option<Vec<f64>> {
-    if let Some(row) = rows.iter().take(6).find(|row| dense_header_label_row(row)) {
+    if let Some(row) = opendataloader_dense_header_row(rows) {
         return Some(sparse_anchors_from_row(row));
     }
     let mut xs = rows
@@ -10392,15 +10397,52 @@ fn opendataloader_dense_column_anchors(rows: &[Vec<TextPoint>]) -> Option<Vec<f6
 }
 
 fn opendataloader_has_meaningful_dense_header(rows: &[Vec<TextPoint>]) -> bool {
-    rows.iter().take(2).any(|row| dense_header_label_row(row))
+    opendataloader_dense_header_row(rows).is_some()
+}
+
+fn opendataloader_dense_header_row(rows: &[Vec<TextPoint>]) -> Option<&Vec<TextPoint>> {
+    if rows.first().is_some_and(|row| dense_header_label_row(row)) {
+        return rows.first();
+    }
+    let Some(first) = rows.first() else {
+        return None;
+    };
+    if first.len() <= 2 && rows.get(1).is_some_and(|row| dense_header_label_row(row)) {
+        rows.get(1)
+    } else {
+        None
+    }
 }
 
 fn opendataloader_dense_output_has_header(rows: &[Vec<TextPoint>]) -> bool {
     rows.first().is_some_and(|row| dense_header_label_row(row))
 }
 
+fn opendataloader_dense_output_has_prose_header(rows: &[Vec<TextPoint>], anchors: &[f64]) -> bool {
+    rows.first()
+        .map(|row| aligned_row_texts(row, anchors))
+        .and_then(|texts| texts.into_iter().next())
+        .is_some_and(|text| dense_prose_fragment(&text))
+}
+
+fn aligned_row_texts(row: &[TextPoint], anchors: &[f64]) -> Vec<String> {
+    let mut texts = vec![String::new(); anchors.len()];
+    for point in row {
+        if let Some(column) = nearest_sparse_column(anchors, point.x) {
+            texts[column] = normalize_text(&format!("{} {}", texts[column], point.text));
+        }
+    }
+    texts
+}
+
 fn dense_header_label_row(row: &[TextPoint]) -> bool {
     if row.len() < 4 || row.len() > 12 {
+        return false;
+    }
+    if row
+        .first()
+        .is_some_and(|point| dense_prose_fragment(&point.text))
+    {
         return false;
     }
     let labels = row
@@ -10412,6 +10454,11 @@ fn dense_header_label_row(row: &[TextPoint]) -> bool {
         .filter(|point| dense_header_title_like(&point.text))
         .count();
     labels >= 4 && labels * 2 >= row.len() && title_like >= 3
+}
+
+fn dense_prose_fragment(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    normalized.chars().count() > 48 || normalized.split_whitespace().count() > 7
 }
 
 fn dense_header_label(text: &str) -> bool {

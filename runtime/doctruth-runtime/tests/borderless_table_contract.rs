@@ -226,6 +226,36 @@ fn parse_pdf_does_not_emit_dense_cluster_table_for_formula_prose_real_case() {
 }
 
 #[test]
+fn parse_pdf_rejects_dense_cluster_table_with_merged_header_values_real_case() {
+    let pdf = opendataloader_fixture("01030000000127.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().all(|table| {
+            table["quality"]["rationale"] != "opendataloader dense cluster table extraction"
+                || table["cells"].as_array().is_none_or(|cells| {
+                    !cells
+                        .iter()
+                        .take(8)
+                        .any(|cell| cell["text"].as_str().unwrap_or("").contains("33.0%"))
+                })
+        }),
+        "dense cluster should not merge percentage values into the header row: {tables:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_does_not_emit_dense_cluster_table_for_bibliography_prose_real_case() {
     let pdf = opendataloader_fixture("01030000000193.pdf");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

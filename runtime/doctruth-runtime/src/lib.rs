@@ -10109,6 +10109,11 @@ fn table_from_aligned_rows(
     {
         return None;
     }
+    if rationale.contains("dense cluster")
+        && opendataloader_dense_output_header_contains_values(&rows, anchors)
+    {
+        return None;
+    }
     let row_centers = rows
         .iter()
         .map(|row| row.iter().map(|point| point.y).sum::<f64>() / row.len() as f64)
@@ -10423,6 +10428,26 @@ fn opendataloader_dense_output_has_prose_header(rows: &[Vec<TextPoint>], anchors
         .map(|row| aligned_row_texts(row, anchors))
         .and_then(|texts| texts.into_iter().next())
         .is_some_and(|text| dense_prose_fragment(&text))
+}
+
+fn opendataloader_dense_output_header_contains_values(
+    rows: &[Vec<TextPoint>],
+    anchors: &[f64],
+) -> bool {
+    rows.first()
+        .map(|row| {
+            aligned_row_texts(row, anchors)
+                .iter()
+                .filter(|text| dense_header_cell_contains_data_value(text))
+                .count()
+                >= 2
+        })
+        .unwrap_or(false)
+}
+
+fn dense_header_cell_contains_data_value(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    normalized.contains('%') || normalized.contains('$')
 }
 
 fn aligned_row_texts(row: &[TextPoint], anchors: &[f64]) -> Vec<String> {

@@ -10,6 +10,7 @@ import pathlib
 import shutil
 import sys
 import tempfile
+import time
 import urllib.request
 from typing import Any
 
@@ -69,6 +70,26 @@ def fetch_artifact(artifact: dict[str, Any], target: pathlib.Path) -> None:
     if not url:
         raise SystemExit(f"artifact has no url: {artifact.get('name')}")
 
+    errors = []
+    for attempt in range(1, 4):
+        try:
+            fetch_artifact_once(artifact, target, url, expected_sha, expected_size)
+            return
+        except SystemExit as exc:
+            errors.append(str(exc))
+            if attempt == 3:
+                break
+            time.sleep(attempt)
+    raise SystemExit(errors[-1])
+
+
+def fetch_artifact_once(
+    artifact: dict[str, Any],
+    target: pathlib.Path,
+    url: str,
+    expected_sha: str,
+    expected_size: int,
+) -> None:
     with tempfile.NamedTemporaryFile(prefix=f"{target.name}.", dir=str(target.parent), delete=False) as handle:
         temp_path = pathlib.Path(handle.name)
     try:

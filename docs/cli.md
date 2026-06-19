@@ -338,12 +338,48 @@ DOCTRUTH_MODEL_CACHE=.doctruth/models \
   doctruth-runtime --doctor
 ```
 
+To fetch the public OpenDataLoader-style hybrid model references used for
+layout/table parity work:
+
+```bash
+scripts/fetch-doctruth-model-pack.py \
+  --manifest model-packs/opendataloader-hybrid-models.json \
+  --cache .doctruth/models
+```
+
+`opendataloader-hybrid-models.json` pins the public RT-DETR layout and
+TATR-compatible table artifacts used by DocTruth's migration harness. The
+historical OpenDataLoader `table_transformer` branch calls an external TATR
+HTTP service; that service repository is not currently publicly fetchable, so
+DocTruth does not claim it has vendored that private service. It normalizes
+public model outputs through `TrustDocument`.
+
+Every model artifact must carry a preprocessing and parity contract. Before
+promoting a converted MNN/C++ decoder, dump the Python/ONNX reference input
+tensor and the Rust/MNN candidate input tensor for the same image and compare
+the first values plus the raw float32 tensor hash:
+
+```bash
+scripts/doctruth-preprocess-tensor-probe.py \
+  --manifest model-packs/opendataloader-hybrid-models.json \
+  --preset table-lite \
+  --model xenova-table-transformer-structure-recognition \
+  --image page.png \
+  --first 32
+```
+
+The candidate MNN worker must emit the same shape, channel order, resize,
+mean/std normalization, first tensor values, and tensor hash within the
+manifest's `parity.maxAbsDiff`. Most conversion regressions are preprocessing
+drift, not inference engine drift; RGB/BGR order, resize policy, scale, mean,
+and std are part of the acceptance contract.
+
 For a Rust MNN worker, package these model files with the client runtime:
 
 ```bash
-TRADEBOT_OCR_DET_MODEL=/path/to/ocr/det_model.mnn
-TRADEBOT_OCR_REC_MODEL=/path/to/ocr/rec_model.mnn
-TRADEBOT_OCR_KEYS_PATH=/path/to/ocr/ppocr_keys.txt
+DOCTRUTH_OCR_DET_MODEL=/path/to/ocr/det_model.mnn
+DOCTRUTH_OCR_REC_MODEL=/path/to/ocr/rec_model.mnn
+DOCTRUTH_OCR_KEYS_PATH=/path/to/ocr/ppocr_keys.txt
 ```
 
 ### Legacy Python Model Workers

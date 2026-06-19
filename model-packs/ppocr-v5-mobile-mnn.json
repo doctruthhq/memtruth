@@ -22,7 +22,25 @@
         "format": "mnn",
         "precision": "fp32",
         "license": "Apache-2.0",
-        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_det.mnn"
+        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_det.mnn",
+        "preprocessing": {
+          "inputLayout": "NCHW",
+          "dtype": "float32",
+          "colorSpace": "sRGB",
+          "channelOrder": "RGB",
+          "resize": {"limitSideLen": 960, "limitType": "max", "alignTo": 32, "keepAspectRatio": true},
+          "resample": "bilinear",
+          "scale": 0.00392156862745098,
+          "mean": [0.485, 0.456, 0.406],
+          "std": [0.229, 0.224, 0.225]
+        },
+        "parity": {
+          "referenceEngine": "python-paddleocr-or-onnxruntime",
+          "candidateEngine": "rust-mnn",
+          "tensorDumpRequired": true,
+          "firstTensorValuesRequired": true,
+          "maxAbsDiff": 0.000001
+        }
       },
       {
         "name": "ppocr-v5-mobile-rec",
@@ -36,7 +54,25 @@
         "format": "mnn",
         "precision": "fp32",
         "license": "Apache-2.0",
-        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_rec.mnn"
+        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_rec.mnn",
+        "preprocessing": {
+          "inputLayout": "NCHW",
+          "dtype": "float32",
+          "colorSpace": "sRGB",
+          "channelOrder": "RGB",
+          "resize": {"width": 320, "height": 48, "keepAspectRatio": true, "padValue": 0},
+          "resample": "bilinear",
+          "scale": 0.00392156862745098,
+          "mean": [0.5, 0.5, 0.5],
+          "std": [0.5, 0.5, 0.5]
+        },
+        "parity": {
+          "referenceEngine": "python-paddleocr-or-onnxruntime",
+          "candidateEngine": "rust-mnn",
+          "tensorDumpRequired": true,
+          "firstTensorValuesRequired": true,
+          "maxAbsDiff": 0.000001
+        }
       }
     ]
   },

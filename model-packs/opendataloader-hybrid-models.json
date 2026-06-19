@@ -1,0 +1,85 @@
+{
+  "packId": "opendataloader-hybrid-models",
+  "version": "2026-06-19",
+  "source": {
+    "project": "OpenDataLoader hybrid model references",
+    "repository": "https://github.com/opendataloader-project/opendataloader-pdf",
+    "tag": "main@0e667c4369c7f903c530cc4444f852499b27f6f5 + table_transformer@3f58e874f9ad1b8712c69584d4a3e2e26387d864",
+    "license": "Apache-2.0 / model-specific",
+    "notes": [
+      "OpenDataLoader main uses deterministic PDF parsing plus hybrid server interfaces.",
+      "The historical table_transformer branch calls a TATR HTTP service; the referenced open-pdf-dataloader-tatr repository is not publicly fetchable, so DocTruth pins public TATR-compatible artifacts instead.",
+      "Every converted MNN/C++ decoder must prove preprocessing parity against the Python/ONNX reference tensor before being promoted."
+    ]
+  },
+  "presets": {
+    "layout-server": [
+      {
+        "name": "kreuzberg-rtdetr-layout",
+        "version": "rtdetr-model-main-2026-06-19",
+        "sha256": "sha256:3bf2fb0ee6df87435b7ae47f0f3930ec3dc97ec56fd824acc6d57bc7a6b89ef2",
+        "sizeBytes": 169089059,
+        "required": true,
+        "task": "layout-detection",
+        "role": "document-layout-detection",
+        "backend": "onnxruntime",
+        "format": "onnx",
+        "precision": "fp32",
+        "license": "Apache-2.0",
+        "url": "https://huggingface.co/Kreuzberg/layout-models/resolve/main/rtdetr/model.onnx",
+        "preprocessing": {
+          "inputLayout": "NCHW",
+          "dtype": "float32",
+          "colorSpace": "sRGB",
+          "channelOrder": "RGB",
+          "resize": {"width": 640, "height": 640, "keepAspectRatio": false},
+          "resample": "bilinear",
+          "scale": 0.00392156862745098,
+          "mean": [0.485, 0.456, 0.406],
+          "std": [0.229, 0.224, 0.225]
+        },
+        "parity": {
+          "referenceEngine": "python-onnxruntime",
+          "candidateEngine": "rust-mnn",
+          "tensorDumpRequired": true,
+          "firstTensorValuesRequired": true,
+          "maxAbsDiff": 0.000001
+        }
+      }
+    ],
+    "table-lite": [
+      {
+        "name": "xenova-table-transformer-structure-recognition",
+        "version": "model_quantized-main-2026-06-19",
+        "sha256": "sha256:c11f4033da75e9c4d41c403ef356e89caa0a37a7d111b55461e7d5ba856bb6b6",
+        "sizeBytes": 30158413,
+        "required": true,
+        "task": "table-structure-recognition",
+        "role": "table-structure-decoder",
+        "backend": "onnxruntime",
+        "format": "onnx",
+        "precision": "quantized",
+        "license": "Apache-2.0",
+        "url": "https://huggingface.co/Xenova/table-transformer-structure-recognition/resolve/main/onnx/model_quantized.onnx",
+        "preprocessing": {
+          "inputLayout": "NCHW",
+          "dtype": "float32",
+          "colorSpace": "sRGB",
+          "channelOrder": "RGB",
+          "resize": {"width": 800, "height": 800, "keepAspectRatio": false},
+          "resample": "bilinear",
+          "scale": 0.00392156862745098,
+          "mean": [0.485, 0.456, 0.406],
+          "std": [0.229, 0.224, 0.225]
+        },
+        "parity": {
+          "referenceEngine": "python-onnxruntime",
+          "candidateEngine": "rust-mnn",
+          "tensorDumpRequired": true,
+          "firstTensorValuesRequired": true,
+          "maxAbsDiff": 0.000001
+        }
+      }
+    ]
+  }
+}

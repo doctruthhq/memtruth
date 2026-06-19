@@ -325,6 +325,19 @@ DOCTRUTH_MNN_NATIVE_PROBE_MODEL=/path/to/model.mnn \
 loading/session/inference. MNN benchmark or shape-only artifacts that have
 weights stripped are not valid inference acceptance models.
 
+DocTruth ships model manifests, not binary model files. To fetch the default
+PP-OCRv5 mobile MNN OCR model pack into the local cache:
+
+```bash
+scripts/fetch-doctruth-model-pack.py \
+  --manifest model-packs/ppocr-v5-mobile-mnn.json \
+  --cache .doctruth/models
+
+DOCTRUTH_MODEL_MANIFEST=model-packs/ppocr-v5-mobile-mnn.json \
+DOCTRUTH_MODEL_CACHE=.doctruth/models \
+  doctruth-runtime --doctor
+```
+
 For a Rust MNN worker, package these model files with the client runtime:
 
 ```bash

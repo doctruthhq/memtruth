@@ -132,6 +132,193 @@ fn parse_pdf_emits_cluster_table_for_opendataloader_sparse_real_case() {
 }
 
 #[test]
+fn parse_pdf_emits_cluster_table_for_opendataloader_service_flow_real_case() {
+    let pdf = opendataloader_fixture("01030000000200.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(format!(
+            r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:service-flow","preset":"auto","offline_mode":true}}"#,
+            pdf.display()
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 4
+                && table["cells"]
+                    .as_array()
+                    .is_some_and(|cells| cells.iter().any(|cell| cell["text"] == "Service Stage"))
+                && table["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| cell["text"] == "Expected Benefit")
+                })
+        }),
+        "expected service-flow table with four columns, got {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_two_column_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000002.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(format!(
+            r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:two-column-prose","preset":"auto","offline_mode":true}}"#,
+            pdf.display()
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().all(|table| {
+            table["quality"]["rationale"] != "opendataloader dense cluster table extraction"
+        }),
+        "two-column prose should not be emitted as dense cluster table: {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_bibliography_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000193.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "bibliography prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_instructor_resource_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000158.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "instructor resource prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_wrapped_paragraph_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000140.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "wrapped paragraph prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_sift_sidebar_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000157.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "sift sidebar prose");
+}
+
+#[test]
+fn parse_pdf_suppresses_dense_duplicate_for_party_registration_real_case() {
+    let pdf = opendataloader_fixture("01030000000046.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let party_tables = tables
+        .iter()
+        .filter(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| cell["text"] == "Political party")
+                    && cells
+                        .iter()
+                        .any(|cell| cell["text"] == "Cambodian People’s Party")
+            })
+        })
+        .count();
+
+    assert_eq!(party_tables, 1, "expected one party table, got {tables:?}");
+    assert_no_dense_cluster_table(&json, "party registration duplicate");
+}
+
+#[test]
+fn parse_pdf_keeps_nested_numeric_subtable_for_appendix_real_case() {
+    let pdf = opendataloader_fixture("01030000000082.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| cell["text"] == "15.6")
+                    && cells.iter().any(|cell| cell["text"] == "200.4")
+                    && cells.len() <= 12
+            })
+        }),
+        "expected nested numeric subtable, got {tables:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_composes_bordered_and_cluster_table_processors() {
     let pdf = write_bordered_plus_cluster_table_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -182,6 +369,16 @@ fn opendataloader_fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../third_party/opendataloader-bench/pdfs")
         .join(name)
+}
+
+fn assert_no_dense_cluster_table(json: &Value, label: &str) {
+    let tables = json["body"]["tables"].as_array().unwrap();
+    assert!(
+        tables.iter().all(|table| {
+            table["quality"]["rationale"] != "opendataloader dense cluster table extraction"
+        }),
+        "{label} should not be emitted as dense cluster table: {tables:?}"
+    );
 }
 
 fn write_borderless_table_pdf_fixture() -> PathBuf {

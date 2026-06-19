@@ -142,6 +142,38 @@ fn doctor_reports_runtime_profiles_and_resource_gate_contract() {
 }
 
 #[test]
+fn doctor_reports_opendataloader_reference_stages_owned_by_rust() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .arg("--doctor")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let stages = json["pdfBackend"]["referenceStages"]
+        .as_array()
+        .expect("reference stages should be listed");
+    for expected in [
+        "content-filter",
+        "text-line",
+        "xy-cut-plus-plus",
+        "cluster-table",
+        "table-structure-normalizer",
+        "heading",
+    ] {
+        assert!(
+            stages.iter().any(|stage| stage == expected),
+            "missing OpenDataLoader reference stage {expected}: {stages:?}"
+        );
+    }
+    assert_eq!(json["pdfBackend"]["canonicalOutput"], "TrustDocument");
+}
+
+#[test]
 fn parse_pdf_rejects_benchmark_oracle_as_production_runtime_profile() {
     let pdf = write_pdf_fixture("Benchmark oracle is not production parse.");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -182,6 +214,10 @@ fn parse_pdf_reads_stdin_and_writes_trust_document_json() {
     assert_eq!(json["parserRun"]["pdfBackend"]["target"], "pdf_oxide");
     assert_eq!(json["parserRun"]["pdfBackend"]["current"], "pdf_oxide");
     assert_eq!(json["parserRun"]["pdfBackend"]["status"], "DEFAULT");
+    assert_eq!(
+        json["parserRun"]["pdfBackend"]["canonicalOutput"],
+        "TrustDocument"
+    );
     assert_eq!(json["parserRun"]["preset"], "lite");
     assert_eq!(json["parserRun"]["profile"], "edge-model");
     assert_eq!(json["auditGradeStatus"], "AUDIT_GRADE");

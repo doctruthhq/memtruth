@@ -5,6 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 DEFAULT_BENCH="$ROOT/scripts/run-doctruth-opendataloader-bench.sh"
 MNN_BENCH="$ROOT/scripts/run-doctruth-mnn-promotion-bench.sh"
 LEGACY_BASELINE="$ROOT/scripts/run-doctruth-opendataloader-hybrid-baseline.sh"
+LEGACY_BASELINE_SMOKE="$ROOT/scripts/smoke-doctruth-opendataloader-hybrid-baseline.sh"
 LEGACY_ADAPTER="$ROOT/scripts/doctruth_opendataloader_prediction.py"
 LEGACY_WORKERS="
 $ROOT/scripts/doctruth-onnx-model-worker
@@ -33,6 +34,18 @@ if [ "$STATUS" -eq 0 ]; then
 fi
 
 printf '%s' "$OUT" | rg -n "oracle-only|DOCTRUTH_ALLOW_PYTHON_ORACLE" >/dev/null
+
+set +e
+SMOKE_OUT="$(sh "$LEGACY_BASELINE_SMOKE" 2>&1)"
+SMOKE_STATUS="$?"
+set -e
+
+if [ "$SMOKE_STATUS" -eq 0 ]; then
+  echo "legacy Python oracle smoke should fail closed without DOCTRUTH_ALLOW_PYTHON_ORACLE=1" >&2
+  exit 1
+fi
+
+printf '%s' "$SMOKE_OUT" | rg -n "oracle-only|DOCTRUTH_ALLOW_PYTHON_ORACLE" >/dev/null
 
 set +e
 ADAPTER_OUT="$(python3 "$LEGACY_ADAPTER" --help 2>&1)"

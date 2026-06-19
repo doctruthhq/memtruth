@@ -146,7 +146,25 @@ fn pdf_backend_json() -> Value {
         "target": PDF_BACKEND_TARGET,
         "current": PDF_BACKEND_CURRENT,
         "status": PDF_BACKEND_STATUS,
-        "features": ["legacy-crypto", "rendering"]
+        "canonicalOutput": "TrustDocument",
+        "referenceSource": "opendataloader-project/opendataloader-pdf@d1845179a1286bbb76f9618e8b6c8f51509a52f4",
+        "referenceStages": [
+            "content-filter",
+            "text-line",
+            "xy-cut-plus-plus",
+            "cluster-table",
+            "table-structure-normalizer",
+            "heading"
+        ],
+        "features": [
+            "legacy-crypto",
+            "rendering",
+            "content-filter",
+            "xy-cut-plus-plus",
+            "cluster-table",
+            "table-structure-normalizer",
+            "heading"
+        ]
     })
 }
 
@@ -336,11 +354,11 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         extract_page_metadata(source_path).unwrap_or_else(|_| fallback_page_metadata(&page_lines));
     let mut units = unit_json(&page_lines, &positioned_lines);
     if let Some(table) = party_registration_table_from_units(&units, tables.len() + 1) {
-        push_non_overlapping_table_without_warnings(&mut tables, table);
+        push_preferred_table(&mut tables, table);
         tables = renumber_tables(tables).unwrap_or_default();
     }
     if let Some(table) = table_of_contents_table_from_units(&units, tables.len() + 1) {
-        push_non_overlapping_table_without_warnings(&mut tables, table);
+        push_preferred_table(&mut tables, table);
         tables = renumber_tables(tables).unwrap_or_default();
     }
     units.extend(table_unit_json(&tables, units.len() + 1));
@@ -4773,6 +4791,10 @@ fn markdown_from_document(document: &Value) -> String {
                 );
                 continue;
             }
+            if let Some(table_id) = table_id_containing_unit_text(unit, &tables) {
+                render_markdown_table_once(&table_id, &tables, &mut rendered_tables, &mut lines);
+                continue;
+            }
             if let Some(block) = markdown_block_for_unit(unit, &blocks) {
                 let block_id = block.get("blockId").and_then(Value::as_str).unwrap_or("");
                 if !block_id.is_empty() && rendered_blocks.contains(block_id) {
@@ -4801,6 +4823,44 @@ fn markdown_from_document(document: &Value) -> String {
         lines.extend(spatial_tables);
     }
     lines.join("\n")
+}
+
+fn table_id_containing_unit_text(unit: &Value, tables: &BTreeMap<String, Value>) -> Option<String> {
+    if unit.get("kind").and_then(Value::as_str) != Some("LINE_SPAN") {
+        return None;
+    }
+    let text = unit
+        .get("text")
+        .and_then(Value::as_str)
+        .map(normalize_text)?;
+    if text.is_empty() {
+        return None;
+    }
+    let unit_bbox = bbox_at(unit, "/location/boundingBox")?;
+    let center_x = (unit_bbox[0] + unit_bbox[2]) / 2.0;
+    let center_y = (unit_bbox[1] + unit_bbox[3]) / 2.0;
+    tables.iter().find_map(|(table_id, table)| {
+        let table_bbox = bbox_at(table, "/boundingBox")?;
+        if center_x < table_bbox[0] - 2.0
+            || center_x > table_bbox[2] + 2.0
+            || center_y < table_bbox[1] - 2.0
+            || center_y > table_bbox[3] + 2.0
+        {
+            return None;
+        }
+        table
+            .get("cells")
+            .and_then(Value::as_array)?
+            .iter()
+            .any(|cell| {
+                cell.get("text")
+                    .and_then(Value::as_str)
+                    .map(normalize_text)
+                    .as_deref()
+                    == Some(text.as_str())
+            })
+            .then(|| table_id.clone())
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -6441,6 +6501,7 @@ fn table_method(rationale: &str) -> &'static str {
         || rationale.contains("borderless aligned text")
         || rationale.contains("party registration")
         || rationale.contains("table of contents")
+        || rationale.contains("dense cluster")
     {
         "cluster"
     } else if rationale.contains("line-table") {
@@ -8059,6 +8120,11 @@ fn push_non_overlapping_table_without_warnings(
     push_non_overlapping_table(tables, table, &mut warnings);
 }
 
+fn push_preferred_table(tables: &mut Vec<TableExtraction>, table: TableExtraction) {
+    tables.retain(|existing| !duplicate_table(existing, &table));
+    tables.push(table);
+}
+
 fn rejected_table_warning(table: &TableExtraction) -> Option<Value> {
     if suspect_full_page_table_false_positive(table) {
         return Some(parser_safety_warning(
@@ -8135,8 +8201,11 @@ fn noisy_table_text(text: &str) -> bool {
 }
 
 fn duplicate_table(left: &TableExtraction, right: &TableExtraction) -> bool {
-    left.page_number == right.page_number
-        && bbox_intersection_over_min_area(&left.bbox, &right.bbox) >= 0.45
+    if left.page_number != right.page_number {
+        return false;
+    }
+    bbox_intersection_over_min_area(&left.bbox, &right.bbox) >= 0.45
+        || table_text_token_containment(left, right) >= 0.68
 }
 
 fn bbox_intersection_over_min_area(left: &RuntimeBox, right: &RuntimeBox) -> f64 {
@@ -8149,6 +8218,39 @@ fn bbox_intersection_over_min_area(left: &RuntimeBox, right: &RuntimeBox) -> f64
     } else {
         intersection / min_area
     }
+}
+
+fn table_text_token_containment(left: &TableExtraction, right: &TableExtraction) -> f64 {
+    if !table_has_header_like_text(right) {
+        return 0.0;
+    }
+    let left_tokens = table_text_tokens(left);
+    let right_tokens = table_text_tokens(right);
+    let smaller = left_tokens.len().min(right_tokens.len());
+    if smaller < 8 {
+        return 0.0;
+    }
+    let shared = left_tokens.intersection(&right_tokens).count();
+    shared as f64 / smaller as f64
+}
+
+fn table_text_tokens(table: &TableExtraction) -> BTreeSet<String> {
+    table
+        .cells
+        .iter()
+        .flat_map(|cell| cell.text.split(|ch: char| !ch.is_alphanumeric()))
+        .map(|token| token.to_lowercase())
+        .filter(|token| token.chars().count() >= 2)
+        .collect()
+}
+
+fn table_has_header_like_text(table: &TableExtraction) -> bool {
+    table
+        .cells
+        .iter()
+        .filter(|cell| cell.row == 0 && dense_header_title_like(&cell.text))
+        .count()
+        >= 3
 }
 
 fn renumber_tables(mut tables: Vec<TableExtraction>) -> Result<Vec<TableExtraction>, String> {
@@ -8211,12 +8313,24 @@ fn extract_tables_from_positioned_lines(
             tables.push(table);
             continue;
         }
+        let before_borderless = tables.len();
         for segment in borderless_table_segments(&points) {
             if let Some(table) = borderless_table_from_text_points(
                 page_number,
                 page_width,
                 page_height,
                 &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                tables.push(table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_dense_cluster_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &points,
                 tables.len() + 1,
             ) {
                 tables.push(table);
@@ -8923,12 +9037,24 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
                 )
             })
             .collect::<Vec<_>>();
+        let before_borderless = tables.len();
         for segment in borderless_table_segments(&remaining_points) {
             if let Some(table) = borderless_table_from_text_points(
                 page_number,
                 page_width,
                 page_height,
                 &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                push_non_overlapping_table_without_warnings(&mut tables, table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_dense_cluster_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &remaining_points,
                 tables.len() + 1,
             ) {
                 push_non_overlapping_table_without_warnings(&mut tables, table);
@@ -9298,9 +9424,91 @@ fn sparse_borderless_table_from_rows(
 ) -> Option<TableExtraction> {
     let rows = merge_sparse_continuation_rows(rows);
     if !looks_like_sparse_borderless_table(&rows) {
-        return None;
+        return opendataloader_dense_aligned_table_from_rows(
+            page_number,
+            page_width,
+            page_height,
+            &rows,
+            table_index,
+        );
     }
     let anchors = sparse_column_anchors(&rows);
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        &rows,
+        &anchors,
+        table_index,
+        "borderless aligned text table extraction",
+    )
+}
+
+fn opendataloader_dense_cluster_table_from_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let rows = borderless_rows(points);
+    let anchors = opendataloader_dense_column_anchors(&rows)?;
+    if !opendataloader_dense_candidate_passes_quality_gate(&rows, &anchors) {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        &rows,
+        &anchors,
+        table_index,
+        "opendataloader dense cluster table extraction",
+    )
+}
+
+fn opendataloader_dense_aligned_table_from_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let anchors = opendataloader_dense_column_anchors(rows)?;
+    if !opendataloader_dense_candidate_passes_quality_gate(rows, &anchors) {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        rows,
+        &anchors,
+        table_index,
+        "opendataloader dense cluster table extraction",
+    )
+}
+
+fn table_from_aligned_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    anchors: &[f64],
+    table_index: usize,
+    rationale: &str,
+) -> Option<TableExtraction> {
+    if anchors.is_empty() {
+        return None;
+    }
+    let rows = if rationale.contains("dense cluster") {
+        opendataloader_merge_row_bands(rows, anchors)
+    } else {
+        rows.to_vec()
+    };
+    if rationale.contains("dense cluster") && !opendataloader_dense_output_has_header(&rows) {
+        return None;
+    }
     let row_centers = rows
         .iter()
         .map(|row| row.iter().map(|point| point.y).sum::<f64>() / row.len() as f64)
@@ -9337,7 +9545,7 @@ fn sparse_borderless_table_from_rows(
         page_number,
         table_id: format!("table-{table_index:04}"),
         bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
-        rationale: "borderless aligned text table extraction".to_string(),
+        rationale: rationale.to_string(),
         cells,
     })
 }
@@ -9501,6 +9709,195 @@ fn sparse_row_is_letter_header(row: &[TextPoint]) -> bool {
         })
         .count()
         >= 2
+}
+
+fn opendataloader_dense_candidate_passes_quality_gate(
+    rows: &[Vec<TextPoint>],
+    anchors: &[f64],
+) -> bool {
+    if rows.len() < 4 {
+        return false;
+    }
+    if anchors.len() < 3 || anchors.len() > 10 {
+        return false;
+    }
+    let min_x = rows
+        .iter()
+        .flatten()
+        .map(|point| point.x)
+        .fold(f64::INFINITY, f64::min);
+    let max_x = rows
+        .iter()
+        .flatten()
+        .map(|point| point.x)
+        .fold(f64::NEG_INFINITY, f64::max);
+    if max_x - min_x < PAGE_WIDTH * 0.45 {
+        return false;
+    }
+    let strong_rows = rows.iter().filter(|row| row.len() >= 3).count();
+    if strong_rows < 1 {
+        return false;
+    }
+    let dense_columns = anchors
+        .iter()
+        .filter(|anchor| {
+            rows.iter()
+                .filter(|row| row.iter().any(|point| (point.x - **anchor).abs() <= 24.0))
+                .count()
+                >= 4
+        })
+        .count();
+    if dense_columns < 2 {
+        return false;
+    }
+    let aligned_multi_rows = rows
+        .iter()
+        .filter(|row| opendataloader_dense_row_has_separated_columns(row))
+        .count();
+    aligned_multi_rows >= 4
+        && opendataloader_rows_are_monotonic(rows)
+        && opendataloader_has_meaningful_dense_header(rows)
+}
+
+fn opendataloader_dense_column_anchors(rows: &[Vec<TextPoint>]) -> Option<Vec<f64>> {
+    if let Some(row) = rows.iter().take(6).find(|row| dense_header_label_row(row)) {
+        return Some(sparse_anchors_from_row(row));
+    }
+    let mut xs = rows
+        .iter()
+        .filter(|row| row.len() >= 3)
+        .flat_map(|row| row.iter().map(|point| point.x))
+        .collect::<Vec<_>>();
+    xs.sort_by(f64::total_cmp);
+    let mut clusters: Vec<Vec<f64>> = Vec::new();
+    for x in xs {
+        if let Some(cluster) = clusters.last_mut() {
+            let mean = cluster.iter().sum::<f64>() / cluster.len() as f64;
+            if (x - mean).abs() <= 24.0 {
+                cluster.push(x);
+                continue;
+            }
+        }
+        clusters.push(vec![x]);
+    }
+    let mut anchors = clusters
+        .into_iter()
+        .filter(|cluster| cluster.len() >= 3)
+        .map(|cluster| cluster.iter().sum::<f64>() / cluster.len() as f64)
+        .collect::<Vec<_>>();
+    anchors.sort_by(f64::total_cmp);
+    if (3..=10).contains(&anchors.len()) {
+        return Some(anchors);
+    }
+    rows.iter()
+        .filter(|row| row.len() >= 4)
+        .max_by_key(|row| row.len())
+        .map(|row| sparse_anchors_from_row(row))
+        .filter(|anchors| anchors.len() >= 4)
+}
+
+fn opendataloader_has_meaningful_dense_header(rows: &[Vec<TextPoint>]) -> bool {
+    rows.iter().take(2).any(|row| dense_header_label_row(row))
+}
+
+fn opendataloader_dense_output_has_header(rows: &[Vec<TextPoint>]) -> bool {
+    rows.first().is_some_and(|row| dense_header_label_row(row))
+}
+
+fn dense_header_label_row(row: &[TextPoint]) -> bool {
+    if row.len() < 4 || row.len() > 8 {
+        return false;
+    }
+    let labels = row
+        .iter()
+        .filter(|point| dense_header_label(&point.text))
+        .count();
+    let title_like = row
+        .iter()
+        .filter(|point| dense_header_title_like(&point.text))
+        .count();
+    labels >= 4 && labels * 2 >= row.len() && title_like >= 3
+}
+
+fn dense_header_label(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    if normalized.is_empty() {
+        return false;
+    }
+    if normalized.chars().count() > 32 {
+        return false;
+    }
+    let words = normalized.split_whitespace().count();
+    words <= 4 && normalized.chars().any(|ch| ch.is_alphabetic())
+}
+
+fn dense_header_title_like(text: &str) -> bool {
+    normalize_text(text)
+        .split_whitespace()
+        .find_map(|word| word.chars().find(|ch| ch.is_alphabetic()))
+        .is_some_and(|ch| ch.is_uppercase())
+}
+
+fn opendataloader_rows_are_monotonic(rows: &[Vec<TextPoint>]) -> bool {
+    rows.windows(2)
+        .all(|pair| sparse_row_center_y(&pair[0]) > sparse_row_center_y(&pair[1]))
+}
+
+fn opendataloader_dense_row_has_separated_columns(row: &[TextPoint]) -> bool {
+    if row.len() < 2 {
+        return false;
+    }
+    let mut xs = row.iter().map(|point| point.x).collect::<Vec<_>>();
+    xs.sort_by(f64::total_cmp);
+    xs.windows(2).any(|pair| pair[1] - pair[0] >= 80.0)
+}
+
+fn opendataloader_merge_row_bands(rows: &[Vec<TextPoint>], anchors: &[f64]) -> Vec<Vec<TextPoint>> {
+    let mut merged: Vec<Vec<TextPoint>> = Vec::new();
+    for row in rows {
+        if opendataloader_row_should_merge_with_previous(&merged, row, anchors) {
+            if let Some(previous) = merged.last_mut() {
+                previous.extend(row.iter().cloned());
+                previous.sort_by(|left, right| left.x.total_cmp(&right.x));
+                continue;
+            }
+        }
+        merged.push(sorted_sparse_row(row.clone()));
+    }
+    merged
+}
+
+fn opendataloader_row_should_merge_with_previous(
+    merged: &[Vec<TextPoint>],
+    row: &[TextPoint],
+    anchors: &[f64],
+) -> bool {
+    let Some(previous) = merged.last() else {
+        return false;
+    };
+    let gap = sparse_row_gap(previous, row);
+    if gap > 36.0 {
+        return false;
+    }
+    let previous_columns = opendataloader_occupied_columns(previous, anchors);
+    let row_columns = opendataloader_occupied_columns(row, anchors);
+    if row_columns.is_empty() {
+        return false;
+    }
+    let subset_of_previous = row_columns
+        .iter()
+        .all(|column| previous_columns.contains(column));
+    let header_continuation = !previous_columns.contains(&0)
+        && row_columns.iter().any(|column| *column >= 2)
+        && row_columns.len() <= previous_columns.len().max(2);
+    let body_continuation = !row_columns.contains(&0) && row_columns.len() <= 2;
+    subset_of_previous || header_continuation || body_continuation
+}
+
+fn opendataloader_occupied_columns(row: &[TextPoint], anchors: &[f64]) -> BTreeSet<usize> {
+    row.iter()
+        .filter_map(|point| nearest_sparse_column(anchors, point.x))
+        .collect()
 }
 
 fn sorted_sparse_row(mut row: Vec<TextPoint>) -> Vec<TextPoint> {

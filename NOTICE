@@ -48,16 +48,22 @@ Bundled third-party benchmark material:
 
 Reference implementations adapted in DocTruth-owned code:
 
-- OpenDataLoader PDF XYCutPlusPlusSorter
+- OpenDataLoader PDF parser processors
   Source: https://github.com/opendataloader-project/opendataloader-pdf
-  Reference commit: 58a6dc782d27a42d433ffd1052be3f2c61f75cb3
+  Reference commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4
   Reference files:
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorter.java
     java/opendataloader-pdf-core/src/test/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorterTest.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ContentFilterProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ClusterTableProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableStructureNormalizer.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java
   License: Apache License 2.0
-  Adaptation: Rust-owned reading-order behavior in
-  runtime/doctruth-runtime/src/lib.rs; TrustDocument remains the only canonical
-  DocTruth output contract.
+  Adaptation: Rust-owned reading order, content filtering, line grouping,
+  cluster-table fallback, table-structure normalization, and heading behavior
+  in runtime/doctruth-runtime/src/lib.rs; TrustDocument remains the only
+  canonical DocTruth output contract.
 
 Test-scope dependencies (not bundled in published artifacts):
 

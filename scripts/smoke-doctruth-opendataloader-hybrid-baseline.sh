@@ -5,6 +5,20 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 ENGINE="doctruth-opendataloader-hybrid-baseline-smoke"
 DOC_ID="01030000000045"
 
+if [ "${DOCTRUTH_ALLOW_PYTHON_ORACLE:-}" != "1" ]; then
+  cat >&2 <<'EOF'
+refusing to start Python/OpenDataLoader hybrid baseline smoke.
+
+This smoke is oracle-only legacy benchmark infrastructure. It is not the
+default DocTruth parser, OpenDataLoader prediction, or MNN promotion path.
+
+Use scripts/run-doctruth-opendataloader-bench.sh for the default Rust runner.
+Set DOCTRUTH_ALLOW_PYTHON_ORACLE=1 only when intentionally reproducing the
+heavy OpenDataLoader/docling-fast oracle baseline.
+EOF
+  exit 2
+fi
+
 python3 "$ROOT/scripts/doctruth_opendataloader_prediction.py" \
   --bench-dir "$ROOT/third_party/opendataloader-bench" \
   --engine "$ENGINE" \

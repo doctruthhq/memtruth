@@ -9,11 +9,13 @@ BIN="${DOCTRUTH_RUNTIME_BIN:-}"
 ENGINE="doctruth-runtime"
 DOC_ID=""
 LIMIT=""
-PRESET="lite"
+PRESET="auto"
 RUNTIME_PROFILE="${DOCTRUTH_RUNTIME_PROFILE:-edge-model}"
 OUTPUT_DIR=""
 EVALUATOR="rust"
 TIMEOUT_SECONDS=""
+LOCAL_OCR_MANIFEST="$ROOT/model-packs/ppocr-v5-mobile-mnn.json"
+LOCAL_OCR_CACHE="$ROOT/target/ppocr-v5-mobile-mnn-cache"
 
 usage() {
   cat <<'EOF'
@@ -137,10 +139,32 @@ if [ -z "$BIN" ]; then
   BIN="$ROOT/runtime/doctruth-runtime/target/$BUILD_PROFILE/doctruth-runtime"
 fi
 
+USE_LOCAL_MNN_OCR=0
+if [ "$RUNTIME_PROFILE" = "edge-model" ] \
+  && [ -z "${DOCTRUTH_MODEL_MANIFEST:-}" ] \
+  && [ -z "${DOCTRUTH_MODEL_CACHE:-}" ] \
+  && [ -z "${DOCTRUTH_RUNTIME_MODEL_COMMAND:-}" ] \
+  && [ -z "${DOCTRUTH_MODEL_COMMAND:-}" ] \
+  && [ -f "$LOCAL_OCR_MANIFEST" ] \
+  && [ -d "$LOCAL_OCR_CACHE" ]; then
+  USE_LOCAL_MNN_OCR=1
+  export DOCTRUTH_MODEL_MANIFEST="$LOCAL_OCR_MANIFEST"
+  export DOCTRUTH_MODEL_CACHE="$LOCAL_OCR_CACHE"
+  export DOCTRUTH_RUNTIME_MODEL_COMMAND="$ROOT/runtime/doctruth-runtime/target/$BUILD_PROFILE/doctruth-mnn-model-worker"
+fi
+
 if [ "$BUILD_PROFILE" = "release" ]; then
-  cargo build --release --manifest-path "$MANIFEST" >/dev/null
+  if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
+    cargo build --release --manifest-path "$MANIFEST" --features mnn-ocr --bin doctruth-runtime --bin doctruth-mnn-model-worker >/dev/null
+  else
+    cargo build --release --manifest-path "$MANIFEST" >/dev/null
+  fi
 else
-  cargo build --manifest-path "$MANIFEST" >/dev/null
+  if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
+    cargo build --manifest-path "$MANIFEST" --features mnn-ocr --bin doctruth-runtime --bin doctruth-mnn-model-worker >/dev/null
+  else
+    cargo build --manifest-path "$MANIFEST" >/dev/null
+  fi
 fi
 REPORT_TMP="$(mktemp "${TMPDIR:-/tmp}/doctruth-opendataloader-prediction-report.XXXXXX")"
 

@@ -29,6 +29,7 @@ errors = json.loads(pathlib.Path(sys.argv[2]).read_text())
 report = json.loads(pathlib.Path(sys.argv[3]).read_text())
 assert summary["engine_name"] == "doctruth-runtime-smoke", summary
 assert summary["document_count"] == 1, summary
+assert summary["preset"] == "auto", summary
 assert summary["parsed_count"] + summary["failed_count"] == 1, summary
 assert summary["runtime_contract"] == "TrustDocument", summary
 assert isinstance(errors["documents"], list), errors

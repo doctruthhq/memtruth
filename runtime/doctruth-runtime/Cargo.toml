@@ -8,13 +8,14 @@ publish = false
 [features]
 default = []
 mnn-native = ["dep:mnn_rs"]
-mnn-ocr = ["dep:ocr_rs"]
+mnn-ocr = ["dep:image", "dep:ocr_rs"]
 
 [dependencies]
 pdf_oxide = { version = "0.3.64", default-features = false, features = ["legacy-crypto", "rendering"] }
 serde_json = "1.0"
 sha2 = "0.10"
 mnn_rs = { package = "mnn-rs", version = "0.1.5", optional = true, default-features = false, features = ["cpu", "static", "use-prebuilt"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 ocr_rs = { package = "ocr-rs", version = "2.2.2", optional = true, default-features = false }
 
 [dev-dependencies]

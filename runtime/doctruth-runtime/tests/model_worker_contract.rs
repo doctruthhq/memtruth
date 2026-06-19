@@ -253,6 +253,65 @@ fn rust_mnn_model_worker_doctor_reports_ocr_rs_decoder_when_feature_enabled() {
     assert_eq!(json["decoders"]["ocr"]["modelFormat"], "mnn");
 }
 
+#[cfg(feature = "mnn-ocr")]
+#[test]
+fn rust_mnn_model_worker_attempts_real_ocr_engine_when_feature_enabled() {
+    let cache_dir = temp_dir("doctruth-runtime-worker-real-ocr-invalid-pack");
+    fs::create_dir_all(&cache_dir).unwrap();
+    let det_path = cache_dir.join("ppocr-v5-mobile-det-v0.1.3.bin");
+    let rec_path = cache_dir.join("ppocr-v5-mobile-rec-v0.1.3.bin");
+    let keys_path = cache_dir.join("ppocr-keys-v5-v0.1.3.bin");
+    fs::write(&det_path, b"invalid det mnn").unwrap();
+    fs::write(&rec_path, b"invalid rec mnn").unwrap();
+    fs::write(&keys_path, b"a\nb\nc\n").unwrap();
+    let pdf = write_empty_text_layer_pdf();
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "parse_pdf",
+            "source_path": pdf,
+            "source_hash": "sha256:model-worker",
+            "preset": "ocr",
+            "models": [
+                {
+                    "name": "ppocr-v5-mobile-det",
+                    "version": "v0.1.3",
+                    "role": "text-detection",
+                    "task": "ocr",
+                    "backend": "mnn",
+                    "format": "mnn",
+                    "cacheStatus": "READY",
+                    "cachePath": det_path
+                },
+                {
+                    "name": "ppocr-v5-mobile-rec",
+                    "version": "v0.1.3",
+                    "role": "text-recognition",
+                    "task": "ocr",
+                    "backend": "mnn",
+                    "format": "mnn",
+                    "cacheStatus": "READY",
+                    "cachePath": rec_path
+                }
+            ],
+            "auxiliaryArtifacts": [
+                {
+                    "name": "ppocr-keys-v5",
+                    "version": "v0.1.3",
+                    "role": "recognition-charset",
+                    "cacheStatus": "READY",
+                    "cachePath": keys_path
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("ocr_mnn_load_failed"));
+}
+
 #[test]
 fn rust_mnn_model_worker_probe_fails_without_native_feature() {
     let model_path = temp_path("doctruth-runtime-worker-probe", "mnn");

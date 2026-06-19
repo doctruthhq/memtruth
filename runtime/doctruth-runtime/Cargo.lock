@@ -666,6 +666,7 @@ name = "doctruth-runtime"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "image",
  "mnn-rs",
  "ocr-rs",
  "pdf_oxide",

@@ -3,6 +3,11 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::time::Instant;
 
+#[cfg(feature = "mnn-ocr")]
+use pdf_oxide::document::PdfDocument;
+#[cfg(feature = "mnn-ocr")]
+use pdf_oxide::rendering::{RenderOptions, render_page};
+
 const PROTOCOL_VERSION: &str = "1";
 
 fn main() {
@@ -38,6 +43,10 @@ fn main() {
     }
     let model_pack = ready_mnn_model_pack(&request);
     if !stub_mode_enabled() {
+        if let Some(response) = real_inference_response(&request, &model_pack, started) {
+            print_json(response);
+            clean_exit();
+        }
         fail(
             "mnn_inference_unavailable",
             "Rust MNN worker protocol is ready, but real MNN inference is not wired yet",
@@ -62,6 +71,80 @@ fn main() {
             }
         }
     }));
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn real_inference_response(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    started: Instant,
+) -> Option<Value> {
+    if model_pack.decoder != "ocr" {
+        return None;
+    }
+    match ocr_inference_response(request, model_pack, started) {
+        Ok(response) => Some(response),
+        Err((code, message)) => fail(code, &message),
+    }
+}
+
+#[cfg(not(feature = "mnn-ocr"))]
+fn real_inference_response(
+    _request: &Value,
+    _model_pack: &ReadyModelPack,
+    _started: Instant,
+) -> Option<Value> {
+    None
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn ocr_inference_response(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    started: Instant,
+) -> Result<Value, (&'static str, String)> {
+    let load_started = Instant::now();
+    let engine = ocr_rs::OcrEngine::new(
+        model_role_path(&model_pack.models, "text-detection")?,
+        model_role_path(&model_pack.models, "text-recognition")?,
+        model_role_path(&model_pack.auxiliary, "recognition-charset")?,
+        Some(ocr_rs::OcrEngineConfig::new().with_threads(ocr_threads())),
+    )
+    .map_err(|error| ("ocr_mnn_load_failed", error.to_string()))?;
+    let load_ms = elapsed_ms(load_started);
+
+    let render_started = Instant::now();
+    let image = render_first_page_image(request)?;
+    let render_ms = elapsed_ms(render_started);
+
+    let inference_started = Instant::now();
+    let results = engine
+        .recognize(&image)
+        .map_err(|error| ("ocr_mnn_inference_failed", error.to_string()))?;
+    let inference_ms = elapsed_ms(inference_started);
+    let document = ocr_trust_document(request, model_pack, image.width(), image.height(), &results);
+
+    Ok(json!({
+        "ok": true,
+        "document": document,
+        "metrics": {
+            "runtime": "mnn",
+            "decoder": "ocr",
+            "inputSource": "pdf_oxide_rendered_page",
+            "stubMode": false,
+            "coldStartMs": load_ms,
+            "renderMs": render_ms,
+            "inferenceMs": inference_ms,
+            "totalMs": elapsed_ms(started),
+            "loadedModels": model_pack.model_identities(),
+            "auxiliaryArtifacts": model_pack.auxiliary_identities(),
+            "ocrRegions": results.len(),
+            "unload": {
+                "status": "completed",
+                "policy": "idle-after-request"
+            }
+        }
+    }))
 }
 
 fn probe_model_arg(args: &[String]) -> Option<&str> {
@@ -394,6 +477,205 @@ fn trust_document(request: &Value, model_pack: &ReadyModelPack) -> Value {
     })
 }
 
+#[cfg(feature = "mnn-ocr")]
+fn ocr_trust_document(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    image_width: u32,
+    image_height: u32,
+    results: &[ocr_rs::OcrResult_],
+) -> Value {
+    let source_hash = request
+        .get("source_hash")
+        .or_else(|| request.get("sourceHash"))
+        .and_then(Value::as_str)
+        .unwrap_or("sha256:unknown");
+    let source_path = request
+        .get("source_path")
+        .or_else(|| request.get("sourcePath"))
+        .and_then(Value::as_str)
+        .unwrap_or("document.pdf");
+    let source_filename = request
+        .get("sourceFilename")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            Path::new(source_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+        })
+        .unwrap_or("document.pdf");
+    let model_ids = model_pack.model_identities();
+    let units = results
+        .iter()
+        .enumerate()
+        .map(|(index, result)| ocr_unit_json(index, result))
+        .collect::<Vec<_>>();
+    let text_spans = units
+        .iter()
+        .enumerate()
+        .map(|(index, unit)| ocr_span_json(index, unit))
+        .collect::<Vec<_>>();
+    json!({
+        "docId": source_hash,
+        "source": {
+            "sourceFilename": source_filename,
+            "sourceHash": source_hash,
+            "metadata": {
+                "sourceFilename": source_filename,
+                "pageCount": 1
+            }
+        },
+        "body": {
+            "pages": [{
+                "pageNumber": 1,
+                "width": image_width,
+                "height": image_height,
+                "textLayerAvailable": false,
+                "imageHash": format!("sha256:{}", "0".repeat(64))
+            }],
+            "units": units,
+            "tables": []
+        },
+        "contentBlocks": text_spans,
+        "parseTrace": {
+            "traceId": "trace-mnn-ocr-0001",
+            "parserRunId": "parser-run-rust-mnn-ocr",
+            "readingOrder": {
+                "source": "mnn-ocr-detection-order",
+                "fallback": false,
+                "confidence": 0.8
+            },
+            "pages": [{
+                "pageIndex": 0,
+                "pageNumber": 1,
+                "pageSize": {"width": image_width, "height": image_height},
+                "preprocBlocks": [],
+                "readingBlocks": text_spans,
+                "discardedBlocks": [],
+                "tables": [],
+                "images": [],
+                "equations": [],
+                "textSpans": []
+            }],
+            "sectionTree": [],
+            "warnings": []
+        },
+        "parserRun": {
+            "parserRunId": "parser-run-rust-mnn-ocr",
+            "parserVersion": "doctruth-mnn-model-worker",
+            "preset": "ocr",
+            "backend": "rust-sidecar+model-worker",
+            "workerBackend": "mnn-ocr-rs",
+            "models": model_ids,
+            "warnings": []
+        },
+        "auditGradeStatus": if results.is_empty() { "NOT_AUDIT_GRADE" } else { "AUDIT_GRADE" }
+    })
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn ocr_unit_json(index: usize, result: &ocr_rs::OcrResult_) -> Value {
+    let unit_id = format!("unit-ocr-{index:04}");
+    let span_id = format!("span-ocr-{index:04}");
+    let trace_span_id = format!("trace-span-ocr-{index:04}");
+    let source_object_id = format!("mnn-ocr-region-{index:04}");
+    json!({
+        "unitId": unit_id,
+        "kind": "OCR_REGION",
+        "page": 1,
+        "text": result.text,
+        "evidenceSpanIds": [span_id],
+        "parseTraceSpanIds": [trace_span_id],
+        "location": {
+            "page": 1,
+            "readingOrder": index + 1,
+            "boundingBox": ocr_bbox_json(result)
+        },
+        "sourceObjectId": source_object_id,
+        "confidence": {
+            "score": rounded_f64(result.confidence as f64),
+            "rationale": "ocr-rs mnn detection and recognition"
+        },
+        "warnings": []
+    })
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn ocr_span_json(index: usize, unit: &Value) -> Value {
+    json!({
+        "blockId": format!("block-ocr-{index:04}"),
+        "type": "text",
+        "page": 1,
+        "readingOrder": index + 1,
+        "text": unit.get("text").cloned().unwrap_or(Value::Null),
+        "normalizedText": unit.get("text").cloned().unwrap_or(Value::Null),
+        "bbox": unit.pointer("/location/boundingBox").cloned().unwrap_or(Value::Null),
+        "evidenceSpanIds": unit.get("evidenceSpanIds").cloned().unwrap_or_else(|| json!([])),
+        "sourceUnitIds": [unit.get("unitId").cloned().unwrap_or(Value::Null)],
+        "tableId": Value::Null,
+        "textLevel": Value::Null,
+        "sectionId": Value::Null,
+        "parentSectionId": Value::Null,
+        "sectionPath": [],
+        "sectionTitlePath": [],
+        "isSectionRoot": false,
+        "warnings": []
+    })
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn ocr_bbox_json(result: &ocr_rs::OcrResult_) -> Value {
+    let left = result.bbox.rect.left() as f64;
+    let top = result.bbox.rect.top() as f64;
+    json!({
+        "x0": left,
+        "y0": top,
+        "x1": left + result.bbox.rect.width() as f64,
+        "y1": top + result.bbox.rect.height() as f64
+    })
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn render_first_page_image(request: &Value) -> Result<image::DynamicImage, (&'static str, String)> {
+    let source_path = request
+        .get("source_path")
+        .or_else(|| request.get("sourcePath"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            (
+                "ocr_pdf_render_failed",
+                "source_path is required".to_string(),
+            )
+        })?;
+    let document = PdfDocument::open(source_path)
+        .map_err(|error| ("ocr_pdf_render_failed", error.to_string()))?;
+    let rendered = render_page(&document, 0, &RenderOptions::with_dpi(144))
+        .map_err(|error| ("ocr_pdf_render_failed", error.to_string()))?;
+    image::load_from_memory(&rendered.data)
+        .map_err(|error| ("ocr_pdf_render_failed", error.to_string()))
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn model_role_path<'a>(models: &'a [Value], role: &str) -> Result<&'a str, (&'static str, String)> {
+    find_model_role(models, role)
+        .and_then(|model| model.get("cachePath").and_then(Value::as_str))
+        .ok_or_else(|| {
+            (
+                "model_unavailable",
+                format!("required OCR model role {role} has no cachePath"),
+            )
+        })
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn ocr_threads() -> i32 {
+    std::env::var("DOCTRUTH_MNN_OCR_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|threads| *threads > 0)
+        .unwrap_or(4)
+}
+
 fn model_identity(model: &Value) -> String {
     let name = model
         .get("name")
@@ -462,13 +744,28 @@ fn output_stats(values: &[f32]) -> Value {
     })
 }
 
-#[cfg(feature = "mnn-native")]
+#[cfg(any(feature = "mnn-native", feature = "mnn-ocr"))]
 fn rounded_f64(value: f64) -> f64 {
     (value * 1_000_000.0).round() / 1_000_000.0
 }
 
 fn print_json(value: Value) {
     println!("{}", serde_json::to_string(&value).unwrap());
+}
+
+fn clean_exit() -> ! {
+    use std::io::Write;
+
+    let _ = std::io::stdout().flush();
+    #[cfg(unix)]
+    unsafe {
+        unsafe extern "C" {
+            fn _exit(status: i32) -> !;
+        }
+        _exit(0);
+    }
+    #[cfg(not(unix))]
+    std::process::exit(0);
 }
 
 fn stub_mode_enabled() -> bool {

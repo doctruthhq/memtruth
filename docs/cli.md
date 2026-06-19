@@ -313,6 +313,18 @@ and `DOCTRUTH_MODEL_MANIFEST`; they are not bundled in the generic Java jar.
 is explicitly marked `NOT_AUDIT_GRADE` and must not be treated as production
 inference.
 
+The optional native MNN probe verifies real Rust-side MNN session creation and
+inference with a supplied executable `.mnn` model:
+
+```bash
+DOCTRUTH_MNN_NATIVE_PROBE_MODEL=/path/to/model.mnn \
+  scripts/smoke-doctruth-mnn-native-probe.sh
+```
+
+`--doctor` only proves the worker protocol. `--probe-model` proves native MNN
+loading/session/inference. MNN benchmark or shape-only artifacts that have
+weights stripped are not valid inference acceptance models.
+
 For a Rust MNN worker, package these model files with the client runtime:
 
 ```bash

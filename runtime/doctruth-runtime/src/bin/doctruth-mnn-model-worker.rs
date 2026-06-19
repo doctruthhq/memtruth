@@ -6,8 +6,16 @@ use std::time::Instant;
 const PROTOCOL_VERSION: &str = "1";
 
 fn main() {
-    if std::env::args().any(|arg| arg == "--doctor") {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--doctor") {
         print_json(doctor_json());
+        return;
+    }
+    if let Some(model_path) = probe_model_arg(&args) {
+        match probe_model(model_path) {
+            Ok(report) => print_json(report),
+            Err((code, message)) => fail(code, &message),
+        }
         return;
     }
     let started = Instant::now();
@@ -54,6 +62,12 @@ fn main() {
     }));
 }
 
+fn probe_model_arg(args: &[String]) -> Option<&str> {
+    args.windows(2)
+        .find(|window| window[0] == "--probe-model")
+        .map(|window| window[1].as_str())
+}
+
 fn doctor_json() -> Value {
     json!({
         "ok": true,
@@ -68,6 +82,100 @@ fn doctor_json() -> Value {
         "stubMode": stub_mode_enabled(),
         "productionPythonResidency": false
     })
+}
+
+#[cfg(feature = "mnn-native")]
+fn probe_model(model_path: &str) -> Result<Value, (&'static str, String)> {
+    use mnn_rs::{BackendType, Interpreter, ScheduleConfig};
+
+    let started = Instant::now();
+    let load_started = Instant::now();
+    let interpreter = Interpreter::from_file(model_path)
+        .map_err(|error| ("mnn_probe_load_failed", error.to_string()))?;
+    let load_ms = elapsed_ms(load_started);
+
+    let session_started = Instant::now();
+    let config = ScheduleConfig::new()
+        .backend(BackendType::CPU)
+        .num_threads(native_probe_threads());
+    let mut session = interpreter
+        .create_session(config)
+        .map_err(|error| ("mnn_probe_session_failed", error.to_string()))?;
+    let session_ms = elapsed_ms(session_started);
+    let resize_started = Instant::now();
+    interpreter.resize_session(&mut session);
+    let resize_ms = elapsed_ms(resize_started);
+
+    let input = session
+        .get_input(None)
+        .map_err(|error| ("mnn_probe_input_failed", error.to_string()))?;
+    let input_shape = input.shape();
+    let input_elements = checked_element_count(input.element_count())?;
+    let input_data: Vec<f32> = (0..input_elements)
+        .map(|index| (index % 256) as f32 / 255.0)
+        .collect();
+    let input_write = input.write(&input_data);
+
+    let inference_started = Instant::now();
+    session
+        .run()
+        .map_err(|error| ("mnn_probe_inference_failed", error.to_string()))?;
+    let inference_ms = elapsed_ms(inference_started);
+
+    let output = session
+        .get_output(None)
+        .map_err(|error| ("mnn_probe_output_failed", error.to_string()))?;
+    let output_shape = output.shape();
+    let output_elements = checked_element_count(output.element_count())?;
+    let output_read: Result<Vec<f32>, String> = output.read().map_err(|error| error.to_string());
+    let output_read_ready = output_read.is_ok();
+    let host_tensor_io_ready = input_write.is_ok() && output_read_ready;
+    let output_data = output_read.unwrap_or_default();
+
+    Ok(json!({
+        "ok": true,
+        "runtime": "mnn",
+        "engine": "mnn",
+        "command": "probe_model",
+        "protocol_version": PROTOCOL_VERSION,
+        "nativeBackend": native_backend_json(),
+        "mnnSessionReady": true,
+        "inferenceRan": true,
+        "modelPath": model_path,
+        "modelBytes": model_size(model_path),
+        "input": {
+            "shape": input_shape,
+            "elements": input_elements,
+            "hostWriteReady": input_write.is_ok(),
+            "hostWriteError": input_write.err().map(|error| error.to_string())
+        },
+        "output": {
+            "shape": output_shape,
+            "elements": output_elements,
+            "hostReadReady": output_read_ready,
+            "sample": output_sample(&output_data),
+            "stats": output_stats(&output_data)
+        },
+        "hostTensorIoReady": host_tensor_io_ready,
+        "metrics": {
+            "loadMs": load_ms,
+            "sessionMs": session_ms,
+            "resizeMs": resize_ms,
+            "inferenceMs": inference_ms,
+            "totalMs": elapsed_ms(started),
+            "memoryBytes": session.memory_usage(),
+            "flops": session.flops()
+        }
+    }))
+}
+
+#[cfg(not(feature = "mnn-native"))]
+fn probe_model(_model_path: &str) -> Result<Value, (&'static str, String)> {
+    Err((
+        "mnn_native_feature_disabled",
+        "build doctruth-mnn-model-worker with --features mnn-native to probe real MNN inference"
+            .to_string(),
+    ))
 }
 
 fn ready_mnn_model(request: &Value) -> Value {
@@ -191,6 +299,66 @@ fn model_identity(model: &Value) -> String {
 
 fn elapsed_ms(started: Instant) -> f64 {
     (started.elapsed().as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0
+}
+
+#[cfg(feature = "mnn-native")]
+fn checked_element_count(count: i32) -> Result<usize, (&'static str, String)> {
+    usize::try_from(count).map_err(|_| {
+        (
+            "mnn_probe_invalid_tensor",
+            format!("negative tensor element count: {count}"),
+        )
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn native_probe_threads() -> u32 {
+    std::env::var("DOCTRUTH_MNN_NATIVE_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|threads| *threads > 0)
+        .unwrap_or(4)
+}
+
+#[cfg(feature = "mnn-native")]
+fn model_size(model_path: &str) -> u64 {
+    std::fs::metadata(model_path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
+}
+
+#[cfg(feature = "mnn-native")]
+fn output_sample(values: &[f32]) -> Vec<f64> {
+    values
+        .iter()
+        .take(8)
+        .map(|value| rounded_f64(*value as f64))
+        .collect()
+}
+
+#[cfg(feature = "mnn-native")]
+fn output_stats(values: &[f32]) -> Value {
+    if values.is_empty() {
+        return json!({"min": Value::Null, "max": Value::Null, "mean": Value::Null});
+    }
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    let mut sum = 0.0_f64;
+    for value in values {
+        min = min.min(*value);
+        max = max.max(*value);
+        sum += *value as f64;
+    }
+    json!({
+        "min": rounded_f64(min as f64),
+        "max": rounded_f64(max as f64),
+        "mean": rounded_f64(sum / values.len() as f64)
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn rounded_f64(value: f64) -> f64 {
+    (value * 1_000_000.0).round() / 1_000_000.0
 }
 
 fn print_json(value: Value) {

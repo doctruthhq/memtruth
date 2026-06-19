@@ -234,6 +234,19 @@ fn rust_mnn_model_worker_doctor_is_python_free() {
 }
 
 #[test]
+fn rust_mnn_model_worker_probe_fails_without_native_feature() {
+    let model_path = temp_path("doctruth-runtime-worker-probe", "mnn");
+    fs::write(&model_path, b"mnn").unwrap();
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    cmd.arg("--probe-model")
+        .arg(&model_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mnn_native_feature_disabled"));
+}
+
+#[test]
 fn rust_mnn_model_worker_rejects_non_mnn_artifacts() {
     let model_path = temp_path("doctruth-runtime-worker-onnx", "onnx");
     fs::write(&model_path, b"onnx").unwrap();

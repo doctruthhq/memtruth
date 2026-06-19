@@ -43,6 +43,8 @@ before OpenDataLoader Bench is used as a final acceptance gate.
   wired; contract-smoke stub mode is explicit and non-audit-grade.
 - [x] Add optional `mnn-native` Rust feature using `mnn-rs` so native MNN
   binding compilation is verified without bloating the default build.
+- [x] Add `doctruth-mnn-model-worker --probe-model` and an env-gated native MNN
+  smoke for real executable `.mnn` artifacts.
 - [ ] Implement real MNN OCR inference inside `doctruth-mnn-model-worker`.
 - [ ] Implement real MNN table/layout inference inside `doctruth-mnn-model-worker`.
 - [x] Replace Python ONNX model worker with Rust/MNN model worker or remove it
@@ -51,6 +53,10 @@ before OpenDataLoader Bench is used as a final acceptance gate.
   remain in the repository.
 - [ ] Record model manifest, model SHA, profile, RSS, latency, and unload
   behavior for each accepted edge-model profile.
+
+Native MNN acceptance requires a real executable `.mnn` model. Benchmark-only
+or shape-only artifacts with stripped weights are useful for parser plumbing
+tests but do not count as inference acceptance.
 
 ## Benchmark Boundary
 

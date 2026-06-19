@@ -58,8 +58,13 @@ runtime boundary. Its doctor reports `protocolReady=true` and
 `inferenceReady=false` until real inference is wired. The only non-real parse
 path is the explicit `DOCTRUTH_MNN_WORKER_STUB=1` contract-smoke mode, whose
 output must be `NOT_AUDIT_GRADE`. Native MNN binding work is behind the optional
-`mnn-native` Cargo feature using `mnn-rs`; the default build remains Rust
-runtime/protocol only until real model decoders are wired and benchmarked.
+`mnn-native` Cargo feature using `mnn-rs`; `doctruth-mnn-model-worker
+--probe-model /path/to/model.mnn` and
+`scripts/smoke-doctruth-mnn-native-probe.sh` are the acceptance entrypoints for
+real native MNN session/inference checks with executable model artifacts. The
+default build remains Rust runtime/protocol only until real model decoders are
+wired and benchmarked. Benchmark-only MNN artifacts with stripped weights do not
+count as native inference acceptance models.
 
 ## 1. Summary
 
@@ -1112,7 +1117,10 @@ model-assisted parse requests with `mnn_inference_unavailable` until real MNN
 inference is implemented. Stub output is severe-warning, non-audit-grade output
 for contract smokes only. The optional `mnn-native` feature verifies that
 `mnn-rs` can compile as the native binding seam without changing default runtime
-weight. Real MNN inference and broad labeled OCR/table accuracy are still open
+weight. `--probe-model` verifies native MNN session creation and inference when
+given a real executable `.mnn` artifact; benchmark-only or shape-only MNN files
+with stripped weights are rejected by MNN and do not satisfy acceptance. Real
+OCR/table decoder wiring and broad labeled OCR/table accuracy are still open
 implementation and evaluation work.
 
 Current parser-accuracy corpus status: JSON and readable

@@ -6520,6 +6520,8 @@ fn table_method(rationale: &str) -> &'static str {
         || rationale.contains("table of contents")
         || rationale.contains("dense cluster")
         || rationale.contains("captioned numeric")
+        || rationale.contains("matrix cluster")
+        || rationale.contains("compact numeric")
     {
         "cluster"
     } else if rationale.contains("line-table") {
@@ -8057,6 +8059,7 @@ struct Segment {
 struct TextPoint {
     x: f64,
     y: f64,
+    width: f64,
     font_size: f64,
     text: String,
     hidden: bool,
@@ -8214,8 +8217,21 @@ fn duplicate_table(left: &TableExtraction, right: &TableExtraction) -> bool {
     if left.page_number != right.page_number {
         return false;
     }
+    if broad_text_spatial_table(left) && !broad_text_spatial_table(right) {
+        return false;
+    }
+    if broad_text_spatial_table(right) && !broad_text_spatial_table(left) {
+        return false;
+    }
     bbox_intersection_over_min_area(&left.bbox, &right.bbox) >= 0.45
         || table_text_token_containment(left, right) >= 0.68
+}
+
+fn broad_text_spatial_table(table: &TableExtraction) -> bool {
+    table.rationale.contains("text-spatial")
+        && table_row_count(table) >= 20
+        && table_column_count(table) <= 6
+        && bbox_height(&table.bbox) >= 600.0
 }
 
 fn bbox_intersection_over_min_area(left: &RuntimeBox, right: &RuntimeBox) -> f64 {
@@ -8330,6 +8346,28 @@ fn extract_tables_from_positioned_lines(
                 page_width,
                 page_height,
                 &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                tables.push(table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_matrix_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &points,
+                tables.len() + 1,
+            ) {
+                tables.push(table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_compact_numeric_label_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &points,
                 tables.len() + 1,
             ) {
                 tables.push(table);
@@ -9017,6 +9055,7 @@ fn positioned_line_text_point(line: &PositionedLine) -> TextPoint {
     TextPoint {
         x: line.bbox.x0,
         y: line.page_height - line.bbox.y0,
+        width: bbox_width(&line.bbox),
         font_size: line.font_size,
         text: line.text.clone(),
         hidden: false,
@@ -9068,6 +9107,28 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
                 page_width,
                 page_height,
                 &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                push_non_overlapping_table_without_warnings(&mut tables, table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_matrix_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &remaining_points,
+                tables.len() + 1,
+            ) {
+                push_non_overlapping_table_without_warnings(&mut tables, table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_compact_numeric_label_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &remaining_points,
                 tables.len() + 1,
             ) {
                 push_non_overlapping_table_without_warnings(&mut tables, table);
@@ -9486,6 +9547,22 @@ fn opendataloader_dense_cluster_table_from_points(
     points: &[TextPoint],
     table_index: usize,
 ) -> Option<TableExtraction> {
+    opendataloader_dense_cluster_table_from_candidate_points(
+        page_number,
+        page_width,
+        page_height,
+        points,
+        table_index,
+    )
+}
+
+fn opendataloader_dense_cluster_table_from_candidate_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    table_index: usize,
+) -> Option<TableExtraction> {
     let rows = borderless_rows(points);
     let anchors = opendataloader_dense_column_anchors(&rows)?;
     if !opendataloader_dense_candidate_passes_quality_gate(&rows, &anchors) {
@@ -9500,6 +9577,344 @@ fn opendataloader_dense_cluster_table_from_points(
         table_index,
         "opendataloader dense cluster table extraction",
     )
+}
+
+fn opendataloader_split_text_points_by_whitespace(points: &[TextPoint]) -> Vec<TextPoint> {
+    points
+        .iter()
+        .flat_map(opendataloader_split_text_point_by_whitespace)
+        .collect()
+}
+
+fn opendataloader_split_text_point_by_whitespace(point: &TextPoint) -> Vec<TextPoint> {
+    if !point.text.chars().any(char::is_whitespace) {
+        return vec![point.clone()];
+    }
+    let char_count = point.text.chars().count().max(1) as f64;
+    let char_width = point.width.max(point.font_size * char_count * 0.55) / char_count;
+    let mut tokens = Vec::new();
+    let mut token = String::new();
+    let mut token_start: Option<usize> = None;
+    for (index, ch) in point.text.chars().enumerate() {
+        if ch.is_whitespace() {
+            opendataloader_push_split_text_point(
+                &mut tokens,
+                point,
+                token_start.take(),
+                std::mem::take(&mut token),
+                char_width,
+            );
+        } else {
+            if token_start.is_none() {
+                token_start = Some(index);
+            }
+            token.push(ch);
+        }
+    }
+    opendataloader_push_split_text_point(&mut tokens, point, token_start, token, char_width);
+    if tokens.is_empty() {
+        vec![point.clone()]
+    } else {
+        tokens
+    }
+}
+
+fn opendataloader_push_split_text_point(
+    tokens: &mut Vec<TextPoint>,
+    point: &TextPoint,
+    token_start: Option<usize>,
+    token: String,
+    char_width: f64,
+) {
+    let Some(start) = token_start else {
+        return;
+    };
+    let token = normalize_text(&token);
+    if token.is_empty() {
+        return;
+    }
+    tokens.push(TextPoint {
+        x: point.x + start as f64 * char_width,
+        y: point.y,
+        width: token.chars().count() as f64 * char_width,
+        font_size: point.font_size,
+        text: token,
+        hidden: point.hidden,
+    });
+}
+
+fn opendataloader_matrix_table_from_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let tokenized_points = opendataloader_split_text_points_by_whitespace(points);
+    let rows = borderless_rows(&tokenized_points);
+    for (header_index, header_row) in rows.iter().enumerate() {
+        if !opendataloader_matrix_header_row(header_row) {
+            continue;
+        }
+        let body_rows = opendataloader_matrix_body_rows(&rows, header_index + 1);
+        if body_rows.len() < 2 {
+            continue;
+        }
+        let anchors = opendataloader_matrix_anchors(header_row, &body_rows)?;
+        if anchors.len() < 4 || anchors.len() > 14 {
+            continue;
+        }
+        return opendataloader_matrix_table_from_rows(
+            page_number,
+            page_width,
+            page_height,
+            header_row,
+            &body_rows,
+            &anchors,
+            table_index,
+        );
+    }
+    None
+}
+
+fn opendataloader_matrix_header_row(row: &[TextPoint]) -> bool {
+    let texts = row
+        .iter()
+        .map(|point| point.text.as_str())
+        .collect::<Vec<_>>();
+    texts.iter().any(|text| *text == "Model")
+        && texts.iter().any(|text| {
+            matches!(
+                *text,
+                "ARC" | "HellaSwag" | "MMLU" | "TruthfulQA" | "Winogrande" | "GSM8K"
+            )
+        })
+        && row.len() >= 6
+}
+
+fn opendataloader_matrix_body_rows(rows: &[Vec<TextPoint>], start: usize) -> Vec<Vec<TextPoint>> {
+    let mut out = Vec::new();
+    for row in rows.iter().skip(start) {
+        if row.iter().any(|point| point.text == "Table") {
+            break;
+        }
+        if !opendataloader_matrix_body_row(row) {
+            break;
+        }
+        out.push(sorted_sparse_row(row.clone()));
+    }
+    out
+}
+
+fn opendataloader_matrix_body_row(row: &[TextPoint]) -> bool {
+    let values = row
+        .iter()
+        .filter(|point| opendataloader_matrix_value_cell(&point.text))
+        .count();
+    values >= 3 && row.len() <= 14
+}
+
+fn opendataloader_matrix_value_cell(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    matches!(normalized.as_str(), "O" | "X" | "✗" | "✓") || opendataloader_numeric_cell(&normalized)
+}
+
+fn opendataloader_matrix_anchors(
+    header_row: &[TextPoint],
+    body_rows: &[Vec<TextPoint>],
+) -> Option<Vec<f64>> {
+    let strongest = body_rows.iter().max_by_key(|row| {
+        row.iter()
+            .filter(|point| opendataloader_matrix_value_cell(&point.text))
+            .count()
+    })?;
+    let label_anchor = header_row
+        .iter()
+        .find(|point| point.text == "Model")
+        .map(|point| point.x)
+        .or_else(|| strongest.first().map(|point| point.x))?;
+    let value_anchors = strongest
+        .iter()
+        .filter(|point| opendataloader_matrix_value_cell(&point.text))
+        .map(|point| point.x)
+        .collect::<Vec<_>>();
+    if value_anchors.len() < 3 {
+        return None;
+    }
+    let mut anchors = vec![label_anchor];
+    anchors.extend(value_anchors);
+    Some(anchors)
+}
+
+fn opendataloader_matrix_table_from_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    header_row: &[TextPoint],
+    body_rows: &[Vec<TextPoint>],
+    anchors: &[f64],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let mut rows = Vec::with_capacity(body_rows.len() + 1);
+    rows.push(opendataloader_matrix_header_cells(header_row, anchors));
+    rows.extend(opendataloader_matrix_body_cells(body_rows, anchors));
+    let row_centers = std::iter::once(sparse_row_center_y(header_row))
+        .chain(body_rows.iter().map(|row| sparse_row_center_y(row)))
+        .collect::<Vec<_>>();
+    let mut cells = Vec::new();
+    for (row_index, row) in rows.into_iter().enumerate() {
+        for (column_index, text) in row.into_iter().enumerate() {
+            cells.push(TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row_index:04}-{column_index:04}"),
+                row: row_index,
+                column: column_index,
+                row_end: row_index,
+                column_end: column_index,
+                bbox: sparse_cell_bbox(
+                    page_width,
+                    page_height,
+                    anchors,
+                    &row_centers,
+                    row_index,
+                    column_index,
+                ),
+                text,
+            });
+        }
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: "opendataloader matrix cluster table extraction".to_string(),
+        cells,
+    })
+}
+
+fn opendataloader_matrix_header_cells(row: &[TextPoint], anchors: &[f64]) -> Vec<String> {
+    let mut cells = vec![String::new(); anchors.len()];
+    cells[0] = "Model".to_string();
+    for point in row.iter().filter(|point| point.text != "Model") {
+        if let Some(column) = nearest_matrix_column(anchors, point) {
+            cells[column] = normalize_text(&format!("{} {}", cells[column], point.text));
+        }
+    }
+    cells
+}
+
+fn opendataloader_matrix_body_cells(rows: &[Vec<TextPoint>], anchors: &[f64]) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    let mut model_prefix = String::new();
+    for row in rows {
+        let mut cells = vec![String::new(); anchors.len()];
+        let label = opendataloader_matrix_row_label(row, &mut model_prefix);
+        cells[0] = label;
+        for point in row
+            .iter()
+            .filter(|point| opendataloader_matrix_value_cell(&point.text))
+        {
+            if let Some(column) = nearest_matrix_column(anchors, point) {
+                cells[column] = normalize_text(&format!("{} {}", cells[column], point.text));
+            }
+        }
+        out.push(cells);
+    }
+    out
+}
+
+fn opendataloader_matrix_row_label(row: &[TextPoint], model_prefix: &mut String) -> String {
+    let label = row
+        .iter()
+        .take_while(|point| !opendataloader_matrix_value_cell(&point.text))
+        .map(|point| point.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let normalized = normalize_text(&label);
+    if let Some(prefix) = normalized.split_whitespace().next() {
+        if !prefix.starts_with('v') && prefix != "+" {
+            *model_prefix = prefix.to_string();
+        }
+    }
+    if normalized.starts_with('v') && !model_prefix.is_empty() {
+        normalize_text(&format!("{model_prefix} {normalized}"))
+    } else if normalized.starts_with('+') && !model_prefix.is_empty() {
+        normalize_text(&format!("{model_prefix} {normalized}"))
+    } else {
+        normalized
+    }
+}
+
+fn nearest_matrix_column(anchors: &[f64], point: &TextPoint) -> Option<usize> {
+    let center = point.x + point.width / 2.0;
+    anchors
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            (center - **left).abs().total_cmp(&(center - **right).abs())
+        })
+        .map(|(index, _)| index)
+}
+
+fn opendataloader_compact_numeric_label_table_from_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let rows = borderless_rows(points);
+    let header_index = rows
+        .iter()
+        .position(|row| opendataloader_compact_numeric_header_row(row))?;
+    let body_rows = rows
+        .iter()
+        .skip(header_index + 1)
+        .filter(|row| opendataloader_compact_numeric_body_row(row))
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>();
+    if body_rows.len() < 2 {
+        return None;
+    }
+    let anchors = body_rows
+        .iter()
+        .max_by_key(|row| row.len())
+        .map(|row| sparse_anchors_from_row(row))?;
+    if anchors.len() < 4 {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        &body_rows,
+        &anchors,
+        table_index,
+        "opendataloader compact numeric label table extraction",
+    )
+}
+
+fn opendataloader_compact_numeric_header_row(row: &[TextPoint]) -> bool {
+    row.iter()
+        .any(|point| normalize_text(&point.text) == "State")
+}
+
+fn opendataloader_compact_numeric_body_row(row: &[TextPoint]) -> bool {
+    if row.len() < 4 || row.len() > 8 {
+        return false;
+    }
+    let Some(first) = row.first() else {
+        return false;
+    };
+    if !opendataloader_captioned_label_cell(&first.text) {
+        return false;
+    }
+    row.iter()
+        .skip(1)
+        .filter(|point| opendataloader_numeric_cell(&point.text))
+        .count()
+        >= 3
 }
 
 fn opendataloader_dense_aligned_table_from_rows(
@@ -9898,7 +10313,7 @@ fn opendataloader_dense_candidate_passes_quality_gate(
     if rows.len() < 4 {
         return false;
     }
-    if anchors.len() < 3 || anchors.len() > 10 {
+    if anchors.len() < 3 || anchors.len() > 12 {
         return false;
     }
     let min_x = rows
@@ -9966,7 +10381,7 @@ fn opendataloader_dense_column_anchors(rows: &[Vec<TextPoint>]) -> Option<Vec<f6
         .map(|cluster| cluster.iter().sum::<f64>() / cluster.len() as f64)
         .collect::<Vec<_>>();
     anchors.sort_by(f64::total_cmp);
-    if (3..=10).contains(&anchors.len()) {
+    if (3..=12).contains(&anchors.len()) {
         return Some(anchors);
     }
     rows.iter()
@@ -9985,7 +10400,7 @@ fn opendataloader_dense_output_has_header(rows: &[Vec<TextPoint>]) -> bool {
 }
 
 fn dense_header_label_row(row: &[TextPoint]) -> bool {
-    if row.len() < 4 || row.len() > 8 {
+    if row.len() < 4 || row.len() > 12 {
         return false;
     }
     let labels = row
@@ -10220,7 +10635,9 @@ fn combined_bbox(boxes: Vec<&RuntimeBox>) -> RuntimeBox {
 }
 
 fn estimate_text_bbox(page_width: f64, page_height: f64, point: &TextPoint) -> RuntimeBox {
-    let text_width = point.text.chars().count() as f64 * point.font_size * 0.55;
+    let text_width = point
+        .width
+        .max(point.text.chars().count() as f64 * point.font_size * 0.55);
     normalize_bbox_for_page(
         page_width,
         page_height,
@@ -10352,6 +10769,7 @@ fn push_text_point(
     text_points.push(TextPoint {
         x,
         y,
+        width: text.chars().count() as f64 * font_size * 0.55,
         font_size,
         text,
         hidden,

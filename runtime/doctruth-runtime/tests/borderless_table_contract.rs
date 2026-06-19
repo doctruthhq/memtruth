@@ -192,6 +192,23 @@ fn parse_pdf_does_not_emit_dense_cluster_table_for_two_column_prose_real_case() 
 }
 
 #[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_article_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000048.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "article prose");
+}
+
+#[test]
 fn parse_pdf_does_not_emit_dense_cluster_table_for_bibliography_prose_real_case() {
     let pdf = opendataloader_fixture("01030000000193.pdf");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -346,6 +363,38 @@ fn parse_pdf_emits_remittance_growth_table_from_columnar_text_real_case() {
                 })
         }),
         "expected remittance growth table, got {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_emits_dense_ablation_matrix_table_from_split_text_chunks_real_case() {
+    let pdf = opendataloader_fixture("01030000000189.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["method"] == "cluster"
+                && table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 10
+                && table["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| cell["text"] == "Model")
+                        && cells.iter().any(|cell| cell["text"] == "Alpaca-GPT4")
+                        && cells.iter().any(|cell| cell["text"] == "SFT v1")
+                        && cells.iter().any(|cell| cell["text"] == "69.15")
+                        && cells.iter().any(|cell| cell["text"] == "GSM8K")
+                })
+        }),
+        "expected dense ablation matrix cluster table, got {tables:?}"
     );
 }
 

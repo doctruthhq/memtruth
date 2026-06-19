@@ -25,6 +25,8 @@ const PDF_BACKEND_STATUS: &str = "DEFAULT";
 const DEFAULT_PROTOCOL_PROFILE: &str = "edge-model";
 const PAGE_WIDTH: f64 = 612.0;
 const PAGE_HEIGHT: f64 = 792.0;
+const MAX_DEFAULT_RENDERED_PAGE_AREA: f64 = 2_000_000.0;
+const MAX_RAW_CONTENT_SAFETY_BYTES: usize = 64 * 1024;
 const GRID_EPSILON: f64 = 1.0;
 const HUMAN_REVIEWED_PARSER_ACCURACY_METRICS: &[&str] = &[
     "reading_order_f1",
@@ -709,6 +711,12 @@ fn raw_content_safety(document: &PdfDocument, page_index: usize) -> RawContentSa
     let Ok(content) = document.get_page_content_data(page_index) else {
         return RawContentSafety::default();
     };
+    if default_page_render_too_large(document, page_index) {
+        return raw_content_safety_skipped();
+    }
+    if content.len() > MAX_RAW_CONTENT_SAFETY_BYTES {
+        return raw_content_safety_skipped();
+    }
     let Ok(operations) = parse_content_stream(&content) else {
         return RawContentSafety::default();
     };
@@ -726,6 +734,22 @@ fn raw_content_safety(document: &PdfDocument, page_index: usize) -> RawContentSa
         }
     }
     safety
+}
+
+fn default_page_render_too_large(document: &PdfDocument, page_index: usize) -> bool {
+    pdf_oxide_page_dimensions(document, page_index)
+        .map(|(width, height)| width * height > MAX_DEFAULT_RENDERED_PAGE_AREA)
+        .unwrap_or(false)
+}
+
+fn raw_content_safety_skipped() -> RawContentSafety {
+    RawContentSafety {
+        warnings: vec![parser_safety_warning(
+            "raw_content_safety_skipped",
+            "Skipped raw content safety parse because the page exceeded the bounded local parser limit",
+        )],
+        ..RawContentSafety::default()
+    }
 }
 
 fn off_page_text_point(point: &TextPoint) -> bool {
@@ -6223,8 +6247,20 @@ fn rendered_page_hash(
         let _ = fs::remove_file(&output);
         hash
     } else {
+        skip_large_default_page_render(document, page_index)?;
         pdf_oxide_rendered_page_hash(document, page_index)
     }
+}
+
+fn skip_large_default_page_render(document: &PdfDocument, page_index: usize) -> Result<(), String> {
+    let (width, height) = pdf_oxide_page_dimensions(document, page_index)?;
+    let area = width * height;
+    if area > MAX_DEFAULT_RENDERED_PAGE_AREA {
+        return Err(format!(
+            "page area {area} exceeds default rendered hash limit"
+        ));
+    }
+    Ok(())
 }
 
 fn pdf_oxide_rendered_page_hash(
@@ -6502,6 +6538,7 @@ fn table_method(rationale: &str) -> &'static str {
         || rationale.contains("party registration")
         || rationale.contains("table of contents")
         || rationale.contains("dense cluster")
+        || rationale.contains("captioned numeric")
     {
         "cluster"
     } else if rationale.contains("line-table") {
@@ -8326,6 +8363,17 @@ fn extract_tables_from_positioned_lines(
             }
         }
         if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_captioned_numeric_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &points,
+                tables.len() + 1,
+            ) {
+                tables.push(table);
+            }
+        }
+        if tables.len() == before_borderless {
             if let Some(table) = opendataloader_dense_cluster_table_from_points(
                 page_number,
                 page_width,
@@ -9007,6 +9055,9 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
     let page_count = document.page_count().map_err(|error| error.to_string())?;
     let mut tables = Vec::new();
     for page_index in 0..page_count {
+        if default_page_render_too_large(&document, page_index) {
+            continue;
+        }
         let (page_width, page_height, _segments, text_points) =
             pdf_oxide_page_primitives(&document, page_index)?;
         let page_number = page_index + 1;
@@ -9044,6 +9095,17 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
                 page_width,
                 page_height,
                 &segment.into_iter().flatten().collect::<Vec<_>>(),
+                tables.len() + 1,
+            ) {
+                push_non_overlapping_table_without_warnings(&mut tables, table);
+            }
+        }
+        if tables.len() == before_borderless {
+            if let Some(table) = opendataloader_captioned_numeric_table_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &remaining_points,
                 tables.len() + 1,
             ) {
                 push_non_overlapping_table_without_warnings(&mut tables, table);
@@ -9487,6 +9549,151 @@ fn opendataloader_dense_aligned_table_from_rows(
         table_index,
         "opendataloader dense cluster table extraction",
     )
+}
+
+fn opendataloader_captioned_numeric_table_from_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let rows = borderless_rows(points);
+    let caption_y = opendataloader_table_caption_y(&rows)?;
+    let body_rows = opendataloader_captioned_numeric_body_rows(&rows, caption_y);
+    let rows = opendataloader_longest_numeric_table_segment(body_rows)?;
+    let anchors = rows
+        .iter()
+        .max_by_key(|row| row.len())
+        .map(|row| sparse_anchors_from_row(row))?;
+    if anchors.len() < 4 || rows.len() < 4 {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        &rows,
+        &anchors,
+        table_index,
+        "opendataloader captioned numeric table extraction",
+    )
+}
+
+fn opendataloader_table_caption_y(rows: &[Vec<TextPoint>]) -> Option<f64> {
+    rows.iter()
+        .find(|row| {
+            row.iter()
+                .any(|point| opendataloader_table_caption(&point.text))
+        })
+        .map(|row| sparse_row_center_y(row))
+}
+
+fn opendataloader_table_caption(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    normalized.starts_with("Table ") || normalized.starts_with("Table.")
+}
+
+fn opendataloader_captioned_numeric_body_rows(
+    rows: &[Vec<TextPoint>],
+    caption_y: f64,
+) -> Vec<Vec<TextPoint>> {
+    rows.iter()
+        .filter(|row| sparse_row_center_y(row) < caption_y - 18.0)
+        .filter(|row| opendataloader_captioned_numeric_body_row(row))
+        .cloned()
+        .collect()
+}
+
+fn opendataloader_captioned_numeric_body_row(row: &[TextPoint]) -> bool {
+    if row.len() < 4 || row.len() > 12 {
+        return false;
+    }
+    let Some(first) = row.first() else {
+        return false;
+    };
+    if !opendataloader_captioned_label_cell(&first.text) {
+        return false;
+    }
+    let numeric_cells = row
+        .iter()
+        .skip(1)
+        .filter(|point| opendataloader_numeric_cell(&point.text))
+        .count();
+    numeric_cells >= 3 && numeric_cells + 1 >= row.len().saturating_sub(1)
+}
+
+fn opendataloader_captioned_label_cell(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    if normalized.is_empty() || normalized.chars().count() > 48 {
+        return false;
+    }
+    if normalized.starts_with("Source") || normalized.starts_with("Note") {
+        return false;
+    }
+    normalized.chars().any(|ch| ch.is_alphabetic()) && !opendataloader_numeric_cell(&normalized)
+}
+
+fn opendataloader_numeric_cell(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    if normalized.is_empty() || normalized.chars().count() > 24 {
+        return false;
+    }
+    let trimmed = normalized
+        .trim_end_matches('%')
+        .trim_end_matches('*')
+        .trim_start_matches(['+', '-'])
+        .replace(',', "");
+    if trimmed.is_empty() {
+        return false;
+    }
+    let mut decimal_points = 0;
+    let mut digits = 0;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_digit() {
+            digits += 1;
+        } else if ch == '.' {
+            decimal_points += 1;
+            if decimal_points > 1 {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    digits > 0
+}
+
+fn opendataloader_longest_numeric_table_segment(
+    rows: Vec<Vec<TextPoint>>,
+) -> Option<Vec<Vec<TextPoint>>> {
+    let mut best: Vec<Vec<TextPoint>> = Vec::new();
+    let mut current: Vec<Vec<TextPoint>> = Vec::new();
+    for row in rows {
+        if current
+            .last()
+            .is_none_or(|previous| opendataloader_same_numeric_segment(previous, &row))
+        {
+            current.push(sorted_sparse_row(row));
+        } else {
+            if current.len() > best.len() {
+                best = current;
+            }
+            current = vec![sorted_sparse_row(row)];
+        }
+    }
+    if current.len() > best.len() {
+        best = current;
+    }
+    (best.len() >= 4).then_some(best)
+}
+
+fn opendataloader_same_numeric_segment(previous: &[TextPoint], row: &[TextPoint]) -> bool {
+    sparse_row_gap(previous, row) <= 30.0
+        && previous
+            .first()
+            .zip(row.first())
+            .is_some_and(|(left, right)| (left.x - right.x).abs() <= 48.0)
 }
 
 fn table_from_aligned_rows(

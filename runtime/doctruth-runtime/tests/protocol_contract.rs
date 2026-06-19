@@ -1583,6 +1583,42 @@ fn parse_pdf_emits_positioned_text_bboxes_when_content_stream_positions_are_avai
 }
 
 #[test]
+fn parse_pdf_preserves_stream_whitespace_between_adjacent_text_chunks() {
+    let pdf = write_pdf_fixture_with_stream(
+        "\
+BT
+/F1 24 Tf
+72 720 Td
+(Alpha) Tj
+( ) Tj
+(Beta) Tj
+ET
+",
+    );
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let unit_text = json["body"]["units"][0]["text"].as_str().unwrap();
+
+    assert!(
+        unit_text.contains("Alpha Beta"),
+        "stream whitespace should be preserved in TrustDocument text: {unit_text:?}"
+    );
+    assert!(
+        !unit_text.contains("AlphaBeta"),
+        "stream whitespace should not collapse adjacent chunks: {unit_text:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_uses_media_box_page_dimensions_and_stable_page_hash() {
     let pdf = write_custom_media_box_pdf_fixture();
     let mut first_cmd = Command::cargo_bin("doctruth-runtime").unwrap();
@@ -1616,6 +1652,65 @@ fn parse_pdf_uses_media_box_page_dimensions_and_stable_page_hash() {
     assert_eq!(image_hash.len(), "sha256:".len() + 64);
     assert!(!image_hash.contains("first-source"));
     assert!(!image_hash.contains("second-source"));
+}
+
+#[test]
+fn parse_pdf_skips_rendered_png_hash_for_large_pages() {
+    let pdf = write_large_media_box_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let page = &json["body"]["pages"][0];
+
+    assert_eq!(page["width"].as_f64().unwrap(), 1728.0);
+    assert_eq!(page["height"].as_f64().unwrap(), 2592.0);
+    assert_eq!(json["body"]["units"][0]["text"], "Large page evidence.");
+    assert_eq!(
+        page["imageHash"],
+        deterministic_page_hash(1, 1728.0, 2592.0, &[])
+    );
+}
+
+#[test]
+fn parse_pdf_skips_raw_content_safety_for_large_illustrator_stream_real_case() {
+    let pdf = opendataloader_fixture("01030000000141.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request_with_hash_and_preset(
+            &pdf,
+            "sha256:large-illustrator-stream",
+            "lite",
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let unit_text = json["body"]["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|unit| unit["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let warnings = json["parserRun"]["warnings"].as_array().unwrap();
+
+    assert!(unit_text.contains("and"));
+    assert!(unit_text.contains(".org"));
+    assert!(warnings.iter().any(|warning| {
+        warning["code"] == "raw_content_safety_skipped" && warning["severity"] == "SEVERE"
+    }));
 }
 
 #[test]
@@ -2241,9 +2336,21 @@ fn write_pdf_fixture_with_lines(lines: &[&str]) -> PathBuf {
     path
 }
 
+fn write_pdf_fixture_with_stream(stream: &str) -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-stream-fixture");
+    fs::write(&path, minimal_single_stream_pdf(stream)).unwrap();
+    path
+}
+
 fn write_custom_media_box_pdf_fixture() -> PathBuf {
     let path = temp_pdf_path("doctruth-runtime-custom-media-box-fixture");
     fs::write(&path, minimal_custom_media_box_pdf()).unwrap();
+    path
+}
+
+fn write_large_media_box_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-large-media-box-fixture");
+    fs::write(&path, minimal_large_media_box_pdf()).unwrap();
     path
 }
 
@@ -2360,6 +2467,15 @@ fn rendered_fixture_hash(page_number: usize) -> String {
     let mut bytes = b"\x89PNG\r\n\x1a\nfake-page-".to_vec();
     bytes.extend_from_slice(page_number.to_string().as_bytes());
     format!("sha256:{:x}", Sha256::digest(&bytes))
+}
+
+fn deterministic_page_hash(page_number: u32, width: f64, height: f64, content: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(page_number.to_be_bytes());
+    hasher.update(width.to_be_bytes());
+    hasher.update(height.to_be_bytes());
+    hasher.update(content);
+    format!("sha256:{:x}", hasher.finalize())
 }
 
 fn pdf_oxide_rendered_hash(path: &Path, page_index: usize) -> String {
@@ -2514,6 +2630,18 @@ fn minimal_custom_media_box_pdf() -> Vec<u8> {
         .as_bytes(),
     );
     pdf
+}
+
+fn minimal_large_media_box_pdf() -> Vec<u8> {
+    let stream = "BT\n/F1 64 Tf\n120 2400 Td\n(Large page evidence.) Tj\nET\n";
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1728 2592] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
+    ];
+    pdf_from_objects(&objects)
 }
 
 fn minimal_bordered_table_pdf() -> Vec<u8> {

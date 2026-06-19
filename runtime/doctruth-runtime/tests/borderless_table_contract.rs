@@ -319,6 +319,37 @@ fn parse_pdf_keeps_nested_numeric_subtable_for_appendix_real_case() {
 }
 
 #[test]
+fn parse_pdf_emits_remittance_growth_table_from_columnar_text_real_case() {
+    let pdf = opendataloader_fixture("01030000000078.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 7
+                && table["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| cell["text"] == "Cambodia")
+                        && cells.iter().any(|cell| cell["text"] == "7.5%")
+                        && cells.iter().any(|cell| cell["text"] == "1,272")
+                        && cells.iter().any(|cell| cell["text"] == "Viet Nam")
+                        && cells.iter().any(|cell| cell["text"] == "17,200")
+                })
+        }),
+        "expected remittance growth table, got {tables:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_composes_bordered_and_cluster_table_processors() {
     let pdf = write_bordered_plus_cluster_table_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

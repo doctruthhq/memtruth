@@ -16,7 +16,7 @@ before OpenDataLoader Bench is used as a final acceptance gate.
   numeric/table caption exclusions.
 - [ ] Match Python linewise paragraph projection and optional paragraph-join
   behavior.
-- [ ] Match Python table-of-contents Markdown rendering for detected table
+- [x] Match Python table-of-contents Markdown rendering for detected table
   outputs.
 - [x] Match Python synthetic table reconstruction from ordered text lines.
 
@@ -31,7 +31,7 @@ before OpenDataLoader Bench is used as a final acceptance gate.
 - [x] Match Python spatial-table output contract:
   consume source units and append recovered table HTML after normal text
   projection unless a later Rust-owned contract replaces that behavior.
-- [ ] Match Python party-registration table reconstruction.
+- [x] Match Python party-registration table reconstruction.
 
 ## Model and Worker Runtime
 

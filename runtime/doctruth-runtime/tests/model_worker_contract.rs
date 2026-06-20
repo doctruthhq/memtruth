@@ -836,6 +836,104 @@ fn parse_pdf_edge_model_rejects_onnx_manifest_and_does_not_start_worker() {
 }
 
 #[test]
+fn parse_pdf_benchmark_oracle_routes_ready_onnx_reference_manifest_to_worker() {
+    let pdf = write_pdf_fixture("Benchmark oracle should use reference model.");
+    let worker = write_onnx_reference_model_worker();
+    let cache_dir = temp_dir("doctruth-runtime-onnx-reference-cache");
+    fs::create_dir_all(&cache_dir).unwrap();
+    let artifact = b"real onnx reference artifact";
+    let artifact_sha = sha256(artifact);
+    let artifact_path = cache_dir.join("table-reference.onnx");
+    fs::write(&artifact_path, artifact).unwrap();
+    let manifest = temp_path("doctruth-runtime-onnx-reference-manifest", "json");
+    fs::write(
+        &manifest,
+        json!({
+            "presets": {
+                "table-lite": [
+                    {
+                        "name": "xenova-table-transformer-structure-recognition",
+                        "version": "model_quantized-main-2026-06-19",
+                        "cacheFilename": "table-reference.onnx",
+                        "sha256": artifact_sha,
+                        "sizeBytes": artifact.len(),
+                        "required": true,
+                        "task": "table-structure-recognition",
+                        "backend": "onnxruntime",
+                        "format": "onnx",
+                        "precision": "quantized",
+                        "license": "Apache-2.0",
+                        "preprocessing": {
+                            "inputLayout": "NCHW",
+                            "dtype": "float32",
+                            "colorSpace": "sRGB",
+                            "channelOrder": "RGB",
+                            "resize": {"width": 800, "height": 800, "keepAspectRatio": false},
+                            "resample": "bilinear",
+                            "scale": 0.00392156862745098,
+                            "mean": [0.485, 0.456, 0.406],
+                            "std": [0.229, 0.224, 0.225]
+                        },
+                        "parity": {
+                            "referenceEngine": "python-onnxruntime",
+                            "candidateEngine": "rust-mnn",
+                            "tensorDumpRequired": true,
+                            "firstTensorValuesRequired": true,
+                            "maxAbsDiff": 0.000001
+                        }
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request_with_runtime_profile(
+            &pdf,
+            "table-lite",
+            "benchmark-oracle",
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(json["parserRun"]["profile"], "benchmark-oracle");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["decision"],
+        "model-runtime"
+    );
+    assert_eq!(json["parserRun"]["modelRouting"]["route"], "model-runtime");
+    assert_eq!(json["parserRun"]["modelRuntime"]["runtime"], "onnxruntime");
+    assert_eq!(json["parserRun"]["modelRuntime"]["referenceOnly"], true);
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["resize"]["width"],
+        800
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["mean"][0],
+        0.485
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["parity"]["referenceEngine"],
+        "python-onnxruntime"
+    );
+    assert_eq!(
+        json["body"]["units"][0]["text"],
+        "ONNX reference worker evidence"
+    );
+}
+
+#[test]
 fn parse_pdf_accepts_worker_envelope_with_document_payload() {
     let pdf = write_pdf_fixture("Fallback text should not be used.");
     let worker = write_enveloped_model_worker();
@@ -1479,6 +1577,81 @@ fn write_bad_model_worker() -> PathBuf {
     write_worker_script(
         "doctruth-runtime-bad-model-worker",
         "#!/usr/bin/env python3\nprint('not json')\n",
+    )
+}
+
+fn write_onnx_reference_model_worker() -> PathBuf {
+    write_worker_script(
+        "doctruth-runtime-onnx-reference-model-worker",
+        r#"#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+request = json.load(sys.stdin)
+model = request["models"][0]
+assert request["profile"] == "benchmark-oracle"
+assert request["runtime_profile"] == "benchmark-oracle"
+assert request["modelRuntime"]["runtime"] == "onnxruntime"
+assert request["modelRuntime"]["referenceOnly"] is True
+assert request["modelRuntime"]["preprocessing"]["resize"]["width"] == 800
+assert request["modelRuntime"]["preprocessing"]["resize"]["height"] == 800
+assert request["modelRuntime"]["preprocessing"]["mean"] == [0.485, 0.456, 0.406]
+assert request["modelRuntime"]["preprocessing"]["std"] == [0.229, 0.224, 0.225]
+assert request["modelRuntime"]["preprocessing"]["parity"]["referenceEngine"] == "python-onnxruntime"
+assert model["name"] == "xenova-table-transformer-structure-recognition"
+assert model["backend"] == "onnxruntime"
+assert model["format"] == "onnx"
+assert model["cacheStatus"] == "READY"
+assert pathlib.Path(model["cachePath"]).name == "table-reference.onnx"
+assert pathlib.Path(model["cachePath"]).is_file()
+print(json.dumps({
+    "docId": request["source_hash"],
+    "source": {
+        "sourceFilename": "onnx-reference-worker.pdf",
+        "sourceHash": request["source_hash"],
+        "metadata": {"sourceFilename": "onnx-reference-worker.pdf", "pageCount": 1}
+    },
+    "body": {
+        "pages": [{
+            "pageNumber": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "textLayerAvailable": True,
+            "imageHash": "sha256:" + "0" * 64
+        }],
+        "units": [{
+            "unitId": "unit-onnx-0001",
+            "kind": "TABLE_CELL",
+            "page": 1,
+            "text": "ONNX reference worker evidence",
+            "evidenceSpanIds": ["span-onnx-0001"],
+            "location": {
+                "page": 1,
+                "readingOrder": 1,
+                "boundingBox": {"x0": 0.0, "y0": 0.0, "x1": 1000.0, "y1": 1000.0}
+            },
+            "sourceObjectId": "onnx-reference-cell-1",
+            "confidence": {"score": 0.97, "rationale": "real onnx reference worker"},
+            "warnings": []
+        }],
+        "tables": []
+    },
+    "parserRun": {
+        "parserVersion": "test-onnx-reference-worker",
+        "preset": request["preset"],
+        "backend": "rust-sidecar+model-worker",
+        "profile": request["profile"],
+        "models": ["xenova-table-transformer-structure-recognition:model_quantized-main-2026-06-19"],
+        "warnings": []
+    },
+    "auditGradeStatus": "AUDIT_GRADE",
+    "metrics": {
+        "runtime": "onnxruntime",
+        "loadedModels": ["xenova-table-transformer-structure-recognition:model_quantized-main-2026-06-19"]
+    }
+}))
+"#,
     )
 }
 

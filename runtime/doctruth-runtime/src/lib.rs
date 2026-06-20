@@ -315,9 +315,24 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
     let required_models = required_model_descriptors(effective_preset);
     let model_artifacts = worker_model_artifacts(effective_preset, &required_models);
     if profile == "benchmark-oracle" {
+        if !required_models.is_empty()
+            && model_artifacts_ready_for_profile(profile, &model_artifacts)
+            && let Some(document) = configured_model_worker_parse(
+                source_path,
+                source_hash,
+                effective_preset,
+                profile,
+                &route,
+                &required_models,
+                &model_artifacts,
+                request,
+            )?
+        {
+            return Ok(document);
+        }
         return Err(error_json(
-            "PROFILE_NOT_SUPPORTED",
-            "benchmark-oracle is an explicit benchmark comparison profile, not a production parse runtime profile",
+            "MODEL_WORKER_REQUIRED",
+            "benchmark-oracle requires READY reference model artifacts and a configured model worker; it does not emit heuristic fallback output",
         )
         .to_string());
     }
@@ -466,6 +481,11 @@ struct ModelRouteDecision {
 
 impl ModelRouteDecision {
     fn to_json(&self, started_model_runtime: bool, model_identities: &[String]) -> Value {
+        let route = if started_model_runtime && self.decision == "deterministic-only" {
+            "model-runtime"
+        } else {
+            self.decision.as_str()
+        };
         json!({
             "mode": self.mode,
             "decision": if started_model_runtime {
@@ -473,7 +493,7 @@ impl ModelRouteDecision {
             } else {
                 "deterministic-only"
             },
-            "route": self.decision,
+            "route": route,
             "effectivePreset": self.effective_preset,
             "startedModelRuntime": started_model_runtime,
             "routedPages": if started_model_runtime { json!(self.routed_pages) } else { json!([]) },
@@ -1901,7 +1921,7 @@ fn configured_model_worker_parse(
         "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
         "models": model_artifacts,
         "auxiliaryArtifacts": auxiliary_artifacts,
-        "modelRuntime": model_runtime_request_json(profile, preset),
+        "modelRuntime": model_runtime_request_json(profile, preset, model_artifacts),
         "modelRouting": route.to_json(true, &required_models.iter().map(RequiredModel::identity).collect::<Vec<_>>())
     });
     let output = run_model_worker(&command, &worker_request)?;
@@ -1929,7 +1949,7 @@ fn model_runtime_metrics_with_context(
     let mut target = metrics.as_object().cloned().unwrap_or_default();
     target
         .entry("preprocessing".to_string())
-        .or_insert_with(|| mnn_preprocessing_contract_json(preset));
+        .or_insert_with(|| model_preprocessing_contract_json(preset, model_artifacts));
     if let Some(manifest_path) = configured_model_manifest_path() {
         target.insert("manifestPath".to_string(), json!(manifest_path));
     }
@@ -1975,13 +1995,31 @@ fn model_runtime_artifact_json(artifact: &Value) -> Value {
     Value::Object(object)
 }
 
-fn model_runtime_request_json(profile: &str, preset: &str) -> Value {
+fn model_runtime_request_json(profile: &str, preset: &str, model_artifacts: &[Value]) -> Value {
+    let runtime = model_runtime_engine(profile, model_artifacts);
     json!({
-        "runtime": if profile == "edge-model" { "mnn" } else { "none" },
+        "runtime": runtime,
         "loadPolicy": "lazy",
         "unloadPolicy": "idle-after-request",
-        "preprocessing": mnn_preprocessing_contract_json(preset)
+        "referenceOnly": profile == "benchmark-oracle" && runtime != "mnn",
+        "preprocessing": model_preprocessing_contract_json(preset, model_artifacts)
     })
+}
+
+fn model_runtime_engine(profile: &str, model_artifacts: &[Value]) -> String {
+    if profile == "edge-model" {
+        return "mnn".to_string();
+    }
+    if profile == "benchmark-oracle" {
+        return model_artifacts
+            .iter()
+            .filter(|artifact| artifact.get("cacheStatus").and_then(Value::as_str) == Some("READY"))
+            .filter_map(|artifact| artifact.get("backend").and_then(Value::as_str))
+            .next()
+            .unwrap_or("none")
+            .to_string();
+    }
+    "none".to_string()
 }
 
 fn mnn_preprocessing_contract_json(preset: &str) -> Value {
@@ -2017,6 +2055,64 @@ fn mnn_preprocessing_contract_json(preset: &str) -> Value {
             ],
             "promotionBlockedWithoutTensorDigest": true
         }
+    })
+}
+
+fn model_preprocessing_contract_json(preset: &str, model_artifacts: &[Value]) -> Value {
+    let mut contract = mnn_preprocessing_contract_json(preset);
+    let Some(model_preprocessing) = model_artifacts
+        .iter()
+        .find_map(|artifact| artifact.get("preprocessing"))
+    else {
+        return contract;
+    };
+    if let Some(target) = contract.as_object_mut() {
+        if let Some(value) = model_preprocessing.get("inputLayout") {
+            target.insert("tensorLayout".to_string(), value.clone());
+            target.insert("inputLayout".to_string(), value.clone());
+        }
+        for (source_key, target_key) in [
+            ("dtype", "valueType"),
+            ("colorSpace", "colorSpace"),
+            ("channelOrder", "channelOrder"),
+            ("resize", "resize"),
+            ("resample", "resample"),
+            ("scale", "scale"),
+            ("mean", "mean"),
+            ("std", "std"),
+        ] {
+            if let Some(value) = model_preprocessing.get(source_key) {
+                target.insert(target_key.to_string(), value.clone());
+            }
+        }
+        if let Some(parity) = model_artifacts
+            .iter()
+            .find_map(|artifact| artifact.get("parity"))
+        {
+            target.insert(
+                "parity".to_string(),
+                model_preprocessing_parity_json(parity),
+            );
+        }
+    }
+    contract
+}
+
+fn model_preprocessing_parity_json(parity: &Value) -> Value {
+    json!({
+        "required": true,
+        "checks": [
+            "input_shape",
+            "first_tensor_values",
+            "tensor_sha256",
+            "python_reference_digest"
+        ],
+        "promotionBlockedWithoutTensorDigest": true,
+        "referenceEngine": parity.get("referenceEngine").cloned().unwrap_or(Value::Null),
+        "candidateEngine": parity.get("candidateEngine").cloned().unwrap_or(Value::Null),
+        "tensorDumpRequired": parity.get("tensorDumpRequired").cloned().unwrap_or(json!(true)),
+        "firstTensorValuesRequired": parity.get("firstTensorValuesRequired").cloned().unwrap_or(json!(true)),
+        "maxAbsDiff": parity.get("maxAbsDiff").cloned().unwrap_or(Value::Null)
     })
 }
 
@@ -2156,6 +2252,7 @@ fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
         return runtime;
     };
     for key in [
+        "runtime",
         "decoder",
         "inputSource",
         "stubMode",
@@ -2177,6 +2274,10 @@ fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
         if let Some(value) = model_metrics.get(key) {
             target.insert(key.to_string(), value.clone());
         }
+    }
+    if profile == "benchmark-oracle" && target.get("runtime").and_then(Value::as_str) != Some("mnn")
+    {
+        target.insert("referenceOnly".to_string(), json!(true));
     }
     runtime
 }
@@ -2447,11 +2548,8 @@ fn model_with_cache_status(mut model: Value, cache_dir: &str) -> Value {
         .and_then(Value::as_str)
         .unwrap_or("v1")
         .to_string();
-    let cache_path = Path::new(cache_dir).join(model_cache_filename(&name, &version));
-    let (mut status, actual_sha, actual_size) = verify_model_cache_artifact(&cache_path, &model);
-    if explicit_non_mnn_model_artifact(&model) {
-        status = "UNSUPPORTED_RUNTIME";
-    }
+    let cache_path = Path::new(cache_dir).join(model_cache_filename(&model, &name, &version));
+    let (status, actual_sha, actual_size) = verify_model_cache_artifact(&cache_path, &model);
     if model.get("expectedSha256").is_none() {
         let sha = model
             .get("sha256")
@@ -2468,7 +2566,10 @@ fn model_with_cache_status(mut model: Value, cache_dir: &str) -> Value {
     model
 }
 
-fn model_cache_filename(name: &str, version: &str) -> String {
+fn model_cache_filename(model: &Value, name: &str, version: &str) -> String {
+    if let Some(filename) = model.get("cacheFilename").and_then(Value::as_str) {
+        return filename.to_string();
+    }
     format!(
         "{}-{}.bin",
         sanitize_model_token(name),
@@ -8394,6 +8495,14 @@ fn model_unavailable_warnings(
 fn model_unavailable_reason(profile: &str, artifacts: &[Value]) -> &'static str {
     if profile == "edge-fast" {
         return "model startup is disabled by edge-fast profile";
+    }
+    if profile == "edge-model"
+        && artifacts.iter().any(|artifact| {
+            artifact.get("cacheStatus").and_then(Value::as_str) == Some("READY")
+                && explicit_non_mnn_model_artifact(artifact)
+        })
+    {
+        return "unsupported model runtime; edge-model accepts MNN artifacts only";
     }
     if artifacts.iter().any(|artifact| {
         artifact.get("cacheStatus").and_then(Value::as_str) == Some("UNSUPPORTED_RUNTIME")

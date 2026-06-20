@@ -17,6 +17,7 @@
       {
         "name": "kreuzberg-rtdetr-layout",
         "version": "rtdetr-model-main-2026-06-19",
+        "cacheFilename": "kreuzberg-rtdetr-layout-model.bin",
         "sha256": "sha256:3bf2fb0ee6df87435b7ae47f0f3930ec3dc97ec56fd824acc6d57bc7a6b89ef2",
         "sizeBytes": 169089059,
         "required": true,
@@ -51,6 +52,7 @@
       {
         "name": "xenova-table-transformer-structure-recognition",
         "version": "model_quantized-main-2026-06-19",
+        "cacheFilename": "xenova-table-transformer-structure-recognition-model_quantized.bin",
         "sha256": "sha256:c11f4033da75e9c4d41c403ef356e89caa0a37a7d111b55461e7d5ba856bb6b6",
         "sizeBytes": 30158413,
         "required": true,

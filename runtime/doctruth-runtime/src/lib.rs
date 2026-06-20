@@ -1367,6 +1367,64 @@ fn filter_repeated_header_footer_lines(pages: Vec<Vec<PositionedLine>>) -> Vec<V
         .collect()
 }
 
+#[cfg(test)]
+fn merge_positioned_visual_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
+    let mut rows: Vec<Vec<PositionedLine>> = Vec::new();
+    for line in sort_positioned_y_then_x(lines) {
+        if let Some(row) = rows
+            .iter_mut()
+            .find(|row| positioned_lines_same_visual_row(&row[0], &line))
+        {
+            row.push(line);
+        } else {
+            rows.push(vec![line]);
+        }
+    }
+    rows.into_iter()
+        .map(merge_positioned_visual_row)
+        .collect()
+}
+
+#[cfg(test)]
+fn positioned_lines_same_visual_row(left: &PositionedLine, right: &PositionedLine) -> bool {
+    (left.bbox.y0 - right.bbox.y0).abs() <= 3.0
+        && (left.bbox.y1 - right.bbox.y1).abs() <= 3.0
+}
+
+#[cfg(test)]
+fn merge_positioned_visual_row(mut row: Vec<PositionedLine>) -> PositionedLine {
+    row.sort_by(|left, right| left.bbox.x0.total_cmp(&right.bbox.x0));
+    let mut merged = row.remove(0);
+    for line in row {
+        let separator = positioned_line_separator(&merged, &line);
+        merged.text = normalize_text(&format!("{}{}{}", merged.text, separator, line.text));
+        merged.bbox.x0 = merged.bbox.x0.min(line.bbox.x0);
+        merged.bbox.y0 = merged.bbox.y0.min(line.bbox.y0);
+        merged.bbox.x1 = merged.bbox.x1.max(line.bbox.x1);
+        merged.bbox.y1 = merged.bbox.y1.max(line.bbox.y1);
+        merged.raw_bbox.x0 = merged.raw_bbox.x0.min(line.raw_bbox.x0);
+        merged.raw_bbox.y0 = merged.raw_bbox.y0.min(line.raw_bbox.y0);
+        merged.raw_bbox.x1 = merged.raw_bbox.x1.max(line.raw_bbox.x1);
+        merged.raw_bbox.y1 = merged.raw_bbox.y1.max(line.raw_bbox.y1);
+        merged.font_size = merged.font_size.max(line.font_size);
+    }
+    merged
+}
+
+#[cfg(test)]
+fn positioned_line_separator(left: &PositionedLine, right: &PositionedLine) -> &'static str {
+    if left.text.ends_with(char::is_whitespace) || right.text.starts_with(char::is_whitespace) {
+        return "";
+    }
+    let gap = right.bbox.x0 - left.bbox.x1;
+    let threshold = left.font_size.max(right.font_size) * 0.17;
+    if gap > threshold.max(1.0) {
+        " "
+    } else {
+        ""
+    }
+}
+
 fn footer_band_line(line: &PositionedLine) -> bool {
     line.bbox.y1 <= line.page_height * 0.15
 }
@@ -13352,6 +13410,32 @@ mod tests {
                 .iter()
                 .any(|cell| cell.row == 7 && cell.column == 4 && cell.text == "r8c5")
         );
+    }
+
+    #[test]
+    fn opendataloader_text_line_processor_sorts_chunks_by_left_x() {
+        let lines = vec![
+            line("content", 100.0, 300.0, 200.0, 310.0),
+            line("Q:", 10.0, 300.0, 40.0, 310.0),
+        ];
+
+        let merged = merge_positioned_visual_lines(lines);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].text, "Q: content");
+    }
+
+    #[test]
+    fn opendataloader_text_line_processor_adds_space_between_distant_chunks() {
+        let lines = vec![
+            line("A:", 10.0, 300.0, 30.0, 310.0),
+            line("answer text", 50.0, 300.0, 150.0, 310.0),
+        ];
+
+        let merged = merge_positioned_visual_lines(lines);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].text, "A: answer text");
     }
 
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {

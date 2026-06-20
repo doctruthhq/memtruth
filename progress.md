@@ -8102,3 +8102,27 @@
 - Boundary: this completes the Rust triage signal contract. Feeding real
   table-border/image/model objects into it remains part of Hybrid schema
   transformer and MNN decoder work, not the text-only pdf_oxide path.
+
+## 2026-06-20 TableBorderProcessor Foundation Closure
+
+- Ported the practical Rust-owned TableBorder foundation contracts:
+  - table cell text now uses character-center x-range splitting, so one
+    spanning text point can be split into adjacent cell text like the
+    OpenDataLoader `TextChunkUtils` path;
+  - neighbor table linking is represented as a shape contract using column
+    count, table width, and per-column width closeness within the reference
+    20% tolerance;
+  - nested table processing depth guard is captured at the reference limit of
+    10 for contract coverage.
+- Wired neighbor shape matching into table continuation detection instead of
+  only checking coarse table bbox alignment.
+- Verification passed:
+  `cargo test opendataloader_table_border --lib` (3 passed);
+  `cargo test --lib` (42 passed);
+  `cargo test opendataloader_parity_ --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `git diff --check`.
+- Boundary: the Java reference runs full text/list/paragraph/heading/caption
+  processors inside table cells. Rust now owns the geometry/text-splitting
+  contracts; a richer cell-internal TrustDocument block pipeline is separate
+  work, not hidden Java/Python fallback.

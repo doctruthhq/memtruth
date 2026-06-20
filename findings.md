@@ -1978,3 +1978,10 @@
   model/runtime output belongs to the Hybrid schema transformer and MNN decoder
   items; do not claim the text-only pdf_oxide path now discovers those objects
   on its own.
+- OpenDataLoader `TableBorderProcessor` has three high-value pure contracts we
+  can own in Rust without VeraPDF containers: split a text chunk across cells
+  by x range, link neighboring tables when column count/overall width/cell
+  widths match within 20%, and stop nested table processing at depth 10. The
+  Java reference also runs full processors inside table cells; DocTruth Rust
+  should only claim the pure contracts until TrustDocument has a richer
+  cell-internal block pipeline.

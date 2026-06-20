@@ -8025,3 +8025,20 @@
   `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`;
   `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`;
   `git diff --check`.
+
+## 2026-06-20 OpenDataLoader Foundation Port Resumption
+
+- User clarified the current acceptance rule: keep porting/copying the
+  OpenDataLoader foundation and do not stop or run full200 before the
+  foundation checklist is complete.
+- Updated `task_plan.md` with an explicit Active Continuation section and a
+  foundation port checklist.
+- Added `findings.md` note documenting what is already ported and what still
+  blocks a full OpenDataLoader Bench rerun.
+- Current uncommitted implementation at resumption:
+  - `runtime/doctruth-runtime/src/lib.rs` contains the OpenDataLoader
+    `TextSimilarity` stream-vs-OCR trust algorithm and tests.
+  - Focused `cargo test opendataloader_text_similarity --lib` passed.
+  - `cargo test --lib` passed with 30 tests.
+  - `cargo test opendataloader_parity_ --test benchmark_corpus_contract` was
+    interrupted before completion, so this slice is not yet committed.

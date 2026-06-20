@@ -178,6 +178,54 @@ real parser-quality corpus gates
 | 78. Full verification after benchmark corpus CLI | complete | Full Java suite and whitespace checks after corpus CLI/docs/smoke updates | `mvn test`, `git diff --check` |
 | 79. Compact corpus metric RED/MVP | complete | Benchmark results report compact size and round-trip/source-map health so `compact_llm` can be gated on corpus-level LLM efficiency and replayability | `ParserBenchmarkRunnerTest` red, then focused green |
 | 80. Full verification after compact corpus metrics | complete | Focused benchmark/API tests, full Java suite, benchmark corpus smoke, and whitespace checks after compact metric docs/runner updates | focused tests, `mvn test`, smoke, `git diff --check` |
+
+## Active Continuation: OpenDataLoader Foundation Port Completion
+
+Status: in_progress as of 2026-06-20.
+
+Goal: port the OpenDataLoader foundation behavior into DocTruth's Rust runtime
+before running another full OpenDataLoader Bench pass. "Foundation" means the
+pure parser/runtime algorithms and contracts that can be owned locally without
+starting Python/Docling/Torch or using OpenDataLoader as a hidden production
+fallback.
+
+Hard rule for this continuation:
+
+```text
+Do not run full200 / full OpenDataLoader Bench again until the foundation port
+checklist below is complete or intentionally marked out of scope with a reason.
+```
+
+Foundation port checklist:
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| ContentFilter short-text abnormal bbox correction | complete | Ported from OpenDataLoader issue #150 behavior. |
+| ContentSanitizer default sensitive-data rules | complete | Implemented as opt-in only; DocTruth evidence remains exact by default. |
+| TextProcessor undefined replacement handling | complete | Optional replacement plus replacement-character ratio warning. |
+| TextSimilarity stream-vs-OCR trust algorithm | in_progress | Focused tests pass; parity subset and commit still required. |
+| HeaderFooter repeated band filtering | complete | Multi-page header/footer band filter implemented. |
+| ListProcessor localized/letter labels | complete | Korean and alphabetic labels covered. |
+| TableStructureNormalizer undersegmented grid rebuild | complete | Grid rows rebuilt from raw row bands. |
+| Dense table source-unit enrichment | complete | Fills missing dense table cell text/bbox from source units. |
+| TextLineProcessor visual-row merge | partial | Contract captured; production integration broke TOC/table parity and needs table-aware gating. |
+| TriageProcessor page-complexity signals | pending | Need Rust equivalents for line ratio, table border/vector line signals, large images, suspicious/aligned patterns, and disabled-signal reporting. |
+| TableBorderProcessor remaining semantics | pending | Need neighbor table linking, cell text splitting behavior, nested-depth guard contract, and text-block no-normalize boundary where applicable to TrustDocument. |
+| ParagraphProcessor right-alignment precedence | pending | Needs a canonical layout metadata target before production integration. |
+| Caption/Image/Formula/TextDecoration semantics | pending | Need TrustDocument block/unit representation before broad integration. |
+| Hybrid schema transformer foundations | pending | Need Rust-owned mapping from worker/model output into TrustDocument layers without Python adapter dependence. |
+| MNN OCR/table decoder and preprocessing parity | pending | Requires model artifacts and strict input tensor parity checks; no fake quality claim. |
+
+Current verification boundary:
+
+```text
+cargo test --lib
+cargo test opendataloader_parity_ --test benchmark_corpus_contract
+git diff --check
+```
+
+Full OpenDataLoader Bench can resume only after this checklist is complete or
+after a written decision narrows the scope.
 | 81. GFM Markdown escaping RED/MVP | complete | `markdown_clean` preserves fenced code blocks and links while escaping Markdown-sensitive table cell brackets/pipes/backslashes | `TrustDocumentRenderedOutputTest` red, then focused green |
 | 82. Full verification after GFM Markdown escaping | complete | Renderer/source-map focused tests, full Java suite, CLI sidecar smoke, and whitespace checks after Markdown escaping update | focused tests, `mvn test`, smoke, `git diff --check` |
 | 83. Audit replay verifier RED/MVP | complete | SDK and CLI verify Audit JSON against full TrustDocument JSON by checking doc/source/canonical/evidence integrity | SDK/CLI tests red, then focused green |

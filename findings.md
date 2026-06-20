@@ -1945,3 +1945,22 @@
 - The official evaluator converts Markdown tables before reading-order,
   heading, and table scoring. Rust previously converted them only for TEDS,
   which made aggregate parity drift on Markdown-table fixtures.
+
+## 2026-06-20 OpenDataLoader Foundation Port Boundary Finding
+
+- "All copied" cannot mean blindly embedding OpenDataLoader as a production
+  fallback. The safe target is to port pure, locally owned parser/runtime
+  behavior into `runtime/doctruth-runtime` and normalize all output through
+  TrustDocument.
+- The foundation port is not complete yet. Completed slices include content
+  filters, sensitive-data rules, undefined-character handling, header/footer
+  filtering, localized lists, undersegmented grid table rebuilds, dense table
+  enrichment, and multiple markdown/table/heading parity rules.
+- Remaining foundational gaps before another full200 run are TriageProcessor
+  signals, remaining TableBorderProcessor semantics, production-safe
+  TextLineProcessor visual-row merging, paragraph alignment metadata, caption /
+  image / formula / decoration representation, hybrid schema transformation,
+  and real MNN OCR/table preprocessing/decoder parity.
+- TextSimilarity is a good small hybrid slice because it is pure Rustable logic
+  deciding when stream text can be trusted over OCR text. It should be committed
+  only after the parity subset is rerun because the previous run was interrupted.

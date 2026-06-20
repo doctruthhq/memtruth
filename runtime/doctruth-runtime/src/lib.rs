@@ -7596,6 +7596,7 @@ struct OpendataloaderTriageSignals {
     text_chunk_count: usize,
     line_to_text_ratio: f64,
     aligned_line_groups: usize,
+    has_table_border: bool,
     has_suspicious_pattern: bool,
     horizontal_line_count: usize,
     vertical_line_count: usize,
@@ -7608,6 +7609,8 @@ struct OpendataloaderTriageSignals {
     max_consecutive_streak: usize,
     pattern_density: f64,
     has_consecutive_patterns: bool,
+    large_image_ratio: f64,
+    large_image_aspect_ratio: f64,
 }
 
 impl OpendataloaderTriageSignals {
@@ -7625,6 +7628,22 @@ impl OpendataloaderTriageSignals {
             || (self.pattern_density >= 0.10 && self.table_pattern_count >= 2);
         (self.has_consecutive_patterns || high_pattern_count) && meets_pattern_threshold
     }
+
+    fn has_large_image(&self) -> bool {
+        self.large_image_ratio >= 0.11 && self.large_image_aspect_ratio >= 1.75
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct OpendataloaderTriageInput<'a> {
+    text_lines: &'a [PositionedLine],
+    segments: &'a [Segment],
+    line_art_count: usize,
+    has_table_border: bool,
+    image_boxes: &'a [RuntimeBox],
+    page_box: Option<RuntimeBox>,
+    replacement_ratio: f64,
+    line_ratio_threshold: f64,
 }
 
 fn opendataloader_triage_page(
@@ -7632,8 +7651,22 @@ fn opendataloader_triage_page(
     segments: &[Segment],
     replacement_ratio: f64,
 ) -> OpendataloaderTriageDecision {
-    let signals = opendataloader_triage_signals(text_lines, segments);
-    if replacement_ratio >= 0.3 {
+    let input = OpendataloaderTriageInput {
+        text_lines,
+        segments,
+        replacement_ratio,
+        line_ratio_threshold: 0.3,
+        ..OpendataloaderTriageInput::default()
+    };
+    opendataloader_triage(input)
+}
+
+fn opendataloader_triage(input: OpendataloaderTriageInput<'_>) -> OpendataloaderTriageDecision {
+    let signals = opendataloader_triage_signals(&input);
+    if input.replacement_ratio >= 0.3 {
+        return opendataloader_triage_decision("backend", 1.0, signals);
+    }
+    if signals.has_table_border {
         return opendataloader_triage_decision("backend", 1.0, signals);
     }
     if signals.has_vector_table_signal() {
@@ -7642,7 +7675,10 @@ fn opendataloader_triage_page(
     if signals.has_text_table_pattern() {
         return opendataloader_triage_decision("backend", 0.9, signals);
     }
-    if signals.line_to_text_ratio > 0.3 {
+    if signals.has_large_image() {
+        return opendataloader_triage_decision("backend", 0.85, signals);
+    }
+    if signals.line_to_text_ratio > input.line_ratio_threshold {
         return opendataloader_triage_decision("backend", 0.8, signals);
     }
     opendataloader_triage_decision("deterministic", 0.9, signals)
@@ -7660,57 +7696,84 @@ fn opendataloader_triage_decision(
     }
 }
 
-fn opendataloader_triage_signals(
-    text_lines: &[PositionedLine],
-    segments: &[Segment],
-) -> OpendataloaderTriageSignals {
+fn opendataloader_triage_signals(input: &OpendataloaderTriageInput<'_>) -> OpendataloaderTriageSignals {
     let mut signals = OpendataloaderTriageSignals {
-        text_chunk_count: text_lines.len(),
-        line_chunk_count: segments.len(),
+        text_chunk_count: input.text_lines.len(),
+        line_chunk_count: input.segments.len(),
+        line_art_count: input.line_art_count,
+        has_table_border: input.has_table_border,
         ..OpendataloaderTriageSignals::default()
     };
-    let total_count = signals.text_chunk_count + signals.line_chunk_count;
+    let total_count = signals.text_chunk_count + signals.line_chunk_count + signals.line_art_count;
     signals.line_to_text_ratio = if total_count == 0 {
         0.0
     } else {
         signals.line_chunk_count as f64 / total_count as f64
     };
     let mut short_horizontal_lines = Vec::new();
+    let mut row_separator_pattern_count = 0usize;
     let mut last_was_horizontal = false;
-    for segment in segments {
+    for segment in input.segments {
         let width = (segment.x1 - segment.x0).abs();
         let height = (segment.y1 - segment.y0).abs();
         if width > height * 3.0 {
             signals.horizontal_line_count += 1;
             if !last_was_horizontal {
-                signals.has_row_separator_pattern =
-                    signals.horizontal_line_count >= 5 || signals.has_row_separator_pattern;
+                row_separator_pattern_count += 1;
             }
             short_horizontal_lines.push((segment.x0.min(segment.x1), width));
             last_was_horizontal = true;
         } else if height > width * 3.0 {
             signals.vertical_line_count += 1;
-            last_was_horizontal = false;
         } else {
             last_was_horizontal = false;
         }
     }
     signals.has_grid_lines = signals.horizontal_line_count >= 3 && signals.vertical_line_count >= 3;
     signals.has_table_border_lines = signals.horizontal_line_count + signals.vertical_line_count >= 8;
+    signals.has_row_separator_pattern = row_separator_pattern_count >= 5;
     signals.has_aligned_short_lines =
         opendataloader_has_aligned_short_horizontal_lines(&short_horizontal_lines);
-    signals.has_suspicious_pattern = opendataloader_suspicious_text_patterns(text_lines);
-    signals.aligned_line_groups = opendataloader_aligned_line_groups(text_lines, 3.0);
-    let (pattern_count, max_streak) = opendataloader_text_table_pattern_stats(text_lines);
+    signals.has_suspicious_pattern = opendataloader_suspicious_text_patterns(input.text_lines);
+    signals.aligned_line_groups = opendataloader_aligned_line_groups(input.text_lines, 3.0);
+    let (pattern_count, max_streak) = opendataloader_text_table_pattern_stats(input.text_lines);
     signals.table_pattern_count = pattern_count;
     signals.max_consecutive_streak = max_streak;
     signals.has_consecutive_patterns = max_streak >= 2;
-    signals.pattern_density = if text_lines.is_empty() {
+    signals.pattern_density = if signals.text_chunk_count == 0 {
         0.0
     } else {
-        pattern_count as f64 / text_lines.len() as f64
+        pattern_count as f64 / signals.text_chunk_count as f64
     };
+    let (ratio, aspect_ratio) =
+        opendataloader_largest_image_metrics(input.image_boxes, input.page_box.clone());
+    signals.large_image_ratio = ratio;
+    signals.large_image_aspect_ratio = aspect_ratio;
     signals
+}
+
+fn opendataloader_largest_image_metrics(
+    image_boxes: &[RuntimeBox],
+    page_box: Option<RuntimeBox>,
+) -> (f64, f64) {
+    let Some(page_box) = page_box else {
+        return (0.0, 0.0);
+    };
+    let page_area = bbox_width(&page_box) * bbox_height(&page_box);
+    if page_area <= 0.0 {
+        return (0.0, 0.0);
+    }
+    image_boxes
+        .iter()
+        .map(|bbox| {
+            let width = bbox_width(bbox);
+            let height = bbox_height(bbox);
+            let ratio = width * height / page_area;
+            let aspect_ratio = if height > 0.0 { width / height } else { 0.0 };
+            (ratio, aspect_ratio)
+        })
+        .max_by(|left, right| left.0.total_cmp(&right.0))
+        .unwrap_or((0.0, 0.0))
 }
 
 fn opendataloader_has_aligned_short_horizontal_lines(lines: &[(f64, f64)]) -> bool {
@@ -13919,6 +13982,102 @@ mod tests {
         assert_eq!(decision.route, "backend");
         assert_eq!(decision.confidence, 0.95);
         assert!(decision.signals.has_vector_table_signal());
+        assert!(decision.signals.line_to_text_ratio > 0.3);
+    }
+
+    #[test]
+    fn opendataloader_triage_routes_explicit_table_border_to_backend() {
+        let input = OpendataloaderTriageInput {
+            text_lines: &[line("Cell", 20.0, 20.0, 50.0, 40.0)],
+            has_table_border: true,
+            line_ratio_threshold: 0.3,
+            ..OpendataloaderTriageInput::default()
+        };
+
+        let decision = opendataloader_triage(input);
+
+        assert_eq!(decision.route, "backend");
+        assert_eq!(decision.confidence, 1.0);
+        assert!(decision.signals.has_table_border);
+    }
+
+    #[test]
+    fn opendataloader_triage_routes_large_wide_image_to_backend() {
+        let image_boxes = vec![RuntimeBox {
+            x0: 10.0,
+            y0: 10.0,
+            x1: 510.0,
+            y1: 130.0,
+        }];
+        let input = OpendataloaderTriageInput {
+            image_boxes: &image_boxes,
+            page_box: Some(RuntimeBox {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 1000.0,
+                y1: 500.0,
+            }),
+            line_ratio_threshold: 0.3,
+            ..OpendataloaderTriageInput::default()
+        };
+
+        let decision = opendataloader_triage(input);
+
+        assert_eq!(decision.route, "backend");
+        assert_eq!(decision.confidence, 0.85);
+        assert!(decision.signals.has_large_image());
+    }
+
+    #[test]
+    fn opendataloader_triage_counts_line_art_as_vector_signal() {
+        let input = OpendataloaderTriageInput {
+            line_art_count: 8,
+            line_ratio_threshold: 0.3,
+            ..OpendataloaderTriageInput::default()
+        };
+
+        let decision = opendataloader_triage(input);
+
+        assert_eq!(decision.route, "backend");
+        assert_eq!(decision.confidence, 0.95);
+        assert!(decision.signals.has_vector_table_signal());
+    }
+
+    #[test]
+    fn opendataloader_triage_honors_custom_line_ratio_threshold() {
+        let lines = vec![
+            line("Text1", 10.0, 100.0, 80.0, 120.0),
+            line("Text2", 10.0, 80.0, 80.0, 100.0),
+        ];
+        let segments = vec![segment(10.0, 70.0, 200.0, 70.0)];
+        let input = OpendataloaderTriageInput {
+            text_lines: &lines,
+            segments: &segments,
+            line_ratio_threshold: 0.5,
+            ..OpendataloaderTriageInput::default()
+        };
+
+        let decision = opendataloader_triage(input);
+
+        assert_eq!(decision.route, "deterministic");
+        assert!(decision.signals.line_to_text_ratio > 0.3);
+    }
+
+    #[test]
+    fn opendataloader_triage_tracks_row_separator_pattern_like_accumulator() {
+        let segments = vec![
+            segment(10.0, 100.0, 200.0, 100.0),
+            segment(10.0, 90.0, 200.0, 90.0),
+            segment(10.0, 80.0, 200.0, 80.0),
+            segment(10.0, 70.0, 200.0, 70.0),
+            segment(10.0, 60.0, 200.0, 60.0),
+        ];
+
+        let decision = opendataloader_triage_page(&[], &segments, 0.0);
+
+        assert_eq!(decision.route, "backend");
+        assert!(!decision.signals.has_row_separator_pattern);
+        assert!(!decision.signals.has_table_border_lines);
         assert!(decision.signals.line_to_text_ratio > 0.3);
     }
 

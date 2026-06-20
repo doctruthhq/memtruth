@@ -11096,6 +11096,23 @@ fn table_from_primitives(
         }
     }
 
+    if let Some(normalized) = opendataloader_rebuild_undersegmented_grid_table(
+        page_number,
+        page_width,
+        page_height,
+        table_index,
+        &xs,
+        left,
+        right,
+        bottom,
+        top,
+        row_count,
+        column_count,
+        text_points,
+    ) {
+        return Some(normalized);
+    }
+
     Some(TableExtraction {
         page_number,
         table_id: format!("table-{table_index:04}"),
@@ -11103,6 +11120,137 @@ fn table_from_primitives(
         rationale: "pdf_oxide line-table extraction".to_string(),
         cells,
     })
+}
+
+fn opendataloader_rebuild_undersegmented_grid_table(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    table_index: usize,
+    xs: &[f64],
+    left: f64,
+    right: f64,
+    bottom: f64,
+    top: f64,
+    original_rows: usize,
+    columns: usize,
+    text_points: &[TextPoint],
+) -> Option<TableExtraction> {
+    if original_rows > 2 || columns < 3 {
+        return None;
+    }
+    let points = text_points
+        .iter()
+        .filter(|point| point.x >= left && point.x <= right)
+        .filter(|point| point.y >= bottom && point.y <= top)
+        .cloned()
+        .collect::<Vec<_>>();
+    let rows = borderless_rows(&points);
+    if rows.len() < original_rows + 2 || rows.len() < 4 {
+        return None;
+    }
+    let dense_columns = (0..columns)
+        .filter(|column| {
+            rows.iter()
+                .filter(|row| row.iter().any(|point| point_in_grid_column(point, xs, *column)))
+                .count()
+                >= 4
+        })
+        .count();
+    if dense_columns < 2 {
+        return None;
+    }
+    let row_centers = rows.iter().map(|row| sparse_row_center_y(row)).collect::<Vec<_>>();
+    let mut cells = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        let mut texts = vec![String::new(); columns];
+        for point in row {
+            if let Some(column) = grid_column_for_point(point, xs, columns) {
+                texts[column] = normalize_text(&format!("{} {}", texts[column], point.text));
+            }
+        }
+        for (column, text) in texts.into_iter().enumerate() {
+            cells.push(TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row_index:04}-{column:04}"),
+                row: row_index,
+                column,
+                row_end: row_index,
+                column_end: column,
+                bbox: normalized_grid_row_cell_bbox(
+                    page_width,
+                    page_height,
+                    xs,
+                    &row_centers,
+                    row,
+                    row_index,
+                    column,
+                ),
+                text,
+            });
+        }
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: normalize_bbox_for_page(page_width, page_height, left, top, right, bottom),
+        rationale: "opendataloader undersegmented grid normalization".to_string(),
+        cells,
+    })
+}
+
+fn point_in_grid_column(point: &TextPoint, xs: &[f64], column: usize) -> bool {
+    xs.get(column)
+        .zip(xs.get(column + 1))
+        .is_some_and(|(left, right)| point.x >= *left && point.x <= *right)
+}
+
+fn grid_column_for_point(point: &TextPoint, xs: &[f64], columns: usize) -> Option<usize> {
+    (0..columns)
+        .find(|column| point_in_grid_column(point, xs, *column))
+        .or_else(|| {
+            (0..columns).min_by(|left, right| {
+                let left_center = (xs[*left] + xs[*left + 1]) / 2.0;
+                let right_center = (xs[*right] + xs[*right + 1]) / 2.0;
+                (point.x - left_center)
+                    .abs()
+                    .total_cmp(&(point.x - right_center).abs())
+            })
+        })
+}
+
+fn normalized_grid_row_cell_bbox(
+    page_width: f64,
+    page_height: f64,
+    xs: &[f64],
+    row_centers: &[f64],
+    row: &[TextPoint],
+    row_index: usize,
+    column: usize,
+) -> RuntimeBox {
+    let row_font = row
+        .iter()
+        .map(|point| point.font_size)
+        .fold(0.0, f64::max)
+        .max(6.0);
+    let top = if row_index == 0 {
+        row_centers[row_index] + row_font
+    } else {
+        (row_centers[row_index - 1] + row_centers[row_index]) / 2.0
+    };
+    let bottom = if row_index + 1 == row_centers.len() {
+        row_centers[row_index] - row_font * 0.5
+    } else {
+        (row_centers[row_index] + row_centers[row_index + 1]) / 2.0
+    };
+    normalize_bbox_for_page(
+        page_width,
+        page_height,
+        xs[column],
+        top,
+        xs[column + 1],
+        bottom,
+    )
 }
 
 fn borderless_table_from_text_points(
@@ -13176,6 +13324,36 @@ mod tests {
         assert!(!list_item("b"));
     }
 
+    #[test]
+    fn opendataloader_table_normalizer_rebuilds_undersegmented_grid_rows() {
+        let segments = grid_segments(10.0, 10.0, 260.0, 110.0, 2, 5);
+        let mut points = Vec::new();
+        let row_bottoms = [94.0, 84.0, 74.0, 64.0, 54.0, 44.0, 34.0, 24.0];
+        for (row_index, bottom_y) in row_bottoms.iter().enumerate() {
+            for column in 0..5 {
+                points.push(text_point(
+                    &format!("r{}c{}", row_index + 1, column + 1),
+                    15.0 + column as f64 * 50.0,
+                    *bottom_y,
+                    25.0,
+                    6.0,
+                ));
+            }
+        }
+
+        let table = table_from_primitives(1, 1000.0, 1000.0, &segments, &points, 1)
+            .expect("expected table");
+        let row_count = table.cells.iter().map(|cell| cell.row).max().unwrap_or(0) + 1;
+
+        assert_eq!(row_count, 8);
+        assert!(
+            table
+                .cells
+                .iter()
+                .any(|cell| cell.row == 7 && cell.column == 4 && cell.text == "r8c5")
+        );
+    }
+
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {
         order_positioned_lines(lines)
             .into_iter()
@@ -13191,6 +13369,47 @@ mod tests {
             page_width: 1000.0,
             page_height: 1000.0,
             font_size: 12.0,
+        }
+    }
+
+    fn grid_segments(
+        left: f64,
+        bottom: f64,
+        right: f64,
+        top: f64,
+        rows: usize,
+        columns: usize,
+    ) -> Vec<Segment> {
+        let mut segments = Vec::new();
+        for column in 0..=columns {
+            let x = left + (right - left) * column as f64 / columns as f64;
+            segments.push(Segment {
+                x0: x,
+                y0: bottom,
+                x1: x,
+                y1: top,
+            });
+        }
+        for row in 0..=rows {
+            let y = bottom + (top - bottom) * row as f64 / rows as f64;
+            segments.push(Segment {
+                x0: left,
+                y0: y,
+                x1: right,
+                y1: y,
+            });
+        }
+        segments
+    }
+
+    fn text_point(text: &str, x: f64, y: f64, width: f64, font_size: f64) -> TextPoint {
+        TextPoint {
+            x,
+            y,
+            width,
+            font_size,
+            text: text.to_string(),
+            hidden: false,
         }
     }
 

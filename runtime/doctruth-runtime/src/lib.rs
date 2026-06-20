@@ -6121,9 +6121,7 @@ fn flush_markdown_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {
 }
 
 fn markdown_list_item(line: &str) -> bool {
-    let mut chars = line.chars();
-    matches!(chars.next(), Some('*' | '-' | '\u{2022}')) && chars.next() == Some(' ')
-        || markdown_numbered_list_item(line)
+    list_item(line) || markdown_numbered_list_item(line)
 }
 
 fn markdown_numbered_list_item(line: &str) -> bool {
@@ -8917,7 +8915,7 @@ fn candidate_text(unit: &Value) -> &str {
 
 fn list_item(text: &str) -> bool {
     let trimmed = text.trim_start();
-    if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
         return true;
     }
     let mut chars = trimmed.chars().peekable();
@@ -8926,10 +8924,21 @@ fn list_item(text: &str) -> bool {
         digits += 1;
         chars.next();
     }
-    if digits == 0 || digits > 3 {
-        return false;
+    if digits > 0 {
+        return digits <= 3
+            && matches!(chars.next(), Some('.' | ')'))
+            && matches!(chars.next(), Some(ch) if ch.is_whitespace());
     }
-    matches!(chars.next(), Some('.' | ')'))
+    localized_letter_list_item(trimmed)
+}
+
+fn localized_letter_list_item(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(label) = chars.next() else {
+        return false;
+    };
+    label.is_alphabetic()
+        && matches!(chars.next(), Some('.' | ')'))
         && matches!(chars.next(), Some(ch) if ch.is_whitespace())
 }
 
@@ -13156,6 +13165,15 @@ mod tests {
                 .iter()
                 .any(|text| text.contains("CERAGEM BALANCE USER MANUAL"))
         );
+    }
+
+    #[test]
+    fn opendataloader_list_processor_recognizes_localized_letter_labels() {
+        assert!(list_item("가. 첫 번째 항목"));
+        assert!(list_item("나. 두 번째 항목"));
+        assert!(list_item("a) alphabetic item"));
+        assert!(!list_item("a"));
+        assert!(!list_item("b"));
     }
 
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {

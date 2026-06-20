@@ -30,6 +30,8 @@ const PAGE_HEIGHT: f64 = 792.0;
 const MAX_DEFAULT_RENDERED_PAGE_AREA: f64 = 2_000_000.0;
 const MAX_RAW_CONTENT_SAFETY_BYTES: usize = 64 * 1024;
 const GRID_EPSILON: f64 = 1.0;
+#[cfg(test)]
+const OPENDATALOADER_MAX_NESTED_TABLE_DEPTH: usize = 10;
 const HUMAN_REVIEWED_PARSER_ACCURACY_METRICS: &[&str] = &[
     "reading_order_f1",
     "quote_anchor_accuracy",
@@ -11574,7 +11576,7 @@ fn is_table_continuation(previous: &TableExtraction, current: &TableExtraction) 
     previous.page_number + 1 == current.page_number
         && !previous_header.is_empty()
         && previous_header == current_header
-        && aligned_table_boxes(previous, current)
+        && opendataloader_neighbor_table_link(previous, current)
 }
 
 fn append_table_continuation(previous: &mut TableExtraction, current: TableExtraction) {
@@ -11610,9 +11612,42 @@ fn header_row(table: &TableExtraction) -> Vec<String> {
         .collect()
 }
 
-fn aligned_table_boxes(previous: &TableExtraction, current: &TableExtraction) -> bool {
-    (previous.bbox.x0 - current.bbox.x0).abs() <= 20.0
-        && (previous.bbox.x1 - current.bbox.x1).abs() <= 20.0
+fn opendataloader_neighbor_table_link(previous: &TableExtraction, current: &TableExtraction) -> bool {
+    let previous_columns = table_column_count(previous);
+    if previous_columns == 0 || previous_columns != table_column_count(current) {
+        return false;
+    }
+    if !close_ratio(bbox_width(&previous.bbox), bbox_width(&current.bbox), 0.2) {
+        return false;
+    }
+    (0..previous_columns).all(|column| {
+        let previous_width = table_column_width(previous, column).unwrap_or(0.0);
+        let current_width = table_column_width(current, column).unwrap_or(0.0);
+        close_ratio(previous_width, current_width, 0.2)
+    })
+}
+
+fn table_column_width(table: &TableExtraction, column: usize) -> Option<f64> {
+    table
+        .cells
+        .iter()
+        .filter(|cell| cell.column == column)
+        .map(|cell| bbox_width(&cell.bbox))
+        .max_by(|left, right| left.total_cmp(right))
+}
+
+fn close_ratio(left: f64, right: f64, epsilon: f64) -> bool {
+    let max_value = left.abs().max(right.abs());
+    if max_value <= 0.0 {
+        true
+    } else {
+        (left - right).abs() / max_value <= epsilon
+    }
+}
+
+#[cfg(test)]
+fn opendataloader_table_border_depth_allowed(depth: usize) -> bool {
+    depth < OPENDATALOADER_MAX_NESTED_TABLE_DEPTH
 }
 
 fn table_from_primitives(
@@ -11669,13 +11704,13 @@ fn table_from_primitives(
             let cell_left = xs[column];
             let cell_right = xs[column_end + 1];
             let cell_bottom = ys[ys.len() - 2 - row_end];
-            let text = text_points
-                .iter()
-                .filter(|point| point.x >= cell_left && point.x <= cell_right)
-                .filter(|point| point.y >= cell_bottom && point.y <= row_top)
-                .map(|point| point.text.as_str())
-                .collect::<Vec<_>>()
-                .join(" ");
+            let text = opendataloader_text_points_for_table_cell(
+                text_points,
+                cell_left,
+                cell_right,
+                cell_bottom,
+                row_top,
+            );
             cells.push(TableCellExtraction {
                 page_number,
                 cell_id: format!("cell-{table_index:04}-{row:04}-{column:04}"),
@@ -11691,7 +11726,7 @@ fn table_from_primitives(
                     cell_right,
                     cell_bottom,
                 ),
-                text: normalize_text(&text),
+                text,
             });
             mark_occupied(&mut occupied, row, column, row_end, column_end);
             column = column_end + 1;
@@ -11722,6 +11757,46 @@ fn table_from_primitives(
         rationale: "pdf_oxide line-table extraction".to_string(),
         cells,
     })
+}
+
+fn opendataloader_text_points_for_table_cell(
+    text_points: &[TextPoint],
+    cell_left: f64,
+    cell_right: f64,
+    cell_bottom: f64,
+    cell_top: f64,
+) -> String {
+    let text = text_points
+        .iter()
+        .filter(|point| point.y >= cell_bottom && point.y <= cell_top)
+        .filter_map(|point| opendataloader_text_point_part_for_x_range(point, cell_left, cell_right))
+        .collect::<Vec<_>>()
+        .join(" ");
+    normalize_text(&text)
+}
+
+fn opendataloader_text_point_part_for_x_range(
+    point: &TextPoint,
+    cell_left: f64,
+    cell_right: f64,
+) -> Option<String> {
+    let chars = point.text.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return None;
+    }
+    let char_width = point.width.max(0.0) / chars.len().max(1) as f64;
+    if char_width <= 0.0 {
+        return (point.x >= cell_left && point.x <= cell_right).then(|| point.text.clone());
+    }
+    let mut selected = String::new();
+    for (index, ch) in chars.iter().enumerate() {
+        let center_x = point.x + (index as f64 + 0.5) * char_width;
+        if center_x >= cell_left && center_x <= cell_right {
+            selected.push(*ch);
+        }
+    }
+    let selected = normalize_text(&selected);
+    (!selected.is_empty()).then_some(selected)
 }
 
 fn opendataloader_rebuild_undersegmented_grid_table(
@@ -14194,6 +14269,34 @@ mod tests {
     }
 
     #[test]
+    fn opendataloader_table_border_splits_text_across_cells_by_x_range() {
+        let segments = grid_segments(10.0, 10.0, 30.0, 30.0, 2, 2);
+        let points = vec![text_point("test", 11.0, 25.0, 18.0, 10.0)];
+
+        let table = table_from_primitives(1, 100.0, 100.0, &segments, &points, 1)
+            .expect("expected table");
+
+        assert_eq!(table_cell_text(&table, 0, 0), "te");
+        assert_eq!(table_cell_text(&table, 0, 1), "st");
+    }
+
+    #[test]
+    fn opendataloader_table_border_links_neighbor_tables_by_shape() {
+        let first = simple_table_extraction(1, 1, 10.0, 30.0, &[10.0, 20.0, 30.0]);
+        let second = simple_table_extraction(2, 2, 10.0, 30.0, &[10.0, 20.0, 30.0]);
+        let different = simple_table_extraction(3, 3, 10.0, 40.0, &[10.0, 25.0, 40.0]);
+
+        assert!(opendataloader_neighbor_table_link(&first, &second));
+        assert!(!opendataloader_neighbor_table_link(&first, &different));
+    }
+
+    #[test]
+    fn opendataloader_table_border_depth_guard_matches_reference_limit() {
+        assert!(opendataloader_table_border_depth_allowed(9));
+        assert!(!opendataloader_table_border_depth_allowed(10));
+    }
+
+    #[test]
     fn opendataloader_text_line_processor_sorts_chunks_by_left_x() {
         let lines = vec![
             line("content", 100.0, 300.0, 200.0, 310.0),
@@ -14280,6 +14383,54 @@ mod tests {
 
     fn segment(x0: f64, y0: f64, x1: f64, y1: f64) -> Segment {
         Segment { x0, y0, x1, y1 }
+    }
+
+    fn table_cell_text(table: &TableExtraction, row: usize, column: usize) -> String {
+        table
+            .cells
+            .iter()
+            .find(|cell| cell.row == row && cell.column == column)
+            .map(|cell| cell.text.clone())
+            .unwrap_or_default()
+    }
+
+    fn simple_table_extraction(
+        page_number: usize,
+        table_index: usize,
+        left: f64,
+        right: f64,
+        xs: &[f64],
+    ) -> TableExtraction {
+        let mut cells = Vec::new();
+        for column in 0..xs.len().saturating_sub(1) {
+            cells.push(TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-0000-{column:04}"),
+                row: 0,
+                column,
+                row_end: 0,
+                column_end: column,
+                bbox: RuntimeBox {
+                    x0: xs[column],
+                    y0: 10.0,
+                    x1: xs[column + 1],
+                    y1: 20.0,
+                },
+                text: format!("h{column}"),
+            });
+        }
+        TableExtraction {
+            page_number,
+            table_id: format!("table-{table_index:04}"),
+            bbox: RuntimeBox {
+                x0: left,
+                y0: 10.0,
+                x1: right,
+                y1: 20.0,
+            },
+            rationale: "test".to_string(),
+            cells,
+        }
     }
 
     fn line_with_font_size(

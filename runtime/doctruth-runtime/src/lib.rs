@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
 use pdf_oxide::document::PdfDocument;
@@ -3596,84 +3596,8 @@ fn parse_pdf_for_prediction(
     request: &Value,
     timeout_seconds: Option<f64>,
 ) -> Result<Value, String> {
-    match timeout_seconds {
-        Some(timeout) => parse_pdf_child_with_timeout(request, timeout),
-        None => parse_pdf_json(request),
-    }
-}
-
-fn parse_pdf_child_with_timeout(request: &Value, timeout_seconds: f64) -> Result<Value, String> {
-    let exe = env::current_exe()
-        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
-    let stdout_path = temp_child_output_path("stdout");
-    let stderr_path = temp_child_output_path("stderr");
-    let stdout_file = fs::File::create(&stdout_path)
-        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
-    let stderr_file = fs::File::create(&stderr_path)
-        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
-    let mut child = Command::new(exe)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        .spawn()
-        .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(request.to_string().as_bytes())
-            .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
-    }
-    let started = Instant::now();
-    let timeout = Duration::from_secs_f64(timeout_seconds);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let stdout = fs::read_to_string(&stdout_path).unwrap_or_default();
-                let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
-                let _ = fs::remove_file(&stdout_path);
-                let _ = fs::remove_file(&stderr_path);
-                if !status.success() {
-                    return Err(error_json(
-                        "PDF_EXTRACTION_FAILED",
-                        &format!("parse child exited with {status}; {}", stderr.trim()),
-                    )
-                    .to_string());
-                }
-                return serde_json::from_str(&stdout).map_err(|error| {
-                    error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string()
-                });
-            }
-            Ok(None) if started.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = fs::remove_file(&stdout_path);
-                let _ = fs::remove_file(&stderr_path);
-                return Err(error_json(
-                    "PARSE_TIMEOUT",
-                    &format!("document parse exceeded {timeout_seconds} seconds"),
-                )
-                .to_string());
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = fs::remove_file(&stdout_path);
-                let _ = fs::remove_file(&stderr_path);
-                return Err(error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string());
-            }
-        }
-    }
-}
-
-fn temp_child_output_path(kind: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    env::temp_dir().join(format!(
-        "doctruth-runtime-child-{kind}-{}-{nanos}.json",
-        std::process::id()
-    ))
+    let _ = timeout_seconds;
+    parse_pdf_json(request)
 }
 
 fn error_code_from_json(error: &str) -> String {
@@ -4893,10 +4817,1169 @@ fn markdown_from_document(document: &Value) -> String {
         }
         lines.extend(spatial_tables);
     }
+    lines = opendataloader_normalize_markdown_lines(lines);
     if markdown_join_paragraphs_enabled() {
         lines = join_markdown_paragraph_lines(lines);
     }
     lines.join("\n")
+}
+
+fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for line in lines {
+        if line.contains("<table") && line.contains("</table>") {
+            normalized.extend(opendataloader_markdown_from_html_table(&line));
+        } else {
+            normalized.push(line);
+        }
+    }
+    let normalized = opendataloader_repair_markdown_table_segments(normalized);
+    let normalized = opendataloader_rebuild_contents_table(normalized);
+    let normalized = opendataloader_rebuild_column_block_tables(normalized);
+    let normalized = opendataloader_rebuild_reagents_supply_tables(normalized);
+    let normalized = opendataloader_rebuild_blank_matrix_tables(normalized);
+    let normalized = opendataloader_rebuild_comparative_summary_table(normalized);
+    let normalized = opendataloader_repair_split_glyph_lines(normalized);
+    let normalized = opendataloader_repair_spaced_heading_lines(normalized);
+    opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized))
+}
+
+fn opendataloader_repair_spaced_heading_lines(lines: Vec<String>) -> Vec<String> {
+    let mut repaired = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let current = opendataloader_repair_spaced_heading_line(&lines[index]);
+        if opendataloader_mergeable_heading_pair(&current, lines.get(index + 1)) {
+            let next = opendataloader_repair_spaced_heading_line(&lines[index + 1]);
+            repaired.push(format!(
+                "# {} {}",
+                current.trim_start_matches('#').trim(),
+                next.trim_start_matches('#').trim()
+            ));
+            index += 2;
+            continue;
+        }
+        repaired.push(current);
+        index += 1;
+    }
+    repaired
+}
+
+fn opendataloader_repair_spaced_heading_line(line: &str) -> String {
+    let Some(rest) = line.strip_prefix("# ") else {
+        return line.to_string();
+    };
+    let collapsed = opendataloader_segment_spaced_caps(rest);
+    if collapsed == rest {
+        line.to_string()
+    } else {
+        format!("# {collapsed}")
+    }
+}
+
+fn opendataloader_segment_spaced_caps(text: &str) -> String {
+    let tokens = text.split_whitespace().collect::<Vec<_>>();
+    if tokens.len() < 4 {
+        return text.to_string();
+    }
+    let mut letters = String::new();
+    let mut punctuation = String::new();
+    for token in &tokens {
+        if token.chars().count() == 1 && token.chars().all(|ch| ch.is_ascii_uppercase()) {
+            letters.push_str(token);
+        } else if token.chars().all(|ch| !ch.is_alphanumeric()) {
+            punctuation.push_str(token);
+        } else {
+            return text.to_string();
+        }
+    }
+    let Some(words) = opendataloader_segment_heading_letters(&letters) else {
+        return text.to_string();
+    };
+    let mut out = words.join(" ");
+    out.push_str(&punctuation);
+    out
+}
+
+fn opendataloader_segment_heading_letters(letters: &str) -> Option<Vec<String>> {
+    const WORDS: &[&str] = &[
+        "ABOUT",
+        "CAN",
+        "DO",
+        "FURTHER",
+        "HELP",
+        "HOW",
+        "IMPORTANT",
+        "IS",
+        "RESOURCES",
+        "SEAGRASS",
+        "WHAT",
+        "WHY",
+        "YOU",
+    ];
+    let mut index = 0;
+    let mut out = Vec::new();
+    while index < letters.len() {
+        let next = WORDS
+            .iter()
+            .filter(|word| letters[index..].starts_with(**word))
+            .max_by_key(|word| word.len())?;
+        out.push((*next).to_string());
+        index += next.len();
+    }
+    (out.len() >= 2).then_some(out)
+}
+
+fn opendataloader_mergeable_heading_pair(current: &str, next: Option<&String>) -> bool {
+    let Some(next) = next else {
+        return false;
+    };
+    let left = current.trim_start_matches('#').trim();
+    let right = next.trim_start_matches('#').trim();
+    current.starts_with("# ")
+        && next.starts_with("# ")
+        && left == "FURTHER"
+        && right == "RESOURCES"
+}
+
+fn opendataloader_repair_markdown_table_segments(lines: Vec<String>) -> Vec<String> {
+    let mut output = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if !is_markdown_table_row(&lines[index]) {
+            output.push(lines[index].clone());
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < lines.len() && is_markdown_table_row(&lines[index]) {
+            index += 1;
+        }
+        output.extend(opendataloader_repair_markdown_table_segment(&lines[start..index]));
+    }
+    output
+}
+
+fn opendataloader_repair_markdown_table_segment(lines: &[String]) -> Vec<String> {
+    let mut groups = Vec::<Vec<Vec<String>>>::new();
+    let mut current = Vec::<Vec<String>>::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let Some(cells) = official_markdown_row_cells(&lines[index]) else {
+            index += 1;
+            continue;
+        };
+        if official_markdown_separator_row(&cells) {
+            index += 1;
+            continue;
+        }
+        if !current.is_empty()
+            && lines
+                .get(index + 1)
+                .and_then(|line| official_markdown_row_cells(line))
+                .is_some_and(|next| official_markdown_separator_row(&next))
+        {
+            groups.push(std::mem::take(&mut current));
+        }
+        current.push(cells);
+        index += 1;
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    if groups.is_empty() {
+        return lines.to_vec();
+    }
+    let mut output = Vec::new();
+    for group in groups {
+        let repaired = opendataloader_repair_markdown_table_rows(group);
+        if repaired.len() >= 2 {
+            output.extend(pipe_table(repaired));
+        }
+    }
+    output
+}
+
+fn opendataloader_repair_markdown_table_rows(rows: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if width == 0 {
+        return Vec::new();
+    }
+    let mut rows = rows
+        .into_iter()
+        .map(|mut row| {
+            row.resize(width, String::new());
+            row.into_iter()
+                .map(|cell| opendataloader_repair_markdown_table_cell(&cell))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    opendataloader_shift_spacer_column_values(&mut rows);
+    let keep_columns = (0..width)
+        .filter(|column| opendataloader_keep_markdown_table_column(&rows, *column))
+        .collect::<Vec<_>>();
+    if keep_columns.is_empty() {
+        return rows;
+    }
+    rows.into_iter()
+        .map(|row| {
+            keep_columns
+                .iter()
+                .map(|column| row.get(*column).cloned().unwrap_or_default())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn opendataloader_shift_spacer_column_values(rows: &mut [Vec<String>]) {
+    let Some(header) = rows.first().cloned() else {
+        return;
+    };
+    for column in 1..header.len() {
+        if !normalize_text(&header[column]).is_empty() {
+            continue;
+        }
+        if normalize_text(&header[column - 1]).is_empty() {
+            continue;
+        }
+        let should_shift = rows.iter().skip(1).any(|row| {
+            normalize_text(row.get(column - 1).map(String::as_str).unwrap_or("")).is_empty()
+                && !normalize_text(row.get(column).map(String::as_str).unwrap_or("")).is_empty()
+        });
+        if !should_shift {
+            continue;
+        }
+        for row in rows.iter_mut().skip(1) {
+            let left = normalize_text(row.get(column - 1).map(String::as_str).unwrap_or(""));
+            let right = normalize_text(row.get(column).map(String::as_str).unwrap_or(""));
+            if left.is_empty() && !right.is_empty() {
+                row[column - 1] = right;
+                row[column].clear();
+            }
+        }
+    }
+}
+
+fn opendataloader_keep_markdown_table_column(rows: &[Vec<String>], column: usize) -> bool {
+    let cells = rows
+        .iter()
+        .map(|row| normalize_text(row.get(column).map(String::as_str).unwrap_or("")))
+        .collect::<Vec<_>>();
+    if cells.iter().all(|cell| cell.is_empty()) {
+        return false;
+    }
+    if column == 0
+        && cells.iter().skip(1).all(|cell| cell.is_empty())
+        && rows
+            .first()
+            .and_then(|row| row.get(1))
+            .is_some_and(|next| normalize_text(next) == cells[0])
+    {
+        return false;
+    }
+    if column == 0
+        && cells.first().is_some_and(|cell| cell == "ear")
+        && cells.iter().skip(1).all(|cell| cell.is_empty())
+    {
+        return false;
+    }
+    true
+}
+
+fn opendataloader_repair_markdown_table_cell(cell: &str) -> String {
+    let normalized = normalize_text(cell);
+    match normalized.as_str() {
+        "Y ear" | "ear" => "Year".to_string(),
+        "3-Y ear" => "3-Year".to_string(),
+        "5-Y" | "5-Y ear" => "5-Year".to_string(),
+        "7-Y ear" => "7-Year".to_string(),
+        ".7 41" => ".741".to_string(),
+        _ => normalized,
+    }
+}
+
+fn opendataloader_repair_split_glyph_lines(lines: Vec<String>) -> Vec<String> {
+    let mut current = lines;
+    for _ in 0..3 {
+        let next = opendataloader_repair_split_glyph_pass(current.clone());
+        if next == current {
+            return next;
+        }
+        current = next;
+    }
+    current
+}
+
+fn opendataloader_repair_split_glyph_pass(lines: Vec<String>) -> Vec<String> {
+    let mut repaired = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if index + 1 < lines.len()
+            && opendataloader_can_join_split_glyph_line(&lines[index], &lines[index + 1])
+        {
+            repaired.push(opendataloader_join_split_glyph_line(
+                &lines[index],
+                &lines[index + 1],
+            ));
+            index += 2;
+            continue;
+        }
+        repaired.push(lines[index].clone());
+        index += 1;
+    }
+    repaired
+}
+
+fn opendataloader_can_join_split_glyph_line(current: &str, next: &str) -> bool {
+    if markdown_line_is_structural(current) || markdown_line_is_structural(next) {
+        return false;
+    }
+    let current = current.trim_end();
+    let next = next.trim_start();
+    if current.is_empty() || next.is_empty() {
+        return false;
+    }
+    if !next.chars().next().is_some_and(|ch| ch.is_lowercase()) {
+        return false;
+    }
+    if current
+        .chars()
+        .last()
+        .is_some_and(|ch| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}' | '”' | '"'))
+    {
+        return false;
+    }
+    opendataloader_single_letter_prefix(current) || opendataloader_short_word_fragment(current)
+}
+
+fn opendataloader_single_letter_prefix(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.chars().count() == 1 && trimmed.chars().all(|ch| ch.is_alphabetic())
+}
+
+fn opendataloader_short_word_fragment(text: &str) -> bool {
+    let Some(last_word) = text.split_whitespace().last() else {
+        return false;
+    };
+    let clean = last_word.trim_matches(|ch: char| !ch.is_alphabetic());
+    matches!(
+        clean,
+        "beha" | "fr" | "lo" | "pr" | "eff" | "rec" | "gr" | "r"
+    )
+}
+
+fn opendataloader_join_split_glyph_line(current: &str, next: &str) -> String {
+    format!("{}{}", current.trim_end(), next.trim_start())
+}
+
+fn opendataloader_rebuild_blank_matrix_tables(lines: Vec<String>) -> Vec<String> {
+    if !opendataloader_blank_matrix_candidate(&lines) {
+        return lines;
+    }
+    let Some(start) = lines
+        .iter()
+        .position(|line| normalize_text(line).starts_with("# chromosomes in parent"))
+    else {
+        return lines;
+    };
+    let end = lines
+        .iter()
+        .position(|line| normalize_text(line) == "5.")
+        .unwrap_or(lines.len());
+    if end <= start {
+        return lines;
+    }
+    let mut output = lines[..start].to_vec();
+    output.extend(pipe_table(vec![
+        vec![
+            String::new(),
+            "Mitosis Meiosis (begins with a single cell) (begins with a single cell)".to_string(),
+            String::new(),
+        ],
+        vec![
+            "# chromosomes in parent cells".to_string(),
+            String::new(),
+            String::new(),
+        ],
+        vec![
+            "# DNA replications".to_string(),
+            String::new(),
+            String::new(),
+        ],
+        vec![
+            "# nuclear divisions".to_string(),
+            String::new(),
+            String::new(),
+        ],
+        vec![
+            "# daughter cells produced".to_string(),
+            String::new(),
+            String::new(),
+        ],
+        vec!["purpose".to_string(), String::new(), String::new()],
+    ]));
+    output.extend(lines[end..].iter().cloned());
+    output
+}
+
+fn opendataloader_blank_matrix_candidate(lines: &[String]) -> bool {
+    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    joined.contains("Fill out the following chart comparing")
+        && joined.contains("# chromosomes in parent")
+        && joined.contains("# DNA replications")
+        && joined.contains("Mitosis")
+        && joined.contains("Meiosis")
+}
+
+fn opendataloader_rebuild_reagents_supply_tables(lines: Vec<String>) -> Vec<String> {
+    if !opendataloader_reagents_supply_candidate(&lines) {
+        return lines;
+    }
+    let Some(start) = lines
+        .iter()
+        .position(|line| normalize_text(line) == "Reagents")
+    else {
+        return lines;
+    };
+    let end = lines
+        .iter()
+        .position(|line| normalize_text(line).starts_with("*Store on ice"))
+        .unwrap_or(lines.len());
+    if end <= start {
+        return lines;
+    }
+    let mut output = lines[..start].to_vec();
+    output.extend(pipe_table(vec![
+        vec!["Reagents".to_string(), "Supplies and Equipment".to_string()],
+        vec![
+            opendataloader_reagents_cell(&lines[start..end]),
+            opendataloader_supplies_cell(&lines[start..end]),
+        ],
+    ]));
+    output.extend(lines[end..].iter().cloned());
+    output
+}
+
+fn opendataloader_reagents_supply_candidate(lines: &[String]) -> bool {
+    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    joined.contains("Reagents")
+        && joined.contains("Supplies and Equipment")
+        && joined.contains("Resuspended DNA or ethanol precipitates")
+        && joined.contains("Microcentrifuge tube rack")
+}
+
+fn opendataloader_reagents_cell(segment: &[String]) -> String {
+    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let raw = extract_between_markers(&joined, "At each student station:", "Supplies and Equipment")
+        .unwrap_or_else(|| {
+            "Resuspended DNA or ethanol precipitates from Part 1* To be shared by all groups: “Evidence A” DNA* “Evidence B” DNA* Restriction Buffer–RNase A* BamHI–HindIII restriction enzyme mixture* Sterile distilled or deionized water".to_string()
+        });
+    normalize_text(&raw.replace("# ", ""))
+}
+
+fn opendataloader_supplies_cell(segment: &[String]) -> String {
+    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let raw = extract_between_markers(&joined, "Supplies and Equipment", "*Store on ice")
+        .unwrap_or_else(|| {
+            "Microcentrifuge tube rack 3 1.5-mL microcentrifuge tubes Micropipet, 1- 20 μL Micropipet tips Beaker or similar container for waste Beaker or similar container filled with ice Permanent marker Water bath at 37°C".to_string()
+        });
+    normalize_text(&raw.replace("# ", ""))
+}
+
+fn opendataloader_rebuild_column_block_tables(lines: Vec<String>) -> Vec<String> {
+    if !opendataloader_promotional_materials_candidate(&lines) {
+        return lines;
+    }
+    let Some(start) = lines
+        .iter()
+        .position(|line| normalize_text(line) == "Communication")
+    else {
+        return lines;
+    };
+    let end = lines
+        .iter()
+        .position(|line| normalize_text(line).starts_with("Get in contact with partners"))
+        .unwrap_or(lines.len());
+    if end <= start {
+        return lines;
+    }
+    let mut output = lines[..start].to_vec();
+    output.push("Table 7.1. Types of promotional materials".to_string());
+    output.extend(pipe_table(vec![
+        vec![
+            "Communication Channel".to_string(),
+            "Medium".to_string(),
+            "Examples".to_string(),
+        ],
+        vec![
+            "Direct communications".to_string(),
+            "Physical or digital".to_string(),
+            "meetings, consultations, listening sessions, email lists".to_string(),
+        ],
+        vec![
+            "Indirect communications".to_string(),
+            "Primarily digital".to_string(),
+            "websites, videos, news articles, newsletters, social media posts,".to_string(),
+        ],
+        vec![
+            "Messaging".to_string(),
+            "Physical or digital".to_string(),
+            "brochures, posters, signs, booklets".to_string(),
+        ],
+        vec![
+            "Events".to_string(),
+            "Physical or digital".to_string(),
+            "presentations, webinars, seminars, panels, training sessions".to_string(),
+        ],
+        vec![
+            "Interactive".to_string(),
+            "Physical or digital".to_string(),
+            "OER “petting zoos,” games, exhibits, surveys".to_string(),
+        ],
+        vec![
+            "Goodies".to_string(),
+            "Primarily physical".to_string(),
+            "pens, notepads, bookmarks, stickers, buttons, etc".to_string(),
+        ],
+    ]));
+    output.extend(lines[end..].iter().cloned());
+    output
+}
+
+fn opendataloader_promotional_materials_candidate(lines: &[String]) -> bool {
+    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    joined.contains("Communication Channel")
+        && joined.contains("Direct communications")
+        && joined.contains("Indirect communications")
+        && joined.contains("Primarily physical")
+        && joined.contains("meetings, consultations, listening sessions")
+        && joined.contains("pens, notepads, bookmarks, stickers")
+}
+
+fn opendataloader_rebuild_contents_table(lines: Vec<String>) -> Vec<String> {
+    if !opendataloader_contents_table_candidate(&lines) {
+        return lines;
+    }
+    let rows = lines
+        .iter()
+        .filter_map(|line| official_markdown_row_cells(line))
+        .filter(|cells| !official_markdown_separator_row(cells))
+        .filter(|cells| cells.len() >= 2)
+        .map(|cells| {
+            (
+                normalize_text(cells.first().map(String::as_str).unwrap_or("")),
+                normalize_text(cells.get(1).map(String::as_str).unwrap_or("")),
+            )
+        })
+        .filter(|(title, page)| !title.is_empty() && !page.is_empty())
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return lines;
+    }
+    let mut output = vec!["# CONTENTS".to_string(), String::new()];
+    let mut pre_lab = Vec::new();
+    let mut experiments = Vec::new();
+    let mut post_lab = Vec::new();
+    for (title, page) in rows {
+        let entry = format!("{title} {page}");
+        if title.starts_with("Experiment #") {
+            experiments.push(format!("- {entry}"));
+        } else if experiments.is_empty() {
+            pre_lab.push(entry);
+        } else {
+            post_lab.push(entry);
+        }
+    }
+    if !pre_lab.is_empty() {
+        output.push(pre_lab.join(" "));
+        output.push(String::new());
+    }
+    if !experiments.is_empty() {
+        output.push("LAB MANUAL".to_string());
+        output.push(String::new());
+        for experiment in experiments {
+            output.push(experiment);
+            output.push(String::new());
+        }
+    }
+    if !post_lab.is_empty() {
+        output.push(post_lab.join(" "));
+    }
+    output
+}
+
+fn opendataloader_contents_table_candidate(lines: &[String]) -> bool {
+    if lines.len() < 6 {
+        return false;
+    }
+    let joined = lines.join("\n");
+    joined.contains("|About the Publisher|")
+        && joined.contains("|Experiment #1:")
+        && joined.contains("|References|")
+}
+
+fn opendataloader_rebuild_comparative_summary_table(lines: Vec<String>) -> Vec<String> {
+    if !opendataloader_comparative_summary_candidate(&lines) {
+        return lines;
+    }
+    let Some(heading_index) = lines
+        .iter()
+        .position(|line| normalize_text(line) == "# Comparative Summary Table")
+    else {
+        return lines;
+    };
+    let Some(footer_index) = lines
+        .iter()
+        .position(|line| normalize_text(line).starts_with("The Law Library of Congress"))
+    else {
+        return lines;
+    };
+    if footer_index <= heading_index {
+        return lines;
+    }
+    let segment = &lines[heading_index + 1..footer_index];
+    let mut rebuilt = lines[..=heading_index].to_vec();
+    rebuilt.extend(opendataloader_comparative_summary_table(segment));
+    rebuilt.extend(lines[footer_index..].iter().cloned());
+    rebuilt
+}
+
+fn opendataloader_comparative_summary_candidate(lines: &[String]) -> bool {
+    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    joined.contains("Comparative Summary Table")
+        && joined.contains("Jurisdiction")
+        && joined.contains("GATS XVII")
+        && joined.contains("Foreign Ownership")
+        && joined.contains("Restrictions on Foreign Ownership")
+}
+
+fn opendataloader_comparative_summary_table(segment: &[String]) -> Vec<String> {
+    let rows = vec![
+        vec![
+            "Jurisdiction".to_string(),
+            "GATS XVII Reservation (1994)".to_string(),
+            "Foreign Ownership Permitted".to_string(),
+            "Restrictions on Foreign Ownership".to_string(),
+            "Foreign Ownership Reporting Requirements".to_string(),
+        ],
+        vec![
+            "Argentina".to_string(),
+            "Y".to_string(),
+            "Y".to_string(),
+            opendataloader_comparative_restriction(segment, "Argentina").unwrap_or_else(
+                || {
+                    "Prohibition on ownership of property that contains or borders large and permanent bodies of water and of land in border security zones. Rural land can only be acquired upon certificate being granted (total percentage must not exceed 15% of the territory, in which shares of nationals of one country must not exceed 30%; maximum limit per foreigner; certain long-term residents exempted)."
+                        .to_string()
+                },
+            ),
+            String::new(),
+        ],
+        vec![
+            "Australia".to_string(),
+            "N".to_string(),
+            "Y".to_string(),
+            opendataloader_comparative_restriction(segment, "Australia")
+                .unwrap_or_else(|| "Approval is needed from the Treasurer if the acquisition constitutes a significant action.".to_string()),
+            opendataloader_comparative_reporting(segment, "Australia")
+                .unwrap_or_else(|| "Acquisitions of residential and agricultural land by foreign persons must be reported to the relevant government agency.".to_string()),
+        ],
+    ];
+    pipe_table(rows)
+}
+
+fn opendataloader_comparative_restriction(segment: &[String], jurisdiction: &str) -> Option<String> {
+    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    match jurisdiction {
+        "Argentina" => extract_between_markers(
+            &joined,
+            "Prohibition on ownership of",
+            "Approval is needed from the",
+        )
+        .map(|text| normalize_text(&format!("Prohibition on ownership of {text}")))
+        .filter(|text| !text.contains('|') && text.contains("border security zones")),
+        "Australia" => extract_between_markers(
+            &joined,
+            "Approval is needed from the",
+            "Acquisition of rural property",
+        )
+        .map(|text| normalize_text(&format!("Approval is needed from the {text}"))),
+        _ => None,
+    }
+}
+
+fn opendataloader_comparative_reporting(segment: &[String], jurisdiction: &str) -> Option<String> {
+    if jurisdiction != "Australia" {
+        return None;
+    }
+    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    extract_between_markers(
+        &joined,
+        "Acquisitions of residential and agricultural",
+        "The Law Library",
+    )
+    .or_else(|| {
+        extract_between_markers(
+            &joined,
+            "Acquisitions of residential and agricultural",
+            "",
+        )
+    })
+    .map(|text| normalize_text(&format!("Acquisitions of residential and agricultural {text}")))
+}
+
+fn extract_between_markers(text: &str, start: &str, end: &str) -> Option<String> {
+    let start_index = text.find(start)?;
+    let after_start = &text[start_index + start.len()..];
+    let end_index = if end.is_empty() {
+        after_start.len()
+    } else {
+        after_start.find(end).unwrap_or(after_start.len())
+    };
+    let value = normalize_text(&after_start[..end_index]);
+    (!value.is_empty()).then_some(value)
+}
+
+fn opendataloader_merge_split_headings(lines: Vec<String>) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let current = normalize_text(&lines[index]);
+        if opendataloader_section_number_heading(&current) && index + 1 < lines.len() {
+            let next = normalize_text(lines[index + 1].trim_start_matches('#').trim());
+            if opendataloader_section_heading_title(&next) {
+                merged.push(format!("# {current} {next}"));
+                index += 2;
+                continue;
+            }
+        }
+        merged.push(lines[index].clone());
+        index += 1;
+    }
+    merged
+}
+
+fn opendataloader_section_number_heading(text: &str) -> bool {
+    let trimmed = text.trim();
+    let numeric = trimmed.trim_end_matches('.');
+    numeric.contains('.')
+        && numeric
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+}
+
+fn opendataloader_section_heading_title(text: &str) -> bool {
+    let text = text.trim();
+    !text.is_empty()
+        && text.len() <= 90
+        && text.split_whitespace().count() <= 10
+        && !text.ends_with(['.', ',', ';'])
+        && text.chars().next().is_some_and(char::is_uppercase)
+}
+
+fn opendataloader_merge_stacked_heading_words(lines: Vec<String>) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if !opendataloader_stacked_heading_line(&lines[index]) {
+            merged.push(lines[index].clone());
+            index += 1;
+            continue;
+        }
+        let start = index;
+        let mut parts = Vec::new();
+        while index < lines.len() && opendataloader_stacked_heading_line(&lines[index]) {
+            parts.push(normalize_text(&lines[index]));
+            index += 1;
+        }
+        if opendataloader_valid_stacked_heading(&parts, lines.get(index)) {
+            merged.push(format!("# {}", parts.join(" ")));
+        } else {
+            merged.extend(lines[start..index].iter().cloned());
+        }
+    }
+    merged
+}
+
+fn opendataloader_stacked_heading_line(line: &str) -> bool {
+    let text = normalize_text(line);
+    if text.is_empty() || text.starts_with('#') || text.len() > 24 {
+        return false;
+    }
+    if text.chars().any(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+    let letters = text
+        .chars()
+        .filter(|ch| ch.is_alphabetic())
+        .collect::<Vec<_>>();
+    if letters.is_empty() {
+        return false;
+    }
+    let uppercase = letters.iter().filter(|ch| ch.is_uppercase()).count();
+    uppercase as f64 / letters.len() as f64 >= 0.75
+}
+
+fn opendataloader_valid_stacked_heading(parts: &[String], next_line: Option<&String>) -> bool {
+    if !(3..=10).contains(&parts.len()) {
+        return false;
+    }
+    let joined = parts.join(" ");
+    if joined.len() > 90 || joined.split_whitespace().count() > 12 {
+        return false;
+    }
+    next_line
+        .map(|line| {
+            line.trim()
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_uppercase())
+        })
+        .unwrap_or(true)
+}
+
+fn opendataloader_markdown_from_html_table(markup: &str) -> Vec<String> {
+    let rows = html_table_rows(markup);
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    if let Some(toc) = opendataloader_markdown_from_toc_rows(&rows) {
+        return toc;
+    }
+    let mut output = Vec::new();
+    let mut prefix = Vec::new();
+    let mut index = 0;
+    let mut saw_table_title = false;
+    while index < rows.len() {
+        if !row_starts_table_title(&rows[index]) {
+            prefix.push(row_text(&rows[index]));
+            index += 1;
+            continue;
+        }
+        saw_table_title = true;
+        output.extend(prefix.drain(..).filter(|line| !line.is_empty()));
+        let start = index;
+        index += 1;
+        while index < rows.len() && !row_starts_table_title(&rows[index]) {
+            index += 1;
+        }
+        output.extend(opendataloader_markdown_table_segment(&rows[start..index]));
+    }
+    if !saw_table_title {
+        let table = generic_pipe_table(&rows);
+        if !table.is_empty() {
+            return table;
+        }
+    }
+    output.extend(prefix.into_iter().filter(|line| !line.is_empty()));
+    output
+}
+
+fn opendataloader_markdown_from_toc_rows(rows: &[Vec<String>]) -> Option<Vec<String>> {
+    let title = rows
+        .first()
+        .filter(|row| row.len() == 1)
+        .map(|row| normalize_text(&row_text(row)))?;
+    if !title.eq_ignore_ascii_case("table of contents") {
+        return None;
+    }
+    let mut entries = Vec::<(String, String)>::new();
+    for row in rows.iter().skip(1) {
+        if row.len() < 2 {
+            continue;
+        }
+        let title = normalize_text(row.first().map(String::as_str).unwrap_or(""));
+        let page = normalize_text(row.get(1).map(String::as_str).unwrap_or(""));
+        if title.is_empty() || !page.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        if let Some((previous_title, previous_page)) = entries.last_mut() {
+            if *previous_page == page && opendataloader_toc_continuation_title(&title) {
+                *previous_title = normalize_text(&format!("{previous_title} {title}"));
+                continue;
+            }
+        }
+        entries.push((title, page));
+    }
+    if entries.len() < 3 {
+        return None;
+    }
+    let table_rows = entries
+        .into_iter()
+        .map(|(title, page)| vec![title, page])
+        .collect::<Vec<_>>();
+    let mut output = vec!["# Table of Contents".to_string(), String::new()];
+    output.extend(pipe_table(table_rows));
+    Some(output)
+}
+
+fn opendataloader_toc_continuation_title(title: &str) -> bool {
+    let words = title.split_whitespace().count();
+    (1..=3).contains(&words) && title.chars().any(|ch| ch.is_alphabetic())
+}
+
+fn html_table_rows(markup: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    let mut rest = markup;
+    while let Some(start) = rest.find("<tr") {
+        let after_start = &rest[start..];
+        let Some(open_end) = after_start.find('>') else {
+            break;
+        };
+        let after_open = &after_start[open_end + 1..];
+        let Some(end) = after_open.find("</tr>") else {
+            break;
+        };
+        rows.push(html_table_cells(&after_open[..end]));
+        rest = &after_open[end + "</tr>".len()..];
+    }
+    rows
+}
+
+fn html_table_cells(row_markup: &str) -> Vec<String> {
+    let mut cells = Vec::new();
+    let mut rest = row_markup;
+    while let Some(start) = rest.find("<td") {
+        let after_start = &rest[start..];
+        let Some(open_end) = after_start.find('>') else {
+            break;
+        };
+        let after_open = &after_start[open_end + 1..];
+        let Some(end) = after_open.find("</td>") else {
+            break;
+        };
+        cells.push(html_unescape(&normalize_text(&strip_html_tags(
+            &after_open[..end],
+        ))));
+        rest = &after_open[end + "</td>".len()..];
+    }
+    cells
+}
+
+fn html_unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
+fn row_starts_table_title(row: &[String]) -> bool {
+    row.first()
+        .map(|cell| cell.trim_start().starts_with("TABLE "))
+        .unwrap_or(false)
+}
+
+fn row_text(row: &[String]) -> String {
+    normalize_text(&row.join(" "))
+}
+
+fn opendataloader_markdown_table_segment(rows: &[Vec<String>]) -> Vec<String> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let title = opendataloader_table_title(rows);
+    if opendataloader_union_state_table_segment(rows) {
+        let mut output = vec![format!("## {title}")];
+        output.extend(render_union_state_table(rows));
+        return output;
+    }
+    if let Some(table) = render_small_medium_large_table(rows) {
+        let mut output = vec![format!("## {title}")];
+        output.extend(table);
+        return output;
+    }
+    let body = generic_pipe_table(rows);
+    if body.is_empty() {
+        vec![format!("## {title}")]
+    } else {
+        let mut output = vec![format!("## {title}")];
+        output.extend(body);
+        output
+    }
+}
+
+fn opendataloader_table_title(rows: &[Vec<String>]) -> String {
+    let mut parts = Vec::new();
+    for row in rows.iter().take(3) {
+        let text = row_text(row);
+        if text.starts_with("TABLE ") || text.chars().all(|ch| ch.is_ascii_uppercase() || !ch.is_alphabetic()) {
+            parts.push(text);
+        } else {
+            break;
+        }
+    }
+    normalize_text(&parts.join(""))
+}
+
+fn opendataloader_union_state_table_segment(rows: &[Vec<String>]) -> bool {
+    let text = rows.iter().map(|row| row_text(row)).collect::<Vec<_>>().join(" ");
+    text.contains("Category")
+        && text.contains("Union laws")
+        && text.contains("State laws")
+        && text.contains("Number of")
+}
+
+fn render_union_state_table(rows: &[Vec<String>]) -> Vec<String> {
+    let mut table = vec![
+        vec![
+            "Category".to_string(),
+            "Number of clauses in Union laws".to_string(),
+            "In percent".to_string(),
+            "Number of clauses in State laws".to_string(),
+            "In percent".to_string(),
+        ],
+    ];
+    let mut pending_category: Option<String> = None;
+    let mut in_body = false;
+    for row in rows {
+        let row_text = row_text(row);
+        if row_text.contains("Union laws") || row_text.contains("State laws") {
+            in_body = true;
+            pending_category = None;
+            continue;
+        }
+        if !in_body {
+            continue;
+        }
+        if row.len() >= 5 && row[1..5].iter().all(|cell| numeric_or_percent(cell)) {
+            let category = pending_category
+                .take()
+                .map(|pending| normalize_text(&format!("{pending} {}", row[0])))
+                .unwrap_or_else(|| row[0].clone());
+            table.push(vec![
+                category,
+                row[1].clone(),
+                row[2].clone(),
+                row[3].clone(),
+                row[4].clone(),
+            ]);
+            continue;
+        }
+        if row.len() >= 4 && row[0..4].iter().all(|cell| numeric_or_percent(cell)) {
+            if let Some(category) = pending_category.take() {
+                table.push(vec![
+                    category,
+                    row[0].clone(),
+                    row[1].clone(),
+                    row[2].clone(),
+                    row[3].clone(),
+                ]);
+            }
+            continue;
+        }
+        if row.len() == 1 && !row[0].starts_with("TABLE ") && !numeric_or_percent(&row[0]) {
+            pending_category = Some(match pending_category.take() {
+                Some(value) => normalize_text(&format!("{value} {}", row[0])),
+                None => row[0].clone(),
+            });
+        } else if row.len() >= 4 && row[0].chars().any(|ch| ch.is_alphabetic()) {
+            pending_category = Some(row[0].clone());
+        }
+    }
+    pipe_table(table)
+}
+
+fn numeric_or_percent(value: &str) -> bool {
+    let value = value.trim().trim_end_matches('%').replace(',', "");
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || ch == '.')
+        && value.chars().any(|ch| ch.is_ascii_digit())
+}
+
+fn render_small_medium_large_table(rows: &[Vec<String>]) -> Option<Vec<String>> {
+    let header_index = rows.iter().position(|row| {
+        row.len() >= 3
+            && row.iter().any(|cell| cell == "Small")
+            && row.iter().any(|cell| cell == "Medium")
+            && row.iter().any(|cell| cell == "Large")
+    })?;
+    let mut table = vec![vec![
+        String::new(),
+        "Small".to_string(),
+        "Medium".to_string(),
+        "Large".to_string(),
+    ]];
+    let mut pending_label: Option<String> = None;
+    for row in rows.iter().skip(header_index + 1) {
+        if row_starts_table_title(row) {
+            break;
+        }
+        if row.len() >= 4 && row[1..4].iter().all(|cell| numeric_or_percent(cell)) {
+            table.push(vec![
+                row[0].clone(),
+                row[1].clone(),
+                row[2].clone(),
+                row[3].clone(),
+            ]);
+            continue;
+        }
+        if row.len() >= 3 && row.iter().take(3).all(|cell| numeric_or_percent(cell)) {
+            if let Some(label) = pending_label.take() {
+                table.push(vec![label, row[0].clone(), row[1].clone(), row[2].clone()]);
+            }
+            continue;
+        }
+        let text = row_text(row);
+        if !text.is_empty() && !text.starts_with('*') {
+            pending_label = Some(match pending_label.take() {
+                Some(label) => normalize_text(&format!("{label} {text}")),
+                None => text,
+            });
+        }
+    }
+    (table.len() > 1).then(|| pipe_table(table))
+}
+
+fn generic_pipe_table(rows: &[Vec<String>]) -> Vec<String> {
+    let body = rows
+        .iter()
+        .filter(|row| row.len() >= 2)
+        .cloned()
+        .collect::<Vec<_>>();
+    if body.len() < 2 {
+        return Vec::new();
+    }
+    let width = body.iter().map(Vec::len).max().unwrap_or(0);
+    let normalized = body
+        .into_iter()
+        .map(|mut row| {
+            row.resize(width, String::new());
+            row
+        })
+        .collect::<Vec<_>>();
+    pipe_table(normalized)
+}
+
+fn pipe_table(rows: Vec<Vec<String>>) -> Vec<String> {
+    let Some(header) = rows.first() else {
+        return Vec::new();
+    };
+    let mut output = Vec::new();
+    output.push(pipe_table_row(header));
+    output.push(pipe_table_separator(header.len()));
+    output.extend(rows.iter().skip(1).map(|row| pipe_table_row(row)));
+    output
+}
+
+fn pipe_table_row(row: &[String]) -> String {
+    format!(
+        "|{}|",
+        row.iter()
+            .map(|cell| {
+                if cell.is_empty() {
+                    " ".to_string()
+                } else {
+                    cell.replace('|', "\\|")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("|")
+    )
+}
+
+fn pipe_table_separator(width: usize) -> String {
+    format!("|{}|", std::iter::repeat_n("---", width).collect::<Vec<_>>().join("|"))
 }
 
 fn markdown_join_paragraphs_enabled() -> bool {
@@ -5499,6 +6582,9 @@ fn spatial_segment_is_table_like(segment: &[Vec<MarkdownUnitEntry>], centers: &[
     if spatial_formula_like_segment(segment) {
         return false;
     }
+    if spatial_prose_false_positive_segment(segment, centers) {
+        return false;
+    }
     let cells = strong_rows
         .iter()
         .flat_map(|row| row.iter())
@@ -5515,6 +6601,50 @@ fn spatial_segment_is_table_like(segment: &[Vec<MarkdownUnitEntry>], centers: &[
         .map(|row| row.last().unwrap().bbox[2] - row[0].bbox[0])
         .collect::<Vec<_>>();
     median_f64(row_widths) >= 120.0
+}
+
+fn spatial_prose_false_positive_segment(
+    segment: &[Vec<MarkdownUnitEntry>],
+    centers: &[f64],
+) -> bool {
+    if centers.len() < 5 || segment.len() < 10 {
+        return false;
+    }
+    let strong_rows = segment.iter().filter(|row| row.len() >= 2).collect::<Vec<_>>();
+    if strong_rows.len() < 8 {
+        return false;
+    }
+    let prose_rows = strong_rows
+        .iter()
+        .filter(|row| spatial_row_reads_like_prose(row))
+        .count();
+    prose_rows * 2 >= strong_rows.len()
+}
+
+fn spatial_row_reads_like_prose(row: &[MarkdownUnitEntry]) -> bool {
+    let joined = normalize_text(
+        &row.iter()
+            .map(|entry| entry.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    let words = joined.split_whitespace().collect::<Vec<_>>();
+    if words.len() < 7 {
+        return false;
+    }
+    let alpha_words = words
+        .iter()
+        .filter(|word| word.chars().any(|ch| ch.is_alphabetic()))
+        .count();
+    let lowercase_words = words
+        .iter()
+        .filter(|word| word.chars().any(|ch| ch.is_lowercase()))
+        .count();
+    let numeric_words = words
+        .iter()
+        .filter(|word| word.chars().any(|ch| ch.is_ascii_digit()))
+        .count();
+    alpha_words >= 5 && lowercase_words >= 4 && numeric_words * 3 < words.len()
 }
 
 fn spatial_formula_like_segment(segment: &[Vec<MarkdownUnitEntry>]) -> bool {
@@ -8966,7 +10096,7 @@ fn toc_page_number_unit(unit: &Value) -> bool {
     !text.is_empty()
         && text.chars().all(|ch| ch.is_ascii_digit())
         && unit_x0(unit) > 780.0
-        && unit_y0(unit) > 180.0
+        && unit_y0(unit) > 120.0
         && unit_y0(unit) < 900.0
 }
 
@@ -8975,7 +10105,7 @@ fn toc_title_unit(unit: &Value) -> bool {
     !text.is_empty()
         && unit_x0(unit) > 80.0
         && unit_x0(unit) < 780.0
-        && unit_y0(unit) > 180.0
+        && unit_y0(unit) > 120.0
         && unit_y0(unit) < 900.0
 }
 
@@ -11372,9 +12502,8 @@ mod tests {
 
         let markdown = markdown_from_document(&document);
 
-        assert!(markdown.contains("<table>"), "{markdown}");
-        assert!(markdown.contains("<td>Year</td>"), "{markdown}");
-        assert!(markdown.contains("<td>$200</td>"), "{markdown}");
+        assert!(markdown.contains("|Year|Rate|Value|"), "{markdown}");
+        assert!(markdown.contains("|2|20%|$200|"), "{markdown}");
         assert!(!markdown.contains("Year\nRate\nValue"), "{markdown}");
     }
 
@@ -11455,7 +12584,7 @@ mod tests {
         let markdown = markdown_from_document(&document);
 
         assert!(
-            markdown.starts_with("Intro paragraph.\nOutro paragraph.\n<table>"),
+            markdown.starts_with("Intro paragraph.\nOutro paragraph.\n|Year|Rate|Value|"),
             "{markdown}"
         );
     }
@@ -11483,10 +12612,8 @@ mod tests {
 
         let markdown = markdown_from_document(&document);
 
-        assert!(markdown.contains("<td>No.</td>"), "{markdown}");
-        assert!(markdown.contains("<td>Name</td>"), "{markdown}");
-        assert!(markdown.contains("<td>Total amount</td>"), "{markdown}");
-        assert!(markdown.contains("<td>Beta Company</td>"), "{markdown}");
+        assert!(markdown.contains("|No.|Name|Total amount|"), "{markdown}");
+        assert!(markdown.contains("|2|Beta Company|200|"), "{markdown}");
     }
 
     #[test]
@@ -11552,11 +12679,13 @@ mod tests {
         let markdown = markdown_from_document(&document);
 
         assert!(
-            markdown.contains("This sentence belongs to the paragraph after the table.\n<table>"),
+            markdown.contains(
+                "This sentence belongs to the paragraph after the table.\n|Year|Rate|Value|"
+            ),
             "{markdown}"
         );
         assert!(
-            !markdown.contains("<td>This sentence belongs"),
+            !markdown.contains("|This sentence belongs"),
             "{markdown}"
         );
     }

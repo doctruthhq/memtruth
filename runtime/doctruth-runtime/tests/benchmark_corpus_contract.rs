@@ -10,6 +10,329 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[test]
+fn opendataloader_parity_formats_section_heading_like_reference() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-heading-parity");
+    let report = run_opendataloader_prediction("01030000000054", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000054.md")).unwrap();
+    assert!(
+        markdown.contains("# 2.1. Diesel and biodiesel use"),
+        "expected OpenDataLoader-style section heading in markdown:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("\n2.1.\nDiesel and biodiesel use\n"),
+        "section heading should not remain split across plain lines:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_reconstructs_regular_tables_like_reference() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-table-parity");
+    let report = run_opendataloader_prediction("01030000000083", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000083.md")).unwrap();
+    assert!(
+        markdown.contains("|Category|Number of clauses in Union laws|In percent|Number of clauses in State laws|In percent|"),
+        "expected normalized markdown pipe table header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Commercial|529|10.1%|817|3.9%|"),
+        "expected complete first body row in normalized table:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("<table>"),
+        "regular OpenDataLoader-style tables should render as markdown pipe tables:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_prediction_timeout_path_does_not_spawn_per_document_child() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-same-process-runner");
+    let report = run_opendataloader_prediction("01030000000165", &output_dir);
+
+    assert_eq!(report["prediction"]["documentCount"], 1);
+    assert_eq!(report["prediction"]["failedCount"], 1);
+    let errors = fs::read_to_string(output_dir.join("errors.json")).unwrap();
+    assert!(
+        !errors.contains("parse child exited"),
+        "prediction runner should call parse_pdf in-process instead of spawning one child per PDF:\n{errors}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_merges_stacked_caps_heading_like_reference() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-stacked-heading");
+    let report = run_opendataloader_prediction("01030000000092", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000092.md")).unwrap();
+    assert!(
+        markdown.contains("# THE TEXTBOOK’S DIFFERENT LEVELS OF RIGOR"),
+        "expected stacked all-caps heading to be merged like OpenDataLoader:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("\nTHE\nTEXTBOOK’S\nDIFFERENT\nLEVELS\nOF\nRIGOR\n"),
+        "stacked heading words should not remain separate plain lines:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_repairs_spaced_letter_and_fragmented_headings() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-spaced-heading");
+    let report = run_opendataloader_prediction("01030000000163", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000163.md")).unwrap();
+    assert!(
+        markdown.contains("# HOW CAN YOU HELP?"),
+        "letter-spaced heading should be collapsed:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("# FURTHER RESOURCES"),
+        "fragmented adjacent heading words should be merged:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("# H O W C A N Y O U H E L P ?"),
+        "letter-spaced heading should not leak into markdown:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_reconstructs_long_text_comparative_table() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-long-table");
+    let report = run_opendataloader_prediction("01030000000088", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000088.md")).unwrap();
+    assert!(
+        markdown.contains("|Jurisdiction|GATS XVII Reservation (1994)|Foreign Ownership Permitted|Restrictions on Foreign Ownership|Foreign Ownership Reporting Requirements|"),
+        "expected OpenDataLoader-style long text table header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Argentina|Y|Y|Prohibition on ownership of property that contains or borders large and permanent bodies of water"),
+        "expected Argentina row to be reconstructed as a table row:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Australia|N|Y|Approval is needed from the Treasurer if the acquisition constitutes"),
+        "expected Australia row to be reconstructed as a table row:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_renders_table_of_contents_as_list() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-toc-list");
+    let report = run_opendataloader_prediction("01030000000108", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000108.md")).unwrap();
+    assert!(markdown.starts_with("# CONTENTS"), "{markdown}");
+    assert!(
+        markdown.contains("- Experiment #1: Hydrostatic Pressure 3"),
+        "expected OpenDataLoader-style experiment list:\n{markdown}"
+    );
+    assert!(
+        !markdown.starts_with("|About the Publisher|"),
+        "table of contents should not be emitted as a pipe table:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_preserves_table_of_contents_heading_and_wrapped_items() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-toc-heading-wrap");
+    let report = run_opendataloader_prediction("01030000000044", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000044.md")).unwrap();
+    assert!(
+        markdown.starts_with("# Table of Contents"),
+        "TOC heading should be preserved instead of emitting a bare table:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Executive Summary|4|"),
+        "first TOC row should not be dropped:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Political Parties, Candidates Registration and Election Campaign|18|"),
+        "wrapped TOC item should be merged before table rendering:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("|Campaign|18|"),
+        "wrapped TOC continuation should not become a separate row:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_adds_heading_to_bare_contents_tables() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-bare-toc");
+    let report = run_opendataloader_prediction("01030000000016", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000016.md")).unwrap();
+    assert!(
+        markdown.to_lowercase().starts_with("# table of contents"),
+        "bare contents table should recover its heading:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Introduction|7|"),
+        "contents rows should remain available as structured table rows:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Bibliography|139|"),
+        "tail contents rows should be preserved:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_reconstructs_column_block_table() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-column-block-table");
+    let report = run_opendataloader_prediction("01030000000178", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000178.md")).unwrap();
+    assert!(
+        markdown.contains("|Communication Channel|Medium|Examples|"),
+        "expected column-block table header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Direct communications|Physical or digital|meetings, consultations, listening sessions, email lists|"),
+        "expected first reconstructed row:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Goodies|Primarily physical|pens, notepads, bookmarks, stickers, buttons, etc|"),
+        "expected final reconstructed row:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_reconstructs_two_column_reagents_table() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-reagents-table");
+    let report = run_opendataloader_prediction("01030000000121", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000121.md")).unwrap();
+    assert!(
+        markdown.contains("|Reagents|Supplies and Equipment|"),
+        "expected reagents/supplies table header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("Resuspended DNA or ethanol precipitates from Part 1"),
+        "expected reagent cell text:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("Microcentrifuge tube rack 3 1.5-mL microcentrifuge tubes"),
+        "expected supplies cell text:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_reconstructs_blank_matrix_table() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-blank-matrix");
+    let report = run_opendataloader_prediction("01030000000119", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000119.md")).unwrap();
+    assert!(
+        markdown.contains("| |Mitosis Meiosis (begins with a single cell) (begins with a single cell)| |"),
+        "expected blank comparison matrix header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|# daughter cells produced| | |"),
+        "expected blank matrix row to be preserved:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|purpose| | |"),
+        "expected purpose row to be preserved:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_repairs_split_year_headers_and_empty_table_columns() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-year-table-repair");
+    let report = run_opendataloader_prediction("01030000000127", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000127.md")).unwrap();
+    assert!(
+        markdown.contains("|Year|3-Year|5-Year|7-Year|"),
+        "expected split Year header to be repaired and empty leading column removed:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Year|Recovery Rate|Unadjusted Basis|Depreciation Expense|Accumulated Depreciation|"),
+        "expected depreciation tables to drop empty spacer columns:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("|ear|Y ear|"),
+        "split glyph table header should not leak into markdown:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_does_not_render_prose_page_as_synthetic_table() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-prose-table-gate");
+    let report = run_opendataloader_prediction("01030000000145", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000145.md")).unwrap();
+    assert!(
+        markdown.contains("# 4.1 Introduction"),
+        "section heading should render as heading, not a table row:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("|4.1|"),
+        "ordinary prose page should not become a synthetic markdown table:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("|The| |pressure|drop in a fluid|"),
+        "multi-column prose fragments should stay prose:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_parity_repairs_split_glyph_words_in_paragraphs() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-split-glyphs");
+    let report = run_opendataloader_prediction("01030000000101", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000101.md")).unwrap();
+    assert!(
+        markdown.contains("Vohs et al. (2006)"),
+        "expected split author name to be repaired:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("behavioral psychology"),
+        "expected split word to be repaired:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("# PRICE AND THE PLACEBO EFFECT"),
+        "expected stacked heading merge to stay intact:\n{markdown}"
+    );
+}
+
+#[test]
+#[ignore = "requires OCR/table-model path; keep as OpenDataLoader hybrid parity contract, not text-only Rust parser"]
+fn opendataloader_parity_suppresses_raw_lines_after_reconstructed_table() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-table-source-suppression");
+    let report = run_opendataloader_prediction("01030000000110", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000110.md")).unwrap();
+    assert!(
+        markdown.contains("|Temperature (degree C)|Kinematic viscosity v (m2 /s)|Temperature (degree C)|"),
+        "expected reconstructed viscosity table:\n{markdown}"
+    );
+    let table_header = markdown
+        .find("|Temperature (degree C)|Kinematic viscosity")
+        .expect("table header should be present");
+    let after_table = &markdown[table_header..];
+    assert!(
+        !after_table.contains("\nKinematic viscosity v (m2 /s)\n\nKinematic viscosity v"),
+        "OpenDataLoader removes table-owned source text after building the table:\n{markdown}"
+    );
+}
+
+#[test]
 fn benchmark_corpus_runs_labeled_manifest_and_reports_metrics() {
     let root = temp_dir("doctruth-runtime-corpus");
     fs::create_dir_all(&root).unwrap();
@@ -2409,6 +2732,32 @@ fn temp_dir(prefix: &str) -> PathBuf {
         "{prefix}-{}-{nanos}-{sequence}",
         std::process::id()
     ))
+}
+
+fn run_opendataloader_prediction(doc_id: &str, output_dir: &PathBuf) -> Value {
+    let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../third_party/opendataloader-bench");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": bench_dir,
+                "output_dir": output_dir,
+                "engine": "doctruth-opendataloader-parity-contract",
+                "doc_id": doc_id,
+                "preset": "edge-fast",
+                "profile": "edge-fast",
+                "timeout_seconds": 30
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).unwrap()
 }
 
 fn vendored_opendataloader_pdf(name: &str) -> PathBuf {

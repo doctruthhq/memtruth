@@ -8222,3 +8222,31 @@
   schema-transformer contracts, and merge/failure semantics, but Rust MNN
   table/layout quality still requires a DocTruth-owned model backend and
   decoder rather than a direct copy from OpenDataLoader.
+
+## 2026-06-20 MNN Preprocess Execution Seam
+
+- Added a new `mnn-preprocess` runtime feature. It is opt-in and is included by
+  `mnn-native` and `mnn-ocr`.
+- Added `doctruth-mnn-model-worker --preprocess-page <pdf> --decoder <kind>`.
+  With the feature disabled it fails closed with
+  `mnn_preprocess_feature_disabled`. With the feature enabled it renders the
+  first page through `pdf_oxide`, converts the image to RGB/NCHW/f32, hashes
+  the tensor bytes, and reports shape, element count, byte count, first values,
+  and preprocessing metadata.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract rust_mnn_model_worker_preprocess_probe_fails_without_feature`
+  (1 passed);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --features mnn-preprocess --test model_worker_contract rust_mnn_model_worker_preprocess_probe_emits_stable_rgb_nchw_tensor_digest`
+  (1 passed);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  (19 passed);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --features mnn-preprocess --test model_worker_contract`
+  (19 passed);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (50 passed);
+  `cargo test opendataloader_parity_ --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`.
+- Remaining boundary: table/layout MNN decoder and postprocess logic still need
+  real model artifacts and decoder implementation. This seam proves the input
+  tensor can be reproduced and checked; it does not claim table inference.

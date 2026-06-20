@@ -214,13 +214,14 @@ Foundation port checklist:
 | ParagraphProcessor right-alignment precedence | complete | Rust contract captures OpenDataLoader PR #567 precedence: right-aligned pairs win before two-line left heuristic. Production paragraph metadata integration remains gated. |
 | Caption/Image/Formula/TextDecoration semantics | complete | Hybrid units now preserve explicit heading/list/caption/formula/image kinds and map OpenDataLoader-style text-decoration rules into unit `style.textDecoration`. |
 | Hybrid schema transformer foundations | complete | Worker `parserRun.hybridSchema` now normalizes Docling/OpenDataLoader-like texts, pictures, tables, cells, bboxes, headings, content blocks, and table units into TrustDocument-owned layers without Python adapter dependence. |
-| MNN OCR/table decoder and preprocessing parity | partial | Preprocessing contract is now carried in worker requests and reports with RGB/NCHW/scale/tensor-parity requirements. OCR has a feature-gated `ocr-rs`/MNN path and strict READY checks; table/layout MNN decoders remain real-model work and are not faked. |
+| MNN OCR/table decoder and preprocessing parity | partial | `mnn-preprocess` now executes real PDF page render -> RGB/NCHW/f32 tensor digest with stable samples. OCR has a feature-gated `ocr-rs`/MNN path and strict READY checks; table/layout MNN decoders remain real-model work and are not faked. |
 
 Current verification boundary:
 
 ```text
 cargo test --lib
 cargo test --test model_worker_contract
+cargo test --features mnn-preprocess --test model_worker_contract
 cargo test opendataloader_parity_ --test benchmark_corpus_contract
 git diff --check
 ```

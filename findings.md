@@ -2027,3 +2027,8 @@
   result-merging semantics, coordinate conversion, failure handling, and
   benchmark harness behavior. The model execution layer still needs a
   DocTruth-owned worker/backend implementation.
+- The first non-fake Rust model-execution seam is now preprocessing, not table
+  decoding: `doctruth-mnn-model-worker --preprocess-page` renders the PDF page
+  with `pdf_oxide`, converts it to RGB/NCHW/f32, hashes the exact tensor bytes,
+  and reports stable sample values. This gives future MNN table/layout decoders
+  a concrete parity gate before model output is trusted.

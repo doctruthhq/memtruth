@@ -8077,3 +8077,28 @@
   `git diff --check`.
 - Remaining TriageProcessor gaps: large-image signal, explicit TableBorder
   presence signal, and broader text-pattern parity fixtures.
+
+## 2026-06-20 TriageProcessor Foundation Closure
+
+- Extended Rust `OpendataloaderTriageInput` so the signal contract can accept
+  table-border presence, line-art count, image boxes, page box, replacement
+  ratio, and custom line-ratio threshold without Java/Python/OpenDataLoader
+  runtime fallback.
+- Added focused parity tests for:
+  - explicit table border -> backend confidence 1.0;
+  - large wide image -> backend confidence 0.85;
+  - line art count >= 8 -> vector backend confidence 0.95;
+  - custom line-ratio threshold suppressing the default 0.3 route;
+  - row-separator accumulator semantics separate from raw horizontal-line
+    count.
+- Corrected the row-separator logic to match OpenDataLoader's accumulator
+  behavior instead of treating five horizontal lines as five alternations.
+- Verification passed:
+  `cargo test opendataloader_triage --lib` (9 passed);
+  `cargo test --lib` (39 passed);
+  `cargo test opendataloader_parity_ --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `git diff --check`.
+- Boundary: this completes the Rust triage signal contract. Feeding real
+  table-border/image/model objects into it remains part of Hybrid schema
+  transformer and MNN decoder work, not the text-only pdf_oxide path.

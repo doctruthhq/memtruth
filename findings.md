@@ -1972,3 +1972,9 @@
   line-to-text ratio above 0.3 routes backend with 0.8. Suspicious gap and
   aligned-line-group signals are detected but intentionally disabled for
   routing in OpenDataLoader.
+- Triage can be considered foundation-complete as a Rust contract once it
+  accepts explicit table-border, line-art, large-image, page-box, replacement,
+  and threshold inputs. Actual extraction of table-border/image signals from
+  model/runtime output belongs to the Hybrid schema transformer and MNN decoder
+  items; do not claim the text-only pdf_oxide path now discovers those objects
+  on its own.

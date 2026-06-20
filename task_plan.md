@@ -203,13 +203,13 @@ Foundation port checklist:
 | ContentFilter short-text abnormal bbox correction | complete | Ported from OpenDataLoader issue #150 behavior. |
 | ContentSanitizer default sensitive-data rules | complete | Implemented as opt-in only; DocTruth evidence remains exact by default. |
 | TextProcessor undefined replacement handling | complete | Optional replacement plus replacement-character ratio warning. |
-| TextSimilarity stream-vs-OCR trust algorithm | in_progress | Focused tests pass; parity subset and commit still required. |
+| TextSimilarity stream-vs-OCR trust algorithm | complete | Rust parity contract committed; focused and parity subset pass. |
 | HeaderFooter repeated band filtering | complete | Multi-page header/footer band filter implemented. |
 | ListProcessor localized/letter labels | complete | Korean and alphabetic labels covered. |
 | TableStructureNormalizer undersegmented grid rebuild | complete | Grid rows rebuilt from raw row bands. |
 | Dense table source-unit enrichment | complete | Fills missing dense table cell text/bbox from source units. |
 | TextLineProcessor visual-row merge | partial | Contract captured; production integration broke TOC/table parity and needs table-aware gating. |
-| TriageProcessor page-complexity signals | partial | Rust now ports replacement-ratio routing, vector/line-ratio routing, text-pattern signal basics, suspicious-gap detection, and aligned-line-group detection. Still needs large-image signals, explicit table-border presence, and broader text-pattern parity. |
+| TriageProcessor page-complexity signals | complete | Rust signal contract now covers replacement ratio, explicit table border, vector/line-art/table lines, text-table patterns, large wide image, custom line-ratio threshold, suspicious gap, aligned groups, and disabled-signal behavior. Real table-border/image inputs are owned by the Hybrid schema/model integration items below. |
 | TableBorderProcessor remaining semantics | pending | Need neighbor table linking, cell text splitting behavior, nested-depth guard contract, and text-block no-normalize boundary where applicable to TrustDocument. |
 | ParagraphProcessor right-alignment precedence | pending | Needs a canonical layout metadata target before production integration. |
 | Caption/Image/Formula/TextDecoration semantics | pending | Need TrustDocument block/unit representation before broad integration. |

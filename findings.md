@@ -2032,3 +2032,16 @@
   with `pdf_oxide`, converts it to RGB/NCHW/f32, hashes the exact tensor bytes,
   and reports stable sample values. This gives future MNN table/layout decoders
   a concrete parity gate before model output is trusted.
+- Real layout/table reference artifacts are present locally and hash-valid:
+  `target/runtime-real-model-cache/kreuzberg-rtdetr-layout-model.bin` matches
+  `sha256:3bf2fb0ee6df87435b7ae47f0f3930ec3dc97ec56fd824acc6d57bc7a6b89ef2`,
+  and `target/runtime-real-model-cache/xenova-table-transformer-structure-recognition-model_quantized.bin`
+  matches
+  `sha256:c11f4033da75e9c4d41c403ef356e89caa0a37a7d111b55461e7d5ba856bb6b6`.
+  They are ONNX reference artifacts, so DocTruth now accepts them only under
+  `benchmark-oracle` with `referenceOnly=true`; `edge-model` still requires MNN
+  artifacts.
+- Manifest preprocessing must override generic defaults for real reference
+  models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
+  ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
+  both worker request and normalized `parserRun.modelRuntime`.

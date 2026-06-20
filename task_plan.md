@@ -214,7 +214,7 @@ Foundation port checklist:
 | ParagraphProcessor right-alignment precedence | complete | Rust contract captures OpenDataLoader PR #567 precedence: right-aligned pairs win before two-line left heuristic. Production paragraph metadata integration remains gated. |
 | Caption/Image/Formula/TextDecoration semantics | complete | Hybrid units now preserve explicit heading/list/caption/formula/image kinds and map OpenDataLoader-style text-decoration rules into unit `style.textDecoration`. |
 | Hybrid schema transformer foundations | complete | Worker `parserRun.hybridSchema` now normalizes Docling/OpenDataLoader-like texts, pictures, tables, cells, bboxes, headings, content blocks, and table units into TrustDocument-owned layers without Python adapter dependence. |
-| MNN OCR/table decoder and preprocessing parity | partial | `mnn-preprocess` now executes real PDF page render -> RGB/NCHW/f32 tensor digest with stable samples. OCR has a feature-gated `ocr-rs`/MNN path and strict READY checks; table/layout MNN decoders remain real-model work and are not faked. |
+| MNN OCR/table decoder and preprocessing parity | partial | `mnn-preprocess` now executes real PDF page render -> RGB/NCHW/f32 tensor digest with stable samples. Real ONNX layout/table artifacts are accepted as `benchmark-oracle` reference-only model artifacts with READY SHA checks and manifest preprocessing. OCR has a feature-gated `ocr-rs`/MNN path and strict READY checks; table/layout MNN decoders remain real-model conversion/decoder work and are not faked. |
 
 Current verification boundary:
 
@@ -223,6 +223,7 @@ cargo test --lib
 cargo test --test model_worker_contract
 cargo test --features mnn-preprocess --test model_worker_contract
 cargo test opendataloader_parity_ --test benchmark_corpus_contract
+cargo build --example onnx_reference_smoke_worker
 git diff --check
 ```
 

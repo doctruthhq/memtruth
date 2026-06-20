@@ -8250,3 +8250,40 @@
 - Remaining boundary: table/layout MNN decoder and postprocess logic still need
   real model artifacts and decoder implementation. This seam proves the input
   tensor can be reproduced and checked; it does not claim table inference.
+
+## 2026-06-20 Real ONNX Reference Model Cache Wiring
+
+- Confirmed real local reference model files are present and SHA-valid:
+  - layout RT-DETR:
+    `target/runtime-real-model-cache/kreuzberg-rtdetr-layout-model.bin`
+    -> `sha256:3bf2fb0ee6df87435b7ae47f0f3930ec3dc97ec56fd824acc6d57bc7a6b89ef2`;
+  - table TATR:
+    `target/runtime-real-model-cache/xenova-table-transformer-structure-recognition-model_quantized.bin`
+    -> `sha256:c11f4033da75e9c4d41c403ef356e89caa0a37a7d111b55461e7d5ba856bb6b6`.
+- Added `cacheFilename` support to model manifests because the local real
+  model cache filenames intentionally do not follow the old
+  `name-version.bin` derivation.
+- Changed model cache semantics so ONNX artifacts can be `READY` when their
+  hash matches. Runtime eligibility is now profile-specific:
+  `benchmark-oracle` can route READY ONNX reference artifacts to a configured
+  worker, while `edge-model` still rejects non-MNN artifacts and emits severe
+  fallback warnings instead of starting them.
+- Added a Rust `onnx_reference_smoke_worker` example and a contract test for
+  `benchmark-oracle` routing. The worker sees manifest-derived preprocessing
+  metadata, including 800x800 resize, RGB/NCHW, ImageNet mean/std, and
+  python-onnxruntime -> rust-mnn parity requirements.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  (20 passed);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (50 passed);
+  `cargo test opendataloader_parity_ --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --example onnx_reference_smoke_worker`;
+  real cache smoke with `DOCTRUTH_MODEL_CACHE=target/runtime-real-model-cache`
+  and `DOCTRUTH_MODEL_MANIFEST=model-packs/opendataloader-hybrid-models.json`
+  reported `runtime=onnxruntime`, `referenceOnly=true`, `cacheStatus=READY`,
+  the expected TATR SHA, 800x800 resize, and ImageNet mean/std.
+- Remaining boundary: this proves real reference model artifacts are wired and
+  hash-gated. It still does not execute ONNX inference in Rust or promote MNN;
+  that requires the model execution backend / MNN conversion and decoder.

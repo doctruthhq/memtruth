@@ -1152,6 +1152,33 @@ fn parse_pdf_does_not_promote_page_header_number_as_heading() {
 }
 
 #[test]
+fn parse_pdf_does_not_promote_question_continuation_as_heading() {
+    let pdf = opendataloader_fixture("01030000000158.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+    let headings = blocks
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .map(|block| block["text"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>();
+
+    assert!(
+        !headings.contains(&"Already Know"),
+        "question continuation should not be promoted as heading: {headings:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_emits_table_of_contents_rows_for_split_page_numbers() {
     let pdf = opendataloader_fixture("01030000000016.pdf");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

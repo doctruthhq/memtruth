@@ -4827,7 +4827,102 @@ fn markdown_from_document(document: &Value) -> String {
         }
         lines.extend(spatial_tables);
     }
+    if markdown_join_paragraphs_enabled() {
+        lines = join_markdown_paragraph_lines(lines);
+    }
     lines.join("\n")
+}
+
+fn markdown_join_paragraphs_enabled() -> bool {
+    env::var("DOCTRUTH_BENCH_JOIN_PARAGRAPHS").as_deref() == Ok("1")
+}
+
+fn join_markdown_paragraph_lines(lines: Vec<String>) -> Vec<String> {
+    let mut rendered = Vec::new();
+    let mut paragraph = String::new();
+    for line in lines {
+        if line.trim().is_empty() {
+            flush_markdown_paragraph(&mut rendered, &mut paragraph);
+            continue;
+        }
+        if markdown_line_is_structural(&line) {
+            flush_markdown_paragraph(&mut rendered, &mut paragraph);
+            rendered.push(line);
+            continue;
+        }
+        if starts_new_markdown_paragraph(&line, &paragraph) {
+            flush_markdown_paragraph(&mut rendered, &mut paragraph);
+            paragraph = line;
+        } else {
+            paragraph = merge_markdown_paragraph_line(&paragraph, &line);
+        }
+    }
+    flush_markdown_paragraph(&mut rendered, &mut paragraph);
+    rendered
+}
+
+fn markdown_line_is_structural(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('#') || trimmed.starts_with("<table")
+}
+
+fn starts_new_markdown_paragraph(line: &str, paragraph: &str) -> bool {
+    if paragraph.is_empty() {
+        return false;
+    }
+    let trimmed = line.trim_start();
+    if markdown_list_item(trimmed) || markdown_table_or_figure_caption(trimmed) {
+        return true;
+    }
+    if paragraph.ends_with(['.', '?', '!', ':', ';']) {
+        return true;
+    }
+    line.chars().next().is_some_and(char::is_uppercase) && line.split_whitespace().count() <= 8
+}
+
+fn merge_markdown_paragraph_line(paragraph: &str, line: &str) -> String {
+    if paragraph.is_empty() {
+        return line.to_string();
+    }
+    if paragraph.ends_with('-') && line.chars().next().is_some_and(char::is_lowercase) {
+        return format!("{}{}", paragraph.trim_end_matches('-'), line);
+    }
+    format!("{paragraph} {line}")
+}
+
+fn flush_markdown_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {
+    if !paragraph.is_empty() {
+        lines.push(std::mem::take(paragraph));
+    }
+}
+
+fn markdown_list_item(line: &str) -> bool {
+    let mut chars = line.chars();
+    matches!(chars.next(), Some('*' | '-' | '\u{2022}')) && chars.next() == Some(' ')
+        || markdown_numbered_list_item(line)
+}
+
+fn markdown_numbered_list_item(line: &str) -> bool {
+    let mut seen_digit = false;
+    let mut chars = line.chars().peekable();
+    while let Some(char) = chars.next() {
+        if char.is_ascii_digit() {
+            seen_digit = true;
+            continue;
+        }
+        return seen_digit && matches!(char, '.' | ')') && chars.peek() == Some(&' ');
+    }
+    false
+}
+
+fn markdown_table_or_figure_caption(line: &str) -> bool {
+    line.strip_prefix("Figure ")
+        .or_else(|| line.strip_prefix("Table "))
+        .is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_some_and(|char| char.is_ascii_digit())
+        })
 }
 
 fn table_id_containing_unit_text(unit: &Value, tables: &BTreeMap<String, Value>) -> Option<String> {
@@ -7319,6 +7414,9 @@ fn content_block_semantics_at(units: &[Value], index: usize) -> (&'static str, V
     if text.trim() == "•" || list_item(text) {
         return ("list", Value::Null);
     }
+    if question_heading_continuation_fragment(units, index, text) {
+        return ("text", Value::Null);
+    }
     if heading_fragment_context(units, index, text) {
         return ("text", Value::Null);
     }
@@ -7345,6 +7443,46 @@ fn centered_chapter_heading_context(units: &[Value], index: usize, text: &str) -
     centered_chapter_number(units, index - 1, previous_text)
         && upper_page_centered(unit)
         && nearby_vertical_pair(previous, unit, 90.0)
+}
+
+fn question_heading_continuation_fragment(units: &[Value], index: usize, text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.split_whitespace().count() > 4 || !title_case_heading(trimmed)
+    {
+        return false;
+    }
+    let Some(unit) = units.get(index) else {
+        return false;
+    };
+    let Some(current_box) = bbox_at(unit, "/location/boundingBox") else {
+        return false;
+    };
+    let context = previous_nearby_text(units, index, &current_box, 4);
+    context.contains("Question") && context.contains("Reflection")
+}
+
+fn previous_nearby_text(
+    units: &[Value],
+    index: usize,
+    current_box: &[f64; 4],
+    max_items: usize,
+) -> String {
+    let mut texts = Vec::new();
+    for candidate in units[..index].iter().rev().take(max_items) {
+        if nearby_previous_line(candidate, current_box) {
+            texts.push(candidate_text(candidate).to_string());
+        }
+    }
+    texts.reverse();
+    texts.join(" ")
+}
+
+fn nearby_previous_line(unit: &Value, current_box: &[f64; 4]) -> bool {
+    bbox_at(unit, "/location/boundingBox").is_some_and(|candidate_box| {
+        candidate_box[3] <= current_box[1]
+            && current_box[1] - candidate_box[3] <= 40.0
+            && (candidate_box[0] - current_box[0]).abs() <= 80.0
+    })
 }
 
 fn centered_chapter_number(units: &[Value], index: usize, text: &str) -> bool {
@@ -11097,6 +11235,34 @@ mod tests {
         });
 
         assert_eq!(markdown_from_document(&document), "First line second line");
+    }
+
+    #[test]
+    fn markdown_projection_can_join_paragraph_lines_like_python_adapter() {
+        let lines = vec![
+            "# Summary".to_string(),
+            "This paragraph contin-".to_string(),
+            "ues on the next line".to_string(),
+            "and keeps flowing".to_string(),
+            "Table 1 Summary".to_string(),
+            "<table>\n <tr>\n  <td>A</td>\n </tr>\n</table>".to_string(),
+            "1. First item".to_string(),
+            "Second short heading".to_string(),
+            "Trailing body.".to_string(),
+        ];
+
+        assert_eq!(
+            join_markdown_paragraph_lines(lines),
+            vec![
+                "# Summary",
+                "This paragraph continues on the next line and keeps flowing",
+                "Table 1 Summary",
+                "<table>\n <tr>\n  <td>A</td>\n </tr>\n</table>",
+                "1. First item",
+                "Second short heading",
+                "Trailing body."
+            ]
+        );
     }
 
     #[test]

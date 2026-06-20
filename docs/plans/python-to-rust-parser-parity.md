@@ -14,7 +14,7 @@ before OpenDataLoader Bench is used as a final acceptance gate.
 - [x] Match Python heading promotion contract:
   numbered headings, title-case headings, common single-word headings, and
   numeric/table caption exclusions.
-- [ ] Match Python linewise paragraph projection and optional paragraph-join
+- [x] Match Python linewise paragraph projection and optional paragraph-join
   behavior.
 - [x] Match Python table-of-contents Markdown rendering for detected table
   outputs.

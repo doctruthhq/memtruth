@@ -2019,3 +2019,11 @@
   `parserRun.modelRuntime` now carry the same RGB/NCHW/scale/tensor-parity
   contract so future Python-to-MNN replacement cannot silently drift on channel
   order, tensor layout, or missing digest checks.
+- OpenDataLoader's high-quality hybrid path is not a directly copyable MNN
+  table/layout decoder. Its documented and implemented route is Java/VeraPDF
+  rules plus external AI backends such as `docling-fast` or Hancom AI, followed
+  by schema transformers back into OpenDataLoader IObjects. For DocTruth this
+  means the copyable pieces are triage, schema-transformer contracts,
+  result-merging semantics, coordinate conversion, failure handling, and
+  benchmark harness behavior. The model execution layer still needs a
+  DocTruth-owned worker/backend implementation.

@@ -8205,3 +8205,20 @@
 - Remaining boundary: table/layout MNN decoder implementation and real
   Python-vs-MNN tensor digest comparison still require executable model
   artifacts and should not be marked complete from stub/fake workers.
+
+## 2026-06-20 OpenDataLoader Hybrid Backend Source Check
+
+- Re-checked local `third_party/opendataloader-pdf` after closing the TextLine
+  and preprocessing slice.
+- Confirmed the benchmark-quality hybrid route is Java/VeraPDF/PDFBox plus an
+  external backend, not a directly embedded table/layout MNN decoder:
+  - `docs/hybrid/hybrid-mode-design.md` defines `docling-fast` as the available
+    backend and Hancom/Azure/Google as future/alternate backends;
+  - `python/opendataloader-pdf/src/opendataloader_pdf/hybrid_server.py` wraps a
+    singleton Docling `DocumentConverter` and exposes JSON over FastAPI;
+  - `DoclingSchemaTransformer` and `HancomAISchemaTransformer` map external
+    backend JSON into OpenDataLoader IObjects.
+- Practical impact: DocTruth can continue porting OpenDataLoader's pure rules,
+  schema-transformer contracts, and merge/failure semantics, but Rust MNN
+  table/layout quality still requires a DocTruth-owned model backend and
+  decoder rather than a direct copy from OpenDataLoader.

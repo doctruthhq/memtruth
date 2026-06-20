@@ -671,6 +671,7 @@ dependencies = [
  "ocr-rs",
  "pdf_oxide",
  "predicates",
+ "regex",
  "serde_json",
  "sha2 0.10.9",
 ]

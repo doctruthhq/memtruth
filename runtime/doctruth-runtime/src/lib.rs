@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
@@ -14,6 +15,7 @@ use pdf_oxide::rendering::{RenderOptions, render_page};
 use pdf_oxide::structure::{
     Table as PdfOxideTable, TableDetectionConfig, detect_tables_from_spans,
 };
+use regex::Regex;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -332,7 +334,10 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .filter(|name| !name.is_empty())
         .unwrap_or("document.pdf");
     let extracted = extract_pages_with_pdf_oxide(source_path)?;
-    let extracted_pages = extracted.pages;
+    let mut extracted_pages = extracted.pages;
+    if filter_sensitive_data_enabled(request) {
+        sanitize_extracted_pages(&mut extracted_pages);
+    }
     let page_lines = extracted_pages
         .iter()
         .map(|page| page.lines.clone())
@@ -352,6 +357,9 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
     let table_extraction = extract_tables(source_path, &positioned_lines)
         .unwrap_or_else(|_| TableExtractionResult::default());
     let mut tables = table_extraction.tables;
+    if filter_sensitive_data_enabled(request) {
+        sanitize_tables(&mut tables);
+    }
     let page_metadata =
         extract_page_metadata(source_path).unwrap_or_else(|_| fallback_page_metadata(&page_lines));
     let mut units = unit_json(&page_lines, &positioned_lines);
@@ -369,6 +377,12 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .iter()
         .flat_map(|page| page.warnings.clone())
         .collect::<Vec<_>>();
+    if filter_sensitive_data_enabled(request) {
+        warnings.push(parser_warning(
+            "sensitive_data_filtered",
+            "OpenDataLoader-compatible sensitive-data filter redacted parser text because request.filter_sensitive_data was enabled",
+        ));
+    }
     warnings.extend(extracted.warnings.clone());
     warnings.extend(table_extraction.warnings);
     warnings.extend(model_unavailable_warnings(
@@ -1338,6 +1352,139 @@ fn correct_abnormal_short_text_bbox(mut line: PositionedLine) -> PositionedLine 
     line.bbox.x1 = (line.bbox.x0 + expected_width).min(line.page_width);
     line.raw_bbox.x1 = (line.raw_bbox.x0 + expected_width).min(line.page_width);
     line
+}
+
+fn filter_sensitive_data_enabled(request: &Value) -> bool {
+    request
+        .get("filter_sensitive_data")
+        .or_else(|| request.get("filterSensitiveData"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn sanitize_extracted_pages(pages: &mut [ExtractedPage]) {
+    for page in pages {
+        for line in &mut page.lines {
+            *line = sanitize_sensitive_text(line);
+        }
+        for line in &mut page.positioned_lines {
+            line.text = sanitize_sensitive_text(&line.text);
+        }
+    }
+}
+
+fn sanitize_tables(tables: &mut [TableExtraction]) {
+    for table in tables {
+        for cell in &mut table.cells {
+            cell.text = sanitize_sensitive_text(&cell.text);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SensitiveReplacement {
+    start: usize,
+    end: usize,
+    replacement: &'static str,
+    rule_index: usize,
+}
+
+fn sanitize_sensitive_text(text: &str) -> String {
+    let mut replacements = sensitive_replacements(text);
+    if replacements.is_empty() {
+        return text.to_string();
+    }
+    replacements.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then_with(|| right.end.cmp(&left.end))
+            .then_with(|| left.rule_index.cmp(&right.rule_index))
+    });
+    let replacements = non_overlapping_replacements(replacements);
+    let mut output = String::new();
+    let mut cursor = 0;
+    for replacement in replacements {
+        if cursor < replacement.start {
+            output.push_str(&text[cursor..replacement.start]);
+        }
+        output.push_str(replacement.replacement);
+        cursor = replacement.end;
+    }
+    if cursor < text.len() {
+        output.push_str(&text[cursor..]);
+    }
+    output
+}
+
+fn sensitive_replacements(text: &str) -> Vec<SensitiveReplacement> {
+    sensitive_rules()
+        .iter()
+        .enumerate()
+        .flat_map(|(rule_index, (pattern, replacement))| {
+            pattern.find_iter(text).map(move |match_| SensitiveReplacement {
+                start: match_.start(),
+                end: match_.end(),
+                replacement,
+                rule_index,
+            })
+        })
+        .collect()
+}
+
+fn non_overlapping_replacements(
+    replacements: Vec<SensitiveReplacement>,
+) -> Vec<SensitiveReplacement> {
+    let mut kept: Vec<SensitiveReplacement> = Vec::new();
+    for replacement in replacements {
+        if kept
+            .last()
+            .is_none_or(|last| replacement.start >= last.end)
+        {
+            kept.push(replacement);
+        }
+    }
+    kept
+}
+
+fn sensitive_rules() -> &'static [(Regex, &'static str)] {
+    static RULES: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    RULES
+        .get_or_init(|| {
+            vec![
+                (
+                    Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap(),
+                    "email@example.com",
+                ),
+                (Regex::new(r"[+]\d+(?:-\d+)+").unwrap(), "+00-0000-0000"),
+                (Regex::new(r"[A-Z]{1,2}\d{6,9}").unwrap(), "AA0000000"),
+                (
+                    Regex::new(r"\b\d{4}-?\d{4}-?\d{4}-?\d{4}\b").unwrap(),
+                    "0000-0000-0000-0000",
+                ),
+                (
+                    Regex::new(r"\b\d{10,18}\b").unwrap(),
+                    "0000000000000000",
+                ),
+                (
+                    Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap(),
+                    "0.0.0.0",
+                ),
+                (
+                    Regex::new(r"\b([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\b").unwrap(),
+                    "0.0.0.0::1",
+                ),
+                (
+                    Regex::new(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b").unwrap(),
+                    "00:00:00:00:00:00",
+                ),
+                (Regex::new(r"\b\d{15}\b").unwrap(), "000000000000000"),
+                (
+                    Regex::new(r"https?://[A-Za-z0-9.-]+(:\d+)?(/\S*)?").unwrap(),
+                    "https://example.com",
+                ),
+            ]
+        })
+        .as_slice()
 }
 
 fn filter_repeated_header_footer_lines(pages: Vec<Vec<PositionedLine>>) -> Vec<Vec<PositionedLine>> {
@@ -13328,6 +13475,38 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(kept.len(), 1);
         assert_eq!(bbox_width(&kept[0].bbox), 15.0);
+    }
+
+    #[test]
+    fn opendataloader_content_sanitizer_matches_default_rules() {
+        let text = "Email: test@gmail.com, IP: 192.168.1.1, URL: https://example.org/a";
+
+        assert_eq!(
+            sanitize_sensitive_text(text),
+            "Email: email@example.com, IP: 0.0.0.0, URL: https://example.com"
+        );
+    }
+
+    #[test]
+    fn opendataloader_content_sanitizer_is_opt_in_for_extracted_pages() {
+        let mut pages = vec![ExtractedPage {
+            lines: vec!["User: john.doe@example.com".to_string()],
+            positioned_lines: vec![line(
+                "User: john.doe@example.com",
+                20.0,
+                100.0,
+                180.0,
+                120.0,
+            )],
+            warnings: Vec::new(),
+        }];
+
+        assert_eq!(pages[0].lines[0], "User: john.doe@example.com");
+
+        sanitize_extracted_pages(&mut pages);
+
+        assert_eq!(pages[0].lines[0], "User: email@example.com");
+        assert_eq!(pages[0].positioned_lines[0].text, "User: email@example.com");
     }
 
     #[test]

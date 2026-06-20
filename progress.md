@@ -8173,3 +8173,35 @@
   preprocessing parity still need executable model artifacts. Existing OCR has
   a feature-gated `ocr-rs`/MNN path, but table/layout model quality is not
   claimed.
+
+## 2026-06-20 TextLine And MNN Preprocessing Contract Closure
+
+- Promoted TextLineProcessor visual-row merge into the Rust production
+  pdf_oxide path with a narrow gate:
+  consecutive same-row label/value fragments only, no global y/x reorder, no
+  TOC/table-like numeric rows, and no close-fragment merge without whitespace
+  signal.
+- Initial broad merge attempts broke OpenDataLoader parity fixtures for column
+  block tables, two-column reagent tables, and long comparative tables. The
+  fix was to preserve incoming reading order and only merge safe consecutive
+  rows.
+- Added MNN preprocessing contract to worker requests and normalized
+  `parserRun.modelRuntime`: decoder, `pdf_oxide_rendered_page`, 144 DPI, RGB,
+  NCHW, f32 scale/mean/std, and tensor parity checks including tensor sha and
+  Python reference digest.
+- Fixed worker normalization so `modelRuntime` is merged with the runtime-owned
+  report instead of insert-only. This keeps required preprocessing metadata
+  even when a worker returns a minimal document.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`
+  (18 passed);
+  `cargo test opendataloader_text_line_processor --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (5 passed);
+  `cargo test opendataloader_parity_ --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (50 passed);
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`.
+- Remaining boundary: table/layout MNN decoder implementation and real
+  Python-vs-MNN tensor digest comparison still require executable model
+  artifacts and should not be marked complete from stub/fake workers.

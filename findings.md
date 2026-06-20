@@ -2009,3 +2009,13 @@
   Python-vs-MNN tensor preprocessing parity are still real-model tasks. Do not
   claim full OpenDataLoader quality reproduction from the MNN path until those
   model artifacts and parity checks exist.
+- TextLineProcessor production integration is now safe only under a narrow
+  rule: merge consecutive same-visual-row label/value fragments, but do not
+  globally reorder page lines by y/x and do not merge TOC/table-like numeric
+  rows. The earlier broad merge matched a local text-line contract but broke
+  OpenDataLoader parity fixtures for tables and comparative layouts.
+- MNN preprocessing must be owned by the Rust runtime envelope, not only by
+  individual worker implementations. Worker requests and normalized
+  `parserRun.modelRuntime` now carry the same RGB/NCHW/scale/tensor-parity
+  contract so future Python-to-MNN replacement cannot silently drift on channel
+  order, tensor layout, or missing digest checks.

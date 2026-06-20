@@ -208,18 +208,19 @@ Foundation port checklist:
 | ListProcessor localized/letter labels | complete | Korean and alphabetic labels covered. |
 | TableStructureNormalizer undersegmented grid rebuild | complete | Grid rows rebuilt from raw row bands. |
 | Dense table source-unit enrichment | complete | Fills missing dense table cell text/bbox from source units. |
-| TextLineProcessor visual-row merge | partial | Contract captured; production integration broke TOC/table parity and needs table-aware gating. |
+| TextLineProcessor visual-row merge | complete | Production path now only merges consecutive same-row label/value fragments. It preserves table/TOC parity by rejecting numeric/table-like rows and close fragments without whitespace/provenance signal; no global y/x reorder. |
 | TriageProcessor page-complexity signals | complete | Rust signal contract now covers replacement ratio, explicit table border, vector/line-art/table lines, text-table patterns, large wide image, custom line-ratio threshold, suspicious gap, aligned groups, and disabled-signal behavior. Real table-border/image inputs are owned by the Hybrid schema/model integration items below. |
 | TableBorderProcessor remaining semantics | complete | Rust now covers neighbor table shape linking, cross-cell text splitting by x range, nested-depth guard contract, and text-block no-normalize boundary through the existing normalizer gate. Full cell-internal processor pipeline remains out of scope for text-only primitives. |
 | ParagraphProcessor right-alignment precedence | complete | Rust contract captures OpenDataLoader PR #567 precedence: right-aligned pairs win before two-line left heuristic. Production paragraph metadata integration remains gated. |
 | Caption/Image/Formula/TextDecoration semantics | complete | Hybrid units now preserve explicit heading/list/caption/formula/image kinds and map OpenDataLoader-style text-decoration rules into unit `style.textDecoration`. |
 | Hybrid schema transformer foundations | complete | Worker `parserRun.hybridSchema` now normalizes Docling/OpenDataLoader-like texts, pictures, tables, cells, bboxes, headings, content blocks, and table units into TrustDocument-owned layers without Python adapter dependence. |
-| MNN OCR/table decoder and preprocessing parity | partial | OCR has a feature-gated `ocr-rs`/MNN worker path and strict READY MNN artifact checks; table/layout MNN decoders and tensor-preprocessing parity remain real-model work and are not faked. |
+| MNN OCR/table decoder and preprocessing parity | partial | Preprocessing contract is now carried in worker requests and reports with RGB/NCHW/scale/tensor-parity requirements. OCR has a feature-gated `ocr-rs`/MNN path and strict READY checks; table/layout MNN decoders remain real-model work and are not faked. |
 
 Current verification boundary:
 
 ```text
 cargo test --lib
+cargo test --test model_worker_contract
 cargo test opendataloader_parity_ --test benchmark_corpus_contract
 git diff --check
 ```

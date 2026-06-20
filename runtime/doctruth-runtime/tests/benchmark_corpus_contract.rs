@@ -121,6 +121,23 @@ fn opendataloader_parity_reconstructs_long_text_comparative_table() {
 }
 
 #[test]
+fn opendataloader_parity_enriches_dense_table_cells_from_source_units() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-dense-table-unit-enrichment");
+    let report = run_opendataloader_prediction("01030000000089", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000089.md")).unwrap();
+    assert!(
+        markdown.contains("|Canada|Y|Y|Prohibition on ownership of residential property with exceptions; some provinces"),
+        "wide prose table cells should include continuation source units:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|Chile|N|Y|Prohibition on acquisition of public lands within 10 kilometers from the border"),
+        "multi-line dense table rows should be reconstructed from units:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_renders_table_of_contents_as_list() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-toc-list");
     let report = run_opendataloader_prediction("01030000000108", &output_dir);

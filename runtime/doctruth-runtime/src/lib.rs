@@ -363,6 +363,7 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         push_preferred_table(&mut tables, table);
         tables = renumber_tables(tables).unwrap_or_default();
     }
+    enrich_dense_table_cells_from_units(&mut tables, &units);
     units.extend(table_unit_json(&tables, units.len() + 1));
     let mut warnings = extracted_pages
         .iter()
@@ -9642,6 +9643,203 @@ fn table_has_header_like_text(table: &TableExtraction) -> bool {
         .filter(|cell| cell.row == 0 && dense_header_title_like(&cell.text))
         .count()
         >= 3
+}
+
+fn enrich_dense_table_cells_from_units(tables: &mut [TableExtraction], units: &[Value]) {
+    for table in tables {
+        if !dense_table_needs_unit_enrichment(table) {
+            continue;
+        }
+        let table_snapshot = table.clone();
+        for cell in &mut table.cells {
+            if !dense_table_cell_needs_unit_enrichment(&table_snapshot, cell) {
+                continue;
+            }
+            let enriched = dense_table_cell_text_from_units(&table_snapshot, cell, units);
+            if enriched.split_whitespace().count() > cell.text.split_whitespace().count() + 2 {
+                cell.text = enriched;
+            }
+        }
+    }
+}
+
+fn dense_table_needs_unit_enrichment(table: &TableExtraction) -> bool {
+    table.rationale.contains("dense cluster")
+        || table.cells.iter().any(|cell| {
+            cell.row == 0
+                && normalize_text(&cell.text).contains("Restrictions on Foreign Ownership")
+        })
+}
+
+fn dense_table_cell_needs_unit_enrichment(
+    table: &TableExtraction,
+    cell: &TableCellExtraction,
+) -> bool {
+    if cell.row == 0 || bbox_width(&cell.bbox) < 140.0 || bbox_height(&cell.bbox) < 45.0 {
+        return false;
+    }
+    if dense_table_column_header(table, cell.column).contains("Restrictions on Foreign Ownership")
+    {
+        return true;
+    }
+    let text = normalize_text(&cell.text);
+    text.split_whitespace().count() >= 2
+        && (text.ends_with("of")
+            || text.ends_with("or")
+            || text.ends_with("the")
+            || text.ends_with("and")
+            || bbox_width(&cell.bbox) >= 240.0)
+}
+
+fn dense_table_column_header(table: &TableExtraction, column: usize) -> String {
+    table
+        .cells
+        .iter()
+        .find(|cell| cell.row == 0 && cell.column == column)
+        .map(|cell| normalize_text(&cell.text))
+        .unwrap_or_default()
+}
+
+fn dense_table_cell_text_from_units(
+    table: &TableExtraction,
+    cell: &TableCellExtraction,
+    units: &[Value],
+) -> String {
+    let header = dense_table_column_header(table, cell.column);
+    if header.contains("Restrictions on Foreign Ownership") {
+        let row_text = dense_table_row_column_text_from_units(table, cell, units);
+        if !row_text.is_empty() {
+            return row_text;
+        }
+    }
+    dense_table_cell_bbox_text_from_units(cell, units)
+}
+
+fn dense_table_cell_bbox_text_from_units(cell: &TableCellExtraction, units: &[Value]) -> String {
+    let entries = units
+        .iter()
+        .filter(|unit| unit_page_number(unit) == cell.page_number as u64)
+        .filter(|unit| source_unit_for_dense_table_enrichment(unit))
+        .filter(|unit| unit_center_inside_cell(unit, &cell.bbox))
+        .map(|unit| (unit_y0(unit), unit_x0(unit), normalize_text(candidate_text(unit))))
+        .filter(|(_, _, text)| !text.is_empty())
+        .collect::<Vec<_>>();
+    normalize_dense_unit_entries(entries)
+}
+
+fn dense_table_row_column_text_from_units(
+    table: &TableExtraction,
+    cell: &TableCellExtraction,
+    units: &[Value],
+) -> String {
+    let Some((row_y0, row_y1)) = dense_table_row_y_range(table, cell, units) else {
+        return String::new();
+    };
+    let Some(column_x0) = dense_table_source_x0_for_cell(cell, units, row_y0, row_y1) else {
+        return String::new();
+    };
+    let entries = units
+        .iter()
+        .filter(|unit| unit_page_number(unit) == cell.page_number as u64)
+        .filter(|unit| source_unit_for_dense_table_enrichment(unit))
+        .filter(|unit| unit_y0(unit) >= row_y0 && unit_y0(unit) < row_y1)
+        .filter(|unit| unit_x0(unit) >= column_x0 - 6.0)
+        .filter(|unit| unit_x0(unit) <= table.bbox.x1 + 6.0)
+        .map(|unit| (unit_y0(unit), unit_x0(unit), normalize_text(candidate_text(unit))))
+        .filter(|(_, _, text)| !text.is_empty())
+        .collect::<Vec<_>>();
+    normalize_dense_unit_entries(entries)
+}
+
+fn dense_table_row_y_range(
+    table: &TableExtraction,
+    cell: &TableCellExtraction,
+    units: &[Value],
+) -> Option<(f64, f64)> {
+    let row_anchor = dense_table_row_anchor_y(table, cell.row, cell.page_number, units)?;
+    let next_anchor = table
+        .cells
+        .iter()
+        .filter(|candidate| candidate.column == 0 && candidate.row > cell.row)
+        .filter_map(|candidate| {
+            dense_table_row_anchor_y(table, candidate.row, cell.page_number, units)
+        })
+        .filter(|y| *y > row_anchor)
+        .min_by(|left, right| left.total_cmp(right));
+    let row_y0 = row_anchor - 5.0;
+    let row_y1 = next_anchor
+        .map(|y| y - 5.0)
+        .unwrap_or_else(|| cell.bbox.y1 + 5.0);
+    Some((row_y0, row_y1.max(row_y0 + 1.0)))
+}
+
+fn dense_table_row_anchor_y(
+    table: &TableExtraction,
+    row: usize,
+    page_number: usize,
+    units: &[Value],
+) -> Option<f64> {
+    let label = table
+        .cells
+        .iter()
+        .find(|cell| cell.row == row && cell.column == 0)
+        .map(|cell| normalize_text(&cell.text))?;
+    if label.is_empty() {
+        return None;
+    }
+    units
+        .iter()
+        .filter(|unit| unit_page_number(unit) == page_number as u64)
+        .filter(|unit| source_unit_for_dense_table_enrichment(unit))
+        .filter(|unit| unit_x0(unit) <= table.bbox.x0 + bbox_width(&table.bbox) * 0.25)
+        .filter(|unit| normalize_text(candidate_text(unit)) == label)
+        .map(unit_y0)
+        .min_by(|left, right| left.total_cmp(right))
+}
+
+fn dense_table_source_x0_for_cell(
+    cell: &TableCellExtraction,
+    units: &[Value],
+    row_y0: f64,
+    row_y1: f64,
+) -> Option<f64> {
+    let cell_text = normalize_text(&cell.text);
+    if cell_text.is_empty() {
+        return None;
+    }
+    units
+        .iter()
+        .filter(|unit| unit_page_number(unit) == cell.page_number as u64)
+        .filter(|unit| source_unit_for_dense_table_enrichment(unit))
+        .filter(|unit| unit_y0(unit) >= row_y0 && unit_y0(unit) < row_y1)
+        .filter(|unit| normalize_text(candidate_text(unit)) == cell_text)
+        .map(unit_x0)
+        .min_by(|left, right| left.total_cmp(right))
+}
+
+fn normalize_dense_unit_entries(mut entries: Vec<(f64, f64, String)>) -> String {
+    entries.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.total_cmp(&right.1))
+    });
+    normalize_text(
+        &entries
+            .into_iter()
+            .map(|(_, _, text)| text)
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn source_unit_for_dense_table_enrichment(unit: &Value) -> bool {
+    unit.get("kind").and_then(Value::as_str) != Some("TABLE_CELL")
+}
+
+fn unit_center_inside_cell(unit: &Value, bbox: &RuntimeBox) -> bool {
+    let x = (unit_x0(unit) + unit_x1(unit)) / 2.0;
+    let y = (unit_y0(unit) + unit_y1(unit)) / 2.0;
+    x >= bbox.x0 - 4.0 && x <= bbox.x1 + 4.0 && y >= bbox.y0 - 4.0 && y <= bbox.y1 + 4.0
 }
 
 fn renumber_tables(mut tables: Vec<TableExtraction>) -> Result<Vec<TableExtraction>, String> {

@@ -7535,6 +7535,27 @@ fn normalized_edit_distance(actual: &str, expected: &str) -> f64 {
     levenshtein(actual, expected) as f64 / expected.chars().count().max(1) as f64
 }
 
+pub fn opendataloader_text_similarity(left: &str, right: &str) -> f64 {
+    if left == right {
+        return 1.0;
+    }
+    if left.is_empty() || right.is_empty() {
+        return 0.0;
+    }
+    let max_len = left.chars().count().max(right.chars().count());
+    1.0 - levenshtein(left, right) as f64 / max_len as f64
+}
+
+pub fn opendataloader_trust_stream(stream_text: &str, ocr_text: &str, threshold: f64) -> bool {
+    if stream_text.is_empty() {
+        return false;
+    }
+    if ocr_text.is_empty() {
+        return true;
+    }
+    opendataloader_text_similarity(stream_text, ocr_text) >= threshold
+}
+
 fn levenshtein(left: &str, right: &str) -> usize {
     let right_chars = right.chars().collect::<Vec<_>>();
     let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
@@ -13608,6 +13629,27 @@ mod tests {
 
         assert!((replacement_character_ratio(&lines) - 0.2).abs() < 0.001);
         assert_eq!(replacement_character_ratio(&[]), 0.0);
+    }
+
+    #[test]
+    fn opendataloader_text_similarity_matches_hybrid_contract() {
+        assert_eq!(opendataloader_text_similarity("hello", "hello"), 1.0);
+        assert!(opendataloader_text_similarity("abc", "xyz") < 0.5);
+        assert_eq!(opendataloader_text_similarity("", ""), 1.0);
+        assert_eq!(opendataloader_text_similarity("", "hello"), 0.0);
+    }
+
+    #[test]
+    fn opendataloader_text_similarity_trusts_stream_like_reference() {
+        assert!(!opendataloader_trust_stream(",QWURGXFWLRQ", "Introduction", 0.5));
+        assert!(opendataloader_trust_stream(
+            "Introduction to Biology",
+            "Introduction to Biology",
+            0.5
+        ));
+        assert!(opendataloader_trust_stream("Introduction", "Introductlon", 0.5));
+        assert!(!opendataloader_trust_stream("", "text", 0.5));
+        assert!(opendataloader_trust_stream("text", "", 0.5));
     }
 
     #[test]

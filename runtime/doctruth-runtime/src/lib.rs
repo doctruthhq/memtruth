@@ -333,7 +333,8 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .unwrap_or("document.pdf");
-    let extracted = extract_pages_with_pdf_oxide(source_path)?;
+    let replacement_character = undefined_character_replacement(request);
+    let extracted = extract_pages_with_pdf_oxide(source_path, replacement_character.as_deref())?;
     let mut extracted_pages = extracted.pages;
     if filter_sensitive_data_enabled(request) {
         sanitize_extracted_pages(&mut extracted_pages);
@@ -381,6 +382,12 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         warnings.push(parser_warning(
             "sensitive_data_filtered",
             "OpenDataLoader-compatible sensitive-data filter redacted parser text because request.filter_sensitive_data was enabled",
+        ));
+    }
+    if replacement_character.is_some() {
+        warnings.push(parser_warning(
+            "undefined_character_replaced",
+            "OpenDataLoader-compatible text processor replaced PDF replacement characters because request.undefined_character_replacement was enabled",
         ));
     }
     warnings.extend(extracted.warnings.clone());
@@ -498,7 +505,7 @@ fn model_route_decision(source_path: &str, requested_preset: &str) -> ModelRoute
 }
 
 fn source_empty_text_pages(source_path: &str) -> Option<Vec<u64>> {
-    let extracted = extract_pages_with_pdf_oxide(source_path).ok()?;
+    let extracted = extract_pages_with_pdf_oxide(source_path, None).ok()?;
     let routed_pages = extracted
         .pages
         .iter()
@@ -513,7 +520,7 @@ fn source_empty_text_pages(source_path: &str) -> Option<Vec<u64>> {
 }
 
 fn source_looks_table_heavy(source_path: &str) -> bool {
-    let Ok(extracted) = extract_pages_with_pdf_oxide(source_path) else {
+    let Ok(extracted) = extract_pages_with_pdf_oxide(source_path, None) else {
         return false;
     };
     extracted
@@ -619,7 +626,10 @@ impl ReadingOrderDecision {
     }
 }
 
-fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<ExtractedDocument, String> {
+fn extract_pages_with_pdf_oxide(
+    source_path: &str,
+    undefined_replacement: Option<&str>,
+) -> Result<ExtractedDocument, String> {
     let document = PdfDocument::open(source_path)
         .map_err(|error| error_json("PDF_EXTRACTION_FAILED", &error.to_string()).to_string())?;
     let page_count = document
@@ -639,13 +649,27 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<ExtractedDocument, 
             page_reading_order(&document, page_index)
                 .map(|ordered_spans| {
                     let raw_safety = raw_content_safety(&document, page_index);
-                    let canonical_lines = positioned_lines_from_spans(
+                    let mut canonical_lines = positioned_lines_from_spans(
                         ordered_spans.iter().map(|ordered_span| &ordered_span.span),
                         page_width,
                         page_height,
                     );
+                    let replacement_ratio = replacement_character_ratio(&canonical_lines);
+                    replace_undefined_positioned_lines(
+                        &mut canonical_lines,
+                        undefined_replacement,
+                    );
                     let (positioned_lines, mut warnings) =
                         filter_positioned_lines(canonical_lines, &raw_safety.hidden_texts);
+                    if replacement_ratio > 0.0 {
+                        warnings.push(parser_warning(
+                            "replacement_character_ratio_detected",
+                            &format!(
+                                "OpenDataLoader-compatible text processor measured PDF replacement character ratio {:.3}",
+                                replacement_ratio
+                            ),
+                        ));
+                    }
                     warnings.extend(raw_span_safety_warnings(
                         &document,
                         page_index,
@@ -1360,6 +1384,50 @@ fn filter_sensitive_data_enabled(request: &Value) -> bool {
         .or_else(|| request.get("filterSensitiveData"))
         .and_then(Value::as_bool)
         .unwrap_or(false)
+}
+
+fn undefined_character_replacement(request: &Value) -> Option<String> {
+    request
+        .get("undefined_character_replacement")
+        .or_else(|| request.get("undefinedCharacterReplacement"))
+        .and_then(Value::as_str)
+        .filter(|replacement| !replacement.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn replace_undefined_positioned_lines(
+    lines: &mut [PositionedLine],
+    replacement: Option<&str>,
+) {
+    let Some(replacement) = replacement else {
+        return;
+    };
+    if replacement == "\u{fffd}" {
+        return;
+    }
+    for line in lines {
+        if line.text.contains('\u{fffd}') {
+            line.text = line.text.replace('\u{fffd}', replacement);
+        }
+    }
+}
+
+fn replacement_character_ratio(lines: &[PositionedLine]) -> f64 {
+    let mut total_chars = 0usize;
+    let mut replacement_chars = 0usize;
+    for line in lines {
+        for ch in line.text.chars() {
+            total_chars += 1;
+            if ch == '\u{fffd}' {
+                replacement_chars += 1;
+            }
+        }
+    }
+    if total_chars == 0 {
+        0.0
+    } else {
+        replacement_chars as f64 / total_chars as f64
+    }
 }
 
 fn sanitize_extracted_pages(pages: &mut [ExtractedPage]) {
@@ -13507,6 +13575,39 @@ mod tests {
 
         assert_eq!(pages[0].lines[0], "User: email@example.com");
         assert_eq!(pages[0].positioned_lines[0].text, "User: email@example.com");
+    }
+
+    #[test]
+    fn opendataloader_text_processor_replaces_undefined_characters_when_configured() {
+        let mut lines = vec![
+            line("Hello \u{fffd} World", 10.0, 100.0, 160.0, 120.0),
+            line("No issues here", 10.0, 140.0, 160.0, 160.0),
+        ];
+
+        replace_undefined_positioned_lines(&mut lines, Some("?"));
+
+        assert_eq!(lines[0].text, "Hello ? World");
+        assert_eq!(lines[1].text, "No issues here");
+    }
+
+    #[test]
+    fn opendataloader_text_processor_keeps_default_replacement_character() {
+        let mut lines = vec![line("Hello \u{fffd} World", 10.0, 100.0, 160.0, 120.0)];
+
+        replace_undefined_positioned_lines(&mut lines, Some("\u{fffd}"));
+
+        assert_eq!(lines[0].text, "Hello \u{fffd} World");
+    }
+
+    #[test]
+    fn opendataloader_text_processor_measures_replacement_ratio() {
+        let lines = vec![
+            line("\u{fffd}\u{fffd}\u{fffd}Abcdefg", 10.0, 100.0, 160.0, 120.0),
+            line("clean", 10.0, 140.0, 160.0, 160.0),
+        ];
+
+        assert!((replacement_character_ratio(&lines) - 0.2).abs() < 0.001);
+        assert_eq!(replacement_character_ratio(&[]), 0.0);
     }
 
     #[test]

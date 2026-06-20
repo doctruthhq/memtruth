@@ -523,17 +523,44 @@ fn source_looks_table_heavy(source_path: &str) -> bool {
     let Ok(extracted) = extract_pages_with_pdf_oxide(source_path, None) else {
         return false;
     };
+    let segments_by_page = source_page_segments(source_path, extracted.pages.len());
     extracted
         .pages
         .iter()
-        .any(|page| table_like_lines(&page.lines) >= 3)
+        .enumerate()
+        .any(|(page_index, page)| {
+            let segments = segments_by_page
+                .get(page_index)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let decision = opendataloader_triage_page(
+                &page.positioned_lines,
+                segments,
+                replacement_character_ratio(&page.positioned_lines),
+            );
+            decision.route == "backend"
+                && decision.confidence >= 0.8
+                && (decision.signals.has_vector_table_signal()
+                    || decision.signals.has_text_table_pattern()
+                    || decision.signals.line_to_text_ratio > 0.3)
+        })
 }
 
-fn table_like_lines(lines: &[String]) -> usize {
-    lines
-        .iter()
-        .filter(|line| line.split_whitespace().count() >= 3)
-        .count()
+fn source_page_segments(source_path: &str, page_count: usize) -> Vec<Vec<Segment>> {
+    let Ok(document) = PdfDocument::open(source_path) else {
+        return vec![Vec::new(); page_count];
+    };
+    (0..page_count)
+        .map(|page_index| {
+            let Ok(content) = document.get_page_content_data(page_index) else {
+                return Vec::new();
+            };
+            let Ok(operations) = parse_content_stream(&content) else {
+                return Vec::new();
+            };
+            page_graphics_and_text(&operations).0
+        })
+        .collect()
 }
 
 fn runtime_profile(request: &Value) -> Result<&str, String> {
@@ -7556,6 +7583,224 @@ pub fn opendataloader_trust_stream(stream_text: &str, ocr_text: &str, threshold:
     opendataloader_text_similarity(stream_text, ocr_text) >= threshold
 }
 
+#[derive(Debug, Clone)]
+struct OpendataloaderTriageDecision {
+    route: &'static str,
+    confidence: f64,
+    signals: OpendataloaderTriageSignals,
+}
+
+#[derive(Debug, Clone, Default)]
+struct OpendataloaderTriageSignals {
+    line_chunk_count: usize,
+    text_chunk_count: usize,
+    line_to_text_ratio: f64,
+    aligned_line_groups: usize,
+    has_suspicious_pattern: bool,
+    horizontal_line_count: usize,
+    vertical_line_count: usize,
+    line_art_count: usize,
+    has_grid_lines: bool,
+    has_table_border_lines: bool,
+    has_row_separator_pattern: bool,
+    has_aligned_short_lines: bool,
+    table_pattern_count: usize,
+    max_consecutive_streak: usize,
+    pattern_density: f64,
+    has_consecutive_patterns: bool,
+}
+
+impl OpendataloaderTriageSignals {
+    fn has_vector_table_signal(&self) -> bool {
+        self.has_grid_lines
+            || self.has_table_border_lines
+            || self.line_art_count >= 8
+            || self.has_row_separator_pattern
+            || self.has_aligned_short_lines
+    }
+
+    fn has_text_table_pattern(&self) -> bool {
+        let high_pattern_count = self.table_pattern_count >= 30;
+        let meets_pattern_threshold = self.table_pattern_count >= 3
+            || (self.pattern_density >= 0.10 && self.table_pattern_count >= 2);
+        (self.has_consecutive_patterns || high_pattern_count) && meets_pattern_threshold
+    }
+}
+
+fn opendataloader_triage_page(
+    text_lines: &[PositionedLine],
+    segments: &[Segment],
+    replacement_ratio: f64,
+) -> OpendataloaderTriageDecision {
+    let signals = opendataloader_triage_signals(text_lines, segments);
+    if replacement_ratio >= 0.3 {
+        return opendataloader_triage_decision("backend", 1.0, signals);
+    }
+    if signals.has_vector_table_signal() {
+        return opendataloader_triage_decision("backend", 0.95, signals);
+    }
+    if signals.has_text_table_pattern() {
+        return opendataloader_triage_decision("backend", 0.9, signals);
+    }
+    if signals.line_to_text_ratio > 0.3 {
+        return opendataloader_triage_decision("backend", 0.8, signals);
+    }
+    opendataloader_triage_decision("deterministic", 0.9, signals)
+}
+
+fn opendataloader_triage_decision(
+    route: &'static str,
+    confidence: f64,
+    signals: OpendataloaderTriageSignals,
+) -> OpendataloaderTriageDecision {
+    OpendataloaderTriageDecision {
+        route,
+        confidence,
+        signals,
+    }
+}
+
+fn opendataloader_triage_signals(
+    text_lines: &[PositionedLine],
+    segments: &[Segment],
+) -> OpendataloaderTriageSignals {
+    let mut signals = OpendataloaderTriageSignals {
+        text_chunk_count: text_lines.len(),
+        line_chunk_count: segments.len(),
+        ..OpendataloaderTriageSignals::default()
+    };
+    let total_count = signals.text_chunk_count + signals.line_chunk_count;
+    signals.line_to_text_ratio = if total_count == 0 {
+        0.0
+    } else {
+        signals.line_chunk_count as f64 / total_count as f64
+    };
+    let mut short_horizontal_lines = Vec::new();
+    let mut last_was_horizontal = false;
+    for segment in segments {
+        let width = (segment.x1 - segment.x0).abs();
+        let height = (segment.y1 - segment.y0).abs();
+        if width > height * 3.0 {
+            signals.horizontal_line_count += 1;
+            if !last_was_horizontal {
+                signals.has_row_separator_pattern =
+                    signals.horizontal_line_count >= 5 || signals.has_row_separator_pattern;
+            }
+            short_horizontal_lines.push((segment.x0.min(segment.x1), width));
+            last_was_horizontal = true;
+        } else if height > width * 3.0 {
+            signals.vertical_line_count += 1;
+            last_was_horizontal = false;
+        } else {
+            last_was_horizontal = false;
+        }
+    }
+    signals.has_grid_lines = signals.horizontal_line_count >= 3 && signals.vertical_line_count >= 3;
+    signals.has_table_border_lines = signals.horizontal_line_count + signals.vertical_line_count >= 8;
+    signals.has_aligned_short_lines =
+        opendataloader_has_aligned_short_horizontal_lines(&short_horizontal_lines);
+    signals.has_suspicious_pattern = opendataloader_suspicious_text_patterns(text_lines);
+    signals.aligned_line_groups = opendataloader_aligned_line_groups(text_lines, 3.0);
+    let (pattern_count, max_streak) = opendataloader_text_table_pattern_stats(text_lines);
+    signals.table_pattern_count = pattern_count;
+    signals.max_consecutive_streak = max_streak;
+    signals.has_consecutive_patterns = max_streak >= 2;
+    signals.pattern_density = if text_lines.is_empty() {
+        0.0
+    } else {
+        pattern_count as f64 / text_lines.len() as f64
+    };
+    signals
+}
+
+fn opendataloader_has_aligned_short_horizontal_lines(lines: &[(f64, f64)]) -> bool {
+    for (index, (ref_left, ref_len)) in lines.iter().enumerate() {
+        let mut matches = 1;
+        for (left, len) in lines.iter().skip(index + 1) {
+            let max_len = ref_len.max(*len);
+            if max_len > 0.0
+                && ((*ref_left - *left).abs() / max_len) <= 0.05
+                && ((*ref_len - *len).abs() / max_len) <= 0.05
+            {
+                matches += 1;
+                if matches >= 2 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn opendataloader_suspicious_text_patterns(lines: &[PositionedLine]) -> bool {
+    lines.windows(2).any(|pair| {
+        opendataloader_same_baseline(&pair[0], &pair[1])
+            && pair[1].bbox.x0 - pair[0].bbox.x1 > opendataloader_avg_height(&pair[0], &pair[1]) * 3.0
+    })
+}
+
+fn opendataloader_aligned_line_groups(lines: &[PositionedLine], gap_multiplier: f64) -> usize {
+    let mut groups: Vec<Vec<&PositionedLine>> = Vec::new();
+    for line in lines {
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|group| opendataloader_same_baseline(group[0], line))
+        {
+            group.push(line);
+        } else {
+            groups.push(vec![line]);
+        }
+    }
+    groups
+        .into_iter()
+        .filter_map(|mut group| {
+            if group.len() < 2 {
+                return None;
+            }
+            group.sort_by(|left, right| left.bbox.x0.total_cmp(&right.bbox.x0));
+            group.windows(2).any(|pair| {
+                pair[1].bbox.x0 - pair[0].bbox.x1
+                    > opendataloader_avg_height(pair[0], pair[1]) * gap_multiplier
+            }).then_some(())
+        })
+        .count()
+}
+
+fn opendataloader_text_table_pattern_stats(lines: &[PositionedLine]) -> (usize, usize) {
+    let mut count = 0;
+    let mut current_streak = 0;
+    let mut max_streak = 0;
+    for pair in lines.windows(2) {
+        if opendataloader_suspicious_text_pair(&pair[0], &pair[1]) {
+            count += 1;
+            current_streak += 1;
+            max_streak = max_streak.max(current_streak);
+        } else {
+            current_streak = 0;
+        }
+    }
+    (count, max_streak)
+}
+
+fn opendataloader_suspicious_text_pair(previous: &PositionedLine, current: &PositionedLine) -> bool {
+    if previous.bbox.y0 < current.bbox.y1 {
+        let x_shift = previous.bbox.x0 - current.bbox.x0;
+        let text_width = bbox_width(&previous.bbox);
+        return !(text_width > 0.0 && x_shift > text_width * 2.0);
+    }
+    opendataloader_same_baseline(previous, current)
+        && current.bbox.x0 - previous.bbox.x1 > bbox_height(&current.bbox) * 1.5
+}
+
+fn opendataloader_same_baseline(left: &PositionedLine, right: &PositionedLine) -> bool {
+    (bbox_center_y(&left.bbox) - bbox_center_y(&right.bbox)).abs()
+        < opendataloader_avg_height(left, right) * 0.1
+}
+
+fn opendataloader_avg_height(left: &PositionedLine, right: &PositionedLine) -> f64 {
+    (bbox_height(&left.bbox) + bbox_height(&right.bbox)) / 2.0
+}
+
 fn levenshtein(left: &str, right: &str) -> usize {
     let right_chars = right.chars().collect::<Vec<_>>();
     let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
@@ -13653,6 +13898,61 @@ mod tests {
     }
 
     #[test]
+    fn opendataloader_triage_routes_replacement_ratio_to_backend() {
+        let decision = opendataloader_triage_page(&[line("text", 10.0, 100.0, 80.0, 120.0)], &[], 0.3);
+
+        assert_eq!(decision.route, "backend");
+        assert_eq!(decision.confidence, 1.0);
+    }
+
+    #[test]
+    fn opendataloader_triage_routes_line_ratio_to_backend() {
+        let lines = vec![line("Header", 10.0, 100.0, 80.0, 120.0)];
+        let segments = vec![
+            segment(10.0, 90.0, 200.0, 90.0),
+            segment(10.0, 80.0, 200.0, 80.0),
+            segment(10.0, 70.0, 200.0, 70.0),
+        ];
+
+        let decision = opendataloader_triage_page(&lines, &segments, 0.0);
+
+        assert_eq!(decision.route, "backend");
+        assert_eq!(decision.confidence, 0.95);
+        assert!(decision.signals.has_vector_table_signal());
+        assert!(decision.signals.line_to_text_ratio > 0.3);
+    }
+
+    #[test]
+    fn opendataloader_triage_detects_but_does_not_route_suspicious_gap_signal() {
+        let lines = vec![
+            line("Col1", 10.0, 100.0, 50.0, 120.0),
+            line("Col2", 200.0, 100.0, 250.0, 120.0),
+        ];
+
+        let decision = opendataloader_triage_page(&lines, &[], 0.0);
+
+        assert_eq!(decision.route, "deterministic");
+        assert!(decision.signals.has_suspicious_pattern);
+    }
+
+    #[test]
+    fn opendataloader_triage_detects_but_does_not_route_aligned_line_groups() {
+        let lines = vec![
+            line("A1", 10.0, 100.0, 50.0, 120.0),
+            line("B1", 200.0, 100.0, 250.0, 120.0),
+            line("A2", 10.0, 70.0, 50.0, 90.0),
+            line("B2", 200.0, 70.0, 250.0, 90.0),
+            line("A3", 10.0, 40.0, 50.0, 60.0),
+            line("B3", 200.0, 40.0, 250.0, 60.0),
+        ];
+
+        let decision = opendataloader_triage_page(&lines, &[], 0.0);
+
+        assert_eq!(decision.route, "deterministic");
+        assert!(decision.signals.aligned_line_groups >= 3);
+    }
+
+    #[test]
     fn opendataloader_footer_filter_keeps_repeated_body_note_above_footer_band() {
         let pages = vec![
             vec![
@@ -13817,6 +14117,10 @@ mod tests {
             text: text.to_string(),
             hidden: false,
         }
+    }
+
+    fn segment(x0: f64, y0: f64, x1: f64, y1: f64) -> Segment {
+        Segment { x0, y0, x1, y1 }
     }
 
     fn line_with_font_size(

@@ -1256,6 +1256,7 @@ fn filter_positioned_lines(
     let mut kept: Vec<PositionedLine> = Vec::new();
     let mut warnings = Vec::new();
     for line in lines {
+        let line = correct_abnormal_short_text_bbox(line);
         if line.text.trim().is_empty() {
             warnings.push(parser_safety_warning(
                 "whitespace_text_filtered",
@@ -1310,6 +1311,21 @@ fn filter_positioned_lines(
         kept.push(line);
     }
     (kept, warnings)
+}
+
+fn correct_abnormal_short_text_bbox(mut line: PositionedLine) -> PositionedLine {
+    let char_count = line.text.trim().chars().count();
+    if !(1..=3).contains(&char_count) || line.font_size <= 0.0 {
+        return line;
+    }
+    let current_width = bbox_width(&line.bbox);
+    let expected_width = char_count as f64 * line.font_size * 0.7;
+    if current_width <= expected_width * 3.0 || expected_width <= 0.0 {
+        return line;
+    }
+    line.bbox.x1 = (line.bbox.x0 + expected_width).min(line.page_width);
+    line.raw_bbox.x1 = (line.raw_bbox.x0 + expected_width).min(line.page_width);
+    line
 }
 
 fn off_page_positioned_line(line: &PositionedLine) -> bool {
@@ -13026,6 +13042,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn opendataloader_content_filter_corrects_abnormally_wide_short_text_bbox() {
+        let line = line_with_font_size("4", 180.0, 100.0, 222.0, 110.0, 10.0);
+
+        let (kept, warnings) = filter_positioned_lines(vec![line], &[]);
+
+        assert!(warnings.is_empty());
+        assert_eq!(kept.len(), 1);
+        assert!(
+            bbox_width(&kept[0].bbox) <= 8.0,
+            "short single-character text should be corrected to expected glyph width, got {:?}",
+            kept[0].bbox
+        );
+    }
+
+    #[test]
+    fn opendataloader_content_filter_keeps_normal_short_text_bbox() {
+        let line = line_with_font_size("AB", 100.0, 100.0, 115.0, 110.0, 10.0);
+
+        let (kept, warnings) = filter_positioned_lines(vec![line], &[]);
+
+        assert!(warnings.is_empty());
+        assert_eq!(kept.len(), 1);
+        assert_eq!(bbox_width(&kept[0].bbox), 15.0);
+    }
+
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {
         order_positioned_lines(lines)
             .into_iter()
@@ -13041,6 +13083,24 @@ mod tests {
             page_width: 1000.0,
             page_height: 1000.0,
             font_size: 12.0,
+        }
+    }
+
+    fn line_with_font_size(
+        text: &str,
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        font_size: f64,
+    ) -> PositionedLine {
+        PositionedLine {
+            text: text.to_string(),
+            raw_bbox: RawPdfBox { x0, y0, x1, y1 },
+            bbox: RuntimeBox { x0, y0, x1, y1 },
+            page_width: 1000.0,
+            page_height: 1000.0,
+            font_size,
         }
     }
 

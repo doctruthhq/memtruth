@@ -1669,6 +1669,59 @@ fn positioned_line_separator(left: &PositionedLine, right: &PositionedLine) -> &
     }
 }
 
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpendataloaderParagraphAlignment {
+    Left,
+    Right,
+    None,
+}
+
+#[cfg(test)]
+fn opendataloader_paragraph_pair_alignment(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> OpendataloaderParagraphAlignment {
+    if opendataloader_right_aligned_paragraph_pair(previous, next) {
+        return OpendataloaderParagraphAlignment::Right;
+    }
+    if opendataloader_two_line_paragraph_pair(previous, next) {
+        return OpendataloaderParagraphAlignment::Left;
+    }
+    OpendataloaderParagraphAlignment::None
+}
+
+#[cfg(test)]
+fn opendataloader_right_aligned_paragraph_pair(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> bool {
+    let same_right_edge = (previous.bbox.x1 - next.bbox.x1).abs() <= 1.0;
+    same_right_edge
+        && opendataloader_paragraph_lines_are_adjacent(previous, next)
+        && close_ratio(previous.font_size, next.font_size, 0.05)
+}
+
+#[cfg(test)]
+fn opendataloader_two_line_paragraph_pair(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> bool {
+    previous.bbox.x0 >= next.bbox.x0
+        && previous.bbox.x1 >= next.bbox.x1
+        && opendataloader_paragraph_lines_are_adjacent(previous, next)
+        && close_ratio(previous.font_size, next.font_size, 0.05)
+}
+
+#[cfg(test)]
+fn opendataloader_paragraph_lines_are_adjacent(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> bool {
+    let vertical_gap = (previous.bbox.y0 - next.bbox.y1).abs();
+    vertical_gap <= previous.font_size.max(next.font_size) * 0.35
+}
+
 fn footer_band_line(line: &PositionedLine) -> bool {
     line.bbox.y1 <= line.page_height * 0.15
 }
@@ -14320,6 +14373,18 @@ mod tests {
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].text, "A: answer text");
+    }
+
+    #[test]
+    fn opendataloader_paragraph_right_alignment_precedes_two_line_heuristic() {
+        let previous = line_with_font_size("short", 15.0, 20.0, 20.0, 30.0, 10.0);
+        let next = line_with_font_size("longer line", 10.0, 10.0, 20.0, 20.0, 10.0);
+
+        assert_eq!(
+            opendataloader_paragraph_pair_alignment(&previous, &next),
+            OpendataloaderParagraphAlignment::Right
+        );
+        assert!(opendataloader_two_line_paragraph_pair(&previous, &next));
     }
 
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {

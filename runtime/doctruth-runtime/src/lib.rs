@@ -6177,7 +6177,7 @@ fn markdown_entry_is_heading(unit: &Value, block: Option<&Value>, text: &str) ->
         return true;
     }
     if block_type.is_some() {
-        return false;
+        return activity_markdown_heading(text);
     }
     unit.get("kind").and_then(Value::as_str) == Some("HEADING") || likely_markdown_heading(text)
 }
@@ -6191,6 +6191,9 @@ fn likely_markdown_heading(text: &str) -> bool {
         return false;
     }
     if numbered_dot_markdown_heading(text) {
+        return true;
+    }
+    if activity_markdown_heading(text) {
         return true;
     }
     let letters = text
@@ -6209,6 +6212,18 @@ fn likely_markdown_heading(text: &str) -> bool {
         return true;
     }
     chapter_section_appendix_markdown_heading(text)
+}
+
+fn activity_markdown_heading(text: &str) -> bool {
+    let Some(rest) = text.strip_prefix("Activity ") else {
+        return false;
+    };
+    let Some((number, title)) = rest.split_once(':') else {
+        return false;
+    };
+    number.chars().all(|ch| ch.is_ascii_digit())
+        && !title.trim().is_empty()
+        && text.chars().count() <= 110
 }
 
 fn numbered_dot_markdown_heading(text: &str) -> bool {

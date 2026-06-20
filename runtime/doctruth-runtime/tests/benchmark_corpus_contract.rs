@@ -290,6 +290,19 @@ fn opendataloader_parity_does_not_render_prose_page_as_synthetic_table() {
 }
 
 #[test]
+fn opendataloader_parity_promotes_activity_headings() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-activity-heading");
+    let report = run_opendataloader_prediction("01030000000168", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000168.md")).unwrap();
+    assert!(
+        markdown.contains("# Activity 1: Determining pH With Indicator Strips (Field Method)"),
+        "Activity heading should be promoted:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_repairs_split_glyph_words_in_paragraphs() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-split-glyphs");
     let report = run_opendataloader_prediction("01030000000101", &output_dir);

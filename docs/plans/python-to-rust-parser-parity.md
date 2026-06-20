@@ -45,13 +45,15 @@ before OpenDataLoader Bench is used as a final acceptance gate.
   binding compilation is verified without bloating the default build.
 - [x] Add `doctruth-mnn-model-worker --probe-model` and an env-gated native MNN
   smoke for real executable `.mnn` artifacts.
-- [ ] Implement real MNN OCR inference inside `doctruth-mnn-model-worker`.
+- [x] Implement real MNN OCR inference path inside
+  `doctruth-mnn-model-worker` behind the `mnn-ocr` feature.
+- [ ] Validate real MNN OCR model pack quality against scanned-PDF fixtures.
 - [ ] Implement real MNN table/layout inference inside `doctruth-mnn-model-worker`.
 - [x] Replace Python ONNX model worker with Rust/MNN model worker or remove it
   from production packaging.
 - [x] Keep Python model workers available only behind oracle/test opt-in if they
   remain in the repository.
-- [ ] Record model manifest, model SHA, profile, RSS, latency, and unload
+- [x] Record model manifest, model SHA, profile, RSS, latency, and unload
   behavior for each accepted edge-model profile.
 
 Native MNN acceptance requires a real executable `.mnn` model. Benchmark-only

@@ -1391,6 +1391,10 @@ fn configured_model_worker_parse(
     let Some(command) = configured_model_worker_command(route) else {
         return Ok(None);
     };
+    let auxiliary_artifacts = model_manifest_auxiliary_artifacts()
+        .into_iter()
+        .map(|artifact| model_with_cache_status(artifact, &model_cache_directory()))
+        .collect::<Vec<_>>();
     let worker_request = json!({
         "runtime": RUNTIME,
         "protocol_version": PROTOCOL_VERSION,
@@ -1412,10 +1416,7 @@ fn configured_model_worker_parse(
         "modelCacheDirectory": model_cache_directory(),
         "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
         "models": model_artifacts,
-        "auxiliaryArtifacts": model_manifest_auxiliary_artifacts()
-            .into_iter()
-            .map(|artifact| model_with_cache_status(artifact, &model_cache_directory()))
-            .collect::<Vec<_>>(),
+        "auxiliaryArtifacts": auxiliary_artifacts,
         "modelRuntime": model_runtime_request_json(profile),
         "modelRouting": route.to_json(true, &required_models.iter().map(RequiredModel::identity).collect::<Vec<_>>())
     });
@@ -1423,11 +1424,66 @@ fn configured_model_worker_parse(
     let response: Value = serde_json::from_str(&output).map_err(|error| {
         error_json("MODEL_WORKER_FAILED", &format!("invalid JSON: {error}")).to_string()
     })?;
-    let model_metrics = response.get("metrics").cloned().unwrap_or(Value::Null);
+    let model_metrics = model_runtime_metrics_with_context(
+        response.get("metrics").unwrap_or(&Value::Null),
+        model_artifacts,
+        &auxiliary_artifacts,
+    );
     let document =
         normalize_worker_document(worker_document(response)?, profile, route, &model_metrics);
     validate_worker_document(&document)?;
     Ok(Some(document))
+}
+
+fn model_runtime_metrics_with_context(
+    metrics: &Value,
+    model_artifacts: &[Value],
+    auxiliary_artifacts: &[Value],
+) -> Value {
+    let mut target = metrics.as_object().cloned().unwrap_or_default();
+    if let Some(manifest_path) = configured_model_manifest_path() {
+        target.insert("manifestPath".to_string(), json!(manifest_path));
+    }
+    target.insert(
+        "modelArtifacts".to_string(),
+        json!(
+            model_artifacts
+                .iter()
+                .map(model_runtime_artifact_json)
+                .collect::<Vec<_>>()
+        ),
+    );
+    target.insert(
+        "auxiliaryArtifactDetails".to_string(),
+        json!(
+            auxiliary_artifacts
+                .iter()
+                .map(model_runtime_artifact_json)
+                .collect::<Vec<_>>()
+        ),
+    );
+    Value::Object(target)
+}
+
+fn model_runtime_artifact_json(artifact: &Value) -> Value {
+    let mut object = serde_json::Map::new();
+    for key in [
+        "name",
+        "version",
+        "role",
+        "task",
+        "backend",
+        "format",
+        "cacheStatus",
+        "expectedSha256",
+        "actualSha256",
+        "sizeBytes",
+    ] {
+        if let Some(value) = artifact.get(key) {
+            object.insert(key.to_string(), value.clone());
+        }
+    }
+    Value::Object(object)
 }
 
 fn model_runtime_request_json(profile: &str) -> Value {
@@ -1511,11 +1567,21 @@ fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
         return runtime;
     };
     for key in [
+        "decoder",
+        "inputSource",
+        "stubMode",
+        "manifestPath",
         "coldStartMs",
+        "renderMs",
         "inferenceMs",
+        "totalMs",
         "rssMb",
         "peakMemoryMb",
+        "ocrRegions",
         "loadedModels",
+        "auxiliaryArtifacts",
+        "modelArtifacts",
+        "auxiliaryArtifactDetails",
         "unload",
     ] {
         if let Some(value) = model_metrics.get(key) {

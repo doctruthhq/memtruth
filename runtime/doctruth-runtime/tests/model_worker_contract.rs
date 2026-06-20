@@ -755,13 +755,52 @@ fn parse_pdf_accepts_worker_envelope_with_document_payload() {
     assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
     assert_eq!(json["parserRun"]["workerBackend"], "pdfbox+model-worker");
     assert_eq!(json["parserRun"]["modelRuntime"]["runtime"], "mnn");
+    assert_eq!(json["parserRun"]["modelRuntime"]["decoder"], "table");
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["inputSource"],
+        "synthetic_tensor"
+    );
     assert_eq!(json["parserRun"]["modelRuntime"]["coldStartMs"], 12.5);
+    assert_eq!(json["parserRun"]["modelRuntime"]["renderMs"], 4.5);
     assert_eq!(json["parserRun"]["modelRuntime"]["inferenceMs"], 3.25);
+    assert_eq!(json["parserRun"]["modelRuntime"]["totalMs"], 20.25);
     assert_eq!(json["parserRun"]["modelRuntime"]["rssMb"], 188);
     assert_eq!(json["parserRun"]["modelRuntime"]["peakMemoryMb"], 221);
+    assert_eq!(json["parserRun"]["modelRuntime"]["ocrRegions"], 0);
     assert_eq!(
         json["parserRun"]["modelRuntime"]["loadedModels"],
         json!(["slanet-plus:v1"])
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["auxiliaryArtifacts"],
+        json!(["table-charset:v1"])
+    );
+    assert!(
+        json["parserRun"]["modelRuntime"]["manifestPath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with(".json")),
+        "{}",
+        json["parserRun"]["modelRuntime"]
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["modelArtifacts"][0]["name"],
+        "slanet-plus"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["modelArtifacts"][0]["backend"],
+        "mnn"
+    );
+    assert!(
+        json["parserRun"]["modelRuntime"]["modelArtifacts"][0]["actualSha256"]
+            .as_str()
+            .is_some_and(|sha| sha.starts_with("sha256:")),
+        "{}",
+        json["parserRun"]["modelRuntime"]
+    );
+    assert!(
+        json["parserRun"]["modelRuntime"]["auxiliaryArtifactDetails"].is_array(),
+        "{}",
+        json["parserRun"]["modelRuntime"]
     );
     assert_eq!(
         json["parserRun"]["modelRuntime"]["unload"]["status"],
@@ -947,13 +986,18 @@ print(json.dumps({
         "auditGradeStatus": "AUDIT_GRADE"
     },
     "metrics": {
+        "decoder": "table",
         "inputSource": "synthetic_tensor",
         "runtime": "mnn",
         "coldStartMs": 12.5,
+        "renderMs": 4.5,
         "inferenceMs": 3.25,
+        "totalMs": 20.25,
         "rssMb": 188,
         "peakMemoryMb": 221,
+        "ocrRegions": 0,
         "loadedModels": ["slanet-plus:v1"],
+        "auxiliaryArtifacts": ["table-charset:v1"],
         "unload": {"status": "scheduled", "policy": "idle-after-request"}
     }
 }))

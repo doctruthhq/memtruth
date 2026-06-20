@@ -1990,3 +1990,22 @@
   the generic two-line paragraph heuristic, so the right-alignment pass must
   claim it first. Rust captures this precedence as a contract while production
   paragraph metadata remains gated to avoid broad Markdown/replay regressions.
+- The Caption/Image/Formula/TextDecoration slice is now foundation-complete for
+  Rust-owned hybrid/model outputs. `content_block_semantics` recognizes explicit
+  `HEADING`, `LIST_ITEM`, `CAPTION`, `FORMULA`, `IMAGE`, and `TABLE_CELL`
+  units instead of relying only on text heuristics. Hybrid schema normalization
+  can also map OpenDataLoader-style horizontal rule geometry into
+  `style.textDecoration` with the reference strikethrough/underline thickness,
+  vertical-position, horizontal-overlap, and line-width guards.
+- The Hybrid schema transformer is now a Rust-owned normalization boundary:
+  worker `parserRun.hybridSchema` can produce TrustDocument `body.units`,
+  `body.tables`, and `contentBlocks` from Docling/OpenDataLoader-like texts,
+  pictures, table grids, table cells, provenance bboxes, page numbers, headings,
+  image descriptions, formulas, captions, and text decorations. This is not an
+  external schema becoming canonical; TrustDocument remains the canonical
+  output and the hybrid schema is only a worker/model ingress format.
+- MNN is not completely closed. The worker has strict READY MNN artifact checks
+  and a feature-gated `ocr-rs` real OCR path, but table/layout MNN decoders and
+  Python-vs-MNN tensor preprocessing parity are still real-model tasks. Do not
+  claim full OpenDataLoader quality reproduction from the MNN path until those
+  model artifacts and parity checks exist.

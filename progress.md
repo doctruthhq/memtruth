@@ -8141,3 +8141,35 @@
   `cargo test opendataloader_parity_ --test benchmark_corpus_contract`
   (17 passed, 1 ignored);
   `git diff --check`.
+
+## 2026-06-20 Hybrid Schema And TextDecoration Foundation Closure
+
+- Added Rust-owned hybrid schema normalization from worker/model
+  `parserRun.hybridSchema` into canonical TrustDocument layers:
+  `body.units`, `body.tables`, and `contentBlocks`.
+- Added Docling/OpenDataLoader-like mapping for text labels, headings and
+  levels, formulas, captions, pictures with descriptions, table grids,
+  table-cell row/column spans, page numbers, and provenance bboxes.
+- Ported OpenDataLoader `TextDecorationProcessor` foundation rules for
+  strikethrough and underline detection over horizontal rules:
+  rule thickness, rule-to-text-height ratio, vertical center/baseline zone,
+  horizontal overlap, and line-width/text-width validation.
+- Added worker normalization coverage proving a model worker document with
+  hybrid schema becomes `rust-sidecar+model-worker` TrustDocument output
+  without Python adapter dependence.
+- Verification passed:
+  `cargo test opendataloader_text_decoration --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (1 passed);
+  `cargo test opendataloader_hybrid_schema --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (2 passed);
+  `cargo test worker_normalization_merges_hybrid_schema --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (1 passed);
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --lib`
+  (46 passed);
+  `cargo test opendataloader_parity_ --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check`.
+- Remaining non-fake boundary: MNN table/layout decoders and strict tensor
+  preprocessing parity still need executable model artifacts. Existing OCR has
+  a feature-gated `ocr-rs`/MNN path, but table/layout model quality is not
+  claimed.

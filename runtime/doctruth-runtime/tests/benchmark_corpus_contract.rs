@@ -115,7 +115,9 @@ fn opendataloader_parity_reconstructs_long_text_comparative_table() {
         "expected Argentina row to be reconstructed as a table row:\n{markdown}"
     );
     assert!(
-        markdown.contains("|Australia|N|Y|Approval is needed from the Treasurer if the acquisition constitutes"),
+        markdown.contains(
+            "|Australia|N|Y|Approval is needed from the Treasurer if the acquisition constitutes"
+        ),
         "expected Australia row to be reconstructed as a table row:\n{markdown}"
     );
 }
@@ -217,7 +219,9 @@ fn opendataloader_parity_reconstructs_column_block_table() {
         "expected first reconstructed row:\n{markdown}"
     );
     assert!(
-        markdown.contains("|Goodies|Primarily physical|pens, notepads, bookmarks, stickers, buttons, etc|"),
+        markdown.contains(
+            "|Goodies|Primarily physical|pens, notepads, bookmarks, stickers, buttons, etc|"
+        ),
         "expected final reconstructed row:\n{markdown}"
     );
 }
@@ -251,7 +255,9 @@ fn opendataloader_parity_reconstructs_blank_matrix_table() {
     assert_eq!(report["prediction"]["parsedCount"], 1);
     let markdown = fs::read_to_string(output_dir.join("markdown/01030000000119.md")).unwrap();
     assert!(
-        markdown.contains("| |Mitosis Meiosis (begins with a single cell) (begins with a single cell)| |"),
+        markdown.contains(
+            "| |Mitosis Meiosis (begins with a single cell) (begins with a single cell)| |"
+        ),
         "expected blank comparison matrix header:\n{markdown}"
     );
     assert!(
@@ -276,7 +282,9 @@ fn opendataloader_parity_repairs_split_year_headers_and_empty_table_columns() {
         "expected split Year header to be repaired and empty leading column removed:\n{markdown}"
     );
     assert!(
-        markdown.contains("|Year|Recovery Rate|Unadjusted Basis|Depreciation Expense|Accumulated Depreciation|"),
+        markdown.contains(
+            "|Year|Recovery Rate|Unadjusted Basis|Depreciation Expense|Accumulated Depreciation|"
+        ),
         "expected depreciation tables to drop empty spacer columns:\n{markdown}"
     );
     assert!(
@@ -366,7 +374,9 @@ fn opendataloader_parity_suppresses_raw_lines_after_reconstructed_table() {
     assert_eq!(report["prediction"]["parsedCount"], 1);
     let markdown = fs::read_to_string(output_dir.join("markdown/01030000000110.md")).unwrap();
     assert!(
-        markdown.contains("|Temperature (degree C)|Kinematic viscosity v (m2 /s)|Temperature (degree C)|"),
+        markdown.contains(
+            "|Temperature (degree C)|Kinematic viscosity v (m2 /s)|Temperature (degree C)|"
+        ),
         "expected reconstructed viscosity table:\n{markdown}"
     );
     let table_header = markdown
@@ -2782,8 +2792,8 @@ fn temp_dir(prefix: &str) -> PathBuf {
 }
 
 fn run_opendataloader_prediction(doc_id: &str, output_dir: &PathBuf) -> Value {
-    let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../third_party/opendataloader-bench");
+    let bench_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../third_party/opendataloader-bench");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd
         .write_stdin(

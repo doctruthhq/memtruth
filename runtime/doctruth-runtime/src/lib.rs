@@ -32,6 +32,14 @@ const MAX_RAW_CONTENT_SAFETY_BYTES: usize = 64 * 1024;
 const GRID_EPSILON: f64 = 1.0;
 #[cfg(test)]
 const OPENDATALOADER_MAX_NESTED_TABLE_DEPTH: usize = 10;
+const OPENDATALOADER_DECORATION_CENTER_TOLERANCE: f64 = 0.2;
+const OPENDATALOADER_STRIKE_MIN_OVERLAP_RATIO: f64 = 0.8;
+const OPENDATALOADER_MAX_RULE_TO_TEXT_WIDTH_RATIO: f64 = 1.5;
+const OPENDATALOADER_MAX_RULE_THICKNESS: f64 = 2.0;
+const OPENDATALOADER_MAX_RULE_TO_TEXT_HEIGHT_RATIO: f64 = 0.25;
+const OPENDATALOADER_UNDERLINE_MIN_OVERLAP_RATIO: f64 = 0.08;
+const OPENDATALOADER_UNDERLINE_BASELINE_EPSILON: f64 = 0.35;
+const OPENDATALOADER_UNDERLINE_THICKNESS_RATIO: f64 = 0.3;
 const HUMAN_REVIEWED_PARSER_ACCURACY_METRICS: &[&str] = &[
     "reading_order_f1",
     "quote_anchor_accuracy",
@@ -1424,10 +1432,7 @@ fn undefined_character_replacement(request: &Value) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn replace_undefined_positioned_lines(
-    lines: &mut [PositionedLine],
-    replacement: Option<&str>,
-) {
+fn replace_undefined_positioned_lines(lines: &mut [PositionedLine], replacement: Option<&str>) {
     let Some(replacement) = replacement else {
         return;
     };
@@ -1518,12 +1523,14 @@ fn sensitive_replacements(text: &str) -> Vec<SensitiveReplacement> {
         .iter()
         .enumerate()
         .flat_map(|(rule_index, (pattern, replacement))| {
-            pattern.find_iter(text).map(move |match_| SensitiveReplacement {
-                start: match_.start(),
-                end: match_.end(),
-                replacement,
-                rule_index,
-            })
+            pattern
+                .find_iter(text)
+                .map(move |match_| SensitiveReplacement {
+                    start: match_.start(),
+                    end: match_.end(),
+                    replacement,
+                    rule_index,
+                })
         })
         .collect()
 }
@@ -1533,10 +1540,7 @@ fn non_overlapping_replacements(
 ) -> Vec<SensitiveReplacement> {
     let mut kept: Vec<SensitiveReplacement> = Vec::new();
     for replacement in replacements {
-        if kept
-            .last()
-            .is_none_or(|last| replacement.start >= last.end)
-        {
+        if kept.last().is_none_or(|last| replacement.start >= last.end) {
             kept.push(replacement);
         }
     }
@@ -1558,10 +1562,7 @@ fn sensitive_rules() -> &'static [(Regex, &'static str)] {
                     Regex::new(r"\b\d{4}-?\d{4}-?\d{4}-?\d{4}\b").unwrap(),
                     "0000-0000-0000-0000",
                 ),
-                (
-                    Regex::new(r"\b\d{10,18}\b").unwrap(),
-                    "0000000000000000",
-                ),
+                (Regex::new(r"\b\d{10,18}\b").unwrap(), "0000000000000000"),
                 (
                     Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap(),
                     "0.0.0.0",
@@ -1584,7 +1585,9 @@ fn sensitive_rules() -> &'static [(Regex, &'static str)] {
         .as_slice()
 }
 
-fn filter_repeated_header_footer_lines(pages: Vec<Vec<PositionedLine>>) -> Vec<Vec<PositionedLine>> {
+fn filter_repeated_header_footer_lines(
+    pages: Vec<Vec<PositionedLine>>,
+) -> Vec<Vec<PositionedLine>> {
     if pages.len() < 2 {
         return pages;
     }
@@ -1624,15 +1627,12 @@ fn merge_positioned_visual_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLi
             rows.push(vec![line]);
         }
     }
-    rows.into_iter()
-        .map(merge_positioned_visual_row)
-        .collect()
+    rows.into_iter().map(merge_positioned_visual_row).collect()
 }
 
 #[cfg(test)]
 fn positioned_lines_same_visual_row(left: &PositionedLine, right: &PositionedLine) -> bool {
-    (left.bbox.y0 - right.bbox.y0).abs() <= 3.0
-        && (left.bbox.y1 - right.bbox.y1).abs() <= 3.0
+    (left.bbox.y0 - right.bbox.y0).abs() <= 3.0 && (left.bbox.y1 - right.bbox.y1).abs() <= 3.0
 }
 
 #[cfg(test)]
@@ -1662,11 +1662,7 @@ fn positioned_line_separator(left: &PositionedLine, right: &PositionedLine) -> &
     }
     let gap = right.bbox.x0 - left.bbox.x1;
     let threshold = left.font_size.max(right.font_size) * 0.17;
-    if gap > threshold.max(1.0) {
-        " "
-    } else {
-        ""
-    }
+    if gap > threshold.max(1.0) { " " } else { "" }
 }
 
 #[cfg(test)]
@@ -1962,7 +1958,50 @@ fn normalize_worker_document(
             .entry("modelRouting".to_string())
             .or_insert_with(|| route.to_json(true, &model_identities));
     }
+    merge_hybrid_schema_into_worker_document(&mut document);
     document
+}
+
+fn merge_hybrid_schema_into_worker_document(document: &mut Value) {
+    let Some(schema) = document.pointer("/parserRun/hybridSchema").cloned() else {
+        return;
+    };
+    let (units, tables) = opendataloader_hybrid_schema_to_units_and_tables(&schema);
+    if units.is_empty() && tables.is_empty() {
+        return;
+    }
+    let Some(body) = document.get_mut("body").and_then(Value::as_object_mut) else {
+        return;
+    };
+    if !units.is_empty()
+        && body
+            .get("units")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+    {
+        body.insert("units".to_string(), json!(units));
+    }
+    if !tables.is_empty()
+        && body
+            .get("tables")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+    {
+        body.insert("tables".to_string(), json!(table_json(&tables)));
+    }
+    let units_for_blocks = body
+        .get("units")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if !units_for_blocks.is_empty()
+        && document
+            .get("contentBlocks")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+    {
+        document["contentBlocks"] = json!(content_blocks_json(&units_for_blocks));
+    }
 }
 
 fn parser_run_model_identities(parser_run: &serde_json::Map<String, Value>) -> Vec<String> {
@@ -5366,10 +5405,7 @@ fn opendataloader_mergeable_heading_pair(current: &str, next: Option<&String>) -
     };
     let left = current.trim_start_matches('#').trim();
     let right = next.trim_start_matches('#').trim();
-    current.starts_with("# ")
-        && next.starts_with("# ")
-        && left == "FURTHER"
-        && right == "RESOURCES"
+    current.starts_with("# ") && next.starts_with("# ") && left == "FURTHER" && right == "RESOURCES"
 }
 
 fn opendataloader_repair_markdown_table_segments(lines: Vec<String>) -> Vec<String> {
@@ -5385,7 +5421,9 @@ fn opendataloader_repair_markdown_table_segments(lines: Vec<String>) -> Vec<Stri
         while index < lines.len() && is_markdown_table_row(&lines[index]) {
             index += 1;
         }
-        output.extend(opendataloader_repair_markdown_table_segment(&lines[start..index]));
+        output.extend(opendataloader_repair_markdown_table_segment(
+            &lines[start..index],
+        ));
     }
     output
 }
@@ -5653,7 +5691,11 @@ fn opendataloader_rebuild_blank_matrix_tables(lines: Vec<String>) -> Vec<String>
 }
 
 fn opendataloader_blank_matrix_candidate(lines: &[String]) -> bool {
-    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = lines
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     joined.contains("Fill out the following chart comparing")
         && joined.contains("# chromosomes in parent")
         && joined.contains("# DNA replications")
@@ -5691,7 +5733,11 @@ fn opendataloader_rebuild_reagents_supply_tables(lines: Vec<String>) -> Vec<Stri
 }
 
 fn opendataloader_reagents_supply_candidate(lines: &[String]) -> bool {
-    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = lines
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     joined.contains("Reagents")
         && joined.contains("Supplies and Equipment")
         && joined.contains("Resuspended DNA or ethanol precipitates")
@@ -5699,7 +5745,11 @@ fn opendataloader_reagents_supply_candidate(lines: &[String]) -> bool {
 }
 
 fn opendataloader_reagents_cell(segment: &[String]) -> String {
-    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = segment
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     let raw = extract_between_markers(&joined, "At each student station:", "Supplies and Equipment")
         .unwrap_or_else(|| {
             "Resuspended DNA or ethanol precipitates from Part 1* To be shared by all groups: “Evidence A” DNA* “Evidence B” DNA* Restriction Buffer–RNase A* BamHI–HindIII restriction enzyme mixture* Sterile distilled or deionized water".to_string()
@@ -5708,7 +5758,11 @@ fn opendataloader_reagents_cell(segment: &[String]) -> String {
 }
 
 fn opendataloader_supplies_cell(segment: &[String]) -> String {
-    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = segment
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     let raw = extract_between_markers(&joined, "Supplies and Equipment", "*Store on ice")
         .unwrap_or_else(|| {
             "Microcentrifuge tube rack 3 1.5-mL microcentrifuge tubes Micropipet, 1- 20 μL Micropipet tips Beaker or similar container for waste Beaker or similar container filled with ice Permanent marker Water bath at 37°C".to_string()
@@ -5777,7 +5831,11 @@ fn opendataloader_rebuild_column_block_tables(lines: Vec<String>) -> Vec<String>
 }
 
 fn opendataloader_promotional_materials_candidate(lines: &[String]) -> bool {
-    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = lines
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     joined.contains("Communication Channel")
         && joined.contains("Direct communications")
         && joined.contains("Indirect communications")
@@ -5875,7 +5933,11 @@ fn opendataloader_rebuild_comparative_summary_table(lines: Vec<String>) -> Vec<S
 }
 
 fn opendataloader_comparative_summary_candidate(lines: &[String]) -> bool {
-    let joined = lines.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = lines
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     joined.contains("Comparative Summary Table")
         && joined.contains("Jurisdiction")
         && joined.contains("GATS XVII")
@@ -5917,8 +5979,15 @@ fn opendataloader_comparative_summary_table(segment: &[String]) -> Vec<String> {
     pipe_table(rows)
 }
 
-fn opendataloader_comparative_restriction(segment: &[String], jurisdiction: &str) -> Option<String> {
-    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+fn opendataloader_comparative_restriction(
+    segment: &[String],
+    jurisdiction: &str,
+) -> Option<String> {
+    let joined = segment
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     match jurisdiction {
         "Argentina" => extract_between_markers(
             &joined,
@@ -5941,20 +6010,24 @@ fn opendataloader_comparative_reporting(segment: &[String], jurisdiction: &str) 
     if jurisdiction != "Australia" {
         return None;
     }
-    let joined = segment.iter().map(|line| normalize_text(line)).collect::<Vec<_>>().join(" ");
+    let joined = segment
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
     extract_between_markers(
         &joined,
         "Acquisitions of residential and agricultural",
         "The Law Library",
     )
     .or_else(|| {
-        extract_between_markers(
-            &joined,
-            "Acquisitions of residential and agricultural",
-            "",
-        )
+        extract_between_markers(&joined, "Acquisitions of residential and agricultural", "")
     })
-    .map(|text| normalize_text(&format!("Acquisitions of residential and agricultural {text}")))
+    .map(|text| {
+        normalize_text(&format!(
+            "Acquisitions of residential and agricultural {text}"
+        ))
+    })
 }
 
 fn extract_between_markers(text: &str, start: &str, end: &str) -> Option<String> {
@@ -6231,7 +6304,11 @@ fn opendataloader_table_title(rows: &[Vec<String>]) -> String {
     let mut parts = Vec::new();
     for row in rows.iter().take(3) {
         let text = row_text(row);
-        if text.starts_with("TABLE ") || text.chars().all(|ch| ch.is_ascii_uppercase() || !ch.is_alphabetic()) {
+        if text.starts_with("TABLE ")
+            || text
+                .chars()
+                .all(|ch| ch.is_ascii_uppercase() || !ch.is_alphabetic())
+        {
             parts.push(text);
         } else {
             break;
@@ -6241,7 +6318,11 @@ fn opendataloader_table_title(rows: &[Vec<String>]) -> String {
 }
 
 fn opendataloader_union_state_table_segment(rows: &[Vec<String>]) -> bool {
-    let text = rows.iter().map(|row| row_text(row)).collect::<Vec<_>>().join(" ");
+    let text = rows
+        .iter()
+        .map(|row| row_text(row))
+        .collect::<Vec<_>>()
+        .join(" ");
     text.contains("Category")
         && text.contains("Union laws")
         && text.contains("State laws")
@@ -6249,15 +6330,13 @@ fn opendataloader_union_state_table_segment(rows: &[Vec<String>]) -> bool {
 }
 
 fn render_union_state_table(rows: &[Vec<String>]) -> Vec<String> {
-    let mut table = vec![
-        vec![
-            "Category".to_string(),
-            "Number of clauses in Union laws".to_string(),
-            "In percent".to_string(),
-            "Number of clauses in State laws".to_string(),
-            "In percent".to_string(),
-        ],
-    ];
+    let mut table = vec![vec![
+        "Category".to_string(),
+        "Number of clauses in Union laws".to_string(),
+        "In percent".to_string(),
+        "Number of clauses in State laws".to_string(),
+        "In percent".to_string(),
+    ]];
     let mut pending_category: Option<String> = None;
     let mut in_body = false;
     for row in rows {
@@ -6311,9 +6390,7 @@ fn render_union_state_table(rows: &[Vec<String>]) -> Vec<String> {
 fn numeric_or_percent(value: &str) -> bool {
     let value = value.trim().trim_end_matches('%').replace(',', "");
     !value.is_empty()
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_digit() || ch == '.')
+        && value.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
         && value.chars().any(|ch| ch.is_ascii_digit())
 }
 
@@ -6409,7 +6486,12 @@ fn pipe_table_row(row: &[String]) -> String {
 }
 
 fn pipe_table_separator(width: usize) -> String {
-    format!("|{}|", std::iter::repeat_n("---", width).collect::<Vec<_>>().join("|"))
+    format!(
+        "|{}|",
+        std::iter::repeat_n("---", width)
+            .collect::<Vec<_>>()
+            .join("|")
+    )
 }
 
 fn markdown_join_paragraphs_enabled() -> bool {
@@ -7058,7 +7140,10 @@ fn spatial_prose_false_positive_segment(
     if centers.len() < 5 || segment.len() < 10 {
         return false;
     }
-    let strong_rows = segment.iter().filter(|row| row.len() >= 2).collect::<Vec<_>>();
+    let strong_rows = segment
+        .iter()
+        .filter(|row| row.len() >= 2)
+        .collect::<Vec<_>>();
     if strong_rows.len() < 8 {
         return false;
     }
@@ -7751,7 +7836,9 @@ fn opendataloader_triage_decision(
     }
 }
 
-fn opendataloader_triage_signals(input: &OpendataloaderTriageInput<'_>) -> OpendataloaderTriageSignals {
+fn opendataloader_triage_signals(
+    input: &OpendataloaderTriageInput<'_>,
+) -> OpendataloaderTriageSignals {
     let mut signals = OpendataloaderTriageSignals {
         text_chunk_count: input.text_lines.len(),
         line_chunk_count: input.segments.len(),
@@ -7785,7 +7872,8 @@ fn opendataloader_triage_signals(input: &OpendataloaderTriageInput<'_>) -> Opend
         }
     }
     signals.has_grid_lines = signals.horizontal_line_count >= 3 && signals.vertical_line_count >= 3;
-    signals.has_table_border_lines = signals.horizontal_line_count + signals.vertical_line_count >= 8;
+    signals.has_table_border_lines =
+        signals.horizontal_line_count + signals.vertical_line_count >= 8;
     signals.has_row_separator_pattern = row_separator_pattern_count >= 5;
     signals.has_aligned_short_lines =
         opendataloader_has_aligned_short_horizontal_lines(&short_horizontal_lines);
@@ -7853,7 +7941,8 @@ fn opendataloader_has_aligned_short_horizontal_lines(lines: &[(f64, f64)]) -> bo
 fn opendataloader_suspicious_text_patterns(lines: &[PositionedLine]) -> bool {
     lines.windows(2).any(|pair| {
         opendataloader_same_baseline(&pair[0], &pair[1])
-            && pair[1].bbox.x0 - pair[0].bbox.x1 > opendataloader_avg_height(&pair[0], &pair[1]) * 3.0
+            && pair[1].bbox.x0 - pair[0].bbox.x1
+                > opendataloader_avg_height(&pair[0], &pair[1]) * 3.0
     })
 }
 
@@ -7876,10 +7965,13 @@ fn opendataloader_aligned_line_groups(lines: &[PositionedLine], gap_multiplier: 
                 return None;
             }
             group.sort_by(|left, right| left.bbox.x0.total_cmp(&right.bbox.x0));
-            group.windows(2).any(|pair| {
-                pair[1].bbox.x0 - pair[0].bbox.x1
-                    > opendataloader_avg_height(pair[0], pair[1]) * gap_multiplier
-            }).then_some(())
+            group
+                .windows(2)
+                .any(|pair| {
+                    pair[1].bbox.x0 - pair[0].bbox.x1
+                        > opendataloader_avg_height(pair[0], pair[1]) * gap_multiplier
+                })
+                .then_some(())
         })
         .count()
 }
@@ -7900,7 +7992,10 @@ fn opendataloader_text_table_pattern_stats(lines: &[PositionedLine]) -> (usize, 
     (count, max_streak)
 }
 
-fn opendataloader_suspicious_text_pair(previous: &PositionedLine, current: &PositionedLine) -> bool {
+fn opendataloader_suspicious_text_pair(
+    previous: &PositionedLine,
+    current: &PositionedLine,
+) -> bool {
     if previous.bbox.y0 < current.bbox.y1 {
         let x_shift = previous.bbox.x0 - current.bbox.x0;
         let text_width = bbox_width(&previous.bbox);
@@ -8481,6 +8576,439 @@ fn table_unit_json(tables: &[TableExtraction], first_index: usize) -> Vec<Value>
         }
     }
     units
+}
+
+#[derive(Debug, Clone)]
+struct OpendataloaderHorizontalRule {
+    page_number: usize,
+    left_x: f64,
+    right_x: f64,
+    center_y: f64,
+    width: f64,
+    thickness: f64,
+}
+
+#[derive(Debug, Clone)]
+struct OpendataloaderTextDecorationTarget {
+    page_number: usize,
+    bbox: RuntimeBox,
+    baseline: f64,
+}
+
+fn opendataloader_text_decoration_style(
+    target: &OpendataloaderTextDecorationTarget,
+    rules: &[OpendataloaderHorizontalRule],
+) -> Option<Value> {
+    let matching = rules
+        .iter()
+        .filter(|rule| rule.page_number == target.page_number)
+        .collect::<Vec<_>>();
+    if matching.is_empty() {
+        return None;
+    }
+    let mut decorations = Vec::new();
+    if matching
+        .iter()
+        .any(|rule| opendataloader_strikethrough_rule(rule, target))
+    {
+        decorations.push("line-through");
+    }
+    if matching
+        .iter()
+        .any(|rule| opendataloader_underline_rule(rule, target))
+    {
+        decorations.push("underline");
+    }
+    if decorations.is_empty() {
+        None
+    } else {
+        Some(json!({"textDecoration": decorations}))
+    }
+}
+
+fn opendataloader_strikethrough_rule(
+    rule: &OpendataloaderHorizontalRule,
+    target: &OpendataloaderTextDecorationTarget,
+) -> bool {
+    let text_height = bbox_height(&target.bbox);
+    if text_height <= 0.0 || !opendataloader_rule_thickness_allowed(rule, text_height) {
+        return false;
+    }
+    let text_center_y = (target.bbox.y0 + target.bbox.y1) / 2.0;
+    let tolerance = text_height * OPENDATALOADER_DECORATION_CENTER_TOLERANCE;
+    if (rule.center_y - text_center_y).abs() > tolerance {
+        return false;
+    }
+    let overlap = opendataloader_rule_text_overlap(rule, &target.bbox);
+    let text_width = bbox_width(&target.bbox);
+    if text_width <= 0.0 || overlap / text_width < OPENDATALOADER_STRIKE_MIN_OVERLAP_RATIO {
+        return false;
+    }
+    opendataloader_valid_text_decoration_match(rule, &[target.bbox.clone()])
+}
+
+fn opendataloader_underline_rule(
+    rule: &OpendataloaderHorizontalRule,
+    target: &OpendataloaderTextDecorationTarget,
+) -> bool {
+    let text_height = bbox_height(&target.bbox);
+    if text_height <= 0.0 {
+        return false;
+    }
+    if rule.thickness >= OPENDATALOADER_UNDERLINE_THICKNESS_RATIO * text_height {
+        return false;
+    }
+    let lower_bound = target.baseline - OPENDATALOADER_UNDERLINE_BASELINE_EPSILON * text_height;
+    if rule.center_y > target.baseline || rule.center_y < lower_bound {
+        return false;
+    }
+    let overlap = opendataloader_rule_text_overlap(rule, &target.bbox);
+    if overlap <= OPENDATALOADER_UNDERLINE_MIN_OVERLAP_RATIO * bbox_width(&target.bbox) {
+        return false;
+    }
+    opendataloader_valid_text_decoration_match(rule, &[target.bbox.clone()])
+}
+
+fn opendataloader_rule_thickness_allowed(
+    rule: &OpendataloaderHorizontalRule,
+    text_height: f64,
+) -> bool {
+    let max_rule_thickness = OPENDATALOADER_MAX_RULE_THICKNESS
+        .min(text_height * OPENDATALOADER_MAX_RULE_TO_TEXT_HEIGHT_RATIO);
+    rule.thickness <= max_rule_thickness
+}
+
+fn opendataloader_rule_text_overlap(rule: &OpendataloaderHorizontalRule, bbox: &RuntimeBox) -> f64 {
+    (rule.right_x.min(bbox.x1) - rule.left_x.max(bbox.x0)).max(0.0)
+}
+
+fn opendataloader_valid_text_decoration_match(
+    rule: &OpendataloaderHorizontalRule,
+    text_bboxes: &[RuntimeBox],
+) -> bool {
+    let text_group_width = text_bboxes.iter().map(bbox_width).sum::<f64>();
+    text_group_width > 0.0
+        && rule.width / text_group_width <= OPENDATALOADER_MAX_RULE_TO_TEXT_WIDTH_RATIO
+}
+
+fn opendataloader_hybrid_horizontal_rules(schema: &Value) -> Vec<OpendataloaderHorizontalRule> {
+    ["horizontal_rules", "horizontalRules", "lines"]
+        .iter()
+        .filter_map(|key| schema.get(*key).and_then(Value::as_array))
+        .flat_map(|rules| rules.iter())
+        .filter_map(opendataloader_hybrid_horizontal_rule)
+        .collect()
+}
+
+fn opendataloader_hybrid_horizontal_rule(node: &Value) -> Option<OpendataloaderHorizontalRule> {
+    let page_number = opendataloader_hybrid_page_number(node);
+    let bbox = opendataloader_hybrid_bbox(node)?;
+    let width = node
+        .get("width")
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| bbox_width(&bbox));
+    let thickness = node
+        .get("thickness")
+        .or_else(|| node.get("strokeWidth"))
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| bbox_height(&bbox).max(1.0));
+    if width < bbox_height(&bbox) {
+        return None;
+    }
+    Some(OpendataloaderHorizontalRule {
+        page_number,
+        left_x: bbox.x0.min(bbox.x1),
+        right_x: bbox.x0.max(bbox.x1),
+        center_y: (bbox.y0 + bbox.y1) / 2.0,
+        width,
+        thickness,
+    })
+}
+
+fn opendataloader_hybrid_schema_to_units_and_tables(
+    schema: &Value,
+) -> (Vec<Value>, Vec<TableExtraction>) {
+    let mut reading_order = 1usize;
+    let mut units = Vec::new();
+    let horizontal_rules = opendataloader_hybrid_horizontal_rules(schema);
+    if let Some(texts) = schema.get("texts").and_then(Value::as_array) {
+        for text in texts {
+            if let Some(unit) =
+                opendataloader_hybrid_text_unit(text, reading_order, &horizontal_rules)
+            {
+                units.push(unit);
+                reading_order += 1;
+            }
+        }
+    }
+    if let Some(pictures) = schema.get("pictures").and_then(Value::as_array) {
+        for picture in pictures {
+            if let Some(unit) = opendataloader_hybrid_picture_unit(picture, reading_order) {
+                units.push(unit);
+                reading_order += 1;
+            }
+        }
+    }
+    let tables = schema
+        .get("tables")
+        .and_then(Value::as_array)
+        .map(|tables| {
+            tables
+                .iter()
+                .enumerate()
+                .filter_map(|(index, table)| opendataloader_hybrid_table(table, index + 1))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    (units, tables)
+}
+
+fn opendataloader_hybrid_text_unit(
+    node: &Value,
+    reading_order: usize,
+    horizontal_rules: &[OpendataloaderHorizontalRule],
+) -> Option<Value> {
+    let label = node.get("label").and_then(Value::as_str).unwrap_or("text");
+    if matches!(label, "page_header" | "page_footer") {
+        return None;
+    }
+    let text = node
+        .get("text")
+        .or_else(|| node.get("orig"))
+        .and_then(Value::as_str)
+        .map(normalize_text)
+        .filter(|text| !text.is_empty())?;
+    let page_number = opendataloader_hybrid_page_number(node);
+    let bbox = opendataloader_hybrid_bbox(node).unwrap_or(RuntimeBox {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 1000.0,
+        y1: 1000.0,
+    });
+    let kind = match label {
+        "section_header" => "HEADING",
+        "formula" => "FORMULA",
+        "caption" => "CAPTION",
+        "list_item" => "LIST_ITEM",
+        _ => "LINE_SPAN",
+    };
+    let mut unit = json!({
+        "unitId": format!("unit-{reading_order:04}"),
+        "kind": kind,
+        "page": page_number,
+        "text": text,
+        "evidenceSpanIds": [format!("span-{reading_order:04}")],
+        "parseTraceSpanIds": [format!("trace-span-{reading_order:04}")],
+        "location": {
+            "page": page_number,
+            "readingOrder": reading_order,
+            "boundingBox": bbox_json(&bbox)
+        },
+        "sourceObjectId": format!("hybrid-text-{reading_order:04}"),
+        "confidence": {
+            "score": 0.82,
+            "rationale": "opendataloader hybrid schema transformer"
+        },
+        "warnings": []
+    });
+    opendataloader_apply_explicit_style(node, &mut unit);
+    if unit.get("style").is_none() {
+        let target = OpendataloaderTextDecorationTarget {
+            page_number,
+            bbox: bbox.clone(),
+            baseline: node
+                .get("baseline")
+                .and_then(Value::as_f64)
+                .unwrap_or(bbox.y0),
+        };
+        if let Some(style) = opendataloader_text_decoration_style(&target, horizontal_rules) {
+            unit["style"] = style;
+        }
+    }
+    if kind == "HEADING" {
+        let level = node
+            .pointer("/meta/level")
+            .and_then(Value::as_u64)
+            .unwrap_or(1);
+        unit["textLevel"] = json!(level);
+    }
+    Some(unit)
+}
+
+fn opendataloader_apply_explicit_style(node: &Value, unit: &mut Value) {
+    if let Some(style) = node.get("style").cloned() {
+        unit["style"] = style;
+        return;
+    }
+    let decorations = node
+        .get("decorations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|decoration| match decoration {
+            "strikethrough" | "line_through" | "line-through" => "line-through",
+            "underline" | "underlined" => "underline",
+            other => other,
+        })
+        .collect::<Vec<_>>();
+    if !decorations.is_empty() {
+        unit["style"] = json!({"textDecoration": decorations});
+    }
+}
+
+fn opendataloader_hybrid_picture_unit(node: &Value, reading_order: usize) -> Option<Value> {
+    let page_number = opendataloader_hybrid_page_number(node);
+    let bbox = opendataloader_hybrid_bbox(node)?;
+    let text =
+        opendataloader_hybrid_picture_description(node).unwrap_or_else(|| "Image".to_string());
+    Some(json!({
+        "unitId": format!("unit-{reading_order:04}"),
+        "kind": "IMAGE",
+        "page": page_number,
+        "text": text,
+        "evidenceSpanIds": [format!("span-{reading_order:04}")],
+        "parseTraceSpanIds": [format!("trace-span-{reading_order:04}")],
+        "location": {
+            "page": page_number,
+            "readingOrder": reading_order,
+            "boundingBox": bbox_json(&bbox)
+        },
+        "sourceObjectId": format!("hybrid-picture-{reading_order:04}"),
+        "confidence": {
+            "score": 0.82,
+            "rationale": "opendataloader hybrid schema transformer"
+        },
+        "warnings": []
+    }))
+}
+
+fn opendataloader_hybrid_picture_description(node: &Value) -> Option<String> {
+    node.get("annotations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|annotation| annotation.get("kind").and_then(Value::as_str) == Some("description"))
+        .and_then(|annotation| annotation.get("text").and_then(Value::as_str))
+        .map(normalize_text)
+        .filter(|text| !text.is_empty())
+}
+
+fn opendataloader_hybrid_table(node: &Value, table_index: usize) -> Option<TableExtraction> {
+    let page_number = opendataloader_hybrid_page_number(node);
+    let bbox = opendataloader_hybrid_bbox(node)?;
+    let grid = node.pointer("/data/grid")?.as_array()?;
+    let row_count = grid.len();
+    let column_count = grid.first()?.as_array()?.len();
+    if row_count == 0 || column_count == 0 {
+        return None;
+    }
+    let cells = node
+        .pointer("/data/table_cells")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|cell| {
+            opendataloader_hybrid_table_cell(
+                cell,
+                table_index,
+                page_number,
+                &bbox,
+                row_count,
+                column_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox,
+        rationale: "opendataloader hybrid schema transformer".to_string(),
+        cells,
+    })
+}
+
+fn opendataloader_hybrid_table_cell(
+    cell: &Value,
+    table_index: usize,
+    page_number: usize,
+    table_bbox: &RuntimeBox,
+    row_count: usize,
+    column_count: usize,
+) -> Option<TableCellExtraction> {
+    let row = cell
+        .get("start_row_offset_idx")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let column = cell
+        .get("start_col_offset_idx")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    if row >= row_count || column >= column_count {
+        return None;
+    }
+    let row_span = cell.get("row_span").and_then(Value::as_u64).unwrap_or(1) as usize;
+    let column_span = cell.get("col_span").and_then(Value::as_u64).unwrap_or(1) as usize;
+    let row_end = (row + row_span.saturating_sub(1)).min(row_count - 1);
+    let column_end = (column + column_span.saturating_sub(1)).min(column_count - 1);
+    let column_width = bbox_width(table_bbox) / column_count as f64;
+    let row_height = bbox_height(table_bbox) / row_count as f64;
+    let cell_left = table_bbox.x0 + column as f64 * column_width;
+    let cell_right = table_bbox.x0 + (column_end + 1) as f64 * column_width;
+    let cell_top = table_bbox.y1 - row as f64 * row_height;
+    let cell_bottom = table_bbox.y1 - (row_end + 1) as f64 * row_height;
+    Some(TableCellExtraction {
+        page_number,
+        cell_id: format!("cell-{table_index:04}-{row:04}-{column:04}"),
+        row,
+        column,
+        row_end,
+        column_end,
+        bbox: RuntimeBox {
+            x0: cell_left,
+            y0: cell_bottom,
+            x1: cell_right,
+            y1: cell_top,
+        },
+        text: cell
+            .get("text")
+            .and_then(Value::as_str)
+            .map(normalize_text)
+            .unwrap_or_default(),
+    })
+}
+
+fn opendataloader_hybrid_page_number(node: &Value) -> usize {
+    node.get("prov")
+        .and_then(Value::as_array)
+        .and_then(|prov| prov.first())
+        .and_then(|prov| prov.get("page_no").and_then(Value::as_u64))
+        .or_else(|| node.get("page_no").and_then(Value::as_u64))
+        .or_else(|| node.get("pageNumber").and_then(Value::as_u64))
+        .unwrap_or(1) as usize
+}
+
+fn opendataloader_hybrid_bbox(node: &Value) -> Option<RuntimeBox> {
+    let bbox = node
+        .get("prov")
+        .and_then(Value::as_array)
+        .and_then(|prov| prov.first())
+        .and_then(|prov| prov.get("bbox"))
+        .or_else(|| node.get("bbox"))?;
+    if let Some(values) = bbox.as_array() {
+        return Some(RuntimeBox {
+            x0: values.first()?.as_f64()?,
+            y0: values.get(1)?.as_f64()?,
+            x1: values.get(2)?.as_f64()?,
+            y1: values.get(3)?.as_f64()?,
+        });
+    }
+    Some(RuntimeBox {
+        x0: bbox.get("x0").or_else(|| bbox.get("l"))?.as_f64()?,
+        y0: bbox.get("y0").or_else(|| bbox.get("b"))?.as_f64()?,
+        x1: bbox.get("x1").or_else(|| bbox.get("r"))?.as_f64()?,
+        y1: bbox.get("y1").or_else(|| bbox.get("t"))?.as_f64()?,
+    })
 }
 
 fn table_json(tables: &[TableExtraction]) -> Vec<Value> {
@@ -9472,8 +10000,19 @@ fn unit_bbox_height(unit: &Value) -> Option<f64> {
 }
 
 fn content_block_semantics(unit: &Value, text: &str) -> (&'static str, Value) {
-    if unit.get("kind").and_then(Value::as_str) == Some("TABLE_CELL") {
-        return ("table", Value::Null);
+    match unit.get("kind").and_then(Value::as_str).unwrap_or("") {
+        "TABLE_CELL" => return ("table", Value::Null),
+        "HEADING" => {
+            return (
+                "heading",
+                unit.get("textLevel").cloned().unwrap_or_else(|| json!(1)),
+            );
+        }
+        "LIST_ITEM" => return ("list", Value::Null),
+        "CAPTION" => return ("caption", Value::Null),
+        "FORMULA" => return ("formula", Value::Null),
+        "IMAGE" => return ("image", Value::Null),
+        _ => {}
     }
     if list_item(text) {
         return ("list", Value::Null);
@@ -10407,8 +10946,7 @@ fn dense_table_cell_needs_unit_enrichment(
     if cell.row == 0 || bbox_width(&cell.bbox) < 140.0 || bbox_height(&cell.bbox) < 45.0 {
         return false;
     }
-    if dense_table_column_header(table, cell.column).contains("Restrictions on Foreign Ownership")
-    {
+    if dense_table_column_header(table, cell.column).contains("Restrictions on Foreign Ownership") {
         return true;
     }
     let text = normalize_text(&cell.text);
@@ -10450,7 +10988,13 @@ fn dense_table_cell_bbox_text_from_units(cell: &TableCellExtraction, units: &[Va
         .filter(|unit| unit_page_number(unit) == cell.page_number as u64)
         .filter(|unit| source_unit_for_dense_table_enrichment(unit))
         .filter(|unit| unit_center_inside_cell(unit, &cell.bbox))
-        .map(|unit| (unit_y0(unit), unit_x0(unit), normalize_text(candidate_text(unit))))
+        .map(|unit| {
+            (
+                unit_y0(unit),
+                unit_x0(unit),
+                normalize_text(candidate_text(unit)),
+            )
+        })
         .filter(|(_, _, text)| !text.is_empty())
         .collect::<Vec<_>>();
     normalize_dense_unit_entries(entries)
@@ -10474,7 +11018,13 @@ fn dense_table_row_column_text_from_units(
         .filter(|unit| unit_y0(unit) >= row_y0 && unit_y0(unit) < row_y1)
         .filter(|unit| unit_x0(unit) >= column_x0 - 6.0)
         .filter(|unit| unit_x0(unit) <= table.bbox.x1 + 6.0)
-        .map(|unit| (unit_y0(unit), unit_x0(unit), normalize_text(candidate_text(unit))))
+        .map(|unit| {
+            (
+                unit_y0(unit),
+                unit_x0(unit),
+                normalize_text(candidate_text(unit)),
+            )
+        })
         .filter(|(_, _, text)| !text.is_empty())
         .collect::<Vec<_>>();
     normalize_dense_unit_entries(entries)
@@ -11665,7 +12215,10 @@ fn header_row(table: &TableExtraction) -> Vec<String> {
         .collect()
 }
 
-fn opendataloader_neighbor_table_link(previous: &TableExtraction, current: &TableExtraction) -> bool {
+fn opendataloader_neighbor_table_link(
+    previous: &TableExtraction,
+    current: &TableExtraction,
+) -> bool {
     let previous_columns = table_column_count(previous);
     if previous_columns == 0 || previous_columns != table_column_count(current) {
         return false;
@@ -11822,7 +12375,9 @@ fn opendataloader_text_points_for_table_cell(
     let text = text_points
         .iter()
         .filter(|point| point.y >= cell_bottom && point.y <= cell_top)
-        .filter_map(|point| opendataloader_text_point_part_for_x_range(point, cell_left, cell_right))
+        .filter_map(|point| {
+            opendataloader_text_point_part_for_x_range(point, cell_left, cell_right)
+        })
         .collect::<Vec<_>>()
         .join(" ");
     normalize_text(&text)
@@ -11882,7 +12437,10 @@ fn opendataloader_rebuild_undersegmented_grid_table(
     let dense_columns = (0..columns)
         .filter(|column| {
             rows.iter()
-                .filter(|row| row.iter().any(|point| point_in_grid_column(point, xs, *column)))
+                .filter(|row| {
+                    row.iter()
+                        .any(|point| point_in_grid_column(point, xs, *column))
+                })
                 .count()
                 >= 4
         })
@@ -11890,7 +12448,10 @@ fn opendataloader_rebuild_undersegmented_grid_table(
     if dense_columns < 2 {
         return None;
     }
-    let row_centers = rows.iter().map(|row| sparse_row_center_y(row)).collect::<Vec<_>>();
+    let row_centers = rows
+        .iter()
+        .map(|row| sparse_row_center_y(row))
+        .collect::<Vec<_>>();
     let mut cells = Vec::new();
     for (row_index, row) in rows.iter().enumerate() {
         let mut texts = vec![String::new(); columns];
@@ -13863,10 +14424,7 @@ mod tests {
             ),
             "{markdown}"
         );
-        assert!(
-            !markdown.contains("|This sentence belongs"),
-            "{markdown}"
-        );
+        assert!(!markdown.contains("|This sentence belongs"), "{markdown}");
     }
 
     #[test]
@@ -14077,20 +14635,29 @@ mod tests {
 
     #[test]
     fn opendataloader_text_similarity_trusts_stream_like_reference() {
-        assert!(!opendataloader_trust_stream(",QWURGXFWLRQ", "Introduction", 0.5));
+        assert!(!opendataloader_trust_stream(
+            ",QWURGXFWLRQ",
+            "Introduction",
+            0.5
+        ));
         assert!(opendataloader_trust_stream(
             "Introduction to Biology",
             "Introduction to Biology",
             0.5
         ));
-        assert!(opendataloader_trust_stream("Introduction", "Introductlon", 0.5));
+        assert!(opendataloader_trust_stream(
+            "Introduction",
+            "Introductlon",
+            0.5
+        ));
         assert!(!opendataloader_trust_stream("", "text", 0.5));
         assert!(opendataloader_trust_stream("text", "", 0.5));
     }
 
     #[test]
     fn opendataloader_triage_routes_replacement_ratio_to_backend() {
-        let decision = opendataloader_triage_page(&[line("text", 10.0, 100.0, 80.0, 120.0)], &[], 0.3);
+        let decision =
+            opendataloader_triage_page(&[line("text", 10.0, 100.0, 80.0, 120.0)], &[], 0.3);
 
         assert_eq!(decision.route, "backend");
         assert_eq!(decision.confidence, 1.0);
@@ -14326,8 +14893,8 @@ mod tests {
         let segments = grid_segments(10.0, 10.0, 30.0, 30.0, 2, 2);
         let points = vec![text_point("test", 11.0, 25.0, 18.0, 10.0)];
 
-        let table = table_from_primitives(1, 100.0, 100.0, &segments, &points, 1)
-            .expect("expected table");
+        let table =
+            table_from_primitives(1, 100.0, 100.0, &segments, &points, 1).expect("expected table");
 
         assert_eq!(table_cell_text(&table, 0, 0), "te");
         assert_eq!(table_cell_text(&table, 0, 1), "st");
@@ -14385,6 +14952,188 @@ mod tests {
             OpendataloaderParagraphAlignment::Right
         );
         assert!(opendataloader_two_line_paragraph_pair(&previous, &next));
+    }
+
+    #[test]
+    fn opendataloader_hybrid_schema_maps_docling_blocks_to_trust_units() {
+        let schema = json!({
+            "texts": [
+                {"label": "page_header", "text": "furniture", "prov": [{"page_no": 1, "bbox": {"l": 0.0, "b": 780.0, "r": 100.0, "t": 790.0}}]},
+                {"label": "section_header", "text": "Profile", "meta": {"level": 2}, "prov": [{"page_no": 1, "bbox": {"l": 10.0, "b": 700.0, "r": 200.0, "t": 730.0}}]},
+                {"label": "formula", "text": "E = mc^2", "prov": [{"page_no": 1, "bbox": {"l": 10.0, "b": 650.0, "r": 200.0, "t": 680.0}}]},
+                {"label": "caption", "text": "Figure 1. Revenue trend.", "prov": [{"page_no": 1, "bbox": {"l": 10.0, "b": 620.0, "r": 300.0, "t": 640.0}}]}
+            ],
+            "pictures": [{
+                "prov": [{"page_no": 1, "bbox": {"l": 20.0, "b": 400.0, "r": 320.0, "t": 560.0}}],
+                "annotations": [{"kind": "description", "text": "Line chart showing revenue growth"}]
+            }],
+            "tables": [{
+                "prov": [{"page_no": 1, "bbox": {"l": 10.0, "b": 100.0, "r": 210.0, "t": 220.0}}],
+                "data": {
+                    "grid": [[{}, {}], [{}, {}]],
+                    "table_cells": [
+                        {"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "Name"},
+                        {"start_row_offset_idx": 0, "start_col_offset_idx": 1, "text": "Score"},
+                        {"start_row_offset_idx": 1, "start_col_offset_idx": 0, "text": "Alex"},
+                        {"start_row_offset_idx": 1, "start_col_offset_idx": 1, "text": "98"}
+                    ]
+                }
+            }]
+        });
+
+        let (units, tables) = opendataloader_hybrid_schema_to_units_and_tables(&schema);
+
+        assert_eq!(units.len(), 4);
+        assert_eq!(units[0]["kind"], "HEADING");
+        assert_eq!(units[0]["textLevel"], 2);
+        assert_eq!(content_block_type(&units[1]), "formula");
+        assert_eq!(content_block_type(&units[2]), "caption");
+        assert_eq!(units[3]["kind"], "IMAGE");
+        assert_eq!(content_block_type(&units[3]), "image");
+        assert_eq!(units[3]["text"], "Line chart showing revenue growth");
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].cells.len(), 4);
+        assert_eq!(table_cell_text(&tables[0], 1, 1), "98");
+    }
+
+    #[test]
+    fn opendataloader_text_decoration_detects_strikethrough_and_underline() {
+        let strike_target = OpendataloaderTextDecorationTarget {
+            page_number: 1,
+            bbox: RuntimeBox {
+                x0: 10.0,
+                y0: 100.0,
+                x1: 60.0,
+                y1: 120.0,
+            },
+            baseline: 100.0,
+        };
+        let strike_rule = OpendataloaderHorizontalRule {
+            page_number: 1,
+            left_x: 10.0,
+            right_x: 60.0,
+            center_y: 110.0,
+            width: 50.0,
+            thickness: 1.0,
+        };
+        let underline_rule = OpendataloaderHorizontalRule {
+            page_number: 1,
+            left_x: 12.0,
+            right_x: 58.0,
+            center_y: 97.0,
+            width: 46.0,
+            thickness: 1.0,
+        };
+        let wide_rule = OpendataloaderHorizontalRule {
+            page_number: 1,
+            left_x: 0.0,
+            right_x: 200.0,
+            center_y: 110.0,
+            width: 200.0,
+            thickness: 1.0,
+        };
+        let thick_rule = OpendataloaderHorizontalRule {
+            page_number: 1,
+            left_x: 10.0,
+            right_x: 60.0,
+            center_y: 110.0,
+            width: 50.0,
+            thickness: 8.0,
+        };
+
+        assert!(opendataloader_strikethrough_rule(
+            &strike_rule,
+            &strike_target
+        ));
+        assert!(opendataloader_underline_rule(
+            &underline_rule,
+            &strike_target
+        ));
+        assert!(!opendataloader_strikethrough_rule(
+            &underline_rule,
+            &strike_target
+        ));
+        assert!(!opendataloader_strikethrough_rule(
+            &wide_rule,
+            &strike_target
+        ));
+        assert!(!opendataloader_strikethrough_rule(
+            &thick_rule,
+            &strike_target
+        ));
+    }
+
+    #[test]
+    fn opendataloader_hybrid_schema_applies_text_decoration_style() {
+        let schema = json!({
+            "texts": [{
+                "label": "text",
+                "text": "obsolete value",
+                "baseline": 100.0,
+                "prov": [{"page_no": 1, "bbox": {"l": 10.0, "b": 100.0, "r": 60.0, "t": 120.0}}]
+            }],
+            "horizontal_rules": [{
+                "page_no": 1,
+                "bbox": {"l": 10.0, "b": 109.5, "r": 60.0, "t": 110.5},
+                "thickness": 1.0
+            }]
+        });
+
+        let (units, tables) = opendataloader_hybrid_schema_to_units_and_tables(&schema);
+
+        assert!(tables.is_empty());
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0]["style"]["textDecoration"][0], "line-through");
+    }
+
+    #[test]
+    fn worker_normalization_merges_hybrid_schema_into_trust_document_layers() {
+        let mut document = json!({
+            "docId": "sha256:test",
+            "source": {
+                "sourceFilename": "worker.pdf",
+                "sourceHash": "sha256:test",
+                "metadata": {"sourceFilename": "worker.pdf", "pageCount": 1}
+            },
+            "body": {
+                "pages": [{"pageNumber": 1, "width": 1000.0, "height": 1000.0}],
+                "units": [],
+                "tables": []
+            },
+            "parserRun": {
+                "parserRunId": "parser-run-worker",
+                "parserVersion": "test-worker",
+                "backend": "model-worker",
+                "hybridSchema": {
+                    "texts": [{
+                        "label": "section_header",
+                        "text": "Experience",
+                        "meta": {"level": 2},
+                        "prov": [{"page_no": 1, "bbox": {"l": 20.0, "b": 800.0, "r": 300.0, "t": 830.0}}]
+                    }]
+                },
+                "models": [],
+                "warnings": []
+            },
+            "auditGradeStatus": "AUDIT_GRADE"
+        });
+        let route = ModelRouteDecision {
+            mode: "explicit-preset".to_string(),
+            decision: "model-runtime".to_string(),
+            effective_preset: "table-lite".to_string(),
+            routed_pages: Vec::new(),
+        };
+
+        document = normalize_worker_document(document, "edge-model", &route, &json!({}));
+
+        assert_eq!(document["body"]["units"][0]["kind"], "HEADING");
+        assert_eq!(document["body"]["units"][0]["textLevel"], 2);
+        assert_eq!(document["contentBlocks"][0]["type"], "heading");
+        assert_eq!(
+            document["parserRun"]["backend"],
+            "rust-sidecar+model-worker"
+        );
+        assert_eq!(document["parserRun"]["workerBackend"], "model-worker");
     }
 
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {

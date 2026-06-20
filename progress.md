@@ -8126,3 +8126,18 @@
   processors inside table cells. Rust now owns the geometry/text-splitting
   contracts; a richer cell-internal TrustDocument block pipeline is separate
   work, not hidden Java/Python fallback.
+
+## 2026-06-20 ParagraphProcessor Right-Alignment Closure
+
+- Ported the OpenDataLoader PR #567 precedence as a Rust contract:
+  right-aligned adjacent lines are classified before the generic two-line
+  paragraph heuristic.
+- Kept this as a contract instead of wiring it into production Markdown
+  paragraph joining because earlier broad TextLine integration broke TOC/table
+  parity. Production paragraph metadata needs a richer TrustDocument target.
+- Verification passed:
+  `cargo test opendataloader_paragraph --lib` (1 passed);
+  `cargo test --lib` (43 passed);
+  `cargo test opendataloader_parity_ --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `git diff --check`.

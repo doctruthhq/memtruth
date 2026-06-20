@@ -1985,3 +1985,8 @@
   Java reference also runs full processors inside table cells; DocTruth Rust
   should only claim the pure contracts until TrustDocument has a richer
   cell-internal block pipeline.
+- OpenDataLoader `ParagraphProcessor` right-alignment precedence is a narrow
+  but important contract: a pair of adjacent flush-right lines can also satisfy
+  the generic two-line paragraph heuristic, so the right-alignment pass must
+  claim it first. Rust captures this precedence as a contract while production
+  paragraph metadata remains gated to avoid broad Markdown/replay regressions.

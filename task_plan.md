@@ -211,7 +211,7 @@ Foundation port checklist:
 | TextLineProcessor visual-row merge | partial | Contract captured; production integration broke TOC/table parity and needs table-aware gating. |
 | TriageProcessor page-complexity signals | complete | Rust signal contract now covers replacement ratio, explicit table border, vector/line-art/table lines, text-table patterns, large wide image, custom line-ratio threshold, suspicious gap, aligned groups, and disabled-signal behavior. Real table-border/image inputs are owned by the Hybrid schema/model integration items below. |
 | TableBorderProcessor remaining semantics | complete | Rust now covers neighbor table shape linking, cross-cell text splitting by x range, nested-depth guard contract, and text-block no-normalize boundary through the existing normalizer gate. Full cell-internal processor pipeline remains out of scope for text-only primitives. |
-| ParagraphProcessor right-alignment precedence | pending | Needs a canonical layout metadata target before production integration. |
+| ParagraphProcessor right-alignment precedence | complete | Rust contract captures OpenDataLoader PR #567 precedence: right-aligned pairs win before two-line left heuristic. Production paragraph metadata integration remains gated. |
 | Caption/Image/Formula/TextDecoration semantics | pending | Need TrustDocument block/unit representation before broad integration. |
 | Hybrid schema transformer foundations | pending | Need Rust-owned mapping from worker/model output into TrustDocument layers without Python adapter dependence. |
 | MNN OCR/table decoder and preprocessing parity | pending | Requires model artifacts and strict input tensor parity checks; no fake quality claim. |

@@ -303,6 +303,23 @@ fn opendataloader_parity_promotes_activity_headings() {
 }
 
 #[test]
+fn opendataloader_parity_promotes_short_title_headings() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-short-title-heading");
+    let report = run_opendataloader_prediction("01030000000107", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000107.md")).unwrap();
+    assert!(
+        markdown.starts_with("# Print vs. Digital"),
+        "short document title should be promoted:\n{markdown}"
+    );
+    assert!(
+        !markdown.starts_with("Print vs. Digital\n"),
+        "title should not remain plain text:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_repairs_split_glyph_words_in_paragraphs() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-split-glyphs");
     let report = run_opendataloader_prediction("01030000000101", &output_dir);

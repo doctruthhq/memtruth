@@ -4833,6 +4833,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
             normalized.push(line);
         }
     }
+    let normalized = opendataloader_promote_initial_title_line(normalized);
     let normalized = opendataloader_repair_markdown_table_segments(normalized);
     let normalized = opendataloader_rebuild_contents_table(normalized);
     let normalized = opendataloader_rebuild_column_block_tables(normalized);
@@ -4842,6 +4843,16 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_repair_split_glyph_lines(normalized);
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
     opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized))
+}
+
+fn opendataloader_promote_initial_title_line(mut lines: Vec<String>) -> Vec<String> {
+    let Some(first) = lines.first_mut() else {
+        return lines;
+    };
+    if !first.starts_with('#') && short_title_markdown_heading(first) {
+        *first = format!("# {}", normalize_text(first));
+    }
+    lines
 }
 
 fn opendataloader_repair_spaced_heading_lines(lines: Vec<String>) -> Vec<String> {
@@ -6212,6 +6223,11 @@ fn likely_markdown_heading(text: &str) -> bool {
         return true;
     }
     chapter_section_appendix_markdown_heading(text)
+}
+
+fn short_title_markdown_heading(text: &str) -> bool {
+    let words = text.split_whitespace().count();
+    (2..=5).contains(&words) && title_case_markdown_heading(text)
 }
 
 fn activity_markdown_heading(text: &str) -> bool {

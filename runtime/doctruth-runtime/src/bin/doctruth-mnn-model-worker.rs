@@ -62,6 +62,7 @@ fn main() {
             "inputSource": "rust_mnn_worker_stub",
             "stubMode": true,
             "coldStartMs": 0.0,
+            "preprocessing": preprocessing_contract_json(model_pack.decoder),
             "inferenceMs": elapsed_ms(started),
             "loadedModels": model_pack.model_identities(),
             "auxiliaryArtifacts": model_pack.auxiliary_identities(),
@@ -134,6 +135,7 @@ fn ocr_inference_response(
             "stubMode": false,
             "coldStartMs": load_ms,
             "renderMs": render_ms,
+            "preprocessing": preprocessing_contract_json("ocr"),
             "inferenceMs": inference_ms,
             "totalMs": elapsed_ms(started),
             "loadedModels": model_pack.model_identities(),
@@ -381,6 +383,35 @@ fn requested_decoder(request: &Value, models: &[Value]) -> &'static str {
         return "layout";
     }
     "table"
+}
+
+fn preprocessing_contract_json(decoder: &str) -> Value {
+    json!({
+        "decoder": decoder,
+        "imageSource": "pdf_oxide_rendered_page",
+        "dpi": 144,
+        "colorSpace": "RGB",
+        "channelOrder": "RGB",
+        "tensorLayout": "NCHW",
+        "valueType": "f32",
+        "scale": 0.00392156862745098_f64,
+        "mean": [0.0, 0.0, 0.0],
+        "std": [1.0, 1.0, 1.0],
+        "resize": {
+            "mode": "model-specific",
+            "sourceOfTruth": "model manifest or decoder adapter"
+        },
+        "parity": {
+            "required": true,
+            "checks": [
+                "input_shape",
+                "first_tensor_values",
+                "tensor_sha256",
+                "python_reference_digest"
+            ],
+            "promotionBlockedWithoutTensorDigest": true
+        }
+    })
 }
 
 fn find_model_role<'a>(models: &'a [Value], role: &str) -> Option<&'a Value> {

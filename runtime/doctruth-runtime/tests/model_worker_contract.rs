@@ -414,6 +414,10 @@ fn rust_mnn_model_worker_stub_mode_is_explicit() {
 
     let json: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["metrics"]["stubMode"], true);
+    assert_eq!(json["metrics"]["preprocessing"]["decoder"], "table");
+    assert_eq!(json["metrics"]["preprocessing"]["channelOrder"], "RGB");
+    assert_eq!(json["metrics"]["preprocessing"]["tensorLayout"], "NCHW");
+    assert_eq!(json["metrics"]["preprocessing"]["parity"]["required"], true);
     assert_eq!(
         json["document"]["parserRun"]["workerBackend"],
         "mnn-model-worker-stub"
@@ -483,6 +487,9 @@ fn rust_mnn_model_worker_stub_mode_reports_complete_ocr_pack_readiness() {
 
     let json: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["metrics"]["decoder"], "ocr");
+    assert_eq!(json["metrics"]["preprocessing"]["decoder"], "ocr");
+    assert_eq!(json["metrics"]["preprocessing"]["channelOrder"], "RGB");
+    assert_eq!(json["metrics"]["preprocessing"]["tensorLayout"], "NCHW");
     assert_eq!(
         json["metrics"]["loadedModels"],
         json!(["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"])
@@ -521,6 +528,18 @@ fn parse_pdf_routes_to_rust_mnn_model_worker_binary() {
     assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
     assert_eq!(json["parserRun"]["workerBackend"], "mnn-model-worker-stub");
     assert_eq!(json["parserRun"]["modelRuntime"]["runtime"], "mnn");
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["decoder"],
+        "table"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["imageSource"],
+        "pdf_oxide_rendered_page"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["parity"]["required"],
+        true
+    );
     assert_eq!(json["body"]["units"][0]["kind"], "TABLE_CELL");
     assert_eq!(json["body"]["units"][0]["text"], "Auto table MNN evidence");
 }
@@ -636,6 +655,22 @@ fn parse_pdf_sends_manifest_cache_metadata_to_configured_worker() {
     assert_eq!(
         json["parserRun"]["modelRuntime"]["unloadPolicy"],
         "idle-after-request"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["decoder"],
+        "table"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["channelOrder"],
+        "RGB"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["tensorLayout"],
+        "NCHW"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRuntime"]["preprocessing"]["parity"]["promotionBlockedWithoutTensorDigest"],
+        true
     );
 }
 
@@ -1019,6 +1054,12 @@ model = request["models"][0]
 assert request["modelRuntime"]["runtime"] == "mnn"
 assert request["modelRuntime"]["loadPolicy"] == "lazy"
 assert request["modelRuntime"]["unloadPolicy"] == "idle-after-request"
+assert request["modelRuntime"]["preprocessing"]["decoder"] == "table"
+assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
+assert request["modelRuntime"]["preprocessing"]["channelOrder"] == "RGB"
+assert request["modelRuntime"]["preprocessing"]["tensorLayout"] == "NCHW"
+assert request["modelRuntime"]["preprocessing"]["parity"]["required"] is True
+assert request["modelRuntime"]["preprocessing"]["parity"]["promotionBlockedWithoutTensorDigest"] is True
 assert cache.exists()
 assert model["name"] == "slanet-plus"
 assert model["version"] == "v1"
@@ -1086,6 +1127,9 @@ assert request["preset"] == "table-lite"
 assert request["modelRouting"]["mode"] == "auto"
 assert request["modelRouting"]["decision"] == "model-runtime"
 assert request["modelRouting"]["route"] == "table-model"
+assert request["modelRuntime"]["preprocessing"]["decoder"] == "table"
+assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
+assert request["modelRuntime"]["preprocessing"]["tensorLayout"] == "NCHW"
 assert request["models"][0]["name"] == "slanet-plus"
 assert request["models"][0]["backend"] == "mnn"
 assert request["models"][0]["format"] == "mnn"
@@ -1160,6 +1204,9 @@ request = json.load(sys.stdin)
 models = request["models"]
 auxiliary = request["auxiliaryArtifacts"]
 assert request["preset"] == "ocr"
+assert request["modelRuntime"]["preprocessing"]["decoder"] == "ocr"
+assert request["modelRuntime"]["preprocessing"]["channelOrder"] == "RGB"
+assert request["modelRuntime"]["preprocessing"]["tensorLayout"] == "NCHW"
 assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
 assert all(model["backend"] == "mnn" and model["format"] == "mnn" for model in models), models
 assert all(model["cacheStatus"] == "READY" for model in models), models
@@ -1223,6 +1270,9 @@ assert request["preset"] == "ocr"
 assert request["modelRouting"]["mode"] == "auto"
 assert request["modelRouting"]["decision"] == "model-runtime"
 assert request["modelRouting"]["route"] == "ocr-model"
+assert request["modelRuntime"]["preprocessing"]["decoder"] == "ocr"
+assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
+assert request["modelRuntime"]["preprocessing"]["parity"]["promotionBlockedWithoutTensorDigest"] is True
 models = request["models"]
 auxiliary = request["auxiliaryArtifacts"]
 assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
@@ -1308,6 +1358,10 @@ assert request["requiredModels"][0]["name"] == "slanet-plus"
 assert request["models"][0]["backend"] == "mnn"
 assert request["models"][0]["format"] == "mnn"
 assert request["models"][0]["cacheStatus"] == "READY"
+assert request["modelRuntime"]["preprocessing"]["decoder"] == "table"
+assert request["modelRuntime"]["preprocessing"]["channelOrder"] == "RGB"
+assert request["modelRuntime"]["preprocessing"]["tensorLayout"] == "NCHW"
+assert request["modelRuntime"]["preprocessing"]["parity"]["required"] is True
 print(json.dumps({
     "docId": request["source_hash"],
     "source": {

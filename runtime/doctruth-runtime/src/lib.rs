@@ -738,7 +738,10 @@ fn extract_pages_with_pdf_oxide(
         .iter()
         .map(|page| page.positioned_lines.clone())
         .collect::<Vec<_>>();
-    let filtered_positioned_pages = filter_repeated_header_footer_lines(positioned_pages);
+    let filtered_positioned_pages = filter_repeated_header_footer_lines(positioned_pages)
+        .into_iter()
+        .map(merge_positioned_visual_lines)
+        .collect::<Vec<_>>();
     for (page, positioned_lines) in pages.iter_mut().zip(filtered_positioned_pages) {
         page.lines = positioned_lines
             .iter()
@@ -1614,28 +1617,41 @@ fn filter_repeated_header_footer_lines(
         .collect()
 }
 
-#[cfg(test)]
 fn merge_positioned_visual_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
-    let mut rows: Vec<Vec<PositionedLine>> = Vec::new();
-    for line in sort_positioned_y_then_x(lines) {
-        if let Some(row) = rows
-            .iter_mut()
-            .find(|row| positioned_lines_same_visual_row(&row[0], &line))
+    let mut output = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let mut row = vec![lines[index].clone()];
+        index += 1;
+        while index < lines.len()
+            && positioned_lines_same_visual_row(
+                row.first().expect("row has first line"),
+                &lines[index],
+            )
         {
-            row.push(line);
-        } else {
-            rows.push(vec![line]);
+            row.push(lines[index].clone());
+            index += 1;
         }
+        output.extend(merge_positioned_visual_row_if_safe(row));
     }
-    rows.into_iter().map(merge_positioned_visual_row).collect()
+    output
 }
 
-#[cfg(test)]
 fn positioned_lines_same_visual_row(left: &PositionedLine, right: &PositionedLine) -> bool {
     (left.bbox.y0 - right.bbox.y0).abs() <= 3.0 && (left.bbox.y1 - right.bbox.y1).abs() <= 3.0
 }
 
-#[cfg(test)]
+fn merge_positioned_visual_row_if_safe(mut row: Vec<PositionedLine>) -> Vec<PositionedLine> {
+    row.sort_by(|left, right| left.bbox.x0.total_cmp(&right.bbox.x0));
+    if row.len() <= 1 {
+        return row;
+    }
+    if !positioned_visual_row_safe_to_merge(&row) {
+        return row;
+    }
+    vec![merge_positioned_visual_row(row)]
+}
+
 fn merge_positioned_visual_row(mut row: Vec<PositionedLine>) -> PositionedLine {
     row.sort_by(|left, right| left.bbox.x0.total_cmp(&right.bbox.x0));
     let mut merged = row.remove(0);
@@ -1655,7 +1671,6 @@ fn merge_positioned_visual_row(mut row: Vec<PositionedLine>) -> PositionedLine {
     merged
 }
 
-#[cfg(test)]
 fn positioned_line_separator(left: &PositionedLine, right: &PositionedLine) -> &'static str {
     if left.text.ends_with(char::is_whitespace) || right.text.starts_with(char::is_whitespace) {
         return "";
@@ -1663,6 +1678,60 @@ fn positioned_line_separator(left: &PositionedLine, right: &PositionedLine) -> &
     let gap = right.bbox.x0 - left.bbox.x1;
     let threshold = left.font_size.max(right.font_size) * 0.17;
     if gap > threshold.max(1.0) { " " } else { "" }
+}
+
+fn positioned_visual_row_safe_to_merge(row: &[PositionedLine]) -> bool {
+    if row.len() < 2 || row.len() > 3 {
+        return false;
+    }
+    if positioned_row_looks_like_toc_or_table(row) {
+        return false;
+    }
+    positioned_row_has_label_value_shape(row)
+}
+
+fn positioned_row_looks_like_toc_or_table(row: &[PositionedLine]) -> bool {
+    let numeric_count = row
+        .iter()
+        .filter(|line| text_numeric_like(&line.text))
+        .count();
+    if numeric_count >= 2 {
+        return true;
+    }
+    if row.len() >= 3
+        && row
+            .iter()
+            .filter(|line| normalize_text(&line.text).chars().count() <= 8)
+            .count()
+            >= 2
+    {
+        return true;
+    }
+    if let Some(last) = row.last() {
+        if text_numeric_like(&last.text) && last.bbox.x0 > 760.0 {
+            return true;
+        }
+    }
+    false
+}
+
+fn positioned_row_has_label_value_shape(row: &[PositionedLine]) -> bool {
+    row.first().is_some_and(|first| {
+        let text = normalize_text(&first.text);
+        (text.ends_with(':') || matches!(text.as_str(), "Q" | "Q:" | "A" | "A:"))
+            && text.chars().count() <= 24
+    })
+}
+
+fn text_numeric_like(text: &str) -> bool {
+    let text = normalize_text(text)
+        .trim_matches(|ch: char| matches!(ch, ',' | '.' | ')' | '(' | '[' | ']'))
+        .to_string();
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '-' | '%'))
+        && text.chars().any(|ch| ch.is_ascii_digit())
 }
 
 #[cfg(test)]
@@ -1832,7 +1901,7 @@ fn configured_model_worker_parse(
         "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
         "models": model_artifacts,
         "auxiliaryArtifacts": auxiliary_artifacts,
-        "modelRuntime": model_runtime_request_json(profile),
+        "modelRuntime": model_runtime_request_json(profile, preset),
         "modelRouting": route.to_json(true, &required_models.iter().map(RequiredModel::identity).collect::<Vec<_>>())
     });
     let output = run_model_worker(&command, &worker_request)?;
@@ -1843,6 +1912,7 @@ fn configured_model_worker_parse(
         response.get("metrics").unwrap_or(&Value::Null),
         model_artifacts,
         &auxiliary_artifacts,
+        preset,
     );
     let document =
         normalize_worker_document(worker_document(response)?, profile, route, &model_metrics);
@@ -1854,8 +1924,12 @@ fn model_runtime_metrics_with_context(
     metrics: &Value,
     model_artifacts: &[Value],
     auxiliary_artifacts: &[Value],
+    preset: &str,
 ) -> Value {
     let mut target = metrics.as_object().cloned().unwrap_or_default();
+    target
+        .entry("preprocessing".to_string())
+        .or_insert_with(|| mnn_preprocessing_contract_json(preset));
     if let Some(manifest_path) = configured_model_manifest_path() {
         target.insert("manifestPath".to_string(), json!(manifest_path));
     }
@@ -1901,11 +1975,48 @@ fn model_runtime_artifact_json(artifact: &Value) -> Value {
     Value::Object(object)
 }
 
-fn model_runtime_request_json(profile: &str) -> Value {
+fn model_runtime_request_json(profile: &str, preset: &str) -> Value {
     json!({
         "runtime": if profile == "edge-model" { "mnn" } else { "none" },
         "loadPolicy": "lazy",
-        "unloadPolicy": "idle-after-request"
+        "unloadPolicy": "idle-after-request",
+        "preprocessing": mnn_preprocessing_contract_json(preset)
+    })
+}
+
+fn mnn_preprocessing_contract_json(preset: &str) -> Value {
+    let decoder = if preset == "ocr" {
+        "ocr"
+    } else if preset == "standard" {
+        "layout-table"
+    } else {
+        "table"
+    };
+    json!({
+        "decoder": decoder,
+        "imageSource": "pdf_oxide_rendered_page",
+        "dpi": 144,
+        "colorSpace": "RGB",
+        "channelOrder": "RGB",
+        "tensorLayout": "NCHW",
+        "valueType": "f32",
+        "scale": 0.00392156862745098_f64,
+        "mean": [0.0, 0.0, 0.0],
+        "std": [1.0, 1.0, 1.0],
+        "resize": {
+            "mode": "model-specific",
+            "sourceOfTruth": "model manifest or decoder adapter"
+        },
+        "parity": {
+            "required": true,
+            "checks": [
+                "input_shape",
+                "first_tensor_values",
+                "tensor_sha256",
+                "python_reference_digest"
+            ],
+            "promotionBlockedWithoutTensorDigest": true
+        }
     })
 }
 
@@ -1950,9 +2061,10 @@ fn normalize_worker_document(
         parser_run
             .entry("profile".to_string())
             .or_insert_with(|| json!(profile));
-        parser_run
-            .entry("modelRuntime".to_string())
-            .or_insert_with(|| model_runtime_report_json(profile, model_metrics));
+        merge_parser_run_model_runtime(
+            parser_run,
+            model_runtime_report_json(profile, model_metrics),
+        );
         let model_identities = parser_run_model_identities(parser_run);
         parser_run
             .entry("modelRouting".to_string())
@@ -1960,6 +2072,25 @@ fn normalize_worker_document(
     }
     merge_hybrid_schema_into_worker_document(&mut document);
     document
+}
+
+fn merge_parser_run_model_runtime(
+    parser_run: &mut serde_json::Map<String, Value>,
+    runtime_report: Value,
+) {
+    let Some(report) = runtime_report.as_object() else {
+        return;
+    };
+    let runtime = parser_run
+        .entry("modelRuntime".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let Some(target) = runtime.as_object_mut() else {
+        *runtime = runtime_report;
+        return;
+    };
+    for (key, value) in report {
+        target.entry(key.clone()).or_insert_with(|| value.clone());
+    }
 }
 
 fn merge_hybrid_schema_into_worker_document(document: &mut Value) {
@@ -2031,6 +2162,7 @@ fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
         "manifestPath",
         "coldStartMs",
         "renderMs",
+        "preprocessing",
         "inferenceMs",
         "totalMs",
         "rssMb",
@@ -14940,6 +15072,51 @@ mod tests {
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].text, "A: answer text");
+    }
+
+    #[test]
+    fn opendataloader_text_line_processor_does_not_merge_close_fragments_without_whitespace_signal()
+    {
+        let lines = vec![
+            line_with_font_size("Evolution", 46.0, 300.0, 85.5, 310.0, 9.5),
+            line_with_font_size("Of", 86.0, 300.0, 94.4, 310.0, 9.5),
+        ];
+
+        let merged = merge_positioned_visual_lines(lines);
+
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn opendataloader_text_line_processor_does_not_merge_toc_page_number_row() {
+        let lines = vec![
+            line("Introduction", 100.0, 300.0, 250.0, 310.0),
+            line("7", 900.0, 300.0, 920.0, 310.0),
+        ];
+
+        let merged = merge_positioned_visual_lines(lines);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(
+            merged
+                .iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Introduction", "7"]
+        );
+    }
+
+    #[test]
+    fn opendataloader_text_line_processor_does_not_merge_table_numeric_row() {
+        let lines = vec![
+            line("2024", 10.0, 300.0, 50.0, 310.0),
+            line("17", 120.0, 300.0, 145.0, 310.0),
+            line("42%", 200.0, 300.0, 235.0, 310.0),
+        ];
+
+        let merged = merge_positioned_visual_lines(lines);
+
+        assert_eq!(merged.len(), 3);
     }
 
     #[test]

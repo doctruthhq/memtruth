@@ -618,7 +618,7 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<ExtractedDocument, 
     } else {
         ReadingOrderDecision::xy_cut_fallback()
     };
-    let pages = (0..page_count)
+    let mut pages = (0..page_count)
         .map(|page_index| {
             let (page_width, page_height) = pdf_oxide_page_dimensions(&document, page_index)
                 .unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
@@ -659,6 +659,18 @@ fn extract_pages_with_pdf_oxide(source_path: &str) -> Result<ExtractedDocument, 
                 })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let positioned_pages = pages
+        .iter()
+        .map(|page| page.positioned_lines.clone())
+        .collect::<Vec<_>>();
+    let filtered_positioned_pages = filter_repeated_header_footer_lines(positioned_pages);
+    for (page, positioned_lines) in pages.iter_mut().zip(filtered_positioned_pages) {
+        page.lines = positioned_lines
+            .iter()
+            .map(|line| line.text.clone())
+            .collect::<Vec<_>>();
+        page.positioned_lines = positioned_lines;
+    }
     Ok(ExtractedDocument {
         pages,
         reading_order,
@@ -1326,6 +1338,41 @@ fn correct_abnormal_short_text_bbox(mut line: PositionedLine) -> PositionedLine 
     line.bbox.x1 = (line.bbox.x0 + expected_width).min(line.page_width);
     line.raw_bbox.x1 = (line.raw_bbox.x0 + expected_width).min(line.page_width);
     line
+}
+
+fn filter_repeated_header_footer_lines(pages: Vec<Vec<PositionedLine>>) -> Vec<Vec<PositionedLine>> {
+    if pages.len() < 2 {
+        return pages;
+    }
+    let footer_pages = pages
+        .iter()
+        .filter(|page| page.iter().any(footer_band_line))
+        .count();
+    let header_pages = pages
+        .iter()
+        .filter(|page| page.iter().any(header_band_line))
+        .count();
+    let filter_footers = footer_pages == pages.len();
+    let filter_headers = header_pages == pages.len();
+    pages
+        .into_iter()
+        .map(|page| {
+            page.into_iter()
+                .filter(|line| {
+                    !(filter_footers && footer_band_line(line))
+                        && !(filter_headers && header_band_line(line))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn footer_band_line(line: &PositionedLine) -> bool {
+    line.bbox.y1 <= line.page_height * 0.15
+}
+
+fn header_band_line(line: &PositionedLine) -> bool {
+    line.bbox.y0 >= line.page_height * 0.85
 }
 
 fn off_page_positioned_line(line: &PositionedLine) -> bool {
@@ -13066,6 +13113,49 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(kept.len(), 1);
         assert_eq!(bbox_width(&kept[0].bbox), 15.0);
+    }
+
+    #[test]
+    fn opendataloader_footer_filter_keeps_repeated_body_note_above_footer_band() {
+        let pages = vec![
+            vec![
+                line("Section 1", 37.0, 535.0, 300.0, 565.0),
+                line("Body content page 1", 37.0, 290.0, 300.0, 320.0),
+                line("CGM BALANCE 17", 37.0, 35.0, 280.0, 44.0),
+            ],
+            vec![
+                line("Section 2", 37.0, 535.0, 300.0, 565.0),
+                line("Body content page 2", 37.0, 290.0, 300.0, 320.0),
+                line("18 CERAGEM BALANCE USER MANUAL", 37.0, 35.0, 280.0, 44.0),
+            ],
+            vec![
+                line("Section 3", 37.0, 535.0, 300.0, 565.0),
+                line("Body content page 3", 37.0, 290.0, 300.0, 320.0),
+                line("Repeated note text", 223.0, 197.0, 360.0, 227.0),
+                line("CGM BALANCE 19", 37.0, 35.0, 280.0, 44.0),
+            ],
+            vec![
+                line("Section 4", 37.0, 535.0, 300.0, 565.0),
+                line("Body content page 4", 37.0, 290.0, 300.0, 320.0),
+                line("Repeated note text", 223.0, 197.0, 360.0, 227.0),
+                line("20 CERAGEM BALANCE USER MANUAL", 37.0, 35.0, 280.0, 44.0),
+            ],
+        ];
+
+        let filtered = filter_repeated_header_footer_lines(pages);
+        let flattened = filtered
+            .iter()
+            .flatten()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(flattened.contains(&"Repeated note text"));
+        assert!(!flattened.iter().any(|text| text.contains("CGM BALANCE")));
+        assert!(
+            !flattened
+                .iter()
+                .any(|text| text.contains("CERAGEM BALANCE USER MANUAL"))
+        );
     }
 
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {

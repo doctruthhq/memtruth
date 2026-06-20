@@ -1,11 +1,13 @@
 use serde_json::{Value, json};
+#[cfg(feature = "mnn-preprocess")]
+use sha2::{Digest, Sha256};
 use std::io::{self, Read};
 use std::path::Path;
 use std::time::Instant;
 
-#[cfg(feature = "mnn-ocr")]
+#[cfg(feature = "mnn-preprocess")]
 use pdf_oxide::document::PdfDocument;
-#[cfg(feature = "mnn-ocr")]
+#[cfg(feature = "mnn-preprocess")]
 use pdf_oxide::rendering::{RenderOptions, render_page};
 
 const PROTOCOL_VERSION: &str = "1";
@@ -18,6 +20,14 @@ fn main() {
     }
     if let Some(model_path) = probe_model_arg(&args) {
         match probe_model(model_path) {
+            Ok(report) => print_json(report),
+            Err((code, message)) => fail(code, &message),
+        }
+        return;
+    }
+    if let Some(source_path) = arg_value(&args, "--preprocess-page") {
+        let decoder = arg_value(&args, "--decoder").unwrap_or("table");
+        match preprocess_page_probe(source_path, decoder) {
             Ok(report) => print_json(report),
             Err((code, message)) => fail(code, &message),
         }
@@ -155,6 +165,12 @@ fn probe_model_arg(args: &[String]) -> Option<&str> {
         .map(|window| window[1].as_str())
 }
 
+fn arg_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+    args.windows(2)
+        .find(|window| window[0] == flag)
+        .map(|window| window[1].as_str())
+}
+
 fn doctor_json() -> Value {
     json!({
         "ok": true,
@@ -169,6 +185,84 @@ fn doctor_json() -> Value {
         "decoders": decoder_json(),
         "stubMode": stub_mode_enabled(),
         "productionPythonResidency": false
+    })
+}
+
+#[cfg(feature = "mnn-preprocess")]
+fn preprocess_page_probe(
+    source_path: &str,
+    decoder: &str,
+) -> Result<Value, (&'static str, String)> {
+    let started = Instant::now();
+    let render_started = Instant::now();
+    let image = render_first_page_image_from_path(source_path)?;
+    let render_ms = elapsed_ms(render_started);
+    let tensor_started = Instant::now();
+    let tensor = rgb_nchw_tensor_report(&image);
+    let tensor_ms = elapsed_ms(tensor_started);
+
+    Ok(json!({
+        "ok": true,
+        "runtime": "mnn",
+        "engine": "mnn",
+        "command": "preprocess_page",
+        "protocol_version": PROTOCOL_VERSION,
+        "sourcePath": source_path,
+        "preprocessing": preprocessing_contract_json(decoder),
+        "image": {
+            "width": image.width(),
+            "height": image.height(),
+            "colorSpace": "RGB"
+        },
+        "tensor": tensor,
+        "metrics": {
+            "renderMs": render_ms,
+            "tensorMs": tensor_ms,
+            "totalMs": elapsed_ms(started)
+        }
+    }))
+}
+
+#[cfg(not(feature = "mnn-preprocess"))]
+fn preprocess_page_probe(
+    _source_path: &str,
+    _decoder: &str,
+) -> Result<Value, (&'static str, String)> {
+    Err((
+        "mnn_preprocess_feature_disabled",
+        "build doctruth-mnn-model-worker with --features mnn-preprocess to run PDF page preprocessing"
+            .to_string(),
+    ))
+}
+
+#[cfg(feature = "mnn-preprocess")]
+fn rgb_nchw_tensor_report(image: &image::DynamicImage) -> Value {
+    let rgb = image.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    let elements = width as u64 * height as u64 * 3;
+    let mut hasher = Sha256::new();
+    let mut first_values = Vec::new();
+
+    for channel in 0..3_usize {
+        for y in 0..height {
+            for x in 0..width {
+                let value = rgb.get_pixel(x, y).0[channel] as f32 / 255.0;
+                hasher.update(value.to_le_bytes());
+                if first_values.len() < 12 {
+                    first_values.push(rounded_f64(value as f64));
+                }
+            }
+        }
+    }
+
+    json!({
+        "dtype": "f32",
+        "layout": "NCHW",
+        "shape": [1, 3, height, width],
+        "elements": elements,
+        "bytes": elements * 4,
+        "sha256": format!("sha256:{:x}", hasher.finalize()),
+        "firstValues": first_values
     })
 }
 
@@ -678,12 +772,19 @@ fn render_first_page_image(request: &Value) -> Result<image::DynamicImage, (&'st
                 "source_path is required".to_string(),
             )
         })?;
+    render_first_page_image_from_path(source_path)
+}
+
+#[cfg(feature = "mnn-preprocess")]
+fn render_first_page_image_from_path(
+    source_path: &str,
+) -> Result<image::DynamicImage, (&'static str, String)> {
     let document = PdfDocument::open(source_path)
-        .map_err(|error| ("ocr_pdf_render_failed", error.to_string()))?;
+        .map_err(|error| ("pdf_page_preprocess_failed", error.to_string()))?;
     let rendered = render_page(&document, 0, &RenderOptions::with_dpi(144))
-        .map_err(|error| ("ocr_pdf_render_failed", error.to_string()))?;
+        .map_err(|error| ("pdf_page_preprocess_failed", error.to_string()))?;
     image::load_from_memory(&rendered.data)
-        .map_err(|error| ("ocr_pdf_render_failed", error.to_string()))
+        .map_err(|error| ("pdf_page_preprocess_failed", error.to_string()))
 }
 
 #[cfg(feature = "mnn-ocr")]
@@ -775,7 +876,11 @@ fn output_stats(values: &[f32]) -> Value {
     })
 }
 
-#[cfg(any(feature = "mnn-native", feature = "mnn-ocr"))]
+#[cfg(any(
+    feature = "mnn-native",
+    feature = "mnn-ocr",
+    feature = "mnn-preprocess"
+))]
 fn rounded_f64(value: f64) -> f64 {
     (value * 1_000_000.0).round() / 1_000_000.0
 }

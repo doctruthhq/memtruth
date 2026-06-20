@@ -234,6 +234,74 @@ fn rust_mnn_model_worker_doctor_is_python_free() {
     assert_eq!(json["productionPythonResidency"], false);
 }
 
+#[cfg(not(feature = "mnn-preprocess"))]
+#[test]
+fn rust_mnn_model_worker_preprocess_probe_fails_without_feature() {
+    let pdf = write_pdf_fixture("Preprocess feature disabled.");
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    cmd.arg("--preprocess-page")
+        .arg(&pdf)
+        .arg("--decoder")
+        .arg("table")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mnn_preprocess_feature_disabled"));
+}
+
+#[cfg(feature = "mnn-preprocess")]
+#[test]
+fn rust_mnn_model_worker_preprocess_probe_emits_stable_rgb_nchw_tensor_digest() {
+    let pdf = write_pdf_fixture("Preprocess feature enabled.");
+    let mut first = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+    let first_output = first
+        .arg("--preprocess-page")
+        .arg(&pdf)
+        .arg("--decoder")
+        .arg("table")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let mut second = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+    let second_output = second
+        .arg("--preprocess-page")
+        .arg(&pdf)
+        .arg("--decoder")
+        .arg("table")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let first_json: Value = serde_json::from_slice(&first_output).unwrap();
+    let second_json: Value = serde_json::from_slice(&second_output).unwrap();
+
+    assert_eq!(first_json["ok"], true);
+    assert_eq!(first_json["preprocessing"]["decoder"], "table");
+    assert_eq!(first_json["preprocessing"]["channelOrder"], "RGB");
+    assert_eq!(first_json["preprocessing"]["tensorLayout"], "NCHW");
+    assert_eq!(first_json["tensor"]["shape"][0], 1);
+    assert_eq!(first_json["tensor"]["shape"][1], 3);
+    assert!(first_json["tensor"]["shape"][2].as_u64().unwrap() > 0);
+    assert!(first_json["tensor"]["shape"][3].as_u64().unwrap() > 0);
+    assert_eq!(
+        first_json["tensor"]["sha256"],
+        second_json["tensor"]["sha256"]
+    );
+    assert_eq!(
+        first_json["tensor"]["firstValues"],
+        second_json["tensor"]["firstValues"]
+    );
+    assert!(
+        first_json["tensor"]["sha256"]
+            .as_str()
+            .is_some_and(|digest| digest.starts_with("sha256:") && digest.len() == 71)
+    );
+}
+
 #[cfg(feature = "mnn-ocr")]
 #[test]
 fn rust_mnn_model_worker_doctor_reports_ocr_rs_decoder_when_feature_enabled() {

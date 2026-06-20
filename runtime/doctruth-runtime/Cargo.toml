@@ -7,8 +7,9 @@ publish = false
 
 [features]
 default = []
-mnn-native = ["dep:mnn_rs"]
-mnn-ocr = ["dep:image", "dep:ocr_rs"]
+mnn-preprocess = ["dep:image"]
+mnn-native = ["dep:mnn_rs", "mnn-preprocess"]
+mnn-ocr = ["mnn-preprocess", "dep:ocr_rs"]
 
 [dependencies]
 pdf_oxide = { version = "0.3.64", default-features = false, features = ["legacy-crypto", "rendering"] }

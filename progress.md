@@ -8042,3 +8042,38 @@
   - `cargo test --lib` passed with 30 tests.
   - `cargo test opendataloader_parity_ --test benchmark_corpus_contract` was
     interrupted before completion, so this slice is not yet committed.
+
+## 2026-06-20 TextSimilarity Slice Closure
+
+- Reran the interrupted OpenDataLoader parity subset:
+  `cargo test opendataloader_parity_ --test benchmark_corpus_contract`.
+- Result: 17 passed, 1 ignored (`requires OCR/table-model path`).
+- Reran `cargo test --lib`: 30 passed.
+- `git diff --check` passed.
+- Committed code as `d0d7e0f feat: port opendataloader text similarity`.
+- Committed planning updates as
+  `c214f95 docs: track opendataloader foundation port`.
+
+## 2026-06-20 TriageProcessor Foundation Start
+
+- Inspected OpenDataLoader `TriageProcessor.java` and tests.
+- Confirmed deterministic Rust-portable routing priority:
+  replacement ratio, table border, vector table signal, text table pattern,
+  large image, and line-to-text ratio.
+- Confirmed `hasSuspiciousPattern` and `alignedLineGroups` must still be
+  detected but are intentionally disabled for backend routing in the reference.
+- Added RED/GREEN Rust tests for:
+  - replacement ratio >= 0.3 routing to backend with confidence 1.0;
+  - vector/line segments routing to backend;
+  - suspicious gap detection without routing;
+  - aligned line group detection without routing.
+- Implemented `opendataloader_triage_page` and signal extraction over
+  `PositionedLine` + `Segment`, then wired `source_looks_table_heavy` to use
+  this triage path instead of coarse whitespace-count heuristics.
+- Verification passed:
+  `cargo test --lib` (34 passed);
+  `cargo test opendataloader_parity_ --test benchmark_corpus_contract`
+  (17 passed, 1 ignored);
+  `git diff --check`.
+- Remaining TriageProcessor gaps: large-image signal, explicit TableBorder
+  presence signal, and broader text-pattern parity fixtures.

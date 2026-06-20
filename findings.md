@@ -1964,3 +1964,11 @@
 - TextSimilarity is a good small hybrid slice because it is pure Rustable logic
   deciding when stream text can be trusted over OCR text. It should be committed
   only after the parity subset is rerun because the previous run was interrupted.
+- OpenDataLoader `TriageProcessor` routing priority is deterministic and can be
+  ported without Java/VeraPDF objects: replacement-character ratio >= 0.3 routes
+  backend with confidence 1.0; explicit table border routes backend with 1.0;
+  vector table signals route backend with 0.95; consecutive/dense text-table
+  patterns route backend with 0.9; large wide image routes backend with 0.85;
+  line-to-text ratio above 0.3 routes backend with 0.8. Suspicious gap and
+  aligned-line-group signals are detected but intentionally disabled for
+  routing in OpenDataLoader.

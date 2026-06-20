@@ -209,7 +209,7 @@ Foundation port checklist:
 | TableStructureNormalizer undersegmented grid rebuild | complete | Grid rows rebuilt from raw row bands. |
 | Dense table source-unit enrichment | complete | Fills missing dense table cell text/bbox from source units. |
 | TextLineProcessor visual-row merge | partial | Contract captured; production integration broke TOC/table parity and needs table-aware gating. |
-| TriageProcessor page-complexity signals | pending | Need Rust equivalents for line ratio, table border/vector line signals, large images, suspicious/aligned patterns, and disabled-signal reporting. |
+| TriageProcessor page-complexity signals | partial | Rust now ports replacement-ratio routing, vector/line-ratio routing, text-pattern signal basics, suspicious-gap detection, and aligned-line-group detection. Still needs large-image signals, explicit table-border presence, and broader text-pattern parity. |
 | TableBorderProcessor remaining semantics | pending | Need neighbor table linking, cell text splitting behavior, nested-depth guard contract, and text-block no-normalize boundary where applicable to TrustDocument. |
 | ParagraphProcessor right-alignment precedence | pending | Needs a canonical layout metadata target before production integration. |
 | Caption/Image/Formula/TextDecoration semantics | pending | Need TrustDocument block/unit representation before broad integration. |

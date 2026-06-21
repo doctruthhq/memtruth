@@ -2009,6 +2009,45 @@ fn parse_pdf_keeps_low_contrast_body_text_from_real_report_case() {
 }
 
 #[test]
+fn parse_pdf_reconstructs_opendataloader_executive_summary_heading_case() {
+    let pdf = vendored_opendataloader_pdf("01030000000079.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request_with_hash(
+            &pdf,
+            "sha256:executive-summary-blocks",
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let headings = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        headings.contains(&"Executive Summary"),
+        "expected stacked Executive Summary heading in {headings:?}"
+    );
+    assert!(
+        !headings.contains(&"Executive") && !headings.contains(&"Summary"),
+        "Executive Summary should not remain split across blocks: {headings:?}"
+    );
+    assert!(
+        !headings.contains(&"1991. The biggest challenges come from"),
+        "year-leading body sentence should not become a heading: {headings:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_prefers_trustworthy_tagged_structure_tree_order() {
     let pdf = write_tagged_structure_order_pdf_fixture();
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

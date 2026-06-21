@@ -9916,7 +9916,9 @@ fn vertical_heading_merge_end(units: &[Value], index: usize) -> Option<usize> {
     if kind != "heading" {
         return None;
     }
-    if !vertical_heading_merge_allowed_start(candidate_text(unit)) {
+    if !vertical_heading_merge_allowed_start(candidate_text(unit))
+        && !stacked_title_heading_start(units, index)
+    {
         return None;
     }
     let mut end = index + 1;
@@ -9936,7 +9938,9 @@ fn vertical_heading_merge_indices(units: &[Value], index: usize) -> Option<Vec<u
     if kind != "heading" {
         return None;
     }
-    if !vertical_heading_merge_allowed_start(candidate_text(first)) {
+    if !vertical_heading_merge_allowed_start(candidate_text(first))
+        && !stacked_title_heading_start(units, index)
+    {
         return None;
     }
     for candidate_index in (index + 1)..(index + 5).min(units.len()) {
@@ -10037,6 +10041,9 @@ fn vertical_heading_continuation(first: &Value, second: &Value) -> bool {
     }
     let first_text = candidate_text(first);
     let second_text = candidate_text(second);
+    if stacked_title_heading_pair(first, second) {
+        return true;
+    }
     if numbered_heading(first_text)
         || hierarchical_numbered_heading(first_text)
         || outline_heading(first_text)
@@ -10046,6 +10053,63 @@ fn vertical_heading_continuation(first: &Value, second: &Value) -> bool {
     title_case_heading(first_text)
         && title_case_heading(second_text)
         && bbox_center_delta(first, second) <= 110.0
+}
+
+fn stacked_title_heading_start(units: &[Value], index: usize) -> bool {
+    let Some(first) = units.get(index) else {
+        return false;
+    };
+    let Some(second) = units.get(index + 1) else {
+        return false;
+    };
+    stacked_title_heading_pair(first, second)
+}
+
+fn stacked_title_heading_continuation(units: &[Value], index: usize) -> bool {
+    if index == 0 {
+        return false;
+    }
+    let Some(previous) = units.get(index - 1) else {
+        return false;
+    };
+    let Some(current) = units.get(index) else {
+        return false;
+    };
+    stacked_title_heading_pair(previous, current)
+}
+
+fn stacked_title_heading_pair(first: &Value, second: &Value) -> bool {
+    if first.get("page") != second.get("page") {
+        return false;
+    }
+    let gap = unit_y0(second) - unit_y1(first);
+    if !(0.0..=24.0).contains(&gap) || unit_x0_delta(first, second) > 18.0 {
+        return false;
+    }
+    let first_text = candidate_text(first).trim();
+    let second_text = candidate_text(second).trim();
+    single_word_title_fragment(first_text)
+        && single_word_title_fragment(second_text)
+        && unit_bbox_height(first)
+            .unwrap_or(0.0)
+            .max(unit_bbox_height(second).unwrap_or(0.0))
+            >= 24.0
+}
+
+fn single_word_title_fragment(text: &str) -> bool {
+    if text.is_empty()
+        || text.split_whitespace().count() != 1
+        || matches!(text.chars().last(), Some('.' | ',' | ';' | ':'))
+    {
+        return false;
+    }
+    let cleaned = text.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '-');
+    cleaned.len() >= 3
+        && cleaned
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+        && cleaned.chars().any(|ch| ch.is_ascii_lowercase())
 }
 
 fn unit_x0_delta(left: &Value, right: &Value) -> f64 {
@@ -10344,6 +10408,13 @@ fn content_block_semantics_at(units: &[Value], index: usize) -> (&'static str, V
     if centered_chapter_heading_context(units, index, text) {
         return ("heading", json!(1));
     }
+    if stacked_title_heading_start(units, index) || stacked_title_heading_continuation(units, index)
+    {
+        return ("heading", json!(3));
+    }
+    if year_leading_sentence_fragment(text) {
+        return ("text", Value::Null);
+    }
     if numbered_heading(text)
         && (!list_item(text)
             || (numbered_section_start_context(units, index)
@@ -10627,6 +10698,9 @@ fn heading_level(text: &str) -> Option<u8> {
     if math_fragment_heading(trimmed) {
         return None;
     }
+    if year_leading_sentence_fragment(trimmed) {
+        return None;
+    }
     if numbered_heading(trimmed) || hierarchical_numbered_heading(trimmed) {
         return Some(2);
     }
@@ -10717,6 +10791,9 @@ fn math_symbol_word(word: &&str) -> bool {
 }
 
 fn numbered_heading(text: &str) -> bool {
+    if year_leading_sentence_fragment(text) {
+        return false;
+    }
     let mut seen_digit = false;
     let mut seen_dot = false;
     let mut seen_space = false;
@@ -10854,6 +10931,9 @@ fn starts_with_lowercase_connector(text: &str) -> bool {
 }
 
 fn sentence_punctuation_fragment(text: &str) -> bool {
+    if year_leading_sentence_fragment(text) {
+        return true;
+    }
     if numbered_heading(text) {
         return false;
     }
@@ -10864,6 +10944,25 @@ fn sentence_punctuation_fragment(text: &str) -> bool {
         || lower.contains(", with ")
         || lower.contains(", and ")
         || lower.contains(", or ")
+}
+
+fn year_leading_sentence_fragment(text: &str) -> bool {
+    let trimmed = text.trim();
+    let Some((marker, rest)) = trimmed.split_once(". ") else {
+        return false;
+    };
+    if marker.len() != 4 || !marker.chars().all(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+    let Ok(year) = marker.parse::<u16>() else {
+        return false;
+    };
+    (1800..=2099).contains(&year)
+        && rest
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+        && rest.split_whitespace().count() >= 3
 }
 
 fn common_single_word_heading(word: &str) -> bool {

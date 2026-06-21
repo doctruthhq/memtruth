@@ -5620,9 +5620,10 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
         let normalized = opendataloader_promote_initial_title_line(lines);
         let normalized = opendataloader_repair_split_glyph_lines(normalized);
         let normalized = opendataloader_repair_spaced_heading_lines(normalized);
-        return opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(
-            normalized,
-        ));
+        let normalized = opendataloader_merge_stacked_heading_words(
+            opendataloader_merge_split_headings(normalized),
+        );
+        return opendataloader_drop_report_title_before_executive_summary(normalized);
     }
     let mut normalized = Vec::new();
     for line in lines {
@@ -5641,7 +5642,9 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_rebuild_comparative_summary_table(normalized);
     let normalized = opendataloader_repair_split_glyph_lines(normalized);
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
-    opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized))
+    let normalized =
+        opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized));
+    opendataloader_drop_report_title_before_executive_summary(normalized)
 }
 
 fn contains_spanning_html_table(lines: &[String]) -> bool {
@@ -5669,6 +5672,30 @@ fn opendataloader_promote_initial_title_line(mut lines: Vec<String>) -> Vec<Stri
         *first = format!("# {}", normalize_text(first));
     }
     lines
+}
+
+fn opendataloader_drop_report_title_before_executive_summary(
+    mut lines: Vec<String>,
+) -> Vec<String> {
+    if lines.len() < 2 {
+        return lines;
+    }
+    let first = lines[0].trim();
+    let second = lines[1].trim();
+    if first.starts_with("# ")
+        && opendataloader_markdown_heading_equals(second, "Executive Summary")
+        && !opendataloader_markdown_heading_equals(first, "Executive Summary")
+    {
+        lines.remove(0);
+    }
+    lines
+}
+
+fn opendataloader_markdown_heading_equals(line: &str, expected: &str) -> bool {
+    let Some(text) = line.trim().strip_prefix("# ") else {
+        return false;
+    };
+    normalize_text(text).eq_ignore_ascii_case(expected)
 }
 
 fn opendataloader_repair_spaced_heading_lines(lines: Vec<String>) -> Vec<String> {
@@ -15382,6 +15409,45 @@ mod tests {
         assert!(!markdown.contains("# 100%"), "{markdown}");
         assert!(markdown.contains("ordinary short phrase"), "{markdown}");
         assert!(!markdown.contains("# ordinary short phrase"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_drops_report_title_before_executive_summary() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Jailed for Doing Business", 100.0, 80.0),
+                    markdown_unit("unit-2", "Executive", 100.0, 120.0),
+                    markdown_unit("unit-3", "Summary", 100.0, 145.0),
+                    markdown_unit("unit-4", "India suffers from regulatory cholesterol.", 100.0, 190.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": [
+                {
+                    "blockId": "block-title",
+                    "type": "heading",
+                    "text": "Jailed for Doing Business",
+                    "normalizedText": "Jailed for Doing Business",
+                    "sourceUnitIds": ["unit-1"]
+                },
+                {
+                    "blockId": "block-summary",
+                    "type": "heading",
+                    "text": "Executive Summary",
+                    "normalizedText": "Executive Summary",
+                    "sourceUnitIds": ["unit-2", "unit-3"]
+                }
+            ]
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(markdown.starts_with("# Executive Summary"), "{markdown}");
+        assert!(
+            !markdown.contains("# Jailed for Doing Business"),
+            "{markdown}"
+        );
     }
 
     #[test]

@@ -1062,6 +1062,10 @@ fn opendataloader_prediction_accepts_request_model_runtime_paths() {
         markdown.contains("Worker corpus evidence."),
         "request-scoped model worker output should be used:\n{markdown}"
     );
+    assert!(
+        markdown.contains("Item Qty Price"),
+        "table model output should be hybrid-merged with deterministic text-layer markdown:\n{markdown}"
+    );
 }
 
 #[test]

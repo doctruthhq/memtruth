@@ -1967,6 +1967,13 @@ fn configured_model_worker_parse(
     );
     let document =
         normalize_worker_document(worker_document(response)?, profile, route, &model_metrics);
+    let document = hybrid_merge_worker_document_with_text_layer(
+        document,
+        source_path,
+        source_hash,
+        request,
+        route,
+    );
     validate_worker_document(&document)?;
     Ok(Some(document))
 }
@@ -2218,6 +2225,101 @@ fn merge_parser_run_model_runtime(
     };
     for (key, value) in report {
         target.entry(key.clone()).or_insert_with(|| value.clone());
+    }
+}
+
+fn hybrid_merge_worker_document_with_text_layer(
+    mut worker_document: Value,
+    source_path: &str,
+    source_hash: &str,
+    request: &Value,
+    route: &ModelRouteDecision,
+) -> Value {
+    if route.decision == "ocr-model"
+        || request
+            .get("hybrid_merge_text_layer")
+            .and_then(Value::as_bool)
+            == Some(false)
+    {
+        return worker_document;
+    }
+    let text_request = json!({
+        "command": "parse_pdf",
+        "source_path": source_path,
+        "source_hash": source_hash,
+        "preset": "lite",
+        "profile": "edge-fast",
+        "runtime_profile": "edge-fast",
+        "runtimeProfile": "edge-fast",
+        "offline_mode": true,
+        "allow_model_downloads": false
+    });
+    let Ok(text_document) = parse_pdf_json(&text_request) else {
+        return worker_document;
+    };
+    merge_text_layer_document_into_worker_document(&mut worker_document, &text_document);
+    worker_document
+}
+
+fn merge_text_layer_document_into_worker_document(
+    worker_document: &mut Value,
+    text_document: &Value,
+) {
+    let text_body = text_document.get("body").and_then(Value::as_object);
+    let Some(text_body) = text_body else {
+        return;
+    };
+    let Some(worker_body) = worker_document
+        .get_mut("body")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    if let Some(pages) = text_body.get("pages").cloned() {
+        worker_body.entry("pages".to_string()).or_insert(pages);
+    }
+    let mut units = text_body
+        .get("units")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    units.extend(
+        worker_body
+            .get("units")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    if !units.is_empty() {
+        worker_body.insert("units".to_string(), json!(units));
+    }
+    let mut tables = text_body
+        .get("tables")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    tables.extend(
+        worker_body
+            .get("tables")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    if !tables.is_empty() {
+        worker_body.insert("tables".to_string(), json!(tables));
+    }
+    if let Some(parser_run) = worker_document
+        .get_mut("parserRun")
+        .and_then(Value::as_object_mut)
+    {
+        parser_run.insert(
+            "hybridMerge".to_string(),
+            json!({
+                "textLayer": "pdf_oxide",
+                "modelLayer": "model-worker",
+                "strategy": "text-layer-units-plus-model-units"
+            }),
+        );
     }
 }
 
@@ -5640,6 +5742,9 @@ fn markdown_from_document(document: &Value) -> String {
             if page_number_noise_unit(unit) {
                 continue;
             }
+            if model_table_structure_unit(unit) {
+                continue;
+            }
             if unit.get("kind").and_then(Value::as_str) == Some("TABLE_CELL") {
                 let table_id = unit.get("tableId").and_then(Value::as_str).unwrap_or("");
                 if render_markdown_table_once(table_id, &tables, &mut rendered_tables, &mut lines) {
@@ -7389,26 +7494,11 @@ fn table_id_containing_unit_text(unit: &Value, tables: &BTreeMap<String, Value>)
     let center_x = (unit_bbox[0] + unit_bbox[2]) / 2.0;
     let center_y = (unit_bbox[1] + unit_bbox[3]) / 2.0;
     tables.iter().find_map(|(table_id, table)| {
-        let table_bbox = bbox_at(table, "/boundingBox")?;
-        if center_x < table_bbox[0] - 2.0
-            || center_x > table_bbox[2] + 2.0
-            || center_y < table_bbox[1] - 2.0
-            || center_y > table_bbox[3] + 2.0
-        {
+        let table_bbox = table_bbox_for_markdown(table)?;
+        if !point_inside_bbox(center_x, center_y, table_bbox, 2.0) {
             return None;
         }
-        table
-            .get("cells")
-            .and_then(Value::as_array)?
-            .iter()
-            .any(|cell| {
-                cell.get("text")
-                    .and_then(Value::as_str)
-                    .map(normalize_text)
-                    .as_deref()
-                    == Some(text.as_str())
-            })
-            .then(|| table_id.clone())
+        table_source_text_matches_unit(table, unit, &text).then(|| table_id.clone())
     })
 }
 
@@ -7417,6 +7507,7 @@ struct MarkdownTableRef {
     table_id: String,
     page: u64,
     bbox: [f64; 4],
+    source_texts: Vec<String>,
 }
 
 fn document_tables_by_id(document: &Value) -> BTreeMap<String, Value> {
@@ -7651,6 +7742,12 @@ fn page_number_noise_unit(unit: &Value) -> bool {
     bbox[1] < 75.0 || bbox[1] > 920.0
 }
 
+fn model_table_structure_unit(unit: &Value) -> bool {
+    unit.get("kind")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| kind.starts_with("TABLE_") && kind != "TABLE_CELL")
+}
+
 fn renderable_table_refs(document: &Value) -> Vec<MarkdownTableRef> {
     document
         .pointer("/body/tables")
@@ -7664,34 +7761,134 @@ fn renderable_table_refs(document: &Value) -> Vec<MarkdownTableRef> {
                 return None;
             }
             let page = table.get("pageNumber").and_then(Value::as_u64).unwrap_or(1);
-            let bbox = bbox_at(table, "/boundingBox")?;
+            let bbox = table_bbox_for_markdown(table)?;
             Some(MarkdownTableRef {
                 table_id: table_id.to_string(),
                 page,
                 bbox,
+                source_texts: table_source_texts(table),
             })
         })
         .collect()
+}
+
+fn table_bbox_for_markdown(table: &Value) -> Option<[f64; 4]> {
+    bbox_at(table, "/boundingBox").or_else(|| table_bbox_from_cells(table))
+}
+
+fn table_bbox_from_cells(table: &Value) -> Option<[f64; 4]> {
+    let cells = table.get("cells").and_then(Value::as_array)?;
+    let boxes = cells
+        .iter()
+        .filter_map(|cell| bbox_at(cell, "/boundingBox"))
+        .collect::<Vec<_>>();
+    if boxes.is_empty() {
+        return None;
+    }
+    Some([
+        boxes.iter().map(|bbox| bbox[0]).fold(1000.0, f64::min),
+        boxes.iter().map(|bbox| bbox[1]).fold(1000.0, f64::min),
+        boxes.iter().map(|bbox| bbox[2]).fold(0.0, f64::max),
+        boxes.iter().map(|bbox| bbox[3]).fold(0.0, f64::max),
+    ])
 }
 
 fn containing_table_ref<'a>(
     unit: &Value,
     tables: &'a [MarkdownTableRef],
 ) -> Option<&'a MarkdownTableRef> {
+    let text = unit
+        .get("text")
+        .and_then(Value::as_str)
+        .map(normalize_text)?;
     let unit_bbox = bbox_at(unit, "/location/boundingBox")?;
     let page = unit_page_number(unit);
     let center_x = (unit_bbox[0] + unit_bbox[2]) / 2.0;
     let center_y = (unit_bbox[1] + unit_bbox[3]) / 2.0;
     tables.iter().find(|table| {
-        if table.page != page {
-            return false;
-        }
-        let padding = 2.0;
-        table.bbox[0] - padding <= center_x
-            && center_x <= table.bbox[2] + padding
-            && table.bbox[1] - padding <= center_y
-            && center_y <= table.bbox[3] + padding
+        table.page == page
+            && point_inside_bbox(center_x, center_y, table.bbox, 2.0)
+            && table_source_texts_match_line(&table.source_texts, &text)
     })
+}
+
+fn point_inside_bbox(x: f64, y: f64, bbox: [f64; 4], padding: f64) -> bool {
+    bbox[0] - padding <= x
+        && x <= bbox[2] + padding
+        && bbox[1] - padding <= y
+        && y <= bbox[3] + padding
+}
+
+fn table_source_text_matches_unit(table: &Value, unit: &Value, text: &str) -> bool {
+    let source_texts = table_source_texts(table);
+    if table_source_texts_match_line(&source_texts, text) {
+        return true;
+    }
+    let Some(unit_bbox) = bbox_at(unit, "/location/boundingBox") else {
+        return false;
+    };
+    let center_x = (unit_bbox[0] + unit_bbox[2]) / 2.0;
+    let center_y = (unit_bbox[1] + unit_bbox[3]) / 2.0;
+    table
+        .get("cells")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|cell| {
+            let cell_text = cell
+                .get("text")
+                .and_then(Value::as_str)
+                .map(normalize_text)
+                .unwrap_or_default();
+            if cell_text != text {
+                return false;
+            }
+            bbox_at(cell, "/boundingBox")
+                .is_some_and(|bbox| point_inside_bbox(center_x, center_y, bbox, 2.0))
+        })
+}
+
+fn table_source_texts(table: &Value) -> Vec<String> {
+    table
+        .get("cells")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+        .map(normalize_text)
+        .filter(|text| !text.is_empty())
+        .collect()
+}
+
+fn table_source_texts_match_line(source_texts: &[String], line: &str) -> bool {
+    if source_texts.iter().any(|text| text == line) {
+        return true;
+    }
+    let normalized_line = normalize_table_source_match_text(line);
+    if normalized_line.is_empty() {
+        return false;
+    }
+    let mut matches = 0;
+    for text in source_texts {
+        let normalized_text = normalize_table_source_match_text(text);
+        if normalized_text.is_empty() {
+            continue;
+        }
+        if normalized_line.contains(&normalized_text) {
+            matches += 1;
+        }
+        if matches >= 2 {
+            return true;
+        }
+    }
+    false
+}
+
+fn normalize_table_source_match_text(text: &str) -> String {
+    text.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '.' || *ch == '-')
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 fn render_markdown_table_once(
@@ -15802,6 +15999,121 @@ mod tests {
     }
 
     #[test]
+    fn markdown_projection_uses_cell_bboxes_for_model_table_source_ownership() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Intro paragraph.", 80.0, 60.0),
+                    markdown_unit("unit-2", "Item Qty Price", 100.0, 110.0),
+                    markdown_unit("unit-3", "A 2 10", 100.0, 140.0),
+                    markdown_unit("unit-4", "B 4 20", 100.0, 170.0),
+                    markdown_unit("unit-5", "Outro paragraph.", 80.0, 230.0)
+                ],
+                "tables": [{
+                    "tableId": "model-table-1",
+                    "pageNumber": 1,
+                    "cells": [
+                        model_table_cell("Item", 0, 0, 100.0, 110.0),
+                        model_table_cell("Qty", 0, 1, 220.0, 110.0),
+                        model_table_cell("Price", 0, 2, 340.0, 110.0),
+                        model_table_cell("A", 1, 0, 100.0, 140.0),
+                        model_table_cell("2", 1, 1, 220.0, 140.0),
+                        model_table_cell("10", 1, 2, 340.0, 140.0),
+                        model_table_cell("B", 2, 0, 100.0, 170.0),
+                        model_table_cell("4", 2, 1, 220.0, 170.0),
+                        model_table_cell("20", 2, 2, 340.0, 170.0)
+                    ]
+                }]
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(markdown.contains("|Item|Qty|Price|"), "{markdown}");
+        assert!(markdown.contains("|B|4|20|"), "{markdown}");
+        assert!(!markdown.contains("Item Qty Price"), "{markdown}");
+        assert!(
+            markdown.starts_with("Intro paragraph.\n|Item|Qty|Price|"),
+            "{markdown}"
+        );
+        assert!(markdown.contains("Outro paragraph."), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_does_not_suppress_prose_inside_broad_model_table_bbox() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Intro paragraph.", 80.0, 60.0),
+                    markdown_unit("unit-2", "The Reynolds number describes flow behavior.", 100.0, 120.0),
+                    markdown_unit("unit-3", "Item Qty Price", 100.0, 180.0),
+                    markdown_unit("unit-4", "A 2 10", 100.0, 210.0),
+                    markdown_unit("unit-5", "Outro paragraph.", 80.0, 360.0)
+                ],
+                "tables": [{
+                    "tableId": "model-table-1",
+                    "pageNumber": 1,
+                    "boundingBox": {
+                        "x0": 50.0,
+                        "y0": 100.0,
+                        "x1": 500.0,
+                        "y1": 340.0
+                    },
+                    "cells": [
+                        model_table_cell("Item", 0, 0, 100.0, 180.0),
+                        model_table_cell("Qty", 0, 1, 220.0, 180.0),
+                        model_table_cell("Price", 0, 2, 340.0, 180.0),
+                        model_table_cell("A", 1, 0, 100.0, 210.0),
+                        model_table_cell("2", 1, 1, 220.0, 210.0),
+                        model_table_cell("10", 1, 2, 340.0, 210.0)
+                    ]
+                }]
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(
+            markdown.contains("The Reynolds number describes flow behavior."),
+            "{markdown}"
+        );
+        assert!(markdown.contains("|Item|Qty|Price|"), "{markdown}");
+        assert!(!markdown.contains("Item Qty Price"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_projection_omits_model_table_structure_labels_from_prose() {
+        let mut region = markdown_unit("unit-1", "table", 100.0, 100.0);
+        region["kind"] = json!("TABLE_REGION");
+        let mut column = markdown_unit("unit-2", "table column", 100.0, 120.0);
+        column["kind"] = json!("TABLE_COLUMN");
+        let mut row = markdown_unit("unit-3", "table row", 100.0, 140.0);
+        row["kind"] = json!("TABLE_ROW");
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-0", "Intro paragraph.", 80.0, 60.0),
+                    region,
+                    column,
+                    row,
+                    markdown_unit("unit-4", "Outro paragraph.", 80.0, 200.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(markdown.contains("Intro paragraph."), "{markdown}");
+        assert!(markdown.contains("Outro paragraph."), "{markdown}");
+        assert!(!markdown.contains("table column"), "{markdown}");
+        assert!(!markdown.contains("table row"), "{markdown}");
+    }
+
+    #[test]
     fn markdown_projection_builds_synthetic_table_from_lines() {
         let document = json!({
             "body": {
@@ -16932,6 +17244,20 @@ mod tests {
                     "x1": x0 + 100.0,
                     "y1": y0 + 20.0
                 }
+            }
+        })
+    }
+
+    fn model_table_cell(text: &str, row: u64, column: u64, x0: f64, y0: f64) -> Value {
+        json!({
+            "text": text,
+            "rowRange": {"start": row, "end": row},
+            "columnRange": {"start": column, "end": column},
+            "boundingBox": {
+                "x0": x0,
+                "y0": y0,
+                "x1": x0 + 90.0,
+                "y1": y0 + 20.0
             }
         })
     }

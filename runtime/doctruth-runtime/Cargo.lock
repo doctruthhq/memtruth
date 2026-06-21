@@ -668,6 +668,7 @@ dependencies = [
  "assert_cmd",
  "image",
  "mnn-rs",
+ "mnn-rs-sys",
  "ocr-rs",
  "pdf_oxide",
  "predicates",

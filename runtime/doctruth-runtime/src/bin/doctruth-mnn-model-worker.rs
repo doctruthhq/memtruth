@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 #[cfg(feature = "mnn-preprocess")]
 use sha2::{Digest, Sha256};
+#[cfg(feature = "mnn-native")]
+use std::ffi::CString;
 use std::io::{self, Read};
 use std::path::Path;
 use std::time::Instant;
@@ -219,9 +221,16 @@ fn table_inference_response(
     let session_ms = elapsed_ms(session_started);
 
     let input_started = Instant::now();
-    let input = session
+    let mut input = session
         .get_input(None)
         .map_err(|error| ("table_mnn_input_failed", error.to_string()))?;
+    if tensor_shape_is_dynamic(&input.shape()) {
+        interpreter.resize_tensor(&mut input, &table_model_input_shape());
+        interpreter.resize_session(&mut session);
+        input = session
+            .get_input(None)
+            .map_err(|error| ("table_mnn_input_failed", error.to_string()))?;
+    }
     let input_shape = input.shape();
     let input_data = table_input_tensor(&image, &input_shape)?;
     input
@@ -235,14 +244,15 @@ fn table_inference_response(
         .map_err(|error| ("table_mnn_inference_failed", error.to_string()))?;
     let inference_ms = elapsed_ms(inference_started);
 
-    let output = session
-        .get_output(None)
-        .map_err(|error| ("table_mnn_output_failed", error.to_string()))?;
-    let output_shape = output.shape();
-    let output_data: Vec<f32> = output
-        .read()
-        .map_err(|error| ("table_mnn_output_failed", error.to_string()))?;
-    let document = table_decoder_pending_document(request, model_pack, &input_shape, &output_shape);
+    let outputs = read_table_outputs(&interpreter, &session)?;
+    let document = table_detection_document(
+        request,
+        model_pack,
+        &input_shape,
+        image.width(),
+        image.height(),
+        &outputs,
+    );
 
     Ok(json!({
         "ok": true,
@@ -264,18 +274,110 @@ fn table_inference_response(
                 "shape": input_shape,
                 "elements": input_data.len()
             },
-            "output": {
-                "shape": output_shape,
-                "elements": output_data.len(),
-                "sample": output_sample(&output_data),
-                "stats": output_stats(&output_data)
+            "outputs": {
+                "names": outputs.output_names,
+                "logits": {
+                    "shape": outputs.logits_shape,
+                    "elements": outputs.logits.len(),
+                    "sample": output_sample(&outputs.logits),
+                    "stats": output_stats(&outputs.logits)
+                },
+                "predBoxes": {
+                    "shape": outputs.boxes_shape,
+                    "elements": outputs.boxes.len(),
+                    "sample": output_sample(&outputs.boxes),
+                    "stats": output_stats(&outputs.boxes)
+                }
             },
+            "detections": outputs.detections.len(),
             "unload": {
                 "status": "completed",
                 "policy": "idle-after-request"
             }
         }
     }))
+}
+
+#[cfg(feature = "mnn-native")]
+fn read_table_outputs(
+    interpreter: &mnn_rs::Interpreter,
+    session: &mnn_rs::Session,
+) -> Result<TableModelOutputs, (&'static str, String)> {
+    let logits = named_output_tensor(session, "logits")?;
+    let boxes = named_output_tensor(session, "pred_boxes")?;
+    let logits_shape = logits.shape();
+    let boxes_shape = boxes.shape();
+    let logits_data: Vec<f32> = logits
+        .read()
+        .map_err(|error| ("table_mnn_output_failed", error.to_string()))?;
+    let boxes_data: Vec<f32> = boxes
+        .read()
+        .map_err(|error| ("table_mnn_output_failed", error.to_string()))?;
+    let output_names = interpreter.get_output_names(session);
+    let detections = table_detections(&logits_shape, &logits_data, &boxes_shape, &boxes_data)?;
+
+    Ok(TableModelOutputs {
+        output_names,
+        logits_shape,
+        logits: logits_data,
+        boxes_shape,
+        boxes: boxes_data,
+        detections,
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn named_output_tensor(
+    session: &mnn_rs::Session,
+    name: &str,
+) -> Result<mnn_rs::Tensor, (&'static str, String)> {
+    let c_name = CString::new(name).map_err(|error| {
+        (
+            "table_mnn_output_failed",
+            format!("invalid output tensor name {name}: {error}"),
+        )
+    })?;
+    let tensor_ptr = unsafe {
+        mnn_rs_sys::mnn_interpreter_get_session_output(
+            session.interpreter(),
+            session.inner(),
+            c_name.as_ptr(),
+        )
+    };
+    if tensor_ptr.is_null() {
+        return Err((
+            "table_mnn_output_failed",
+            format!("Output tensor '{name}' not found"),
+        ));
+    }
+    Ok(unsafe { mnn_rs::Tensor::from_ptr(tensor_ptr, Some(name.to_string())) })
+}
+
+#[cfg(feature = "mnn-native")]
+struct TableModelOutputs {
+    output_names: Vec<String>,
+    logits_shape: Vec<i32>,
+    logits: Vec<f32>,
+    boxes_shape: Vec<i32>,
+    boxes: Vec<f32>,
+    detections: Vec<TableDetection>,
+}
+
+#[cfg(feature = "mnn-native")]
+#[derive(Clone)]
+struct TableDetection {
+    label: &'static str,
+    score: f32,
+    bbox: NormalizedBox,
+}
+
+#[cfg(feature = "mnn-native")]
+#[derive(Clone, Copy)]
+struct NormalizedBox {
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
 }
 
 fn probe_model_arg(args: &[String]) -> Option<&str> {
@@ -462,6 +564,171 @@ fn tensor_image_layout(shape: &[i32]) -> Result<TensorImageLayout, (&'static str
 }
 
 #[cfg(feature = "mnn-native")]
+fn tensor_shape_is_dynamic(shape: &[i32]) -> bool {
+    shape.is_empty() || shape.iter().any(|dimension| *dimension <= 0)
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_model_input_shape() -> [i32; 4] {
+    [1, 3, 800, 800]
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_detections(
+    logits_shape: &[i32],
+    logits: &[f32],
+    boxes_shape: &[i32],
+    boxes: &[f32],
+) -> Result<Vec<TableDetection>, (&'static str, String)> {
+    let (query_count, class_count) = table_logits_shape(logits_shape, logits.len())?;
+    let box_query_count = table_boxes_shape(boxes_shape, boxes.len())?;
+    if query_count != box_query_count {
+        return Err((
+            "table_mnn_output_failed",
+            format!("logits queries {query_count} != box queries {box_query_count}"),
+        ));
+    }
+
+    let mut detections = Vec::new();
+    for query in 0..query_count {
+        let logits_offset = query * class_count;
+        let scores = softmax(&logits[logits_offset..logits_offset + class_count]);
+        let Some((label_index, score)) = best_table_class(&scores) else {
+            continue;
+        };
+        if score < table_class_threshold(label_index) {
+            continue;
+        }
+        let box_offset = query * 4;
+        let bbox = normalized_cxcywh_to_box(&boxes[box_offset..box_offset + 4]);
+        if bbox_area(bbox) < 0.0001 {
+            continue;
+        }
+        detections.push(TableDetection {
+            label: table_label(label_index),
+            score,
+            bbox,
+        });
+    }
+    detections.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(detections)
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_logits_shape(
+    shape: &[i32],
+    value_count: usize,
+) -> Result<(usize, usize), (&'static str, String)> {
+    if shape.len() == 3 && shape[0] == 1 && shape[1] > 0 && shape[2] > 1 {
+        return Ok((shape[1] as usize, shape[2] as usize));
+    }
+    if value_count % 125 == 0 && value_count > 125 {
+        return Ok((125, value_count / 125));
+    }
+    Err((
+        "table_mnn_output_failed",
+        format!("unsupported logits shape {shape:?} with {value_count} values"),
+    ))
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_boxes_shape(shape: &[i32], value_count: usize) -> Result<usize, (&'static str, String)> {
+    if shape.len() == 3 && shape[0] == 1 && shape[1] > 0 && shape[2] == 4 {
+        return Ok(shape[1] as usize);
+    }
+    if value_count % 4 == 0 {
+        return Ok(value_count / 4);
+    }
+    Err((
+        "table_mnn_output_failed",
+        format!("unsupported pred_boxes shape {shape:?} with {value_count} values"),
+    ))
+}
+
+#[cfg(feature = "mnn-native")]
+fn softmax(values: &[f32]) -> Vec<f32> {
+    let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let exp_values: Vec<f32> = values.iter().map(|value| (*value - max).exp()).collect();
+    let sum: f32 = exp_values.iter().sum();
+    if sum <= f32::EPSILON {
+        return vec![0.0; values.len()];
+    }
+    exp_values.iter().map(|value| value / sum).collect()
+}
+
+#[cfg(feature = "mnn-native")]
+fn best_table_class(scores: &[f32]) -> Option<(usize, f32)> {
+    let no_object_index = scores.len().saturating_sub(1);
+    scores
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index < 6 && *index != no_object_index)
+        .max_by(|left, right| {
+            left.1
+                .partial_cmp(right.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(index, score)| (index, *score))
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_class_threshold(label_index: usize) -> f32 {
+    match label_index {
+        0 => 0.35,
+        1 | 2 => 0.45,
+        3 | 4 | 5 => 0.50,
+        _ => 0.99,
+    }
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_label(label_index: usize) -> &'static str {
+    match label_index {
+        0 => "table",
+        1 => "table column",
+        2 => "table row",
+        3 => "table column header",
+        4 => "table projected row header",
+        5 => "table spanning cell",
+        _ => "unknown",
+    }
+}
+
+#[cfg(feature = "mnn-native")]
+fn normalized_cxcywh_to_box(values: &[f32]) -> NormalizedBox {
+    let cx = values[0].clamp(0.0, 1.0) as f64;
+    let cy = values[1].clamp(0.0, 1.0) as f64;
+    let width = values[2].clamp(0.0, 1.0) as f64;
+    let height = values[3].clamp(0.0, 1.0) as f64;
+    NormalizedBox {
+        x0: (cx - width / 2.0).clamp(0.0, 1.0),
+        y0: (cy - height / 2.0).clamp(0.0, 1.0),
+        x1: (cx + width / 2.0).clamp(0.0, 1.0),
+        y1: (cy + height / 2.0).clamp(0.0, 1.0),
+    }
+}
+
+#[cfg(feature = "mnn-native")]
+fn bbox_area(bbox: NormalizedBox) -> f64 {
+    (bbox.x1 - bbox.x0).max(0.0) * (bbox.y1 - bbox.y0).max(0.0)
+}
+
+#[cfg(feature = "mnn-native")]
+fn scaled_bbox_json(bbox: NormalizedBox, width: u32, height: u32) -> Value {
+    json!({
+        "x0": rounded_f64(bbox.x0 * width as f64),
+        "y0": rounded_f64(bbox.y0 * height as f64),
+        "x1": rounded_f64(bbox.x1 * width as f64),
+        "y1": rounded_f64(bbox.y1 * height as f64)
+    })
+}
+
+#[cfg(feature = "mnn-native")]
 fn probe_model(model_path: &str) -> Result<Value, (&'static str, String)> {
     use mnn_rs::{BackendType, Interpreter, ScheduleConfig};
 
@@ -483,9 +750,16 @@ fn probe_model(model_path: &str) -> Result<Value, (&'static str, String)> {
     interpreter.resize_session(&mut session);
     let resize_ms = elapsed_ms(resize_started);
 
-    let input = session
+    let mut input = session
         .get_input(None)
         .map_err(|error| ("mnn_probe_input_failed", error.to_string()))?;
+    if tensor_shape_is_dynamic(&input.shape()) {
+        interpreter.resize_tensor(&mut input, &table_model_input_shape());
+        interpreter.resize_session(&mut session);
+        input = session
+            .get_input(None)
+            .map_err(|error| ("mnn_probe_input_failed", error.to_string()))?;
+    }
     let input_shape = input.shape();
     let input_elements = checked_element_count(input.element_count())?;
     let input_data: Vec<f32> = (0..input_elements)
@@ -827,11 +1101,13 @@ fn trust_document(request: &Value, model_pack: &ReadyModelPack) -> Value {
 }
 
 #[cfg(feature = "mnn-native")]
-fn table_decoder_pending_document(
+fn table_detection_document(
     request: &Value,
     model_pack: &ReadyModelPack,
     input_shape: &[i32],
-    output_shape: &[i32],
+    image_width: u32,
+    image_height: u32,
+    outputs: &TableModelOutputs,
 ) -> Value {
     let source_hash = request
         .get("source_hash")
@@ -853,6 +1129,30 @@ fn table_decoder_pending_document(
         })
         .unwrap_or("document.pdf");
     let model_ids = model_pack.model_identities();
+    let table_bbox = primary_table_bbox(&outputs.detections);
+    let row_detections = table_labeled_detections(&outputs.detections, "table row");
+    let column_detections = table_labeled_detections(&outputs.detections, "table column");
+    let cells = table_cells_from_detections(
+        &row_detections,
+        &column_detections,
+        image_width,
+        image_height,
+    );
+    let units = table_detection_units(&outputs.detections, image_width, image_height, &cells);
+    let table = table_json_from_detections(
+        table_bbox,
+        image_width,
+        image_height,
+        row_detections.len(),
+        column_detections.len(),
+        &cells,
+    );
+    let audit_status = if cells.is_empty() {
+        "NOT_AUDIT_GRADE"
+    } else {
+        "STRUCTURE_ONLY"
+    };
+    let warnings = table_detection_warnings(cells.is_empty());
     json!({
         "docId": source_hash,
         "source": {
@@ -866,13 +1166,13 @@ fn table_decoder_pending_document(
         "body": {
             "pages": [{
                 "pageNumber": 1,
-                "width": 612.0,
-                "height": 792.0,
+                "width": image_width,
+                "height": image_height,
                 "textLayerAvailable": true,
                 "imageHash": format!("sha256:{}", "0".repeat(64))
             }],
-            "units": [],
-            "tables": []
+            "units": units,
+            "tables": table.map(|value| vec![value]).unwrap_or_default()
         },
         "contentBlocks": [],
         "parseTrace": {
@@ -880,16 +1180,12 @@ fn table_decoder_pending_document(
             "parserRunId": "parser-run-rust-mnn-table",
             "readingOrder": {
                 "source": "mnn-table-detection-order",
-                "fallback": true,
-                "confidence": 0.0
+                "fallback": false,
+                "confidence": 0.72
             },
             "pages": [],
             "sectionTree": [],
-            "warnings": [{
-                "code": "table_mnn_decoder_pending",
-                "severity": "SEVERE",
-                "message": "MNN table model inference ran, but table-structure decoding into TrustTable cells is not implemented yet"
-            }]
+            "warnings": warnings
         },
         "parserRun": {
             "parserRunId": "parser-run-rust-mnn-table",
@@ -900,16 +1196,232 @@ fn table_decoder_pending_document(
             "models": model_ids,
             "modelShapes": {
                 "input": input_shape,
-                "output": output_shape
+                "logits": outputs.logits_shape,
+                "predBoxes": outputs.boxes_shape
+            },
+            "detections": table_detection_summary(&outputs.detections),
+            "warnings": warnings
+        },
+        "auditGradeStatus": audit_status
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn primary_table_bbox(detections: &[TableDetection]) -> Option<NormalizedBox> {
+    detections
+        .iter()
+        .find(|detection| detection.label == "table")
+        .map(|detection| detection.bbox)
+        .or_else(|| union_detection_bbox(detections))
+}
+
+#[cfg(feature = "mnn-native")]
+fn union_detection_bbox(detections: &[TableDetection]) -> Option<NormalizedBox> {
+    let mut boxes = detections.iter().map(|detection| detection.bbox);
+    let first = boxes.next()?;
+    Some(boxes.fold(first, |acc, bbox| NormalizedBox {
+        x0: acc.x0.min(bbox.x0),
+        y0: acc.y0.min(bbox.y0),
+        x1: acc.x1.max(bbox.x1),
+        y1: acc.y1.max(bbox.y1),
+    }))
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_labeled_detections(detections: &[TableDetection], label: &str) -> Vec<TableDetection> {
+    let mut filtered: Vec<TableDetection> = detections
+        .iter()
+        .filter(|detection| detection.label == label)
+        .cloned()
+        .collect();
+    filtered.sort_by(|left, right| {
+        let left_key = if label.contains("row") {
+            left.bbox.y0
+        } else {
+            left.bbox.x0
+        };
+        let right_key = if label.contains("row") {
+            right.bbox.y0
+        } else {
+            right.bbox.x0
+        };
+        left_key
+            .partial_cmp(&right_key)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    filtered
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_cells_from_detections(
+    rows: &[TableDetection],
+    columns: &[TableDetection],
+    image_width: u32,
+    image_height: u32,
+) -> Vec<Value> {
+    let mut cells = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        for (column_index, column) in columns.iter().enumerate() {
+            let bbox = NormalizedBox {
+                x0: row.bbox.x0.max(column.bbox.x0),
+                y0: row.bbox.y0.max(column.bbox.y0),
+                x1: row.bbox.x1.min(column.bbox.x1),
+                y1: row.bbox.y1.min(column.bbox.y1),
+            };
+            if bbox_area(bbox) < 0.00005 {
+                continue;
+            }
+            cells.push(json!({
+                "cellId": format!("mnn-table-0001-r{row_index:04}-c{column_index:04}"),
+                "rowRange": {"start": row_index, "end": row_index},
+                "columnRange": {"start": column_index, "end": column_index},
+                "boundingBox": scaled_bbox_json(bbox, image_width, image_height),
+                "text": "",
+                "confidence": {
+                    "score": rounded_f64(row.score.min(column.score) as f64),
+                    "rationale": "mnn table-transformer row/column intersection; text assignment pending"
+                }
+            }));
+        }
+    }
+    cells
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_detection_units(
+    detections: &[TableDetection],
+    image_width: u32,
+    image_height: u32,
+    cells: &[Value],
+) -> Vec<Value> {
+    let mut units = Vec::new();
+    for (index, detection) in detections.iter().take(48).enumerate() {
+        units.push(json!({
+            "unitId": format!("unit-mnn-table-detection-{index:04}"),
+            "kind": table_detection_unit_kind(detection.label),
+            "page": 1,
+            "text": detection.label,
+            "evidenceSpanIds": [format!("span-mnn-table-detection-{index:04}")],
+            "location": {
+                "page": 1,
+                "readingOrder": index + 1,
+                "boundingBox": scaled_bbox_json(detection.bbox, image_width, image_height)
+            },
+            "sourceObjectId": format!("mnn-table-detection-{index:04}"),
+            "confidence": {
+                "score": rounded_f64(detection.score as f64),
+                "rationale": "mnn table-transformer structure detection"
+            },
+            "warnings": []
+        }));
+    }
+    for (cell_index, cell) in cells.iter().take(128).enumerate() {
+        units.push(json!({
+            "unitId": format!("unit-mnn-table-cell-{cell_index:04}"),
+            "kind": "TABLE_CELL",
+            "page": 1,
+            "text": "",
+            "evidenceSpanIds": [format!("span-mnn-table-cell-{cell_index:04}")],
+            "location": {
+                "page": 1,
+                "readingOrder": detections.len() + cell_index + 1,
+                "boundingBox": cell.get("boundingBox").cloned().unwrap_or_else(|| {
+                    json!({"x0": 0.0, "y0": 0.0, "x1": 0.0, "y1": 0.0})
+                })
+            },
+            "sourceObjectId": format!("mnn-table-cell-{cell_index:04}"),
+            "confidence": {
+                "score": cell.pointer("/confidence/score").and_then(Value::as_f64).unwrap_or(0.0),
+                "rationale": "mnn table cell skeleton; text assignment pending"
             },
             "warnings": [{
-                "code": "table_mnn_decoder_pending",
-                "severity": "SEVERE",
-                "message": "MNN table model output is available but not decoded into audit-grade table cells"
+                "code": "table_cell_text_assignment_pending",
+                "severity": "WARNING",
+                "message": "Table structure cell has no assigned text span yet"
             }]
+        }));
+    }
+    units
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_detection_unit_kind(label: &str) -> &'static str {
+    match label {
+        "table" => "TABLE_REGION",
+        "table row" => "TABLE_ROW",
+        "table column" => "TABLE_COLUMN",
+        "table column header" => "TABLE_HEADER",
+        "table projected row header" => "TABLE_ROW_HEADER",
+        "table spanning cell" => "TABLE_SPANNING_CELL",
+        _ => "TABLE_STRUCTURE",
+    }
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_json_from_detections(
+    table_bbox: Option<NormalizedBox>,
+    image_width: u32,
+    image_height: u32,
+    row_count: usize,
+    column_count: usize,
+    cells: &[Value],
+) -> Option<Value> {
+    if row_count == 0 || column_count == 0 {
+        return None;
+    }
+    let bbox = table_bbox.unwrap_or(NormalizedBox {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 1.0,
+        y1: 1.0,
+    });
+    Some(json!({
+        "tableId": "mnn-table-0001",
+        "pageNumber": 1,
+        "boundingBox": scaled_bbox_json(bbox, image_width, image_height),
+        "method": "mnn-table-transformer-structure",
+        "quality": {
+            "rowCount": row_count,
+            "columnCount": column_count,
+            "filledCellCount": 0,
+            "rationale": "mnn table-transformer structure detection; cell text assignment pending"
         },
-        "auditGradeStatus": "NOT_AUDIT_GRADE"
-    })
+        "confidence": {
+            "score": 0.72,
+            "rationale": "mnn table-transformer structure detection"
+        },
+        "cells": cells
+    }))
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_detection_summary(detections: &[TableDetection]) -> Value {
+    let mut counts = serde_json::Map::new();
+    for detection in detections {
+        let current = counts
+            .get(detection.label)
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        counts.insert(detection.label.to_string(), json!(current + 1));
+    }
+    Value::Object(counts)
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_detection_warnings(cells_empty: bool) -> Vec<Value> {
+    let mut warnings = vec![json!({
+        "code": "table_cell_text_assignment_pending",
+        "severity": "WARNING",
+        "message": "MNN table model decoded structure boxes, but cell text assignment from text/OCR spans is still pending"
+    })];
+    if cells_empty {
+        warnings.push(json!({
+            "code": "table_mnn_no_cell_grid",
+            "severity": "SEVERE",
+            "message": "MNN table model did not produce enough row/column detections to build a table grid"
+        }));
+    }
+    warnings
 }
 
 #[cfg(feature = "mnn-ocr")]

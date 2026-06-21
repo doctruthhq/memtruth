@@ -7,7 +7,8 @@ Usage: prepare-doctruth-mnn-model-pack.sh \
   --reference-manifest ONNX_PACK.json \
   --reference-cache CACHE_DIR \
   --output-manifest MNN_PACK.json \
-  --output-cache CACHE_DIR
+  --output-cache CACHE_DIR \
+  [--weight-quant-bits N]
 
 Converts reference ONNX artifacts into an MNN model pack manifest/cache using
 MNNConvert. This is build/preparation tooling only; runtime promotion still
@@ -19,6 +20,7 @@ REFERENCE_MANIFEST=""
 REFERENCE_CACHE=""
 OUTPUT_MANIFEST=""
 OUTPUT_CACHE=""
+WEIGHT_QUANT_BITS=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -36,6 +38,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --output-cache)
             OUTPUT_CACHE="${2:-}"
+            shift 2
+            ;;
+        --weight-quant-bits)
+            WEIGHT_QUANT_BITS="${2:-}"
             shift 2
             ;;
         --help|-h)
@@ -67,6 +73,15 @@ if [ -z "$REFERENCE_MANIFEST" ] || [ -z "$REFERENCE_CACHE" ] \
     json_error "missing_arguments" "reference manifest/cache and output manifest/cache are required"
     exit 2
 fi
+
+case "$WEIGHT_QUANT_BITS" in
+    ""|*[!0-9]*)
+        if [ -n "$WEIGHT_QUANT_BITS" ]; then
+            json_error "invalid_weight_quant_bits" "weight quant bits must be a non-negative integer"
+            exit 2
+        fi
+        ;;
+esac
 
 if [ ! -f "$REFERENCE_MANIFEST" ]; then
     json_error "reference_manifest_missing" "reference manifest does not exist"
@@ -194,7 +209,14 @@ while [ "$INDEX" -lt "$CONVERT_COUNT" ]; do
         exit 2
     fi
 
-    "$CONVERTER" -f ONNX --modelFile "$SOURCE_PATH" --MNNModel "$TARGET_PATH" >/dev/null
+    if [ -n "$WEIGHT_QUANT_BITS" ]; then
+        "$CONVERTER" -f ONNX \
+            --modelFile "$SOURCE_PATH" \
+            --MNNModel "$TARGET_PATH" \
+            --weightQuantBits "$WEIGHT_QUANT_BITS" >/dev/null
+    else
+        "$CONVERTER" -f ONNX --modelFile "$SOURCE_PATH" --MNNModel "$TARGET_PATH" >/dev/null
+    fi
 
     if [ ! -f "$TARGET_PATH" ]; then
         jq -n --arg name "$NAME" --arg path "$TARGET_PATH" \
@@ -209,8 +231,14 @@ while [ "$INDEX" -lt "$CONVERT_COUNT" ]; do
       --arg source "$SOURCE_PATH" \
       --arg target "$TARGET_PATH" \
       --arg sha "$TARGET_SHA" \
+      --arg converter "$CONVERTER" \
+      --arg sourceSha "$ACTUAL_SOURCE_SHA" \
+      --arg weightQuantBits "$WEIGHT_QUANT_BITS" \
       --argjson size "$TARGET_SIZE" \
-      '.converted += 1
+      'def conversion:
+         {converter: $converter, sourceSha256: $sourceSha}
+         + (if $weightQuantBits == "" then {} else {weightQuantBits: ($weightQuantBits | tonumber)} end);
+       .converted += 1
        | .artifacts += [{
            name: $name,
            source: $source,
@@ -218,15 +246,26 @@ while [ "$INDEX" -lt "$CONVERT_COUNT" ]; do
            targetBackend: "mnn",
            sourceBackend: "onnxruntime",
            sha256: $sha,
-           sizeBytes: $size
+           sizeBytes: $size,
+           conversion: conversion
          }]' "$REPORT" > "$REPORT.next"
     mv "$REPORT.next" "$REPORT"
 
     jq \
       --arg targetFile "$TARGET_FILE" \
       --arg sha "$TARGET_SHA" \
+      --arg converter "$CONVERTER" \
+      --arg sourceSha "$ACTUAL_SOURCE_SHA" \
+      --arg weightQuantBits "$WEIGHT_QUANT_BITS" \
       --argjson size "$TARGET_SIZE" \
-      '(.presets[]?[]? | select(.cacheFilename == $targetFile)) |= (.sha256 = $sha | .sizeBytes = $size)' \
+      'def conversion:
+         {converter: $converter, sourceSha256: $sourceSha}
+         + (if $weightQuantBits == "" then {} else {weightQuantBits: ($weightQuantBits | tonumber)} end);
+       (.presets[]?[]? | select(.cacheFilename == $targetFile)) |= (
+         .sha256 = $sha
+         | .sizeBytes = $size
+         | .conversion = conversion
+       )' \
       "$WORK_MANIFEST" > "$WORK_MANIFEST.next"
     mv "$WORK_MANIFEST.next" "$WORK_MANIFEST"
 

@@ -8347,3 +8347,25 @@
 - Remaining boundary: this is conversion preparation tooling. It does not
   bundle converted RT-DETR/TATR `.mnn` artifacts, prove tensor parity against
   Python/ONNX, or implement the table/layout MNN postprocessors.
+
+## 2026-06-21 MNN Pack Conversion Parameter Contract
+
+- Added RED smoke coverage for explicit MNN conversion parameters. The fake
+  converter now rejects calls unless it receives `--weightQuantBits 8`, and the
+  smoke asserts conversion provenance in both the prepare report and generated
+  manifest.
+- RED command:
+  `sh scripts/smoke-doctruth-mnn-pack-prepare.sh`.
+- RED result: failed as expected because
+  `prepare-doctruth-mnn-model-pack.sh` did not yet accept
+  `--weight-quant-bits`.
+- Implemented optional `--weight-quant-bits N` in
+  `scripts/prepare-doctruth-mnn-model-pack.sh`. When present, it forwards
+  `--weightQuantBits N` to `MNNConvert` and records per-artifact
+  `conversion.converter`, `conversion.sourceSha256`, and
+  `conversion.weightQuantBits`.
+- Verification passed:
+  `sh scripts/smoke-doctruth-mnn-pack-prepare.sh`.
+- Boundary: this slice only strengthens build-time MNN pack preparation
+  provenance. It does not change Rust runtime code, benchmark runners, real
+  model artifacts, or decoder parity.

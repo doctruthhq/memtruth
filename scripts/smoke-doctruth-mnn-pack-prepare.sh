@@ -96,6 +96,7 @@ cat > "$WORK_DIR/fake-bin/MNNConvert" <<'EOF_CONVERT'
 set -eu
 MODEL_IN=""
 MODEL_OUT=""
+WEIGHT_QUANT_BITS=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --modelFile)
@@ -106,6 +107,10 @@ while [ "$#" -gt 0 ]; do
             MODEL_OUT="$2"
             shift 2
             ;;
+        --weightQuantBits)
+            WEIGHT_QUANT_BITS="$2"
+            shift 2
+            ;;
         *)
             shift
             ;;
@@ -113,6 +118,10 @@ while [ "$#" -gt 0 ]; do
 done
 if [ -z "$MODEL_IN" ] || [ -z "$MODEL_OUT" ]; then
     echo "missing model input/output" >&2
+    exit 2
+fi
+if [ "$WEIGHT_QUANT_BITS" != "8" ]; then
+    echo "expected --weightQuantBits 8" >&2
     exit 2
 fi
 printf 'mnn:' > "$MODEL_OUT"
@@ -125,13 +134,17 @@ sh "$ROOT/scripts/prepare-doctruth-mnn-model-pack.sh" \
     --reference-manifest "$WORK_DIR/reference-pack.json" \
     --reference-cache "$WORK_DIR/reference-cache" \
     --output-manifest "$WORK_DIR/output-pack.json" \
-    --output-cache "$WORK_DIR/output-cache" > "$WORK_DIR/prepare.json"
+    --output-cache "$WORK_DIR/output-cache" \
+    --weight-quant-bits 8 > "$WORK_DIR/prepare.json"
 
-jq -e '
+jq -e --arg converter "$WORK_DIR/fake-bin/MNNConvert" --arg sourceSha "sha256:$SOURCE_SHA" '
   .ok == true
   and .converted == 1
   and .artifacts[0].sourceBackend == "onnxruntime"
   and .artifacts[0].targetBackend == "mnn"
+  and .artifacts[0].conversion.weightQuantBits == 8
+  and .artifacts[0].conversion.converter == $converter
+  and .artifacts[0].conversion.sourceSha256 == $sourceSha
 ' "$WORK_DIR/prepare.json" >/dev/null
 
 jq -e '
@@ -143,6 +156,12 @@ jq -e '
   and .presets["table-lite"][0].cacheFilename == "table-reference-v1.mnn"
   and .presets["table-lite"][0].parity.candidateEngine == "rust-mnn"
   and .promotionGates.mnn.quality.overall == 0.88
+' "$WORK_DIR/output-pack.json" >/dev/null
+
+jq -e --arg converter "$WORK_DIR/fake-bin/MNNConvert" --arg sourceSha "sha256:$SOURCE_SHA" '
+  .presets["table-lite"][0].conversion.weightQuantBits == 8
+  and .presets["table-lite"][0].conversion.converter == $converter
+  and .presets["table-lite"][0].conversion.sourceSha256 == $sourceSha
 ' "$WORK_DIR/output-pack.json" >/dev/null
 
 sh "$ROOT/scripts/check-doctruth-mnn-pack-readiness.sh" \

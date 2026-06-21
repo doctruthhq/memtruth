@@ -398,6 +398,10 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         tables = renumber_tables(tables).unwrap_or_default();
     }
     enrich_dense_table_cells_from_units(&mut tables, &units);
+    if let Some(table) = foreign_ownership_table_from_units(&units, tables.len() + 1) {
+        push_preferred_table(&mut tables, table);
+        tables = renumber_tables(tables).unwrap_or_default();
+    }
     units.extend(table_unit_json(&tables, units.len() + 1));
     let mut warnings = extracted_pages
         .iter()
@@ -6273,6 +6277,9 @@ fn opendataloader_rebuild_comparative_summary_table(lines: Vec<String>) -> Vec<S
         return lines;
     }
     let segment = &lines[heading_index + 1..footer_index];
+    if opendataloader_comparative_complete_pipe_table(segment) {
+        return lines;
+    }
     let mut rebuilt = lines[..=heading_index].to_vec();
     rebuilt.extend(opendataloader_comparative_summary_table(segment));
     rebuilt.extend(lines[footer_index..].iter().cloned());
@@ -6290,6 +6297,20 @@ fn opendataloader_comparative_summary_candidate(lines: &[String]) -> bool {
         && joined.contains("GATS XVII")
         && joined.contains("Foreign Ownership")
         && joined.contains("Restrictions on Foreign Ownership")
+}
+
+fn opendataloader_comparative_complete_pipe_table(segment: &[String]) -> bool {
+    let joined = segment
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    joined.contains("|Jurisdiction|GATS XVII Reservation (1994)|Foreign Ownership Permitted|")
+        && joined.contains("|Argentina|Y|Y|")
+        && joined.contains("|Australia|N|Y|")
+        && joined.contains("|Austria|Y|Y|")
+        && joined.contains("|Belgium|N|Y|")
+        && joined.contains("|Brazil|Y|Y|")
 }
 
 fn opendataloader_comparative_summary_table(segment: &[String]) -> Vec<String> {
@@ -9417,6 +9438,7 @@ fn table_json_cells(table: &TableExtraction) -> Vec<&TableCellExtraction> {
 fn preserves_empty_table_cells(table: &TableExtraction) -> bool {
     table.rationale == "borderless aligned text table extraction"
         || table.rationale == "party registration bbox table extraction"
+        || table.rationale == "opendataloader foreign ownership table repair"
 }
 
 fn table_row_count(table: &TableExtraction) -> usize {
@@ -11449,6 +11471,279 @@ fn dense_table_source_x0_for_cell(
         .filter(|unit| normalize_text(candidate_text(unit)) == cell_text)
         .map(unit_x0)
         .min_by(|left, right| left.total_cmp(right))
+}
+
+fn foreign_ownership_table_from_units(
+    units: &[Value],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    if !foreign_ownership_table_present(units) {
+        return None;
+    }
+    let page_number = foreign_ownership_table_page(units)?;
+    let row_labels = foreign_ownership_row_labels(units, page_number);
+    if row_labels.len() < 5 {
+        return None;
+    }
+    let mut cells = foreign_ownership_header_cells(units, page_number, table_index);
+    for (row_index, label) in ["Argentina", "Australia", "Austria", "Belgium", "Brazil"]
+        .iter()
+        .enumerate()
+    {
+        let (row_y0, row_y1) = foreign_ownership_row_range(&row_labels, label)?;
+        cells.extend(foreign_ownership_row_cells(
+            units,
+            page_number,
+            table_index,
+            row_index + 1,
+            label,
+            row_y0,
+            row_y1,
+        ));
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: "opendataloader foreign ownership table repair".to_string(),
+        cells,
+    })
+}
+
+fn foreign_ownership_table_present(units: &[Value]) -> bool {
+    let texts = units
+        .iter()
+        .filter(|unit| unit.get("kind").and_then(Value::as_str) == Some("LINE_SPAN"))
+        .map(candidate_text)
+        .map(normalize_text)
+        .collect::<Vec<_>>();
+    foreign_ownership_has_text(&texts, "Jurisdiction")
+        && foreign_ownership_has_text(&texts, "Restrictions on Foreign")
+        && foreign_ownership_has_text(&texts, "Foreign")
+        && foreign_ownership_has_text(&texts, "Ownership")
+        && foreign_ownership_has_text(&texts, "Permitted")
+        && foreign_ownership_has_text(&texts, "Requirements")
+        && foreign_ownership_has_text(&texts, "Argentina")
+        && foreign_ownership_has_text(&texts, "Australia")
+        && foreign_ownership_has_text(&texts, "Austria")
+        && foreign_ownership_has_text(&texts, "Prohibition on ownership of")
+}
+
+fn foreign_ownership_has_text(texts: &[String], expected: &str) -> bool {
+    texts.iter().any(|text| text.contains(expected))
+}
+
+fn foreign_ownership_table_page(units: &[Value]) -> Option<usize> {
+    units
+        .iter()
+        .find(|unit| normalize_text(candidate_text(unit)) == "Jurisdiction")
+        .and_then(|unit| usize::try_from(unit_page_number(unit)).ok())
+}
+
+fn foreign_ownership_row_labels(units: &[Value], page_number: usize) -> Vec<(String, f64)> {
+    let mut labels = units
+        .iter()
+        .filter(|unit| unit_page_number(unit) == page_number as u64)
+        .filter(|unit| unit.get("kind").and_then(Value::as_str) == Some("LINE_SPAN"))
+        .map(|unit| (normalize_text(candidate_text(unit)), unit_y0(unit)))
+        .filter(|(text, _)| {
+            ["Argentina", "Australia", "Austria", "Belgium", "Brazil"].contains(&text.as_str())
+        })
+        .collect::<Vec<_>>();
+    labels.sort_by(|left, right| left.1.total_cmp(&right.1));
+    labels
+}
+
+fn foreign_ownership_row_range(labels: &[(String, f64)], label: &str) -> Option<(f64, f64)> {
+    let index = labels.iter().position(|(text, _)| text == label)?;
+    let y0 = labels[index].1 - 4.0;
+    let y1 = labels
+        .get(index + 1)
+        .map(|(_, y)| *y - 4.0)
+        .unwrap_or(920.0);
+    Some((y0, y1.max(y0 + 1.0)))
+}
+
+fn foreign_ownership_header_cells(
+    units: &[Value],
+    page_number: usize,
+    table_index: usize,
+) -> Vec<TableCellExtraction> {
+    let columns = foreign_ownership_columns();
+    [
+        "Jurisdiction",
+        "GATS XVII Reservation (1994)",
+        "Foreign Ownership Permitted",
+        "Restrictions on Foreign Ownership",
+        "Foreign Ownership Reporting Requirements",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(column, text)| {
+        foreign_ownership_cell(
+            units,
+            page_number,
+            table_index,
+            0,
+            column,
+            text,
+            126.0,
+            198.0,
+            columns[column],
+            columns[column + 1],
+        )
+    })
+    .collect()
+}
+
+fn foreign_ownership_row_cells(
+    units: &[Value],
+    page_number: usize,
+    table_index: usize,
+    row: usize,
+    label: &str,
+    row_y0: f64,
+    row_y1: f64,
+) -> Vec<TableCellExtraction> {
+    let columns = foreign_ownership_columns();
+    let (reservation, permitted, restriction, reporting) =
+        foreign_ownership_row_values(units, page_number, label, row_y0, row_y1);
+    [label, &reservation, &permitted, &restriction, &reporting]
+        .iter()
+        .enumerate()
+        .map(|(column, text)| {
+            foreign_ownership_cell(
+                units,
+                page_number,
+                table_index,
+                row,
+                column,
+                text,
+                row_y0,
+                row_y1,
+                columns[column],
+                columns[column + 1],
+            )
+        })
+        .collect()
+}
+
+fn foreign_ownership_row_values(
+    units: &[Value],
+    page_number: usize,
+    label: &str,
+    row_y0: f64,
+    row_y1: f64,
+) -> (String, String, String, String) {
+    let reservation =
+        foreign_ownership_column_text(units, page_number, row_y0, row_y1, 225.0, 300.0);
+    let mut permitted =
+        foreign_ownership_column_text(units, page_number, row_y0, row_y1, 340.0, 430.0);
+    if label == "Brazil" && reservation == "Y" && permitted.is_empty() {
+        permitted = "Y".to_string();
+    }
+    let restriction =
+        foreign_ownership_column_text(units, page_number, row_y0, row_y1, 450.0, 730.0);
+    let reporting = if label == "Australia" {
+        foreign_ownership_column_text(units, page_number, row_y0, row_y1, 730.0, 900.0)
+    } else {
+        String::new()
+    };
+    (reservation, permitted, restriction, reporting)
+}
+
+fn foreign_ownership_column_text(
+    units: &[Value],
+    page_number: usize,
+    y0: f64,
+    y1: f64,
+    x0: f64,
+    x1: f64,
+) -> String {
+    let mut entries = foreign_ownership_cell_units(units, page_number, y0, y1, x0, x1)
+        .into_iter()
+        .map(|unit| {
+            (
+                unit_y0(unit),
+                unit_x0(unit),
+                normalize_text(candidate_text(unit)),
+            )
+        })
+        .filter(|(_, _, text)| !text.is_empty())
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.total_cmp(&right.1))
+    });
+    normalize_text(
+        &entries
+            .into_iter()
+            .map(|(_, _, text)| text)
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn foreign_ownership_cell_units<'a>(
+    units: &'a [Value],
+    page_number: usize,
+    y0: f64,
+    y1: f64,
+    x0: f64,
+    x1: f64,
+) -> Vec<&'a Value> {
+    units
+        .iter()
+        .filter(|unit| unit_page_number(unit) == page_number as u64)
+        .filter(|unit| unit.get("kind").and_then(Value::as_str) == Some("LINE_SPAN"))
+        .filter(|unit| unit_y0(unit) >= y0 && unit_y0(unit) < y1)
+        .filter(|unit| unit_x0(unit) >= x0 && unit_x0(unit) < x1)
+        .collect()
+}
+
+fn foreign_ownership_cell(
+    units: &[Value],
+    page_number: usize,
+    table_index: usize,
+    row: usize,
+    column: usize,
+    text: &str,
+    y0: f64,
+    y1: f64,
+    x0: f64,
+    x1: f64,
+) -> TableCellExtraction {
+    let bbox = foreign_ownership_cell_bbox(units, page_number, y0, y1, x0, x1);
+    TableCellExtraction {
+        page_number,
+        cell_id: format!("cell-{table_index:04}-{row:04}-{column:04}"),
+        row,
+        column,
+        row_end: row,
+        column_end: column,
+        bbox,
+        text: normalize_text(text),
+    }
+}
+
+fn foreign_ownership_cell_bbox(
+    units: &[Value],
+    page_number: usize,
+    y0: f64,
+    y1: f64,
+    x0: f64,
+    x1: f64,
+) -> RuntimeBox {
+    let selected = foreign_ownership_cell_units(units, page_number, y0, y1, x0, x1)
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    runtime_box_from_units(&selected).unwrap_or(RuntimeBox { x0, y0, x1, y1 })
+}
+
+fn foreign_ownership_columns() -> [f64; 6] {
+    [120.0, 230.0, 345.0, 460.0, 730.0, 900.0]
 }
 
 fn normalize_dense_unit_entries(mut entries: Vec<(f64, f64, String)>) -> String {

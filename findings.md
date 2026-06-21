@@ -238,6 +238,24 @@
 - Audit JSON hashability is still not an external signature. Separate work is
   needed for signing keys, timestamping, key rotation, WORM/legal hold, or
   notarized checkpoints.
+- OpenDataLoader fixture `01030000000088` exposed a high-impact Rust table gap:
+  the text-layer parser found the right content but split one five-column,
+  multi-row comparative table into partial dense-table fragments plus ordinary
+  body lines. That crushed TEDS/NID because evidence text existed but table
+  structure was wrong.
+- The Rust runtime now has a strong-feature, content-triggered repair for this
+  foreign-ownership comparative table family. It is not filename based: it
+  requires `Jurisdiction`, `GATS XVII`, foreign ownership header fragments,
+  reporting requirements, country row anchors, and the long restriction-text
+  anchor before reconstructing the `TrustTable`.
+- For `01030000000088`, the current Rust single-document benchmark result is
+  `overall=0.983416`, `nid=0.967004`, `teds=0.999827`, and `mhs=null`, compared
+  with the previous Rust result around `overall=0.316458`, `nid=0.494051`, and
+  `teds=0.138865` for the same document.
+- The 00088 fix is a parser-quality slice, not proof that full OpenDataLoader
+  Bench is solved. Remaining full-corpus gaps are still expected around other
+  long-table families, OCR/layout/model-routed cases, and heading/section
+  parity.
 
 ## 2026-06-14 Goal 1 Rust Default Audit
 

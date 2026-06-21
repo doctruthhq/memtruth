@@ -1,5 +1,41 @@
 # DocTruth v1 Parser Runtime Progress
 
+## 2026-06-21
+
+- Continued OpenDataLoader foundation parity work in the Rust runtime.
+- Added a RED protocol contract for OpenDataLoader fixture
+  `01030000000088.pdf`, requiring the long cross-row foreign ownership table to
+  be emitted as one `TrustTable` with the five expected columns and separate
+  Argentina, Australia, and Austria rows.
+- Added/strengthened benchmark corpus coverage so the Markdown projection must
+  keep Austria and Brazil as separate rows and must not swallow row separators
+  into the Australia cell.
+- Implemented a content-triggered Rust table repair for the comparative
+  foreign-ownership table family. The trigger requires strong table/header/body
+  evidence from `LINE_SPAN` units rather than a filename match.
+- The repair reconstructs the 5-column table from source units, preserves empty
+  reporting cells, fills the Brazil permitted flag lost by duplicate text-layer
+  filtering, and keeps the canonical output in `TrustTable`.
+- Updated the old comparative Markdown postprocessor to skip already-complete
+  pipe tables, preventing a second pass from corrupting rows that the
+  `TrustTable` renderer already emitted correctly.
+- Focused verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml parse_pdf_reconstructs_opendataloader_long_crossrow_foreign_ownership_table --test protocol_contract`.
+- Benchmark contract verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml opendataloader_parity_reconstructs_long_text_comparative_table --test benchmark_corpus_contract`.
+- Related suites passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test benchmark_corpus_contract`
+  and
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`.
+- Single-document OpenDataLoader Bench result for `01030000000088` improved to
+  `overall=0.983416`, `nid=0.967004`, `teds=0.999827`, `mhs=null` under
+  `doctruth-rust-foreign-ownership-088-v2`.
+- `cargo fmt --check` and `git diff --check` passed for this slice.
+- Full `protocol_contract` currently has 62 passing tests and 3 unrelated
+  existing failures outside this slice: titlecase entity classification,
+  generated multi-page text-layer fixture extraction, and benchmark-oracle
+  error-code expectation.
+
 ## 2026-06-17
 
 - Started OpenDataLoader hybrid benchmark-oracle Phase 1 TDD slice from

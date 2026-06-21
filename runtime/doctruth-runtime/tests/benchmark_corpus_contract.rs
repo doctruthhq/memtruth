@@ -120,6 +120,20 @@ fn opendataloader_parity_reconstructs_long_text_comparative_table() {
         ),
         "expected Australia row to be reconstructed as a table row:\n{markdown}"
     );
+    assert!(
+        markdown.contains("|Austria|Y|Y|Prior authorization required with exceptions; authorization may be refused"),
+        "expected Austria to remain a separate reconstructed row:\n{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "|Brazil|Y|Y|Acquisition of rural property by an alien individual or company"
+        ),
+        "expected Brazil to remain a separate reconstructed row:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("\\|Austria\\|"),
+        "row separators must not be swallowed into Australia cell text:\n{markdown}"
+    );
 }
 
 #[test]

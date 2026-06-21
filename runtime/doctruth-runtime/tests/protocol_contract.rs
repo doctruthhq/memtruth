@@ -970,6 +970,90 @@ fn parse_pdf_keeps_opendataloader_party_registration_continuation_rows() {
 }
 
 #[test]
+fn parse_pdf_reconstructs_opendataloader_long_crossrow_foreign_ownership_table() {
+    let pdf = opendataloader_fixture("01030000000088.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(!tables.is_empty(), "expected at least one TrustTable");
+    let table = tables
+        .iter()
+        .find(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| {
+                    cell["text"]
+                        .as_str()
+                        .is_some_and(|text| text.contains("Foreign Ownership Permitted"))
+                }) && cells.iter().any(|cell| cell["text"] == "Argentina")
+                    && cells.iter().any(|cell| cell["text"] == "Australia")
+                    && cells.iter().any(|cell| cell["text"] == "Austria")
+            })
+        })
+        .unwrap_or_else(|| panic!("expected foreign ownership table in {tables:?}"));
+    let cells = table["cells"].as_array().unwrap();
+
+    assert!(
+        table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 5,
+        "expected at least five columns in {table:?}"
+    );
+    for expected in [
+        "Jurisdiction",
+        "GATS XVII Reservation",
+        "Foreign Ownership Permitted",
+        "Restrictions on Foreign Ownership",
+        "Foreign Ownership Reporting Requirements",
+        "Argentina",
+        "Australia",
+        "Austria",
+    ] {
+        assert!(
+            cells.iter().any(|cell| cell["text"]
+                .as_str()
+                .is_some_and(|text| text.contains(expected))),
+            "expected table cell {expected:?} in {cells:?}"
+        );
+    }
+    assert!(
+        cells.iter().any(|cell| {
+            cell["text"].as_str().is_some_and(|text| {
+                text.contains("Prohibition on ownership of property that contains or borders large and permanent bodies of water")
+            })
+        }),
+        "expected Argentina restriction text in {cells:?}"
+    );
+
+    let headings = json["contentBlocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|block| block["type"] == "heading")
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>();
+    for header in [
+        "Jurisdiction",
+        "GATS XVII Reservation",
+        "Foreign Ownership Permitted",
+        "Restrictions on Foreign Ownership",
+        "Foreign Ownership Reporting Requirements",
+    ] {
+        assert!(
+            !headings.contains(&header),
+            "table header {header:?} must not be duplicated as a heading in {headings:?}"
+        );
+    }
+}
+
+#[test]
 fn parse_pdf_does_not_emit_full_page_spanned_line_table_cell() {
     let pdf = opendataloader_fixture("01030000000041.pdf");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

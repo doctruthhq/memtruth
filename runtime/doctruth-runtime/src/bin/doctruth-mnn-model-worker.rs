@@ -1380,6 +1380,9 @@ fn table_cells_from_ocr(
     if tokens.is_empty() {
         return None;
     }
+    if let Some(cells) = numeric_table_cells_from_ocr_tokens(&tokens, image_width, image_height) {
+        return Some(cells);
+    }
     Some(table_cells_from_detections(
         rows,
         columns,
@@ -1419,6 +1422,131 @@ fn table_ocr_token_looks_like_header(text: &str) -> bool {
         || normalized.contains("degree")
         || normalized.contains("m2/s")
         || normalized.contains("m²/s")
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_table_cells_from_ocr_tokens(
+    tokens: &[TableTextToken],
+    image_width: u32,
+    image_height: u32,
+) -> Option<Vec<Value>> {
+    let mut numeric_tokens = tokens
+        .iter()
+        .filter(|token| table_cell_text_looks_numeric_or_unit(&token.text))
+        .cloned()
+        .collect::<Vec<_>>();
+    if numeric_tokens.len() < 6 {
+        return None;
+    }
+
+    numeric_tokens.sort_by(|left, right| {
+        table_token_center_y(left)
+            .partial_cmp(&table_token_center_y(right))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                table_token_center_x(left)
+                    .partial_cmp(&table_token_center_x(right))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+
+    let rows = numeric_ocr_rows(numeric_tokens, image_height);
+    let rows = rows
+        .into_iter()
+        .filter(|row| row.len() >= 3)
+        .collect::<Vec<_>>();
+    if rows.len() < 2 {
+        return None;
+    }
+    let rows = numeric_ocr_main_table_rows(rows, image_height);
+    if rows.len() < 2 {
+        return None;
+    }
+
+    let max_columns = rows.iter().map(Vec::len).max().unwrap_or_default();
+    if max_columns < 3 {
+        return None;
+    }
+
+    let mut cells = Vec::new();
+    for (row_index, mut row) in rows.into_iter().enumerate() {
+        row.sort_by(|left, right| {
+            table_token_center_x(left)
+                .partial_cmp(&table_token_center_x(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for (column_index, token) in row.into_iter().enumerate() {
+            cells.push(json!({
+                "cellId": format!("mnn-table-0001-r{row_index:04}-c{column_index:04}"),
+                "rowRange": {"start": row_index, "end": row_index},
+                "columnRange": {"start": column_index, "end": column_index},
+                "boundingBox": scaled_bbox_json(token.bbox, image_width, image_height),
+                "text": token.text,
+                "confidence": {
+                    "score": 0.74,
+                    "rationale": "ocr numeric table grid clustering"
+                }
+            }));
+        }
+    }
+    Some(cells)
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_rows(tokens: Vec<TableTextToken>, image_height: u32) -> Vec<Vec<TableTextToken>> {
+    let tolerance = (14.0 / image_height.max(1) as f64).max(0.004);
+    let mut rows: Vec<Vec<TableTextToken>> = Vec::new();
+    for token in tokens {
+        if let Some(row) = rows.iter_mut().find(|row| {
+            (numeric_ocr_row_center_y(row) - table_token_center_y(&token)).abs() <= tolerance
+        }) {
+            row.push(token);
+        } else {
+            rows.push(vec![token]);
+        }
+    }
+    rows
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_main_table_rows(
+    rows: Vec<Vec<TableTextToken>>,
+    image_height: u32,
+) -> Vec<Vec<TableTextToken>> {
+    let gap_limit = (45.0 / image_height.max(1) as f64).max(0.025);
+    let mut segments: Vec<Vec<Vec<TableTextToken>>> = Vec::new();
+    for row in rows {
+        let should_start = segments
+            .last()
+            .and_then(|segment| segment.last())
+            .is_some_and(|previous| {
+                numeric_ocr_row_center_y(&row) - numeric_ocr_row_center_y(previous) > gap_limit
+            });
+        if should_start || segments.is_empty() {
+            segments.push(vec![row]);
+        } else if let Some(segment) = segments.last_mut() {
+            segment.push(row);
+        }
+    }
+    segments
+        .into_iter()
+        .max_by_key(|segment| (segment.len(), segment.iter().map(Vec::len).sum::<usize>()))
+        .unwrap_or_default()
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_row_center_y(row: &[TableTextToken]) -> f64 {
+    row.iter().map(table_token_center_y).sum::<f64>() / row.len().max(1) as f64
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn table_token_center_x(token: &TableTextToken) -> f64 {
+    (token.bbox.x0 + token.bbox.x1) / 2.0
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn table_token_center_y(token: &TableTextToken) -> f64 {
+    (token.bbox.y0 + token.bbox.y1) / 2.0
 }
 
 #[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
@@ -2134,7 +2262,79 @@ mod tests {
         assert!(!table_text_assignment_looks_polluted(&cells));
     }
 
+    #[test]
+    fn numeric_ocr_grid_reconstructs_four_column_viscosity_rows() {
+        let tokens = vec![
+            token("0", 216.0, 721.0, 245.0, 749.0),
+            token("1.793E-06", 428.0, 719.0, 530.0, 748.0),
+            token("25", 707.0, 717.0, 748.0, 751.0),
+            token("8.930E-07", 925.0, 717.0, 1027.0, 750.0),
+            token("1", 216.0, 740.0, 245.0, 769.0),
+            token("1.732E-06", 428.0, 739.0, 530.0, 772.0),
+            token("26", 704.0, 735.0, 751.0, 774.0),
+            token("8.760E-07", 925.0, 739.0, 1027.0, 772.0),
+        ];
+
+        let cells = numeric_table_cells_from_ocr_tokens(&tokens, 1224, 1584).unwrap();
+        let text = cells
+            .iter()
+            .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            text,
+            vec![
+                "0",
+                "1.793E-06",
+                "25",
+                "8.930E-07",
+                "1",
+                "1.732E-06",
+                "26",
+                "8.760E-07"
+            ]
+        );
+    }
+
+    #[test]
+    fn numeric_ocr_grid_rejects_far_numeric_rows_outside_main_table() {
+        let tokens = vec![
+            token("0", 216.0, 721.0, 245.0, 749.0),
+            token("1.793E-06", 428.0, 719.0, 530.0, 748.0),
+            token("25", 707.0, 717.0, 748.0, 751.0),
+            token("8.930E-07", 925.0, 717.0, 1027.0, 750.0),
+            token("1", 216.0, 740.0, 245.0, 769.0),
+            token("1.732E-06", 428.0, 739.0, 530.0, 772.0),
+            token("26", 704.0, 735.0, 751.0, 774.0),
+            token("8.760E-07", 925.0, 739.0, 1027.0, 772.0),
+            token("1", 140.0, 1180.0, 160.0, 1210.0),
+            token("2", 240.0, 1180.0, 260.0, 1210.0),
+            token("3", 340.0, 1180.0, 360.0, 1210.0),
+        ];
+
+        let cells = numeric_table_cells_from_ocr_tokens(&tokens, 1224, 1584).unwrap();
+        let text = cells
+            .iter()
+            .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert_eq!(text.len(), 8);
+        assert!(!text.iter().rev().take(3).eq(["1", "2", "3"].iter()));
+    }
+
     fn cell(text: &str) -> Value {
         json!({"text": text})
+    }
+
+    fn token(text: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> TableTextToken {
+        TableTextToken {
+            text: text.to_string(),
+            bbox: NormalizedBox {
+                x0: x0 / 1224.0,
+                y0: y0 / 1584.0,
+                x1: x1 / 1224.0,
+                y1: y1 / 1584.0,
+            },
+        }
     }
 }

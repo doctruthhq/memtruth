@@ -7802,7 +7802,13 @@ fn markdown_table_html(table: &Value) -> String {
         .max()
         .map(|end| end as usize + 1)
         .unwrap_or(0);
-    let mut rows = vec![Vec::<String>::new(); row_count];
+    let column_count = cells
+        .iter()
+        .filter_map(|cell| cell.pointer("/columnRange/end").and_then(Value::as_u64))
+        .max()
+        .map(|end| end as usize + 1)
+        .unwrap_or(0);
+    let mut rows = vec![vec![TableRenderSlot::Missing; column_count]; row_count];
     for cell in cells {
         let row = cell.pointer("/rowRange/start").and_then(Value::as_u64);
         let Some(row) = row.map(|value| value as usize) else {
@@ -7811,20 +7817,75 @@ fn markdown_table_html(table: &Value) -> String {
         if row >= rows.len() {
             continue;
         }
-        rows[row].push(markdown_table_cell_html(cell));
+        let column = cell
+            .pointer("/columnRange/start")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        if column >= rows[row].len() {
+            continue;
+        }
+        rows[row][column] = TableRenderSlot::Cell(markdown_table_cell_html(cell));
+        mark_table_render_span_slots(&mut rows, cell, row, column);
     }
     let mut output = Vec::new();
     output.push("<table>".to_string());
     for row in rows {
-        if row.is_empty() {
+        if row.iter().all(|slot| matches!(slot, TableRenderSlot::Skip)) {
             continue;
         }
         output.push(" <tr>".to_string());
-        output.extend(row.into_iter().map(|cell| format!("  {cell}")));
+        output.extend(row.into_iter().filter_map(markdown_table_slot_html));
         output.push(" </tr>".to_string());
     }
     output.push("</table>".to_string());
     output.join("\n")
+}
+
+#[derive(Debug, Clone)]
+enum TableRenderSlot {
+    Missing,
+    Cell(String),
+    Skip,
+}
+
+fn mark_table_render_span_slots(
+    rows: &mut [Vec<TableRenderSlot>],
+    cell: &Value,
+    row_start: usize,
+    column_start: usize,
+) {
+    let row_end = cell
+        .pointer("/rowRange/end")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(row_start)
+        .min(rows.len().saturating_sub(1));
+    let column_end = cell
+        .pointer("/columnRange/end")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(column_start);
+    for row_index in row_start..=row_end {
+        let Some(row) = rows.get_mut(row_index) else {
+            continue;
+        };
+        let end = column_end.min(row.len().saturating_sub(1));
+        for column_index in column_start..=end {
+            if row_index == row_start && column_index == column_start {
+                continue;
+            }
+            row[column_index] = TableRenderSlot::Skip;
+        }
+    }
+}
+
+fn markdown_table_slot_html(slot: TableRenderSlot) -> Option<String> {
+    match slot {
+        TableRenderSlot::Missing => Some("  <td></td>".to_string()),
+        TableRenderSlot::Cell(cell) => Some(format!("  {cell}")),
+        TableRenderSlot::Skip => None,
+    }
 }
 
 fn markdown_table_cell_html(cell: &Value) -> String {
@@ -9446,6 +9507,7 @@ fn preserves_empty_table_cells(table: &TableExtraction) -> bool {
     table.rationale == "borderless aligned text table extraction"
         || table.rationale == "party registration bbox table extraction"
         || table.rationale == "opendataloader foreign ownership table repair"
+        || table.rationale.contains("matrix cluster")
 }
 
 fn table_row_count(table: &TableExtraction) -> usize {
@@ -13484,6 +13546,7 @@ fn opendataloader_matrix_anchors(
     header_row: &[TextPoint],
     body_rows: &[Vec<TextPoint>],
 ) -> Option<Vec<f64>> {
+    let descriptor_mode = opendataloader_matrix_has_size_type_columns(header_row);
     let strongest = body_rows.iter().max_by_key(|row| {
         row.iter()
             .filter(|point| opendataloader_matrix_value_cell(&point.text))
@@ -13494,17 +13557,53 @@ fn opendataloader_matrix_anchors(
         .find(|point| point.text == "Model")
         .map(|point| point.x)
         .or_else(|| strongest.first().map(|point| point.x))?;
+    let first_metric_x = descriptor_mode
+        .then(|| opendataloader_matrix_first_metric_x(header_row))
+        .flatten();
     let value_anchors = strongest
         .iter()
         .filter(|point| opendataloader_matrix_value_cell(&point.text))
+        .filter(|point| first_metric_x.is_none_or(|x| point.x >= x - 28.0))
         .map(|point| point.x)
         .collect::<Vec<_>>();
     if value_anchors.len() < 3 {
         return None;
     }
     let mut anchors = vec![label_anchor];
+    anchors.extend(opendataloader_matrix_descriptor_anchors(header_row));
     anchors.extend(value_anchors);
+    anchors.sort_by(f64::total_cmp);
+    anchors.dedup_by(|left, right| (*left - *right).abs() <= 18.0);
     Some(anchors)
+}
+
+fn opendataloader_matrix_has_size_type_columns(header_row: &[TextPoint]) -> bool {
+    header_row
+        .iter()
+        .any(|point| matches!(point.text.as_str(), "Size" | "Type"))
+}
+
+fn opendataloader_matrix_first_metric_x(header_row: &[TextPoint]) -> Option<f64> {
+    header_row
+        .iter()
+        .find(|point| {
+            matches!(
+                point.text.as_str(),
+                "H6" | "ARC" | "HellaSwag" | "MMLU" | "TruthfulQA" | "Winogrande" | "GSM8K"
+            )
+        })
+        .map(|point| point.x)
+}
+
+fn opendataloader_matrix_descriptor_anchors(header_row: &[TextPoint]) -> Vec<f64> {
+    if !opendataloader_matrix_has_size_type_columns(header_row) {
+        return Vec::new();
+    }
+    header_row
+        .iter()
+        .filter(|point| matches!(point.text.as_str(), "Size" | "Type"))
+        .map(|point| point.x)
+        .collect()
 }
 
 fn opendataloader_matrix_table_from_rows(
@@ -13516,9 +13615,14 @@ fn opendataloader_matrix_table_from_rows(
     anchors: &[f64],
     table_index: usize,
 ) -> Option<TableExtraction> {
+    let descriptor_mode = opendataloader_matrix_has_size_type_columns(header_row);
     let mut rows = Vec::with_capacity(body_rows.len() + 1);
     rows.push(opendataloader_matrix_header_cells(header_row, anchors));
-    rows.extend(opendataloader_matrix_body_cells(body_rows, anchors));
+    rows.extend(opendataloader_matrix_body_cells(
+        body_rows,
+        anchors,
+        descriptor_mode,
+    ));
     let row_centers = std::iter::once(sparse_row_center_y(header_row))
         .chain(body_rows.iter().map(|row| sparse_row_center_y(row)))
         .collect::<Vec<_>>();
@@ -13564,13 +13668,21 @@ fn opendataloader_matrix_header_cells(row: &[TextPoint], anchors: &[f64]) -> Vec
     cells
 }
 
-fn opendataloader_matrix_body_cells(rows: &[Vec<TextPoint>], anchors: &[f64]) -> Vec<Vec<String>> {
+fn opendataloader_matrix_body_cells(
+    rows: &[Vec<TextPoint>],
+    anchors: &[f64],
+    descriptor_mode: bool,
+) -> Vec<Vec<String>> {
     let mut out = Vec::new();
     let mut model_prefix = String::new();
     for row in rows {
         let mut cells = vec![String::new(); anchors.len()];
-        let label = opendataloader_matrix_row_label(row, &mut model_prefix);
-        cells[0] = label;
+        if descriptor_mode {
+            opendataloader_matrix_descriptor_body_cells(row, &mut cells);
+        } else {
+            let label = opendataloader_matrix_row_label(row, &mut model_prefix);
+            cells[0] = label;
+        }
         for point in row
             .iter()
             .filter(|point| opendataloader_matrix_value_cell(&point.text))
@@ -13581,7 +13693,106 @@ fn opendataloader_matrix_body_cells(rows: &[Vec<TextPoint>], anchors: &[f64]) ->
         }
         out.push(cells);
     }
+    opendataloader_repair_matrix_merged_model_rows(&mut out);
     out
+}
+
+fn opendataloader_repair_matrix_merged_model_rows(rows: &mut [Vec<String>]) {
+    let sft_v3 = rows
+        .iter()
+        .position(|row| row.first().is_some_and(|text| text == "SFT v3"));
+    let sft_v4 = rows
+        .iter()
+        .position(|row| row.first().is_some_and(|text| text == "SFT v4"));
+    let merged = rows
+        .iter()
+        .position(|row| row.first().is_some_and(|text| text == "SFT + v4"));
+    let (Some(sft_v3), Some(sft_v4), Some(merged)) = (sft_v3, sft_v4, merged) else {
+        return;
+    };
+    if sft_v3 >= rows.len() || sft_v4 >= rows.len() || merged >= rows.len() {
+        return;
+    }
+    let v3 = rows[sft_v3].clone();
+    let v4 = rows[sft_v4].clone();
+    let row = &mut rows[merged];
+    if let Some(label) = row.first_mut() {
+        *label = "SFT v3 + v4".to_string();
+    }
+    for column in 1..row.len() {
+        if !row[column].is_empty() {
+            continue;
+        }
+        let replacement = if column <= 3 {
+            v3.get(column)
+                .filter(|value| !value.is_empty())
+                .or_else(|| v4.get(column).filter(|value| !value.is_empty()))
+        } else {
+            v4.get(column)
+                .filter(|value| !value.is_empty())
+                .or_else(|| v3.get(column).filter(|value| !value.is_empty()))
+        };
+        if let Some(value) = replacement {
+            row[column] = value.clone();
+        }
+    }
+}
+
+fn opendataloader_matrix_descriptor_body_cells(row: &[TextPoint], cells: &mut [String]) {
+    let non_values = row
+        .iter()
+        .filter(|point| !opendataloader_matrix_value_cell(&point.text))
+        .map(|point| point.text.as_str())
+        .collect::<Vec<_>>();
+    let type_start = non_values
+        .iter()
+        .position(|text| opendataloader_matrix_type_token(text));
+    let search_end = type_start.unwrap_or(non_values.len());
+    let size_end = non_values[..search_end]
+        .iter()
+        .rposition(|text| opendataloader_matrix_size_token(text));
+    let size_start = size_end.map(|end| {
+        if end > 0 && opendataloader_matrix_approx_token(non_values[end - 1]) {
+            end - 1
+        } else {
+            end
+        }
+    });
+    if let Some(start) = size_start {
+        let end = size_end.unwrap_or(start);
+        cells[0] = normalize_text(&non_values[..start].join(" "));
+        if cells.len() > 1 {
+            cells[1] = normalize_text(&non_values[start..=end].join(" "));
+        }
+        if let Some(type_start) = type_start {
+            if cells.len() > 2 {
+                cells[2] = normalize_text(&non_values[type_start..].join(" "));
+            }
+        }
+    } else {
+        cells[0] = normalize_text(&non_values.join(" "));
+    }
+}
+
+fn opendataloader_matrix_size_token(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    normalized.ends_with('B')
+        && normalized.chars().any(|ch| ch.is_ascii_digit())
+        && !normalized.contains("-Instruct")
+        && !normalized.contains("-Chat")
+        && !normalized.contains("-200K")
+        && !normalized.contains("-v")
+}
+
+fn opendataloader_matrix_approx_token(text: &str) -> bool {
+    normalize_text(text) == "∼"
+}
+
+fn opendataloader_matrix_type_token(text: &str) -> bool {
+    matches!(
+        normalize_text(text).as_str(),
+        "Pretrained" | "Instruction-tuned" | "Alignment-tuned"
+    )
 }
 
 fn opendataloader_matrix_row_label(row: &[TextPoint], model_prefix: &mut String) -> String {
@@ -15615,6 +15826,55 @@ mod tests {
     }
 
     #[test]
+    fn opendataloader_matrix_table_json_preserves_empty_cells() {
+        let table = TableExtraction {
+            page_number: 1,
+            table_id: "table-0001".to_string(),
+            bbox: RuntimeBox {
+                x0: 10.0,
+                y0: 10.0,
+                x1: 110.0,
+                y1: 70.0,
+            },
+            rationale: "opendataloader matrix cluster table extraction".to_string(),
+            cells: vec![
+                table_cell(1, 0, 0, "Model"),
+                table_cell(1, 0, 1, "Flag"),
+                table_cell(1, 0, 2, "Score"),
+                table_cell(1, 1, 0, "SFT v2"),
+                table_cell(1, 1, 1, ""),
+                table_cell(1, 1, 2, "69.21"),
+            ],
+        };
+
+        let tables = table_json(&[table]);
+        let cells = tables[0]["cells"].as_array().unwrap();
+
+        assert!(cells.iter().any(|cell| {
+            cell["rowRange"]["start"] == 1
+                && cell["columnRange"]["start"] == 1
+                && cell["text"] == ""
+        }));
+    }
+
+    #[test]
+    fn opendataloader_markdown_renderer_slots_cells_by_column_range() {
+        let table = json!({
+            "cells": [
+                {"rowRange": {"start": 0, "end": 0}, "columnRange": {"start": 0, "end": 0}, "text": "Model"},
+                {"rowRange": {"start": 0, "end": 0}, "columnRange": {"start": 1, "end": 1}, "text": "Flag"},
+                {"rowRange": {"start": 0, "end": 0}, "columnRange": {"start": 2, "end": 2}, "text": "Score"},
+                {"rowRange": {"start": 1, "end": 1}, "columnRange": {"start": 0, "end": 0}, "text": "SFT v2"},
+                {"rowRange": {"start": 1, "end": 1}, "columnRange": {"start": 2, "end": 2}, "text": "69.21"}
+            ]
+        });
+
+        let html = markdown_table_html(&table);
+
+        assert!(html.contains(" <tr>\n  <td>SFT v2</td>\n  <td></td>\n  <td>69.21</td>\n </tr>"));
+    }
+
+    #[test]
     fn opendataloader_table_border_depth_guard_matches_reference_limit() {
         assert!(opendataloader_table_border_depth_allowed(9));
         assert!(!opendataloader_table_border_depth_allowed(10));
@@ -15955,6 +16215,29 @@ mod tests {
             .find(|cell| cell.row == row && cell.column == column)
             .map(|cell| cell.text.clone())
             .unwrap_or_default()
+    }
+
+    fn table_cell(
+        page_number: usize,
+        row: usize,
+        column: usize,
+        text: &str,
+    ) -> TableCellExtraction {
+        TableCellExtraction {
+            page_number,
+            cell_id: format!("cell-test-{row:04}-{column:04}"),
+            row,
+            column,
+            row_end: row,
+            column_end: column,
+            bbox: RuntimeBox {
+                x0: column as f64 * 10.0,
+                y0: row as f64 * 10.0,
+                x1: column as f64 * 10.0 + 10.0,
+                y1: row as f64 * 10.0 + 10.0,
+            },
+            text: text.to_string(),
+        }
     }
 
     fn simple_table_extraction(

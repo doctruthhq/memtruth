@@ -285,6 +285,79 @@ fn opendataloader_parity_reconstructs_blank_matrix_table() {
 }
 
 #[test]
+fn opendataloader_content_page_preserves_toc_case_00198() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-toc-case-00198");
+    let report = run_opendataloader_prediction("01030000000198", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000198.md")).unwrap();
+    assert_ne!(
+        markdown.trim(),
+        "6",
+        "content page should not collapse to only the page number:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("Contents"),
+        "expected Contents heading to be preserved:\n{markdown}"
+    );
+    for expected in [
+        "1. Overview of OCR Pack",
+        "2. Introduction of Product Services and Key Features",
+        "3. Product - Detail Specification",
+        "4. Integration Policy",
+        "5. FAQ",
+    ] {
+        assert!(
+            markdown.contains(expected),
+            "expected TOC line `{expected}` to be preserved:\n{markdown}"
+        );
+    }
+}
+
+#[test]
+fn opendataloader_matrix_table_preserves_descriptor_columns_case_00188() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-matrix-table-00188");
+    let report = run_opendataloader_prediction("01030000000188", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000188.md")).unwrap();
+    assert!(
+        markdown
+            .contains("|Model|Size|Type|H6 (Avg.)|ARC|HellaSwag|MMLU|TruthfulQA|Winogrande|GSM8K|"),
+        "expected descriptor columns to remain in the matrix table header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "|SOLAR 10.7B-Instruct|∼ 11B|Alignment-tuned|74.20|71.08|88.16|66.21|71.43|83.58|64.75|"
+        ),
+        "expected first model row to preserve Model/Size/Type cells before scores:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_matrix_table_preserves_empty_boolean_cells_case_00189() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-matrix-table-00189");
+    let report = run_opendataloader_prediction("01030000000189", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000189.md")).unwrap();
+    assert!(
+        markdown.contains(
+            "|Model|Alpaca-GPT4|OpenOrca|Synth. Math-Instruct|H6 (Avg.)|ARC|HellaSwag|MMLU|TruthfulQA|Winogrande|GSM8K|"
+        ),
+        "expected boolean dataset columns to remain separate in the matrix table header:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|SFT v1|O|✗|✗|69.15|67.66|86.03|65.88|60.12|82.95|52.24|"),
+        "expected false boolean cells to stay aligned instead of collapsing gaps:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|SFT v3 + v4|O|O|O|71.11|67.32|85.96|65.95|58.80|2.08|66.57|"),
+        "expected merged-model row to preserve boolean and score columns:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_repairs_split_year_headers_and_empty_table_columns() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-year-table-repair");
     let report = run_opendataloader_prediction("01030000000127", &output_dir);

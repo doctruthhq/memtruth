@@ -8287,3 +8287,23 @@
 - Remaining boundary: this proves real reference model artifacts are wired and
   hash-gated. It still does not execute ONNX inference in Rust or promote MNN;
   that requires the model execution backend / MNN conversion and decoder.
+
+## 2026-06-21 Edge-Model Route Coverage Gate
+
+- Added explicit `parserRun.modelRouting.requiresModelRuntime`,
+  `candidateRoutedPages`, and `blockedReason` fields so `auto`/`edge-model`
+  routes that need table/OCR/layout models cannot silently look like ordinary
+  deterministic parses when the model worker is missing or not READY.
+- Added OpenDataLoader prediction `summary.json` model routing coverage:
+  `requiresModelRuntime`, `startedModelRuntime`, `blockedModelRuntime`,
+  per-route counts, and blocked reasons.
+- Wired `model_routing_coverage` into MNN promotion resource gates. A run can
+  no longer be accepted as an MNN production profile when any document required
+  a model route but did not start it, even if aggregate OpenDataLoader quality
+  metrics are high.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml parse_pdf_auto_preset_table_heavy_without_worker_records_blocked_model_route --test model_worker_contract`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml opendataloader_prediction_summary_counts_blocked_model_runtime_routes --test benchmark_corpus_contract`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml opendataloader_promotion_report_blocks_when_model_routes_were_not_started --test benchmark_corpus_contract`.
+- Remaining boundary: this closes the benchmark/promotion accounting hole. It
+  does not implement the missing MNN table/layout decoders.

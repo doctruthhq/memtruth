@@ -486,6 +486,12 @@ impl ModelRouteDecision {
         } else {
             self.decision.as_str()
         };
+        let requires_model_runtime = self.decision != "deterministic-only";
+        let blocked_reason = if requires_model_runtime && !started_model_runtime {
+            Value::String("model-runtime-unavailable".to_string())
+        } else {
+            Value::Null
+        };
         json!({
             "mode": self.mode,
             "decision": if started_model_runtime {
@@ -495,8 +501,11 @@ impl ModelRouteDecision {
             },
             "route": route,
             "effectivePreset": self.effective_preset,
+            "requiresModelRuntime": requires_model_runtime,
             "startedModelRuntime": started_model_runtime,
+            "candidateRoutedPages": self.routed_pages,
             "routedPages": if started_model_runtime { json!(self.routed_pages) } else { json!([]) },
+            "blockedReason": blocked_reason,
             "models": model_identities
         })
     }
@@ -2791,15 +2800,26 @@ fn mnn_promotion_resource_json(gate: &Value, resource_profile: &Value) -> Value 
     let model_runtime_present = resource_profile
         .get("modelRuntime")
         .is_some_and(Value::is_object);
+    let blocked_model_runtime = resource_profile
+        .pointer("/modelRoutingCoverage/blockedModelRuntime")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let all_required_routes_started = blocked_model_runtime == 0;
     let materially_lower = match (model_peak, heavy_oracle) {
         (Some(model_peak), Some(heavy_oracle)) => model_peak < heavy_oracle,
         _ => false,
     };
     json!({
-        "passed": no_python_torch_docling && lazy && model_runtime_present && materially_lower,
+        "passed": no_python_torch_docling
+            && lazy
+            && model_runtime_present
+            && materially_lower
+            && all_required_routes_started,
         "noPythonTorchDoclingResidency": no_python_torch_docling,
         "lazyModelStartup": lazy,
         "modelRuntimePresent": model_runtime_present,
+        "allRequiredRoutesStarted": all_required_routes_started,
+        "blockedModelRuntime": blocked_model_runtime,
         "materiallyLowerThanHeavyOracle": materially_lower,
         "heavyOracleSteadyRssMb": optional_u64_json(heavy_oracle),
         "modelPeakMemoryMb": optional_u64_json(model_peak)
@@ -4202,8 +4222,15 @@ fn write_opendataloader_prediction_artifacts(
             "offline_mode": true,
             "allow_model_downloads": false
         });
-        let result = parse_pdf_for_prediction(&parse_request, timeout_seconds);
+        let mut result = parse_pdf_for_prediction(&parse_request, timeout_seconds);
         let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);
+        if timeout_seconds.is_some_and(|timeout| elapsed / 1000.0 > timeout) {
+            result = Err(error_json(
+                "PARSE_TIMEOUT",
+                "OpenDataLoader prediction parse exceeded timeout_seconds",
+            )
+            .to_string());
+        }
         match result {
             Ok(document) => {
                 fs::write(&markdown_path, markdown_from_document(&document)).map_err(|error| {
@@ -4263,6 +4290,7 @@ fn write_opendataloader_prediction_artifacts(
         "production_residency": {
             "python_torch_docling": false
         },
+        "model_routing_coverage": model_routing_coverage_json(&documents),
         "documents": documents
     });
     fs::write(output_dir.join("summary.json"), pretty_json(&summary)?).map_err(|error| {
@@ -4283,12 +4311,69 @@ fn write_opendataloader_prediction_artifacts(
     }))
 }
 
+fn model_routing_coverage_json(documents: &[Value]) -> Value {
+    let mut routes = BTreeMap::<String, u64>::new();
+    let mut blocked_reasons = BTreeMap::<String, u64>::new();
+    let mut requires_model_runtime = 0_u64;
+    let mut started_model_runtime = 0_u64;
+    let mut blocked_model_runtime = 0_u64;
+    for routing in documents
+        .iter()
+        .filter_map(|document| document.get("modelRouting"))
+        .filter(|routing| routing.is_object())
+    {
+        let route = routing
+            .get("route")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        *routes.entry(route.to_string()).or_default() += 1;
+        let requires = routing
+            .get("requiresModelRuntime")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let started = routing
+            .get("startedModelRuntime")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if requires {
+            requires_model_runtime += 1;
+        }
+        if started {
+            started_model_runtime += 1;
+        }
+        if requires && !started {
+            blocked_model_runtime += 1;
+            let reason = routing
+                .get("blockedReason")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            *blocked_reasons.entry(reason.to_string()).or_default() += 1;
+        }
+    }
+    json!({
+        "documentCount": documents.len(),
+        "requiresModelRuntime": requires_model_runtime,
+        "startedModelRuntime": started_model_runtime,
+        "blockedModelRuntime": blocked_model_runtime,
+        "routes": routes,
+        "blockedReasons": blocked_reasons
+    })
+}
+
 fn parse_pdf_for_prediction(
     request: &Value,
     timeout_seconds: Option<f64>,
 ) -> Result<Value, String> {
-    let _ = timeout_seconds;
-    parse_pdf_json(request)
+    let started = Instant::now();
+    let document = parse_pdf_json(request)?;
+    if timeout_seconds.is_some_and(|timeout| started.elapsed().as_secs_f64() > timeout) {
+        return Err(error_json(
+            "PARSE_TIMEOUT",
+            "OpenDataLoader prediction parse exceeded timeout_seconds",
+        )
+        .to_string());
+    }
+    Ok(document)
 }
 
 fn error_code_from_json(error: &str) -> String {
@@ -4336,6 +4421,7 @@ fn opendataloader_prediction_resource_profile(profile: &str, summary: &Value) ->
         "elapsedMs": summary.get("total_elapsed").cloned().unwrap_or(Value::Null),
         "meanCaseElapsedMs": summary.get("elapsed_per_doc").cloned().unwrap_or(Value::Null),
         "modelRuntime": aggregate_prediction_model_runtime(&documents),
+        "modelRoutingCoverage": summary.get("model_routing_coverage").cloned().unwrap_or_else(|| model_routing_coverage_json(&documents)),
         "budgetStatus": "profile-baseline-pending"
     })
 }
@@ -5516,6 +5602,14 @@ fn markdown_from_document(document: &Value) -> String {
 }
 
 fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
+    if contains_spanning_html_table(&lines) {
+        let normalized = opendataloader_promote_initial_title_line(lines);
+        let normalized = opendataloader_repair_split_glyph_lines(normalized);
+        let normalized = opendataloader_repair_spaced_heading_lines(normalized);
+        return opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(
+            normalized,
+        ));
+    }
     let mut normalized = Vec::new();
     for line in lines {
         if line.contains("<table") && line.contains("</table>") {
@@ -5534,6 +5628,23 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_repair_split_glyph_lines(normalized);
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
     opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized))
+}
+
+fn contains_spanning_html_table(lines: &[String]) -> bool {
+    let mut inside_table = false;
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("<table") {
+            inside_table = true;
+        }
+        if inside_table && lower.contains("rowspan=") {
+            return true;
+        }
+        if lower.contains("</table>") {
+            inside_table = false;
+        }
+    }
+    false
 }
 
 fn opendataloader_promote_initial_title_line(mut lines: Vec<String>) -> Vec<String> {

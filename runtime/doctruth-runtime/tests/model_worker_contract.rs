@@ -167,6 +167,47 @@ fn parse_pdf_auto_preset_table_heavy_routes_to_table_mnn_worker() {
 }
 
 #[test]
+fn parse_pdf_auto_preset_table_heavy_without_worker_records_blocked_model_route() {
+    let pdf = write_pdf_fixture("Item Qty Price\nA 2 10\nB 4 20\nTotal 6 30");
+    let (cache_dir, manifest) = ready_mnn_model_manifest("doctruth-runtime-auto-table-blocked");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "auto"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar");
+    assert_eq!(json["parserRun"]["profile"], "edge-model");
+    assert_eq!(json["parserRun"]["modelRouting"]["route"], "table-model");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["requiresModelRuntime"],
+        true
+    );
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["startedModelRuntime"],
+        false
+    );
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["candidateRoutedPages"],
+        json!([1])
+    );
+    assert_eq!(json["parserRun"]["modelRouting"]["routedPages"], json!([]));
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["blockedReason"],
+        "model-runtime-unavailable"
+    );
+    assert_eq!(json["auditGradeStatus"], "NOT_AUDIT_GRADE");
+}
+
+#[test]
 fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
     let pdf = write_empty_text_layer_pdf();
     let worker = write_auto_ocr_model_worker();

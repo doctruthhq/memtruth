@@ -820,6 +820,53 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
 }
 
 #[test]
+fn opendataloader_prediction_summary_counts_blocked_model_runtime_routes() {
+    let root = temp_dir("doctruth-runtime-opendataloader-model-coverage");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-model-coverage");
+    let (cache_dir, manifest) = ready_mnn_model_manifest();
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("table-doc.pdf"),
+        minimal_pdf("Item Qty Price\nA 2 10\nB 4 20\nTotal 6 30"),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    cmd.env("DOCTRUTH_MODEL_CACHE", cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", manifest)
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-model-coverage",
+                "preset": "auto",
+                "runtime_profile": "edge-model",
+                "output_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success();
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["model_routing_coverage"]["documentCount"], 1);
+    assert_eq!(summary["model_routing_coverage"]["requiresModelRuntime"], 1);
+    assert_eq!(summary["model_routing_coverage"]["startedModelRuntime"], 0);
+    assert_eq!(summary["model_routing_coverage"]["blockedModelRuntime"], 1);
+    assert_eq!(
+        summary["model_routing_coverage"]["routes"]["table-model"],
+        1
+    );
+    assert_eq!(
+        summary["documents"][0]["modelRouting"]["blockedReason"],
+        "model-runtime-unavailable"
+    );
+}
+
+#[test]
 fn opendataloader_prediction_command_records_per_document_timeout() {
     let root = temp_dir("doctruth-runtime-opendataloader-timeout");
     let pdf_dir = root.join("pdfs");
@@ -1099,6 +1146,115 @@ fn opendataloader_promotion_report_uses_existing_prediction_summary_without_repa
     assert_eq!(
         report["mnnPromotion"]["resources"]["modelRuntimePresent"],
         true
+    );
+}
+
+#[test]
+fn opendataloader_promotion_report_blocks_when_model_routes_were_not_started() {
+    let root = temp_dir("doctruth-runtime-opendataloader-report-blocked-models");
+    let prediction = root.join("prediction/doctruth-direct");
+    fs::create_dir_all(&prediction).unwrap();
+    fs::write(
+        prediction.join("summary.json"),
+        json!({
+            "engine_name": "doctruth-direct",
+            "runtime_contract": "TrustDocument",
+            "runtime_profile": "edge-model",
+            "document_count": 2,
+            "parsed_count": 2,
+            "failed_count": 0,
+            "total_elapsed": 20.0,
+            "elapsed_per_doc": 10.0,
+            "production_residency": {"python_torch_docling": false},
+            "model_routing_coverage": {
+                "documentCount": 2,
+                "requiresModelRuntime": 2,
+                "startedModelRuntime": 1,
+                "blockedModelRuntime": 1,
+                "routes": {"table-model": 2},
+                "blockedReasons": {"model-runtime-unavailable": 1}
+            },
+            "documents": [{
+                "document_id": "doc-a",
+                "status": "parsed",
+                "elapsed": 12.0,
+                "markdown_path": "prediction/doctruth-direct/markdown/doc-a.md",
+                "error": null,
+                "runtimeProfile": "edge-model",
+                "modelRuntime": {
+                    "runtime": "mnn",
+                    "coldStartMs": 8.0,
+                    "inferenceMs": 3.0,
+                    "peakMemoryMb": 202,
+                    "loadedModels": ["slanet-plus:v1"]
+                },
+                "modelRouting": {
+                    "route": "table-model",
+                    "requiresModelRuntime": true,
+                    "startedModelRuntime": true
+                }
+            }, {
+                "document_id": "doc-b",
+                "status": "parsed",
+                "elapsed": 8.0,
+                "markdown_path": "prediction/doctruth-direct/markdown/doc-b.md",
+                "error": null,
+                "runtimeProfile": "edge-model",
+                "modelRuntime": null,
+                "modelRouting": {
+                    "route": "table-model",
+                    "requiresModelRuntime": true,
+                    "startedModelRuntime": false,
+                    "blockedReason": "model-runtime-unavailable"
+                }
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    write_high_quality_opendataloader_evaluation(&root);
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_promotion_report",
+                "prediction_dir": prediction,
+                "opendataloader_evaluation": root.join("opendataloader-evaluation.json"),
+                "promotionGates": {
+                    "mnn": {
+                        "heavyOracleSteadyRssMb": 1400,
+                        "qualityMinimums": {
+                            "overall": 0.88,
+                            "nid": 0.91,
+                            "teds": 0.88,
+                            "mhs": 0.78
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(report["mnnPromotion"]["accepted"], false);
+    assert_eq!(report["mnnPromotion"]["quality"]["passed"], true);
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["modelRuntimePresent"],
+        true
+    );
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["blockedModelRuntime"],
+        1
+    );
+    assert_eq!(
+        report["mnnPromotion"]["resources"]["allRequiredRoutesStarted"],
+        false
     );
 }
 

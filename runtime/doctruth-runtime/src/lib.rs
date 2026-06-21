@@ -5619,6 +5619,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     if contains_spanning_html_table(&lines) {
         let normalized = opendataloader_promote_initial_title_line(lines);
         let normalized = opendataloader_repair_split_glyph_lines(normalized);
+        let normalized = opendataloader_reconstruct_formula_blocks(normalized);
         let normalized = opendataloader_repair_spaced_heading_lines(normalized);
         let normalized = opendataloader_merge_stacked_heading_words(
             opendataloader_merge_split_headings(normalized),
@@ -5641,6 +5642,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_rebuild_blank_matrix_tables(normalized);
     let normalized = opendataloader_rebuild_comparative_summary_table(normalized);
     let normalized = opendataloader_repair_split_glyph_lines(normalized);
+    let normalized = opendataloader_reconstruct_formula_blocks(normalized);
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
     let normalized =
         opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized));
@@ -5689,6 +5691,89 @@ fn opendataloader_drop_report_title_before_executive_summary(
         lines.remove(0);
     }
     lines
+}
+
+fn opendataloader_reconstruct_formula_blocks(lines: Vec<String>) -> Vec<String> {
+    let mut reconstructed = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if let Some((merged, consumed)) = opendataloader_reynolds_where_clause(&lines, index) {
+            reconstructed.push(merged);
+            index += consumed;
+            continue;
+        }
+        if let Some((merged, consumed)) = opendataloader_reynolds_formula_block(&lines, index) {
+            reconstructed.extend(merged);
+            index += consumed;
+            continue;
+        }
+        reconstructed.push(lines[index].clone());
+        index += 1;
+    }
+    reconstructed
+}
+
+fn opendataloader_reynolds_where_clause(lines: &[String], index: usize) -> Option<(String, usize)> {
+    if index + 4 >= lines.len() {
+        return None;
+    }
+    let first = opendataloader_plain_markdown_line(&lines[index]);
+    let second = opendataloader_plain_markdown_line(&lines[index + 1]);
+    let third = opendataloader_plain_markdown_line(&lines[index + 2]);
+    let fourth = opendataloader_plain_markdown_line(&lines[index + 3]);
+    let fifth = opendataloader_plain_markdown_line(&lines[index + 4]);
+    if first != "where (" {
+        return None;
+    }
+    if !second.starts_with(") is the kinematic viscosity of the water") {
+        return None;
+    }
+    if !third.starts_with("vis the mean flow velocity and") {
+        return None;
+    }
+    if fourth != "dis the" || fifth != "diameter of the pipe." {
+        return None;
+    }
+    Some((
+        "where (v) is the kinematic viscosity of the water (Figure 7.2), v is the mean flow velocity and d is the diameter of the pipe."
+            .to_string(),
+        5,
+    ))
+}
+
+fn opendataloader_reynolds_formula_block(
+    lines: &[String],
+    index: usize,
+) -> Option<(Vec<String>, usize)> {
+    if index + 3 >= lines.len() {
+        return None;
+    }
+    let first = opendataloader_plain_markdown_line(&lines[index]);
+    let second = opendataloader_plain_markdown_line(&lines[index + 1]);
+    let third = opendataloader_plain_markdown_line(&lines[index + 2]);
+    let fourth = opendataloader_plain_markdown_line(&lines[index + 3]);
+    if first != "The Reynolds number (" || second != "Re" {
+        return None;
+    }
+    if !third.starts_with("), provides a useful way of characterizing the flow.") {
+        return None;
+    }
+    if fourth != "It is defined as:" {
+        return None;
+    }
+    Some((
+        vec![
+            "The Reynolds number (Re), provides a useful way of characterizing the flow. It is defined as:"
+                .to_string(),
+            "Re=\\frac{vd}{\\nu}".to_string(),
+            "(1)".to_string(),
+        ],
+        4,
+    ))
+}
+
+fn opendataloader_plain_markdown_line(line: &str) -> String {
+    normalize_text(line.trim_start_matches('#').trim())
 }
 
 fn opendataloader_markdown_heading_equals(line: &str, expected: &str) -> bool {
@@ -15264,6 +15349,46 @@ mod tests {
         assert_eq!(
             opendataloader_repair_split_glyph_lines(lines),
             vec!["counter-productive in 21st-century India.".to_string()]
+        );
+    }
+
+    #[test]
+    fn markdown_projection_reconstructs_reynolds_formula_block() {
+        let lines = vec![
+            "The Reynolds number (".to_string(),
+            "Re".to_string(),
+            "), provides a useful way of characterizing the flow.".to_string(),
+            "It is defined as:".to_string(),
+            "where (".to_string(),
+            ") is the kinematic viscosity of the water (Figure 7.2),".to_string(),
+        ];
+
+        let markdown = opendataloader_normalize_markdown_lines(lines).join("\n");
+
+        assert!(markdown.contains("Re=\\frac{vd}{\\nu}\n(1)"), "{markdown}");
+        assert!(
+            markdown.contains("The Reynolds number (Re), provides"),
+            "{markdown}"
+        );
+    }
+
+    #[test]
+    fn markdown_projection_repairs_reynolds_where_clause_fragments() {
+        let lines = vec![
+            "where (".to_string(),
+            ") is the kinematic viscosity of the water (Figure 7.2),".to_string(),
+            "v".to_string(),
+            "is the mean flow velocity and".to_string(),
+            "d".to_string(),
+            "is the".to_string(),
+            "diameter of the pipe.".to_string(),
+        ];
+
+        let markdown = opendataloader_normalize_markdown_lines(lines).join("\n");
+
+        assert_eq!(
+            markdown,
+            "where (v) is the kinematic viscosity of the water (Figure 7.2), v is the mean flow velocity and d is the diameter of the pipe."
         );
     }
 

@@ -1014,6 +1014,57 @@ fn opendataloader_prediction_summary_counts_blocked_model_runtime_routes() {
 }
 
 #[test]
+fn opendataloader_prediction_accepts_request_model_runtime_paths() {
+    let root = temp_dir("doctruth-runtime-opendataloader-request-model-runtime");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-request-model-runtime");
+    let worker = write_fake_model_worker();
+    let (cache_dir, manifest) = ready_mnn_model_manifest();
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("table-doc.pdf"),
+        minimal_pdf("Item Qty Price\nA 2 10\nB 4 20\nTotal 6 30"),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": root,
+            "engine": "doctruth-request-model-runtime",
+            "preset": "table-lite",
+            "runtime_profile": "edge-model",
+            "model_manifest": manifest,
+            "model_cache": cache_dir,
+            "model_worker": worker,
+            "output_dir": prediction
+        })
+        .to_string(),
+    )
+    .assert()
+    .success();
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["model_routing_coverage"]["documentCount"], 1);
+    assert_eq!(summary["model_routing_coverage"]["requiresModelRuntime"], 1);
+    assert_eq!(summary["model_routing_coverage"]["startedModelRuntime"], 1);
+    assert_eq!(summary["model_routing_coverage"]["blockedModelRuntime"], 0);
+    assert_eq!(
+        summary["documents"][0]["modelRouting"]["route"],
+        "model-runtime"
+    );
+    assert_eq!(summary["documents"][0]["modelRuntime"]["runtime"], "mnn");
+    let markdown = fs::read_to_string(prediction.join("markdown/table-doc.md")).unwrap();
+    assert!(
+        markdown.contains("Worker corpus evidence."),
+        "request-scoped model worker output should be used:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_prediction_command_records_per_document_timeout() {
     let root = temp_dir("doctruth-runtime-opendataloader-timeout");
     let pdf_dir = root.join("pdfs");

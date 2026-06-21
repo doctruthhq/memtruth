@@ -313,7 +313,8 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
     let route = model_route_decision(source_path, requested_preset);
     let effective_preset = route.effective_preset.as_str();
     let required_models = required_model_descriptors(effective_preset);
-    let model_artifacts = worker_model_artifacts(effective_preset, &required_models);
+    let model_artifacts =
+        worker_model_artifacts_for_request(request, effective_preset, &required_models);
     if profile == "benchmark-oracle" {
         if !required_models.is_empty()
             && model_artifacts_ready_for_profile(profile, &model_artifacts)
@@ -531,6 +532,14 @@ fn model_route_decision(source_path: &str, requested_preset: &str) -> ModelRoute
             mode: "auto".to_string(),
             decision: "table-model".to_string(),
             effective_preset: "table-lite".to_string(),
+            routed_pages: vec![1],
+        };
+    }
+    if requested_preset != "auto" && !required_model_descriptors(requested_preset).is_empty() {
+        return ModelRouteDecision {
+            mode: "explicit-preset".to_string(),
+            decision: "model-runtime".to_string(),
+            effective_preset: requested_preset.to_string(),
             routed_pages: vec![1],
         };
     }
@@ -1912,12 +1921,13 @@ fn configured_model_worker_parse(
     model_artifacts: &[Value],
     request: &Value,
 ) -> Result<Option<Value>, String> {
-    let Some(command) = configured_model_worker_command(route) else {
+    let Some(command) = configured_model_worker_command_for_request(route, request) else {
         return Ok(None);
     };
-    let auxiliary_artifacts = model_manifest_auxiliary_artifacts()
+    let model_cache = model_cache_directory_for_request(request);
+    let auxiliary_artifacts = model_manifest_auxiliary_artifacts_for_request(request)
         .into_iter()
-        .map(|artifact| model_with_cache_status(artifact, &model_cache_directory()))
+        .map(|artifact| model_with_cache_status(artifact, &model_cache))
         .collect::<Vec<_>>();
     let worker_request = json!({
         "runtime": RUNTIME,
@@ -1937,7 +1947,7 @@ fn configured_model_worker_parse(
         "runtimeProfile": profile,
         "offline_mode": request.get("offline_mode").and_then(Value::as_bool).unwrap_or(true),
         "allow_model_downloads": request.get("allow_model_downloads").and_then(Value::as_bool).unwrap_or(false),
-        "modelCacheDirectory": model_cache_directory(),
+        "modelCacheDirectory": model_cache,
         "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
         "models": model_artifacts,
         "auxiliaryArtifacts": auxiliary_artifacts,
@@ -1953,6 +1963,7 @@ fn configured_model_worker_parse(
         model_artifacts,
         &auxiliary_artifacts,
         preset,
+        request,
     );
     let document =
         normalize_worker_document(worker_document(response)?, profile, route, &model_metrics);
@@ -1965,12 +1976,13 @@ fn model_runtime_metrics_with_context(
     model_artifacts: &[Value],
     auxiliary_artifacts: &[Value],
     preset: &str,
+    request: &Value,
 ) -> Value {
     let mut target = metrics.as_object().cloned().unwrap_or_default();
     target
         .entry("preprocessing".to_string())
         .or_insert_with(|| model_preprocessing_contract_json(preset, model_artifacts));
-    if let Some(manifest_path) = configured_model_manifest_path() {
+    if let Some(manifest_path) = configured_model_manifest_path_for_request(request) {
         target.insert("manifestPath".to_string(), json!(manifest_path));
     }
     target.insert(
@@ -2313,6 +2325,14 @@ fn explicit_model_worker_command() -> Option<String> {
         .filter(|command| !command.trim().is_empty())
 }
 
+fn configured_model_worker_command_for_request(
+    route: &ModelRouteDecision,
+    request: &Value,
+) -> Option<String> {
+    request_scoped_string(request, &["model_worker", "modelWorker", "modelCommand"])
+        .or_else(|| configured_model_worker_command(route))
+}
+
 fn route_default_model_worker_command(route: &ModelRouteDecision) -> Option<String> {
     if !matches!(
         route.decision.as_str(),
@@ -2385,6 +2405,14 @@ fn model_cache_directory() -> String {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| ".doctruth/models".to_string())
+}
+
+fn model_cache_directory_for_request(request: &Value) -> String {
+    request_scoped_string(
+        request,
+        &["model_cache", "modelCache", "modelCacheDirectory"],
+    )
+    .unwrap_or_else(model_cache_directory)
 }
 
 fn model_doctor_json() -> Value {
@@ -2505,8 +2533,17 @@ fn model_worker_doctor_json() -> Value {
     }
 }
 
-fn worker_model_artifacts(preset: &str, required_models: &[RequiredModel]) -> Vec<Value> {
-    worker_model_artifacts_with_cache_dir(preset, required_models, &model_cache_directory())
+fn worker_model_artifacts_for_request(
+    request: &Value,
+    preset: &str,
+    required_models: &[RequiredModel],
+) -> Vec<Value> {
+    worker_model_artifacts_with_manifest_and_cache_dir(
+        preset,
+        required_models,
+        configured_model_manifest_path_for_request(request),
+        &model_cache_directory_for_request(request),
+    )
 }
 
 fn worker_model_artifacts_with_cache_dir(
@@ -2514,7 +2551,21 @@ fn worker_model_artifacts_with_cache_dir(
     required_models: &[RequiredModel],
     cache_dir: &str,
 ) -> Vec<Value> {
-    let manifest_models = model_manifest_artifacts(preset);
+    worker_model_artifacts_with_manifest_and_cache_dir(
+        preset,
+        required_models,
+        configured_model_manifest_path(),
+        cache_dir,
+    )
+}
+
+fn worker_model_artifacts_with_manifest_and_cache_dir(
+    preset: &str,
+    required_models: &[RequiredModel],
+    manifest_path: Option<String>,
+    cache_dir: &str,
+) -> Vec<Value> {
+    let manifest_models = model_manifest_artifacts_from_path(preset, manifest_path.as_deref());
     let models = if manifest_models.is_empty() {
         required_models.iter().map(RequiredModel::json).collect()
     } else {
@@ -2526,11 +2577,11 @@ fn worker_model_artifacts_with_cache_dir(
         .collect()
 }
 
-fn model_manifest_artifacts(preset: &str) -> Vec<Value> {
-    let Some(manifest_path) = configured_model_manifest_path() else {
+fn model_manifest_artifacts_from_path(preset: &str, manifest_path: Option<&str>) -> Vec<Value> {
+    let Some(manifest_path) = manifest_path else {
         return Vec::new();
     };
-    let Ok(manifest) = read_json_file(Path::new(&manifest_path), "MODEL_MANIFEST_INVALID") else {
+    let Ok(manifest) = read_json_file(Path::new(manifest_path), "MODEL_MANIFEST_INVALID") else {
         return Vec::new();
     };
     manifest
@@ -2540,11 +2591,17 @@ fn model_manifest_artifacts(preset: &str) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-fn model_manifest_auxiliary_artifacts() -> Vec<Value> {
-    let Some(manifest_path) = configured_model_manifest_path() else {
+fn model_manifest_auxiliary_artifacts_for_request(request: &Value) -> Vec<Value> {
+    model_manifest_auxiliary_artifacts_from_path(
+        configured_model_manifest_path_for_request(request).as_deref(),
+    )
+}
+
+fn model_manifest_auxiliary_artifacts_from_path(manifest_path: Option<&str>) -> Vec<Value> {
+    let Some(manifest_path) = manifest_path else {
         return Vec::new();
     };
-    let Ok(manifest) = read_json_file(Path::new(&manifest_path), "MODEL_MANIFEST_INVALID") else {
+    let Ok(manifest) = read_json_file(Path::new(manifest_path), "MODEL_MANIFEST_INVALID") else {
         return Vec::new();
     };
     manifest
@@ -2558,6 +2615,22 @@ fn configured_model_manifest_path() -> Option<String> {
     env::var("DOCTRUTH_MODEL_MANIFEST")
         .ok()
         .filter(|value| !value.trim().is_empty())
+}
+
+fn configured_model_manifest_path_for_request(request: &Value) -> Option<String> {
+    request_scoped_string(
+        request,
+        &["model_manifest", "modelManifest", "modelManifestPath"],
+    )
+    .or_else(configured_model_manifest_path)
+}
+
+fn request_scoped_string(request: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| request.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn model_with_cache_status(mut model: Value, cache_dir: &str) -> Value {
@@ -3203,6 +3276,7 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         profile,
         timeout_seconds,
         &pdfs,
+        request,
     )?;
     let summary = read_json_file(
         &output_dir.join("summary.json"),
@@ -4208,6 +4282,7 @@ fn write_opendataloader_prediction_artifacts(
     profile: &str,
     timeout_seconds: Option<f64>,
     pdfs: &[PathBuf],
+    request: &Value,
 ) -> Result<Value, String> {
     let markdown_dir = output_dir.join("markdown");
     fs::create_dir_all(&markdown_dir).map_err(|error| {
@@ -4234,7 +4309,10 @@ fn write_opendataloader_prediction_artifacts(
             "runtime_profile": profile,
             "runtimeProfile": profile,
             "offline_mode": true,
-            "allow_model_downloads": false
+            "allow_model_downloads": false,
+            "model_manifest": request_scoped_string(request, &["model_manifest", "modelManifest", "modelManifestPath"]),
+            "model_cache": request_scoped_string(request, &["model_cache", "modelCache", "modelCacheDirectory"]),
+            "model_worker": request_scoped_string(request, &["model_worker", "modelWorker", "modelCommand"])
         });
         let mut result = parse_pdf_for_prediction(&parse_request, timeout_seconds);
         let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);

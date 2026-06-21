@@ -51,18 +51,25 @@
     "table-lite": [
       {
         "name": "xenova-table-transformer-structure-recognition",
-        "version": "model_quantized-main-2026-06-19",
-        "cacheFilename": "xenova-table-transformer-structure-recognition-model_quantized.bin",
-        "sha256": "sha256:c11f4033da75e9c4d41c403ef356e89caa0a37a7d111b55461e7d5ba856bb6b6",
-        "sizeBytes": 30158413,
+        "version": "model-main-2026-06-30",
+        "cacheFilename": "xenova-table-transformer-structure-recognition-model-main-2026-06-30.mnn",
+        "sha256": "sha256:69fa20e5659cee2e3d261ca0cc59c90993da92cff5170932adee419fa7a5a40e",
+        "sizeBytes": 115838932,
         "required": true,
         "task": "table-structure-recognition",
         "role": "table-structure-decoder",
-        "backend": "onnxruntime",
-        "format": "onnx",
-        "precision": "quantized",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
         "license": "Apache-2.0",
-        "url": "https://huggingface.co/Xenova/table-transformer-structure-recognition/resolve/main/onnx/model_quantized.onnx",
+        "url": "https://huggingface.co/Xenova/table-transformer-structure-recognition/resolve/main/onnx/model.onnx",
+        "conversion": {
+          "sourceFormat": "onnx",
+          "targetFormat": "mnn",
+          "sourceSha256": "sha256:2c90a63298df61006a45267932f47b345a8b104ce53fd504eacf11aee3c05a41",
+          "tool": "MNNConvert",
+          "notes": "FP32 ONNX converted to MNN; FP16 conversion crashed locally and quantized ONNX conversion failed on ConvInteger."
+        },
         "preprocessing": {
           "inputLayout": "NCHW",
           "dtype": "float32",
@@ -82,6 +89,54 @@
           "maxAbsDiff": 0.000001
         }
       }
+    ],
+    "ocr": [
+      {
+        "name": "ppocr-v5-mobile-det",
+        "version": "v0.1.3",
+        "cacheFilename": "ocr-rs-ppocr-v5/PP-OCRv5_mobile_det.mnn",
+        "sha256": "sha256:326f846bb5c903282e116ea089e8796b67921586726cca9457730436a79684c3",
+        "sizeBytes": 4760244,
+        "required": true,
+        "task": "ocr",
+        "role": "text-detection",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_det.mnn"
+      },
+      {
+        "name": "ppocr-v5-mobile-rec",
+        "version": "v0.1.3",
+        "cacheFilename": "ocr-rs-ppocr-v5/PP-OCRv5_mobile_rec.mnn",
+        "sha256": "sha256:c809800b09263a8d18c678c211e470ffc464cbb33db2e6bde0244766f3feb0db",
+        "sizeBytes": 16531596,
+        "required": true,
+        "task": "ocr",
+        "role": "text-recognition",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_rec.mnn"
+      }
     ]
-  }
+  },
+  "auxiliary": [
+    {
+      "name": "ppocr-keys-v5",
+      "version": "v0.1.3",
+      "cacheFilename": "ocr-rs-ppocr-v5/ppocr_keys_v5.txt",
+      "sha256": "sha256:f2ed6bb20a850ce4767fa9b4622d9b282985ab7f0ea8f8c11abd790ca6d2ff94",
+      "sizeBytes": 74008,
+      "required": true,
+      "task": "ocr-charset",
+      "role": "recognition-charset",
+      "backend": "mnn",
+      "format": "txt",
+      "license": "Apache-2.0",
+      "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/ppocr_keys_v5.txt"
+    }
+  ]
 }

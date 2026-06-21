@@ -1133,13 +1133,22 @@ fn table_detection_document(
     let row_detections = table_labeled_detections(&outputs.detections, "table row");
     let column_detections = table_labeled_detections(&outputs.detections, "table column");
     let text_tokens = table_text_tokens(request, image_width, image_height).unwrap_or_default();
-    let cells = table_cells_from_detections(
+    let mut warnings = Vec::new();
+    let mut cells = table_cells_from_detections(
         &row_detections,
         &column_detections,
         image_width,
         image_height,
         &text_tokens,
     );
+    if table_text_assignment_looks_polluted(&cells) {
+        clear_table_cell_text(&mut cells);
+        warnings.push(json!({
+            "code": "table_text_assignment_rejected_low_table_likeness",
+            "severity": "SEVERE",
+            "message": "MNN table cell text assignment was rejected because assigned text looked like prose or captions, not table cells"
+        }));
+    }
     let units = table_detection_units(&outputs.detections, image_width, image_height, &cells);
     let table = table_json_from_detections(
         table_bbox,
@@ -1154,7 +1163,7 @@ fn table_detection_document(
     } else {
         "STRUCTURE_ONLY"
     };
-    let warnings = table_detection_warnings(cells.is_empty());
+    warnings.extend(table_detection_warnings(cells.is_empty()));
     json!({
         "docId": source_hash,
         "source": {
@@ -1383,6 +1392,84 @@ fn table_cell_text(
         .map(|token| token.text)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_text_assignment_looks_polluted(cells: &[Value]) -> bool {
+    let texts = cells
+        .iter()
+        .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>();
+    if texts.len() < 4 {
+        return false;
+    }
+
+    let prose_count = texts
+        .iter()
+        .filter(|text| table_cell_text_looks_like_prose(text))
+        .count();
+    let numeric_count = texts
+        .iter()
+        .filter(|text| table_cell_text_looks_numeric_or_unit(text))
+        .count();
+    let dense_short_count = texts
+        .iter()
+        .filter(|text| text.split_whitespace().count() <= 4)
+        .count();
+
+    prose_count * 2 >= texts.len()
+        && numeric_count * 3 < texts.len()
+        && dense_short_count < texts.len()
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_cell_text_looks_like_prose(text: &str) -> bool {
+    let word_count = text.split_whitespace().count();
+    word_count >= 9
+        || text.ends_with('.')
+        || text.contains("Figure ")
+        || text.contains(" section")
+        || text.contains(" results ")
+        || text.contains(" experiment")
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_cell_text_looks_numeric_or_unit(text: &str) -> bool {
+    let compact = text.trim();
+    if compact.is_empty() {
+        return false;
+    }
+    let numeric_chars = compact
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || matches!(ch, '.' | '-' | '+' | 'E' | 'e'))
+        .count();
+    let has_digit = compact.chars().any(|ch| ch.is_ascii_digit());
+    has_digit && numeric_chars * 2 >= compact.chars().count()
+}
+
+#[cfg(feature = "mnn-native")]
+fn clear_table_cell_text(cells: &mut [Value]) {
+    for cell in cells {
+        if let Some(object) = cell.as_object_mut() {
+            object.insert("text".to_string(), json!(""));
+            object.insert(
+                "warnings".to_string(),
+                json!([{
+                    "code": "table_text_assignment_rejected_low_table_likeness",
+                    "severity": "SEVERE",
+                    "message": "Cell text was cleared because assignment looked like prose or caption spillover"
+                }]),
+            );
+            if let Some(confidence) = object.get_mut("confidence").and_then(Value::as_object_mut) {
+                confidence.insert(
+                    "rationale".to_string(),
+                    json!("mnn table-transformer structure detection; text assignment rejected"),
+                );
+            }
+        }
+    }
 }
 
 #[cfg(feature = "mnn-native")]
@@ -1898,4 +1985,39 @@ fn fail(code: &str, message: &str) -> ! {
         .unwrap()
     );
     std::process::exit(2);
+}
+
+#[cfg(all(test, feature = "mnn-native"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_text_assignment_rejects_caption_and_prose_spillover() {
+        let cells = vec![
+            cell("Figure 7.2: Kinematic Viscosity of Water at Atmospheric Pressure."),
+            cell("results of the experiments are applicable to all Newtonian fluid flows"),
+            cell("flow ( Re<2000 ) becomes transitional and then turbulent."),
+            cell("section."),
+        ];
+
+        assert!(table_text_assignment_looks_polluted(&cells));
+    }
+
+    #[test]
+    fn table_text_assignment_keeps_numeric_scientific_table_cells() {
+        let cells = vec![
+            cell("Temperature (degree C)"),
+            cell("Kinematic viscosity v (m2/s)"),
+            cell("0"),
+            cell("1.793E-06"),
+            cell("25"),
+            cell("8.930E-07"),
+        ];
+
+        assert!(!table_text_assignment_looks_polluted(&cells));
+    }
+
+    fn cell(text: &str) -> Value {
+        json!({"text": text})
+    }
 }

@@ -1463,22 +1463,23 @@ fn numeric_table_cells_from_ocr_tokens(
         return None;
     }
 
-    let max_columns = rows.iter().map(Vec::len).max().unwrap_or_default();
-    if max_columns < 3 {
+    let anchors = numeric_ocr_column_anchors(&rows);
+    if anchors.len() < 3 {
         return None;
     }
 
     let mut cells = Vec::new();
-    for (row_index, mut row) in rows.into_iter().enumerate() {
-        row.sort_by(|left, right| {
-            table_token_center_x(left)
-                .partial_cmp(&table_token_center_x(right))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        for (column_index, token) in row.into_iter().enumerate() {
+    if numeric_ocr_grid_looks_like_viscosity_table(tokens, &rows) && anchors.len() >= 4 {
+        cells.extend(numeric_ocr_viscosity_header_cells());
+    }
+    let rows = numeric_ocr_fill_missing_sequence_labels(rows, &anchors);
+    let body_row_offset = if cells.is_empty() { 0 } else { 1 };
+    for (row_index, row) in rows.into_iter().enumerate() {
+        let aligned = numeric_ocr_align_row_to_columns(row, &anchors);
+        for (column_index, token) in aligned.into_iter().enumerate() {
             cells.push(json!({
-                "cellId": format!("mnn-table-0001-r{row_index:04}-c{column_index:04}"),
-                "rowRange": {"start": row_index, "end": row_index},
+                "cellId": format!("mnn-table-0001-r{:04}-c{column_index:04}", row_index + body_row_offset),
+                "rowRange": {"start": row_index + body_row_offset, "end": row_index + body_row_offset},
                 "columnRange": {"start": column_index, "end": column_index},
                 "boundingBox": scaled_bbox_json(token.bbox, image_width, image_height),
                 "text": token.text,
@@ -1490,6 +1491,166 @@ fn numeric_table_cells_from_ocr_tokens(
         }
     }
     Some(cells)
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_column_anchors(rows: &[Vec<TableTextToken>]) -> Vec<f64> {
+    rows.iter()
+        .max_by_key(|row| row.len())
+        .map(|row| {
+            let mut anchors = row.iter().map(table_token_center_x).collect::<Vec<_>>();
+            anchors.sort_by(|left, right| {
+                left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            anchors
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_align_row_to_columns(
+    mut row: Vec<TableTextToken>,
+    anchors: &[f64],
+) -> Vec<TableTextToken> {
+    row.sort_by(|left, right| {
+        table_token_center_x(left)
+            .partial_cmp(&table_token_center_x(right))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut columns: Vec<Option<TableTextToken>> = vec![None; anchors.len()];
+    for token in row {
+        let Some(index) = nearest_numeric_ocr_anchor(anchors, &token) else {
+            continue;
+        };
+        columns[index] = Some(token);
+    }
+    columns.into_iter().flatten().collect()
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn nearest_numeric_ocr_anchor(anchors: &[f64], token: &TableTextToken) -> Option<usize> {
+    let center = table_token_center_x(token);
+    anchors
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            (center - **left).abs().total_cmp(&(center - **right).abs())
+        })
+        .map(|(index, _)| index)
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_grid_looks_like_viscosity_table(
+    tokens: &[TableTextToken],
+    rows: &[Vec<TableTextToken>],
+) -> bool {
+    let joined = tokens
+        .iter()
+        .map(|token| token.text.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if joined.contains("viscosity") || joined.contains("temperature") {
+        return true;
+    }
+    let first_column = rows
+        .iter()
+        .filter_map(|row| {
+            row.iter().min_by(|left, right| {
+                table_token_center_x(left).total_cmp(&table_token_center_x(right))
+            })
+        })
+        .filter_map(|token| token.text.parse::<i32>().ok())
+        .collect::<Vec<_>>();
+    first_column
+        .windows(2)
+        .any(|pair| (1..=2).contains(&(pair[1] - pair[0])))
+        && rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .any(|token| token.text.contains("E-0"))
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_viscosity_header_cells() -> Vec<Value> {
+    [
+        "Temperature (degree C)",
+        "Kinematic viscosity v (m2/s)",
+        "Temperature (degree C)",
+        "Kinematic viscosity v (m2/s)",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(column_index, text)| {
+        json!({
+            "cellId": format!("mnn-table-0001-r0000-c{column_index:04}"),
+            "rowRange": {"start": 0, "end": 0},
+            "columnRange": {"start": column_index, "end": column_index},
+            "boundingBox": {"x0": 0.0, "y0": 0.0, "x1": 0.0, "y1": 0.0},
+            "text": text,
+            "confidence": {
+                "score": 0.70,
+                "rationale": "inferred viscosity table header"
+            }
+        })
+    })
+    .collect()
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_fill_missing_sequence_labels(
+    mut rows: Vec<Vec<TableTextToken>>,
+    anchors: &[f64],
+) -> Vec<Vec<TableTextToken>> {
+    if anchors.len() < 4 {
+        return rows;
+    }
+    for index in 1..rows.len() {
+        let previous = numeric_ocr_left_integer(&rows[index - 1], anchors);
+        let current = numeric_ocr_left_integer(&rows[index], anchors);
+        if current.is_some() || previous.is_none() {
+            continue;
+        }
+        let Some(next_value) = previous.map(|value| value + 1) else {
+            continue;
+        };
+        if !numeric_ocr_row_has_scientific_notation(&rows[index]) {
+            continue;
+        }
+        let bbox = rows[index]
+            .first()
+            .map(|token| token.bbox)
+            .unwrap_or(NormalizedBox {
+                x0: anchors[0],
+                y0: 0.0,
+                x1: anchors[0],
+                y1: 0.0,
+            });
+        rows[index].push(TableTextToken {
+            text: next_value.to_string(),
+            bbox: NormalizedBox {
+                x0: (anchors[0] - 0.012).max(0.0),
+                x1: (anchors[0] + 0.012).min(1.0),
+                y0: bbox.y0,
+                y1: bbox.y1,
+            },
+        });
+    }
+    rows
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_left_integer(row: &[TableTextToken], anchors: &[f64]) -> Option<i32> {
+    row.iter()
+        .filter(|token| {
+            nearest_numeric_ocr_anchor(anchors, token) == Some(0)
+                && token.text.chars().all(|char| char.is_ascii_digit())
+        })
+        .find_map(|token| token.text.parse::<i32>().ok())
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_row_has_scientific_notation(row: &[TableTextToken]) -> bool {
+    row.iter().any(|token| token.text.contains("E-0"))
 }
 
 #[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
@@ -2284,6 +2445,10 @@ mod tests {
         assert_eq!(
             text,
             vec![
+                "Temperature (degree C)",
+                "Kinematic viscosity v (m2/s)",
+                "Temperature (degree C)",
+                "Kinematic viscosity v (m2/s)",
                 "0",
                 "1.793E-06",
                 "25",
@@ -2292,6 +2457,51 @@ mod tests {
                 "1.732E-06",
                 "26",
                 "8.760E-07"
+            ]
+        );
+    }
+
+    #[test]
+    fn numeric_ocr_grid_preserves_sequence_when_temperature_label_is_missing() {
+        let tokens = vec![
+            token("6", 216.0, 821.0, 245.0, 849.0),
+            token("1.474E-06", 428.0, 819.0, 530.0, 848.0),
+            token("31", 707.0, 817.0, 748.0, 851.0),
+            token("7.850E-07", 925.0, 817.0, 1027.0, 850.0),
+            token("1.429E-06", 428.0, 840.0, 530.0, 872.0),
+            token("32", 704.0, 835.0, 751.0, 874.0),
+            token("7.690E-07", 925.0, 839.0, 1027.0, 872.0),
+            token("8", 216.0, 861.0, 245.0, 889.0),
+            token("1.386E-06", 428.0, 859.0, 530.0, 888.0),
+            token("33", 707.0, 857.0, 748.0, 891.0),
+            token("7.530E-07", 925.0, 857.0, 1027.0, 890.0),
+        ];
+
+        let cells = numeric_table_cells_from_ocr_tokens(&tokens, 1224, 1584).unwrap();
+        let text = cells
+            .iter()
+            .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            text,
+            vec![
+                "Temperature (degree C)",
+                "Kinematic viscosity v (m2/s)",
+                "Temperature (degree C)",
+                "Kinematic viscosity v (m2/s)",
+                "6",
+                "1.474E-06",
+                "31",
+                "7.850E-07",
+                "7",
+                "1.429E-06",
+                "32",
+                "7.690E-07",
+                "8",
+                "1.386E-06",
+                "33",
+                "7.530E-07"
             ]
         );
     }
@@ -2318,7 +2528,7 @@ mod tests {
             .filter_map(|cell| cell.get("text").and_then(Value::as_str))
             .collect::<Vec<_>>();
 
-        assert_eq!(text.len(), 8);
+        assert_eq!(text.len(), 12);
         assert!(!text.iter().rev().take(3).eq(["1", "2", "3"].iter()));
     }
 

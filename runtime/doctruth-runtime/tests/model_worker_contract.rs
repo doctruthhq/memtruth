@@ -421,6 +421,38 @@ fn rust_mnn_model_worker_attempts_real_ocr_engine_when_feature_enabled() {
     .stderr(predicate::str::contains("ocr_mnn_load_failed"));
 }
 
+#[cfg(feature = "mnn-native")]
+#[test]
+fn rust_mnn_model_worker_attempts_real_table_engine_when_native_feature_enabled() {
+    let model_path = temp_path("doctruth-runtime-worker-real-table-invalid-pack", "mnn");
+    fs::write(&model_path, b"invalid table mnn").unwrap();
+    let pdf = write_pdf_fixture("Item Qty Price\nA 2 10\nB 4 20\nTotal 6 30");
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "parse_pdf",
+            "source_path": pdf,
+            "source_hash": "sha256:model-worker",
+            "preset": "table-lite",
+            "models": [{
+                "name": "xenova-table-transformer-structure-recognition",
+                "version": "model_quantized-main-2026-06-19",
+                "role": "table-structure-decoder",
+                "task": "table-structure-recognition",
+                "backend": "mnn",
+                "format": "mnn",
+                "cacheStatus": "READY",
+                "cachePath": model_path
+            }]
+        })
+        .to_string(),
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("table_mnn_load_failed"));
+}
+
 #[test]
 fn rust_mnn_model_worker_probe_fails_without_native_feature() {
     let model_path = temp_path("doctruth-runtime-worker-probe", "mnn");

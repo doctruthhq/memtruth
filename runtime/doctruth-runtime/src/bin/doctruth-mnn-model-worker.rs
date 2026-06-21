@@ -84,15 +84,24 @@ fn main() {
     }));
 }
 
-#[cfg(feature = "mnn-ocr")]
 fn real_inference_response(
     request: &Value,
     model_pack: &ReadyModelPack,
     started: Instant,
 ) -> Option<Value> {
-    if model_pack.decoder != "ocr" {
-        return None;
+    match model_pack.decoder {
+        "ocr" => real_ocr_inference_response(request, model_pack, started),
+        "table" => real_table_inference_response(request, model_pack, started),
+        _ => None,
     }
+}
+
+#[cfg(feature = "mnn-ocr")]
+fn real_ocr_inference_response(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    started: Instant,
+) -> Option<Value> {
     match ocr_inference_response(request, model_pack, started) {
         Ok(response) => Some(response),
         Err((code, message)) => fail(code, &message),
@@ -100,7 +109,28 @@ fn real_inference_response(
 }
 
 #[cfg(not(feature = "mnn-ocr"))]
-fn real_inference_response(
+fn real_ocr_inference_response(
+    _request: &Value,
+    _model_pack: &ReadyModelPack,
+    _started: Instant,
+) -> Option<Value> {
+    None
+}
+
+#[cfg(feature = "mnn-native")]
+fn real_table_inference_response(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    started: Instant,
+) -> Option<Value> {
+    match table_inference_response(request, model_pack, started) {
+        Ok(response) => Some(response),
+        Err((code, message)) => fail(code, &message),
+    }
+}
+
+#[cfg(not(feature = "mnn-native"))]
+fn real_table_inference_response(
     _request: &Value,
     _model_pack: &ReadyModelPack,
     _started: Instant,
@@ -151,6 +181,95 @@ fn ocr_inference_response(
             "loadedModels": model_pack.model_identities(),
             "auxiliaryArtifacts": model_pack.auxiliary_identities(),
             "ocrRegions": results.len(),
+            "unload": {
+                "status": "completed",
+                "policy": "idle-after-request"
+            }
+        }
+    }))
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_inference_response(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    started: Instant,
+) -> Result<Value, (&'static str, String)> {
+    use mnn_rs::{BackendType, Interpreter, ScheduleConfig};
+
+    let load_started = Instant::now();
+    let interpreter = Interpreter::from_file(model_role_path(
+        &model_pack.models,
+        "table-structure-decoder",
+    )?)
+    .map_err(|error| ("table_mnn_load_failed", error.to_string()))?;
+    let load_ms = elapsed_ms(load_started);
+
+    let render_started = Instant::now();
+    let image = render_first_page_image(request)?;
+    let render_ms = elapsed_ms(render_started);
+
+    let session_started = Instant::now();
+    let config = ScheduleConfig::new()
+        .backend(BackendType::CPU)
+        .num_threads(native_probe_threads());
+    let mut session = interpreter
+        .create_session(config)
+        .map_err(|error| ("table_mnn_session_failed", error.to_string()))?;
+    let session_ms = elapsed_ms(session_started);
+
+    let input_started = Instant::now();
+    let input = session
+        .get_input(None)
+        .map_err(|error| ("table_mnn_input_failed", error.to_string()))?;
+    let input_shape = input.shape();
+    let input_data = table_input_tensor(&image, &input_shape)?;
+    input
+        .write(&input_data)
+        .map_err(|error| ("table_mnn_input_failed", error.to_string()))?;
+    let input_ms = elapsed_ms(input_started);
+
+    let inference_started = Instant::now();
+    session
+        .run()
+        .map_err(|error| ("table_mnn_inference_failed", error.to_string()))?;
+    let inference_ms = elapsed_ms(inference_started);
+
+    let output = session
+        .get_output(None)
+        .map_err(|error| ("table_mnn_output_failed", error.to_string()))?;
+    let output_shape = output.shape();
+    let output_data: Vec<f32> = output
+        .read()
+        .map_err(|error| ("table_mnn_output_failed", error.to_string()))?;
+    let document = table_decoder_pending_document(request, model_pack, &input_shape, &output_shape);
+
+    Ok(json!({
+        "ok": true,
+        "document": document,
+        "metrics": {
+            "runtime": "mnn",
+            "decoder": "table",
+            "inputSource": "pdf_oxide_rendered_page",
+            "stubMode": false,
+            "coldStartMs": load_ms,
+            "renderMs": render_ms,
+            "sessionMs": session_ms,
+            "inputMs": input_ms,
+            "preprocessing": preprocessing_contract_json("table"),
+            "inferenceMs": inference_ms,
+            "totalMs": elapsed_ms(started),
+            "loadedModels": model_pack.model_identities(),
+            "input": {
+                "shape": input_shape,
+                "elements": input_data.len()
+            },
+            "output": {
+                "shape": output_shape,
+                "elements": output_data.len(),
+                "sample": output_sample(&output_data),
+                "stats": output_stats(&output_data)
+            },
             "unload": {
                 "status": "completed",
                 "policy": "idle-after-request"
@@ -264,6 +383,82 @@ fn rgb_nchw_tensor_report(image: &image::DynamicImage) -> Value {
         "sha256": format!("sha256:{:x}", hasher.finalize()),
         "firstValues": first_values
     })
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_input_tensor(
+    image: &image::DynamicImage,
+    shape: &[i32],
+) -> Result<Vec<f32>, (&'static str, String)> {
+    let layout = tensor_image_layout(shape)?;
+    let resized = image
+        .resize_exact(
+            layout.width,
+            layout.height,
+            image::imageops::FilterType::Triangle,
+        )
+        .to_rgb8();
+    let mean = [0.485_f32, 0.456_f32, 0.406_f32];
+    let std = [0.229_f32, 0.224_f32, 0.225_f32];
+    let mut tensor = Vec::with_capacity((layout.width * layout.height * 3) as usize);
+
+    if layout.nchw {
+        for channel in 0..3_usize {
+            for y in 0..layout.height {
+                for x in 0..layout.width {
+                    let value = resized.get_pixel(x, y).0[channel] as f32 / 255.0;
+                    tensor.push((value - mean[channel]) / std[channel]);
+                }
+            }
+        }
+    } else {
+        for y in 0..layout.height {
+            for x in 0..layout.width {
+                let pixel = resized.get_pixel(x, y).0;
+                for channel in 0..3_usize {
+                    let value = pixel[channel] as f32 / 255.0;
+                    tensor.push((value - mean[channel]) / std[channel]);
+                }
+            }
+        }
+    }
+
+    Ok(tensor)
+}
+
+#[cfg(feature = "mnn-native")]
+struct TensorImageLayout {
+    width: u32,
+    height: u32,
+    nchw: bool,
+}
+
+#[cfg(feature = "mnn-native")]
+fn tensor_image_layout(shape: &[i32]) -> Result<TensorImageLayout, (&'static str, String)> {
+    if shape.len() != 4 || shape.iter().any(|dimension| *dimension <= 0) {
+        return Err((
+            "table_mnn_input_failed",
+            format!("expected positive 4D image tensor shape, got {shape:?}"),
+        ));
+    }
+    if shape[0] == 1 && shape[1] == 3 {
+        return Ok(TensorImageLayout {
+            height: shape[2] as u32,
+            width: shape[3] as u32,
+            nchw: true,
+        });
+    }
+    if shape[0] == 1 && shape[3] == 3 {
+        return Ok(TensorImageLayout {
+            height: shape[1] as u32,
+            width: shape[2] as u32,
+            nchw: false,
+        });
+    }
+    Err((
+        "table_mnn_input_failed",
+        format!("unsupported table image tensor shape {shape:?}"),
+    ))
 }
 
 #[cfg(feature = "mnn-native")]
@@ -480,6 +675,38 @@ fn requested_decoder(request: &Value, models: &[Value]) -> &'static str {
 }
 
 fn preprocessing_contract_json(decoder: &str) -> Value {
+    let (mean, std, resize) = match decoder {
+        "table" => (
+            json!([0.485, 0.456, 0.406]),
+            json!([0.229, 0.224, 0.225]),
+            json!({
+                "width": 800,
+                "height": 800,
+                "keepAspectRatio": false,
+                "resample": "bilinear",
+                "sourceOfTruth": "opendataloader-hybrid-models table-lite manifest"
+            }),
+        ),
+        "layout" => (
+            json!([0.485, 0.456, 0.406]),
+            json!([0.229, 0.224, 0.225]),
+            json!({
+                "width": 640,
+                "height": 640,
+                "keepAspectRatio": false,
+                "resample": "bilinear",
+                "sourceOfTruth": "opendataloader-hybrid-models layout-server manifest"
+            }),
+        ),
+        _ => (
+            json!([0.0, 0.0, 0.0]),
+            json!([1.0, 1.0, 1.0]),
+            json!({
+                "mode": "model-specific",
+                "sourceOfTruth": "model manifest or decoder adapter"
+            }),
+        ),
+    };
     json!({
         "decoder": decoder,
         "imageSource": "pdf_oxide_rendered_page",
@@ -489,12 +716,9 @@ fn preprocessing_contract_json(decoder: &str) -> Value {
         "tensorLayout": "NCHW",
         "valueType": "f32",
         "scale": 0.00392156862745098_f64,
-        "mean": [0.0, 0.0, 0.0],
-        "std": [1.0, 1.0, 1.0],
-        "resize": {
-            "mode": "model-specific",
-            "sourceOfTruth": "model manifest or decoder adapter"
-        },
+        "mean": mean,
+        "std": std,
+        "resize": resize,
         "parity": {
             "required": true,
             "checks": [
@@ -596,6 +820,92 @@ fn trust_document(request: &Value, model_pack: &ReadyModelPack) -> Value {
                 "code": "mnn_worker_stub_output",
                 "severity": "SEVERE",
                 "message": "Rust MNN worker emitted explicit stub output; real MNN inference is not wired"
+            }]
+        },
+        "auditGradeStatus": "NOT_AUDIT_GRADE"
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_decoder_pending_document(
+    request: &Value,
+    model_pack: &ReadyModelPack,
+    input_shape: &[i32],
+    output_shape: &[i32],
+) -> Value {
+    let source_hash = request
+        .get("source_hash")
+        .or_else(|| request.get("sourceHash"))
+        .and_then(Value::as_str)
+        .unwrap_or("sha256:unknown");
+    let source_path = request
+        .get("source_path")
+        .or_else(|| request.get("sourcePath"))
+        .and_then(Value::as_str)
+        .unwrap_or("document.pdf");
+    let source_filename = request
+        .get("sourceFilename")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            Path::new(source_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+        })
+        .unwrap_or("document.pdf");
+    let model_ids = model_pack.model_identities();
+    json!({
+        "docId": source_hash,
+        "source": {
+            "sourceFilename": source_filename,
+            "sourceHash": source_hash,
+            "metadata": {
+                "sourceFilename": source_filename,
+                "pageCount": 1
+            }
+        },
+        "body": {
+            "pages": [{
+                "pageNumber": 1,
+                "width": 612.0,
+                "height": 792.0,
+                "textLayerAvailable": true,
+                "imageHash": format!("sha256:{}", "0".repeat(64))
+            }],
+            "units": [],
+            "tables": []
+        },
+        "contentBlocks": [],
+        "parseTrace": {
+            "traceId": "trace-mnn-table-0001",
+            "parserRunId": "parser-run-rust-mnn-table",
+            "readingOrder": {
+                "source": "mnn-table-detection-order",
+                "fallback": true,
+                "confidence": 0.0
+            },
+            "pages": [],
+            "sectionTree": [],
+            "warnings": [{
+                "code": "table_mnn_decoder_pending",
+                "severity": "SEVERE",
+                "message": "MNN table model inference ran, but table-structure decoding into TrustTable cells is not implemented yet"
+            }]
+        },
+        "parserRun": {
+            "parserRunId": "parser-run-rust-mnn-table",
+            "parserVersion": "doctruth-mnn-model-worker",
+            "preset": "table-lite",
+            "backend": "rust-sidecar+model-worker",
+            "workerBackend": "mnn-table-rs",
+            "models": model_ids,
+            "modelShapes": {
+                "input": input_shape,
+                "output": output_shape
+            },
+            "warnings": [{
+                "code": "table_mnn_decoder_pending",
+                "severity": "SEVERE",
+                "message": "MNN table model output is available but not decoded into audit-grade table cells"
             }]
         },
         "auditGradeStatus": "NOT_AUDIT_GRADE"
@@ -760,7 +1070,7 @@ fn ocr_bbox_json(result: &ocr_rs::OcrResult_) -> Value {
     })
 }
 
-#[cfg(feature = "mnn-ocr")]
+#[cfg(feature = "mnn-preprocess")]
 fn render_first_page_image(request: &Value) -> Result<image::DynamicImage, (&'static str, String)> {
     let source_path = request
         .get("source_path")
@@ -768,7 +1078,7 @@ fn render_first_page_image(request: &Value) -> Result<image::DynamicImage, (&'st
         .and_then(Value::as_str)
         .ok_or_else(|| {
             (
-                "ocr_pdf_render_failed",
+                "pdf_page_preprocess_failed",
                 "source_path is required".to_string(),
             )
         })?;
@@ -787,14 +1097,14 @@ fn render_first_page_image_from_path(
         .map_err(|error| ("pdf_page_preprocess_failed", error.to_string()))
 }
 
-#[cfg(feature = "mnn-ocr")]
+#[cfg(any(feature = "mnn-ocr", feature = "mnn-native"))]
 fn model_role_path<'a>(models: &'a [Value], role: &str) -> Result<&'a str, (&'static str, String)> {
     find_model_role(models, role)
         .and_then(|model| model.get("cachePath").and_then(Value::as_str))
         .ok_or_else(|| {
             (
                 "model_unavailable",
-                format!("required OCR model role {role} has no cachePath"),
+                format!("required model role {role} has no cachePath"),
             )
         })
 }

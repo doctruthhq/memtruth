@@ -1640,12 +1640,19 @@ fn filter_repeated_header_footer_lines(
     pages
         .into_iter()
         .map(|page| {
-            page.into_iter()
+            let filtered = page
+                .iter()
                 .filter(|line| {
                     !(filter_footers && footer_band_line(line))
                         && !(filter_headers && header_band_line(line))
                 })
-                .collect()
+                .cloned()
+                .collect::<Vec<_>>();
+            if filtered.is_empty() && !page.is_empty() {
+                page
+            } else {
+                filtered
+            }
         })
         .collect()
 }
@@ -10169,6 +10176,23 @@ fn numbered_section_start_context(units: &[Value], index: usize) -> bool {
         .is_some_and(|(_, previous_y1)| y0 - previous_y1 > (y1 - y0).max(1.0) * 1.8)
 }
 
+fn previous_line_is_section_heading(units: &[Value], index: usize) -> bool {
+    previous_line_text(units, index).is_some_and(|text| heading_level(text).is_some())
+}
+
+fn previous_line_is_list_item(units: &[Value], index: usize) -> bool {
+    previous_line_text(units, index).is_some_and(list_item)
+}
+
+fn previous_line_text(units: &[Value], index: usize) -> Option<&str> {
+    let unit = units.get(index)?;
+    units[..index]
+        .iter()
+        .rev()
+        .find(|candidate| unit.get("page") == candidate.get("page"))
+        .map(candidate_text)
+}
+
 fn same_unit_text_kind(unit: &Value) -> &'static str {
     content_block_semantics(unit, candidate_text(unit)).0
 }
@@ -10258,7 +10282,19 @@ fn content_block_semantics_at(units: &[Value], index: usize) -> (&'static str, V
     if centered_chapter_heading_context(units, index, text) {
         return ("heading", json!(1));
     }
-    if numbered_heading(text) && (!list_item(text) || numbered_section_start_context(units, index))
+    if numbered_heading(text)
+        && (!list_item(text)
+            || (numbered_section_start_context(units, index)
+                && !previous_line_is_section_heading(units, index)
+                && !previous_line_is_list_item(units, index)))
+    {
+        return ("heading", json!(2));
+    }
+    if outline_heading(text)
+        && (!list_item(text)
+            || (numbered_section_start_context(units, index)
+                && !previous_line_is_section_heading(units, index)
+                && !previous_line_is_list_item(units, index)))
     {
         return ("heading", json!(2));
     }
@@ -10659,7 +10695,8 @@ fn outline_heading(text: &str) -> bool {
     let Some((marker, title)) = text.split_once(". ") else {
         return false;
     };
-    !title.is_empty()
+    !marker.is_empty()
+        && !title.is_empty()
         && title
             .chars()
             .next()
@@ -15497,6 +15534,23 @@ mod tests {
                 .iter()
                 .any(|text| text.contains("CERAGEM BALANCE USER MANUAL"))
         );
+    }
+
+    #[test]
+    fn opendataloader_footer_filter_keeps_sparse_page_text_in_header_band() {
+        let pages = vec![
+            vec![line("First citeable line.", 100.0, 900.0, 420.0, 930.0)],
+            vec![line("Second citeable line.", 100.0, 900.0, 420.0, 930.0)],
+        ];
+
+        let filtered = filter_repeated_header_footer_lines(pages);
+        let flattened = filtered
+            .iter()
+            .flatten()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(flattened, ["First citeable line.", "Second citeable line."]);
     }
 
     #[test]

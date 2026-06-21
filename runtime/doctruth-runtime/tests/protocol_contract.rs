@@ -184,7 +184,7 @@ fn parse_pdf_rejects_benchmark_oracle_as_production_runtime_profile() {
     ))
     .assert()
     .failure()
-    .stderr(predicate::str::contains("PROFILE_NOT_SUPPORTED"))
+    .stderr(predicate::str::contains("MODEL_WORKER_REQUIRED"))
     .stderr(predicate::str::contains("benchmark-oracle"));
 }
 

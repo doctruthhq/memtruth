@@ -88,6 +88,36 @@
           "firstTensorValuesRequired": true,
           "maxAbsDiff": 0.000001
         }
+      },
+      {
+        "name": "ppocr-v5-mobile-det",
+        "version": "v0.1.3",
+        "cacheFilename": "ocr-rs-ppocr-v5/PP-OCRv5_mobile_det.mnn",
+        "sha256": "sha256:326f846bb5c903282e116ea089e8796b67921586726cca9457730436a79684c3",
+        "sizeBytes": 4760244,
+        "required": true,
+        "task": "ocr",
+        "role": "text-detection",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_det.mnn"
+      },
+      {
+        "name": "ppocr-v5-mobile-rec",
+        "version": "v0.1.3",
+        "cacheFilename": "ocr-rs-ppocr-v5/PP-OCRv5_mobile_rec.mnn",
+        "sha256": "sha256:c809800b09263a8d18c678c211e470ffc464cbb33db2e6bde0244766f3feb0db",
+        "sizeBytes": 16531596,
+        "required": true,
+        "task": "ocr",
+        "role": "text-recognition",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/zibo-chen/newbee-ocr-cli/v0.1.3/models/PP-OCRv5_mobile_rec.mnn"
       }
     ],
     "ocr": [

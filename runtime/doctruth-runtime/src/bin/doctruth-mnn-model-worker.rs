@@ -251,6 +251,7 @@ fn table_inference_response(
         &input_shape,
         image.width(),
         image.height(),
+        &image,
         &outputs,
     );
 
@@ -862,8 +863,8 @@ fn ready_mnn_model_pack(request: &Value) -> ReadyModelPack {
     }
     ReadyModelPack {
         decoder: requested_decoder(request, &ready_models),
-        models: vec![ready_models[0].clone()],
-        auxiliary: Vec::new(),
+        models: ready_models,
+        auxiliary: ready_auxiliary_artifacts(request),
     }
 }
 
@@ -932,10 +933,17 @@ fn ready_auxiliary_artifacts(request: &Value) -> Vec<Value> {
 }
 
 fn requested_decoder(request: &Value, models: &[Value]) -> &'static str {
-    if request.get("preset").and_then(Value::as_str) == Some("ocr")
-        || models
-            .iter()
-            .any(|model| model.get("task").and_then(Value::as_str) == Some("ocr"))
+    if request.get("preset").and_then(Value::as_str) == Some("ocr") {
+        return "ocr";
+    }
+    if models.iter().any(|model| {
+        model.get("task").and_then(Value::as_str) == Some("table-structure-recognition")
+    }) {
+        return "table";
+    }
+    if models
+        .iter()
+        .any(|model| model.get("task").and_then(Value::as_str) == Some("ocr"))
     {
         return "ocr";
     }
@@ -1107,6 +1115,7 @@ fn table_detection_document(
     input_shape: &[i32],
     image_width: u32,
     image_height: u32,
+    image: &image::DynamicImage,
     outputs: &TableModelOutputs,
 ) -> Value {
     let source_hash = request
@@ -1142,12 +1151,29 @@ fn table_detection_document(
         &text_tokens,
     );
     if table_text_assignment_looks_polluted(&cells) {
-        clear_table_cell_text(&mut cells);
-        warnings.push(json!({
-            "code": "table_text_assignment_rejected_low_table_likeness",
-            "severity": "SEVERE",
-            "message": "MNN table cell text assignment was rejected because assigned text looked like prose or captions, not table cells"
-        }));
+        if let Some(ocr_cells) = table_cells_from_ocr(
+            model_pack,
+            image,
+            &row_detections,
+            &column_detections,
+            image_width,
+            image_height,
+        ) {
+            cells = ocr_cells;
+            warnings.push(json!({
+                "code": "table_text_assignment_used_ocr_spans",
+                "severity": "INFO",
+                "message": "MNN table cell text assignment switched from PDF text layer to OCR spans after prose/caption spillover was detected"
+            }));
+        }
+        if table_text_assignment_looks_polluted(&cells) {
+            clear_table_cell_text(&mut cells);
+            warnings.push(json!({
+                "code": "table_text_assignment_rejected_low_table_likeness",
+                "severity": "SEVERE",
+                "message": "MNN table cell text assignment was rejected because assigned text looked like prose or captions, not table cells"
+            }));
+        }
     }
     let units = table_detection_units(&outputs.detections, image_width, image_height, &cells);
     let table = table_json_from_detections(
@@ -1327,6 +1353,97 @@ fn table_text_tokens(
         .into_iter()
         .filter_map(|line| table_text_token_from_line(line, page_width, page_height))
         .collect())
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn table_cells_from_ocr(
+    model_pack: &ReadyModelPack,
+    image: &image::DynamicImage,
+    rows: &[TableDetection],
+    columns: &[TableDetection],
+    image_width: u32,
+    image_height: u32,
+) -> Option<Vec<Value>> {
+    let engine = ocr_rs::OcrEngine::new(
+        model_role_path(&model_pack.models, "text-detection").ok()?,
+        model_role_path(&model_pack.models, "text-recognition").ok()?,
+        model_role_path(&model_pack.auxiliary, "recognition-charset").ok()?,
+        Some(ocr_rs::OcrEngineConfig::new().with_threads(ocr_threads())),
+    )
+    .ok()?;
+    let results = engine.recognize(image).ok()?;
+    let tokens = results
+        .iter()
+        .filter_map(|result| table_text_token_from_ocr(result, image_width, image_height))
+        .filter(table_ocr_token_is_table_like)
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return None;
+    }
+    Some(table_cells_from_detections(
+        rows,
+        columns,
+        image_width,
+        image_height,
+        &tokens,
+    ))
+}
+
+#[cfg(all(feature = "mnn-native", not(feature = "mnn-ocr")))]
+fn table_cells_from_ocr(
+    _model_pack: &ReadyModelPack,
+    _image: &image::DynamicImage,
+    _rows: &[TableDetection],
+    _columns: &[TableDetection],
+    _image_width: u32,
+    _image_height: u32,
+) -> Option<Vec<Value>> {
+    None
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn table_ocr_token_is_table_like(token: &TableTextToken) -> bool {
+    table_cell_text_looks_numeric_or_unit(&token.text)
+        || table_ocr_token_looks_like_header(&token.text)
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn table_ocr_token_looks_like_header(text: &str) -> bool {
+    if text.split_whitespace().count() > 8 {
+        return false;
+    }
+    let normalized = text.to_ascii_lowercase();
+    normalized.contains("temperature")
+        || normalized.contains("kinematic")
+        || normalized.contains("viscosity")
+        || normalized.contains("degree")
+        || normalized.contains("m2/s")
+        || normalized.contains("m²/s")
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn table_text_token_from_ocr(
+    result: &ocr_rs::OcrResult_,
+    image_width: u32,
+    image_height: u32,
+) -> Option<TableTextToken> {
+    let text = result.text.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let left = result.bbox.rect.left() as f64;
+    let top = result.bbox.rect.top() as f64;
+    let width = result.bbox.rect.width() as f64;
+    let height = result.bbox.rect.height() as f64;
+    Some(TableTextToken {
+        text,
+        bbox: NormalizedBox {
+            x0: (left / image_width as f64).clamp(0.0, 1.0),
+            y0: (top / image_height as f64).clamp(0.0, 1.0),
+            x1: ((left + width) / image_width as f64).clamp(0.0, 1.0),
+            y1: ((top + height) / image_height as f64).clamp(0.0, 1.0),
+        },
+    })
 }
 
 #[cfg(feature = "mnn-native")]

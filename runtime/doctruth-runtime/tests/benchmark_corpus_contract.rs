@@ -486,6 +486,33 @@ fn opendataloader_parity_repairs_split_glyph_words_in_paragraphs() {
 }
 
 #[test]
+fn opendataloader_markdown_joins_wrapped_executive_summary_paragraph_case_00079() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-joined-paragraph-00079");
+    let report = run_opendataloader_prediction("01030000000079", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000079.md")).unwrap();
+    assert!(
+        markdown.contains(
+            "India suffers from ‘regulatory cholesterol’ that is getting in the way of doing business."
+        ),
+        "expected visually wrapped Executive Summary prose to be joined:\n{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "since Independence, surviving three decades of economic reforms initiated in 1991. The biggest challenges come from"
+        ),
+        "expected year-ending sentence continuation to stay prose, not split heading/body lines:\n{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "of which 25,537 are at the Union level. These compliances need to be communicated"
+        ),
+        "expected uppercase line continuation inside a paragraph to be joined:\n{markdown}"
+    );
+}
+
+#[test]
 #[ignore = "requires OCR/table-model path; keep as OpenDataLoader hybrid parity contract, not text-only Rust parser"]
 fn opendataloader_parity_suppresses_raw_lines_after_reconstructed_table() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-table-source-suppression");

@@ -7196,7 +7196,7 @@ fn pipe_table_separator(width: usize) -> String {
 }
 
 fn markdown_join_paragraphs_enabled() -> bool {
-    env::var("DOCTRUTH_BENCH_JOIN_PARAGRAPHS").as_deref() == Ok("1")
+    env::var("DOCTRUTH_BENCH_JOIN_PARAGRAPHS").as_deref() != Ok("0")
 }
 
 fn join_markdown_paragraph_lines(lines: Vec<String>) -> Vec<String> {
@@ -7225,7 +7225,11 @@ fn join_markdown_paragraph_lines(lines: Vec<String>) -> Vec<String> {
 
 fn markdown_line_is_structural(line: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with('#') || trimmed.starts_with("<table")
+    trimmed.starts_with('#') || trimmed.starts_with("<table") || markdown_pipe_table_row(trimmed)
+}
+
+fn markdown_pipe_table_row(line: &str) -> bool {
+    line.starts_with('|') && line.ends_with('|') && line.matches('|').count() >= 2
 }
 
 fn starts_new_markdown_paragraph(line: &str, paragraph: &str) -> bool {
@@ -7239,7 +7243,9 @@ fn starts_new_markdown_paragraph(line: &str, paragraph: &str) -> bool {
     if paragraph.ends_with(['.', '?', '!', ':', ';']) {
         return true;
     }
-    line.chars().next().is_some_and(char::is_uppercase) && line.split_whitespace().count() <= 8
+    line.chars().next().is_some_and(char::is_uppercase)
+        && line.split_whitespace().count() <= 8
+        && paragraph.split_whitespace().count() <= 8
 }
 
 fn merge_markdown_paragraph_line(paragraph: &str, line: &str) -> String {
@@ -7264,13 +7270,18 @@ fn markdown_list_item(line: &str) -> bool {
 
 fn markdown_numbered_list_item(line: &str) -> bool {
     let mut seen_digit = false;
+    let mut digit_count = 0;
     let mut chars = line.chars().peekable();
     while let Some(char) = chars.next() {
         if char.is_ascii_digit() {
             seen_digit = true;
+            digit_count += 1;
             continue;
         }
-        return seen_digit && matches!(char, '.' | ')') && chars.peek() == Some(&' ');
+        return seen_digit
+            && digit_count <= 3
+            && matches!(char, '.' | ')')
+            && chars.peek() == Some(&' ');
     }
     false
 }
@@ -15505,6 +15516,9 @@ mod tests {
             "and keeps flowing".to_string(),
             "Table 1 Summary".to_string(),
             "<table>\n <tr>\n  <td>A</td>\n </tr>\n</table>".to_string(),
+            "|A|B|".to_string(),
+            "|---|---|".to_string(),
+            "|1|2|".to_string(),
             "1. First item".to_string(),
             "Second short heading".to_string(),
             "Trailing body.".to_string(),
@@ -15517,6 +15531,9 @@ mod tests {
                 "This paragraph continues on the next line and keeps flowing",
                 "Table 1 Summary",
                 "<table>\n <tr>\n  <td>A</td>\n </tr>\n</table>",
+                "|A|B|",
+                "|---|---|",
+                "|1|2|",
                 "1. First item",
                 "Second short heading",
                 "Trailing body."

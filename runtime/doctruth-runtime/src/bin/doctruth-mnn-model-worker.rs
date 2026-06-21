@@ -1132,11 +1132,13 @@ fn table_detection_document(
     let table_bbox = primary_table_bbox(&outputs.detections);
     let row_detections = table_labeled_detections(&outputs.detections, "table row");
     let column_detections = table_labeled_detections(&outputs.detections, "table column");
+    let text_tokens = table_text_tokens(request, image_width, image_height).unwrap_or_default();
     let cells = table_cells_from_detections(
         &row_detections,
         &column_detections,
         image_width,
         image_height,
+        &text_tokens,
     );
     let units = table_detection_units(&outputs.detections, image_width, image_height, &cells);
     let table = table_json_from_detections(
@@ -1258,6 +1260,7 @@ fn table_cells_from_detections(
     columns: &[TableDetection],
     image_width: u32,
     image_height: u32,
+    text_tokens: &[TableTextToken],
 ) -> Vec<Value> {
     let mut cells = Vec::new();
     for (row_index, row) in rows.iter().enumerate() {
@@ -1271,20 +1274,122 @@ fn table_cells_from_detections(
             if bbox_area(bbox) < 0.00005 {
                 continue;
             }
+            let text = table_cell_text(bbox, image_width, image_height, text_tokens);
             cells.push(json!({
                 "cellId": format!("mnn-table-0001-r{row_index:04}-c{column_index:04}"),
                 "rowRange": {"start": row_index, "end": row_index},
                 "columnRange": {"start": column_index, "end": column_index},
                 "boundingBox": scaled_bbox_json(bbox, image_width, image_height),
-                "text": "",
+                "text": text,
                 "confidence": {
                     "score": rounded_f64(row.score.min(column.score) as f64),
-                    "rationale": "mnn table-transformer row/column intersection; text assignment pending"
+                    "rationale": "mnn table-transformer row/column intersection with pdf_oxide text-line assignment"
                 }
             }));
         }
     }
     cells
+}
+
+#[cfg(feature = "mnn-native")]
+#[derive(Clone)]
+struct TableTextToken {
+    text: String,
+    bbox: NormalizedBox,
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_text_tokens(
+    request: &Value,
+    image_width: u32,
+    image_height: u32,
+) -> Result<Vec<TableTextToken>, String> {
+    let source_path = request
+        .get("source_path")
+        .or_else(|| request.get("sourcePath"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "request source_path missing".to_string())?;
+    let document = PdfDocument::open(source_path).map_err(|error| error.to_string())?;
+    let (page_width, page_height) = pdf_page_dimensions(&document, 0, image_width, image_height);
+    let lines = document
+        .extract_text_lines(0)
+        .map_err(|error| error.to_string())?;
+    Ok(lines
+        .into_iter()
+        .filter_map(|line| table_text_token_from_line(line, page_width, page_height))
+        .collect())
+}
+
+#[cfg(feature = "mnn-native")]
+fn pdf_page_dimensions(
+    document: &PdfDocument,
+    page_index: usize,
+    image_width: u32,
+    image_height: u32,
+) -> (f64, f64) {
+    document
+        .get_page_media_box(page_index)
+        .ok()
+        .map(|(x0, y0, x1, y1)| ((x1 - x0).abs() as f64, (y1 - y0).abs() as f64))
+        .filter(|(width, height)| *width > 0.0 && *height > 0.0)
+        .unwrap_or((image_width as f64 / 2.0, image_height as f64 / 2.0))
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_text_token_from_line(
+    line: pdf_oxide::layout::TextLine,
+    page_width: f64,
+    page_height: f64,
+) -> Option<TableTextToken> {
+    let text = line.text.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let bbox = NormalizedBox {
+        x0: (line.bbox.x as f64 / page_width).clamp(0.0, 1.0),
+        y0: (line.bbox.y as f64 / page_height).clamp(0.0, 1.0),
+        x1: ((line.bbox.x + line.bbox.width) as f64 / page_width).clamp(0.0, 1.0),
+        y1: ((line.bbox.y + line.bbox.height) as f64 / page_height).clamp(0.0, 1.0),
+    };
+    Some(TableTextToken { text, bbox })
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_cell_text(
+    cell_bbox: NormalizedBox,
+    _image_width: u32,
+    _image_height: u32,
+    text_tokens: &[TableTextToken],
+) -> String {
+    let mut tokens = text_tokens
+        .iter()
+        .filter(|token| normalized_center_inside(token.bbox, cell_bbox))
+        .cloned()
+        .collect::<Vec<_>>();
+    tokens.sort_by(|left, right| {
+        left.bbox
+            .y0
+            .partial_cmp(&right.bbox.y0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                left.bbox
+                    .x0
+                    .partial_cmp(&right.bbox.x0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+    tokens
+        .into_iter()
+        .map(|token| token.text)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(feature = "mnn-native")]
+fn normalized_center_inside(inner: NormalizedBox, outer: NormalizedBox) -> bool {
+    let center_x = (inner.x0 + inner.x1) / 2.0;
+    let center_y = (inner.y0 + inner.y1) / 2.0;
+    center_x >= outer.x0 && center_x <= outer.x1 && center_y >= outer.y0 && center_y <= outer.y1
 }
 
 #[cfg(feature = "mnn-native")]
@@ -1383,7 +1488,11 @@ fn table_json_from_detections(
         "quality": {
             "rowCount": row_count,
             "columnCount": column_count,
-            "filledCellCount": 0,
+            "filledCellCount": cells.iter().filter(|cell| {
+                cell.get("text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|text| !text.trim().is_empty())
+            }).count(),
             "rationale": "mnn table-transformer structure detection; cell text assignment pending"
         },
         "confidence": {

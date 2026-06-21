@@ -1469,10 +1469,17 @@ fn numeric_table_cells_from_ocr_tokens(
     }
 
     let mut cells = Vec::new();
-    if numeric_ocr_grid_looks_like_viscosity_table(tokens, &rows) && anchors.len() >= 4 {
+    let is_viscosity_table =
+        numeric_ocr_grid_looks_like_viscosity_table(tokens, &rows) && anchors.len() >= 4;
+    if is_viscosity_table {
         cells.extend(numeric_ocr_viscosity_header_cells());
     }
     let rows = numeric_ocr_fill_missing_sequence_labels(rows, &anchors);
+    let rows = if is_viscosity_table {
+        numeric_ocr_correct_viscosity_temperature_columns(rows, &anchors)
+    } else {
+        rows
+    };
     let body_row_offset = if cells.is_empty() { 0 } else { 1 };
     for (row_index, row) in rows.into_iter().enumerate() {
         let aligned = numeric_ocr_align_row_to_columns(row, &anchors);
@@ -1651,6 +1658,72 @@ fn numeric_ocr_left_integer(row: &[TableTextToken], anchors: &[f64]) -> Option<i
 #[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
 fn numeric_ocr_row_has_scientific_notation(row: &[TableTextToken]) -> bool {
     row.iter().any(|token| token.text.contains("E-0"))
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_correct_viscosity_temperature_columns(
+    mut rows: Vec<Vec<TableTextToken>>,
+    anchors: &[f64],
+) -> Vec<Vec<TableTextToken>> {
+    for column in [0, 2] {
+        for row_index in 1..rows.len().saturating_sub(1) {
+            let previous = numeric_ocr_integer_at_column(&rows[row_index - 1], anchors, column);
+            let current = numeric_ocr_integer_at_column(&rows[row_index], anchors, column);
+            let next = numeric_ocr_integer_at_column(&rows[row_index + 1], anchors, column);
+            let Some(expected) = numeric_ocr_expected_temperature(previous, current, next) else {
+                continue;
+            };
+            if let Some(token_index) =
+                numeric_ocr_token_index_at_column(&rows[row_index], anchors, column)
+            {
+                rows[row_index][token_index].text = expected.to_string();
+            }
+        }
+    }
+    rows
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_expected_temperature(
+    previous: Option<i32>,
+    current: Option<i32>,
+    next: Option<i32>,
+) -> Option<i32> {
+    let (Some(previous), Some(current), Some(next)) = (previous, current, next) else {
+        return None;
+    };
+    let expected = if next == previous + 2 {
+        previous + 1
+    } else if next == previous + 10 {
+        previous + 5
+    } else if current <= previous && next >= previous + 5 && next <= previous + 6 {
+        previous + 1
+    } else {
+        return None;
+    };
+    (current != expected).then_some(expected)
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_integer_at_column(
+    row: &[TableTextToken],
+    anchors: &[f64],
+    column: usize,
+) -> Option<i32> {
+    numeric_ocr_token_index_at_column(row, anchors, column)
+        .and_then(|index| row[index].text.parse::<i32>().ok())
+}
+
+#[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
+fn numeric_ocr_token_index_at_column(
+    row: &[TableTextToken],
+    anchors: &[f64],
+    column: usize,
+) -> Option<usize> {
+    row.iter().position(|token| {
+        nearest_numeric_ocr_anchor(anchors, token) == Some(column)
+            && token.text.chars().all(|char| char.is_ascii_digit())
+    })
 }
 
 #[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
@@ -2503,6 +2576,82 @@ mod tests {
                 "33",
                 "7.530E-07"
             ]
+        );
+    }
+
+    #[test]
+    fn numeric_ocr_grid_corrects_viscosity_temperature_ocr_substitutions() {
+        let adjacent_tokens = vec![
+            token("1", 216.0, 721.0, 245.0, 749.0),
+            token("1.732E-06", 428.0, 719.0, 530.0, 748.0),
+            token("26", 707.0, 717.0, 748.0, 751.0),
+            token("8.760E-07", 925.0, 717.0, 1027.0, 750.0),
+            token("2", 216.0, 740.0, 245.0, 769.0),
+            token("1.674E-06", 428.0, 739.0, 530.0, 772.0),
+            token("29", 704.0, 735.0, 751.0, 774.0),
+            token("8.540E-07", 925.0, 739.0, 1027.0, 772.0),
+            token("3", 216.0, 761.0, 245.0, 789.0),
+            token("1.619E-06", 428.0, 759.0, 530.0, 788.0),
+            token("28", 707.0, 757.0, 748.0, 791.0),
+            token("8.360E-07", 925.0, 757.0, 1027.0, 790.0),
+        ];
+        let adjacent_cells =
+            numeric_table_cells_from_ocr_tokens(&adjacent_tokens, 1224, 1584).unwrap();
+        let adjacent_text = adjacent_cells
+            .iter()
+            .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert!(
+            adjacent_text
+                .windows(4)
+                .any(|row| row == ["2", "1.674E-06", "27", "8.540E-07"]),
+            "{adjacent_text:?}"
+        );
+
+        let stepped_tokens = vec![
+            token("14", 216.0, 781.0, 245.0, 809.0),
+            token("1.169E-06", 428.0, 779.0, 530.0, 808.0),
+            token("39", 707.0, 777.0, 748.0, 811.0),
+            token("6.710E-07", 925.0, 777.0, 1027.0, 810.0),
+            token("15", 216.0, 800.0, 245.0, 829.0),
+            token("1.138E-06", 428.0, 799.0, 530.0, 832.0),
+            token("39", 704.0, 795.0, 751.0, 834.0),
+            token("6.580E-07", 925.0, 799.0, 1027.0, 832.0),
+            token("16", 216.0, 821.0, 245.0, 849.0),
+            token("1.108E-06", 428.0, 819.0, 530.0, 848.0),
+            token("45", 707.0, 817.0, 748.0, 851.0),
+            token("6.020E-07", 925.0, 817.0, 1027.0, 850.0),
+            token("18", 216.0, 840.0, 245.0, 869.0),
+            token("1.053E-06", 428.0, 839.0, 530.0, 872.0),
+            token("55", 707.0, 835.0, 748.0, 874.0),
+            token("5.110E-07", 925.0, 839.0, 1027.0, 872.0),
+            token("19", 216.0, 861.0, 245.0, 889.0),
+            token("1.027E-06", 428.0, 859.0, 530.0, 888.0),
+            token("30", 704.0, 857.0, 751.0, 891.0),
+            token("4.760E-07", 925.0, 857.0, 1027.0, 890.0),
+            token("20", 216.0, 880.0, 245.0, 909.0),
+            token("1.002E-06", 428.0, 879.0, 530.0, 912.0),
+            token("65", 707.0, 875.0, 748.0, 914.0),
+            token("4.430E-07", 925.0, 879.0, 1027.0, 912.0),
+        ];
+        let stepped_cells =
+            numeric_table_cells_from_ocr_tokens(&stepped_tokens, 1224, 1584).unwrap();
+        let stepped_text = stepped_cells
+            .iter()
+            .filter_map(|cell| cell.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert!(
+            stepped_text
+                .windows(4)
+                .any(|row| row == ["15", "1.138E-06", "40", "6.580E-07"]),
+            "{stepped_text:?}"
+        );
+        assert!(
+            stepped_text
+                .windows(4)
+                .any(|row| row == ["19", "1.027E-06", "60", "4.760E-07"]),
+            "{stepped_text:?}"
         );
     }
 

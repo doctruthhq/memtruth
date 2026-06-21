@@ -5992,7 +5992,9 @@ fn opendataloader_can_join_split_glyph_line(current: &str, next: &str) -> bool {
     if current.is_empty() || next.is_empty() {
         return false;
     }
-    if !next.chars().next().is_some_and(|ch| ch.is_lowercase()) {
+    let next_starts_like_suffix = next.chars().next().is_some_and(|ch| ch.is_lowercase())
+        || (next.starts_with('-') && opendataloader_text_ends_with_ordinal_suffix(current));
+    if !next_starts_like_suffix {
         return false;
     }
     if current
@@ -6002,7 +6004,10 @@ fn opendataloader_can_join_split_glyph_line(current: &str, next: &str) -> bool {
     {
         return false;
     }
-    opendataloader_single_letter_prefix(current) || opendataloader_short_word_fragment(current)
+    opendataloader_single_letter_prefix(current)
+        || opendataloader_short_word_fragment(current)
+        || opendataloader_ordinal_suffix_join(current, next)
+        || opendataloader_hyphen_suffix_join(current, next)
 }
 
 fn opendataloader_single_letter_prefix(text: &str) -> bool {
@@ -6019,6 +6024,29 @@ fn opendataloader_short_word_fragment(text: &str) -> bool {
         clean,
         "beha" | "fr" | "lo" | "pr" | "eff" | "rec" | "gr" | "r"
     )
+}
+
+fn opendataloader_ordinal_suffix_join(current: &str, next: &str) -> bool {
+    current
+        .trim_end()
+        .chars()
+        .last()
+        .is_some_and(|ch| ch.is_ascii_digit())
+        && matches!(next.trim(), "st" | "nd" | "rd" | "th")
+}
+
+fn opendataloader_hyphen_suffix_join(current: &str, next: &str) -> bool {
+    let current = current.trim_end();
+    let next = next.trim_start();
+    opendataloader_text_ends_with_ordinal_suffix(current)
+        && next.starts_with('-')
+        && next.chars().nth(1).is_some_and(|ch| ch.is_lowercase())
+}
+
+fn opendataloader_text_ends_with_ordinal_suffix(text: &str) -> bool {
+    ["st", "nd", "rd", "th"]
+        .iter()
+        .any(|suffix| text.ends_with(suffix))
 }
 
 fn opendataloader_join_split_glyph_line(current: &str, next: &str) -> String {
@@ -15222,6 +15250,20 @@ mod tests {
                 "Second short heading",
                 "Trailing body."
             ]
+        );
+    }
+
+    #[test]
+    fn markdown_projection_repairs_split_ordinal_hyphen_suffix() {
+        let lines = vec![
+            "counter-productive in 21".to_string(),
+            "st".to_string(),
+            "-century India.".to_string(),
+        ];
+
+        assert_eq!(
+            opendataloader_repair_split_glyph_lines(lines),
+            vec!["counter-productive in 21st-century India.".to_string()]
         );
     }
 

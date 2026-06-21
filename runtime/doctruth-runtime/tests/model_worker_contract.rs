@@ -725,6 +725,43 @@ fn parse_pdf_auto_table_route_discovers_packaged_rust_mnn_worker() {
 }
 
 #[test]
+fn parse_pdf_auto_routes_opendataloader_image_backed_table_case_to_mnn_worker() {
+    let pdf = opendataloader_worker_fixture("01030000000110.pdf");
+    let bin_dir = temp_dir("doctruth-runtime-packaged-odl-table-bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let source_worker = assert_cmd::cargo::cargo_bin("doctruth-mnn-model-worker");
+    let worker = bin_dir.join("doctruth-mnn-model-worker");
+    fs::copy(&source_worker, &worker).unwrap();
+    make_executable(&worker);
+    let (cache_dir, manifest) = ready_mnn_model_manifest("doctruth-runtime-odl-table-cache");
+    let path = prepend_path(&bin_dir);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_MNN_WORKER_STUB", "1")
+        .env("PATH", path)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "auto"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(json["parserRun"]["preset"], "table-lite");
+    assert_eq!(json["parserRun"]["modelRouting"]["route"], "table-model");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["candidateRoutedPages"],
+        json!([1])
+    );
+    assert_eq!(json["body"]["units"][0]["kind"], "TABLE_CELL");
+}
+
+#[test]
 fn parse_pdf_reports_configured_worker_bad_json_as_stable_error() {
     let pdf = write_pdf_fixture("Fallback text should not be used.");
     let worker = write_bad_model_worker();
@@ -1748,6 +1785,12 @@ fn write_empty_text_layer_pdf() -> PathBuf {
     let path = temp_path("doctruth-runtime-worker-empty-text-layer", "pdf");
     fs::write(&path, minimal_empty_text_layer_pdf()).unwrap();
     path
+}
+
+fn opendataloader_worker_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../third_party/opendataloader-bench/pdfs")
+        .join(name)
 }
 
 fn temp_path(prefix: &str, extension: &str) -> PathBuf {

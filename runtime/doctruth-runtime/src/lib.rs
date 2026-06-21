@@ -2303,7 +2303,10 @@ fn explicit_model_worker_command() -> Option<String> {
 }
 
 fn route_default_model_worker_command(route: &ModelRouteDecision) -> Option<String> {
-    if route.decision != "model-runtime" && route.decision != "ocr-model" {
+    if !matches!(
+        route.decision.as_str(),
+        "model-runtime" | "ocr-model" | "table-model"
+    ) {
         return None;
     }
     find_executable_on_path("doctruth-mnn-model-worker")

@@ -8369,3 +8369,19 @@
 - Boundary: this slice only strengthens build-time MNN pack preparation
   provenance. It does not change Rust runtime code, benchmark runners, real
   model artifacts, or decoder parity.
+
+## 2026-06-21 Packaged Table MNN Worker Discovery
+
+- Added RED coverage for `preset=auto` table-heavy PDFs with a packaged
+  `doctruth-mnn-model-worker` on `PATH` and READY MNN table manifest/cache.
+- RED result: the runtime returned deterministic `rust-sidecar` output instead
+  of starting the packaged worker because default discovery accepted
+  `model-runtime` and `ocr-model` decisions but not the explicit
+  `table-model` route.
+- Updated route-scoped worker discovery so `table-model` can discover the
+  packaged Rust MNN worker the same way OCR already can. This does not make
+  table inference real; without stub mode or a future real table decoder, the
+  worker still fails closed at the decoder boundary.
+- Verification passed:
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml parse_pdf_auto_table_route_discovers_packaged_rust_mnn_worker --test model_worker_contract`;
+  `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test model_worker_contract`.

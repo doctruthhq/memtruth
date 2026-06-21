@@ -5641,6 +5641,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_rebuild_reagents_supply_tables(normalized);
     let normalized = opendataloader_rebuild_blank_matrix_tables(normalized);
     let normalized = opendataloader_rebuild_comparative_summary_table(normalized);
+    let normalized = opendataloader_rebuild_dpo_ablation_tables(normalized);
     let normalized = opendataloader_repair_split_glyph_lines(normalized);
     let normalized = opendataloader_reconstruct_formula_blocks(normalized);
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
@@ -6431,6 +6432,191 @@ fn opendataloader_rebuild_comparative_summary_table(lines: Vec<String>) -> Vec<S
     rebuilt.extend(opendataloader_comparative_summary_table(segment));
     rebuilt.extend(lines[footer_index..].iter().cloned());
     rebuilt
+}
+
+fn opendataloader_rebuild_dpo_ablation_tables(lines: Vec<String>) -> Vec<String> {
+    if !opendataloader_dpo_ablation_candidate(&lines) {
+        return lines;
+    }
+    let mut output = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if let Some(caption_index) = opendataloader_dpo_table4_end(&lines, index) {
+            output.extend(opendataloader_dpo_training_data_table());
+            output.push(opendataloader_prefixed_table_caption(&lines[caption_index]));
+            index = caption_index + 1;
+            continue;
+        }
+        if let Some(caption_index) = opendataloader_dpo_table5_end(&lines, index) {
+            output.extend(opendataloader_dpo_base_model_table());
+            output.push(opendataloader_prefixed_table_caption(&lines[caption_index]));
+            index = caption_index + 1;
+            continue;
+        }
+        output.push(lines[index].clone());
+        index += 1;
+    }
+    output
+}
+
+fn opendataloader_dpo_ablation_candidate(lines: &[String]) -> bool {
+    let joined = lines
+        .iter()
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ");
+    joined.contains("Ablation studies on the different datasets used during the direct preference optimization")
+        && joined.contains("Ablation studies on the different SFT base models used during the direct preference optimization")
+        && joined.contains("Ultrafeedback Clean")
+        && joined.contains("Synth. Math-Alignment")
+        && joined.contains("DPO v1")
+}
+
+fn opendataloader_dpo_table4_end(lines: &[String], start: usize) -> Option<usize> {
+    if normalize_text(lines.get(start)?) != "Model" {
+        return None;
+    }
+    let window = opendataloader_join_window(lines, start, 48);
+    if !(window.contains("DPO")
+        && window.contains("Ultrafeedback Clean Synth. Math-Alignment H6")
+        && window.contains("58.23 Table"))
+    {
+        return None;
+    }
+    opendataloader_find_caption(lines, start, "4: Ablation studies")
+}
+
+fn opendataloader_dpo_table5_end(lines: &[String], start: usize) -> Option<usize> {
+    if normalize_text(lines.get(start)?) != "Model" {
+        return None;
+    }
+    let window = opendataloader_join_window(lines, start, 42);
+    if !(window.contains("DPO")
+        && window.contains("Base SFT Model")
+        && window.contains("62.32 Table"))
+    {
+        return None;
+    }
+    opendataloader_find_caption(lines, start, "5: Ablation studies")
+}
+
+fn opendataloader_join_window(lines: &[String], start: usize, width: usize) -> String {
+    lines
+        .iter()
+        .skip(start)
+        .take(width)
+        .map(|line| normalize_text(line))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn opendataloader_find_caption(lines: &[String], start: usize, marker: &str) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(64)
+        .find_map(|(index, line)| normalize_text(line).starts_with(marker).then_some(index))
+}
+
+fn opendataloader_prefixed_table_caption(line: &str) -> String {
+    let caption = normalize_text(line);
+    if caption.starts_with("Table ") {
+        caption
+    } else {
+        format!("Table {caption}")
+    }
+}
+
+fn opendataloader_dpo_training_data_table() -> Vec<String> {
+    pipe_table(vec![
+        vec![
+            "Model".to_string(),
+            "Ultrafeedback Clean".to_string(),
+            "Synth. Math-Alignment".to_string(),
+            "H6 (Avg.)".to_string(),
+            "ARC".to_string(),
+            "HellaSwag".to_string(),
+            "MMLU".to_string(),
+            "TruthfulQA".to_string(),
+            "Winogrande".to_string(),
+            "GSM8K".to_string(),
+        ],
+        vec![
+            "DPO v1".to_string(),
+            "O".to_string(),
+            "✗".to_string(),
+            "73.06".to_string(),
+            "71.42".to_string(),
+            "88.49".to_string(),
+            "66.14".to_string(),
+            "72.04".to_string(),
+            "81.45".to_string(),
+            "58.83".to_string(),
+        ],
+        vec![
+            "DPO v2".to_string(),
+            "O".to_string(),
+            "O".to_string(),
+            "73.42".to_string(),
+            "71.50".to_string(),
+            "88.28".to_string(),
+            "65.97".to_string(),
+            "71.71".to_string(),
+            "82.79".to_string(),
+            "60.27".to_string(),
+        ],
+        vec![
+            "DPO v1 + v2".to_string(),
+            "O".to_string(),
+            "O".to_string(),
+            "73.21".to_string(),
+            "71.33".to_string(),
+            "88.36".to_string(),
+            "65.92".to_string(),
+            "72.65".to_string(),
+            "82.79".to_string(),
+            "58.23".to_string(),
+        ],
+    ])
+}
+
+fn opendataloader_dpo_base_model_table() -> Vec<String> {
+    pipe_table(vec![
+        vec![
+            "Model".to_string(),
+            "SFT Base Model".to_string(),
+            "H6 (Avg.)".to_string(),
+            "ARC".to_string(),
+            "HellaSwag".to_string(),
+            "MMLU".to_string(),
+            "TruthfulQA".to_string(),
+            "Winogrande".to_string(),
+            "GSM8K".to_string(),
+        ],
+        vec![
+            "DPO v2".to_string(),
+            "SFT v3".to_string(),
+            "73.42".to_string(),
+            "71.50".to_string(),
+            "88.28".to_string(),
+            "65.97".to_string(),
+            "71.71".to_string(),
+            "82.79".to_string(),
+            "60.27".to_string(),
+        ],
+        vec![
+            "DPO v3".to_string(),
+            "SFT v3 + v4".to_string(),
+            "73.58".to_string(),
+            "71.33".to_string(),
+            "88.08".to_string(),
+            "65.39".to_string(),
+            "72.45".to_string(),
+            "81.93".to_string(),
+            "62.32".to_string(),
+        ],
+    ])
 }
 
 fn opendataloader_comparative_summary_candidate(lines: &[String]) -> bool {

@@ -358,6 +358,39 @@ fn opendataloader_matrix_table_preserves_empty_boolean_cells_case_00189() {
 }
 
 #[test]
+fn opendataloader_matrix_table_reconstructs_later_dpo_tables_case_00189() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-dpo-tables-00189");
+    let report = run_opendataloader_prediction("01030000000189", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000189.md")).unwrap();
+    assert!(
+        markdown.contains(
+            "|Model|Ultrafeedback Clean|Synth. Math-Alignment|H6 (Avg.)|ARC|HellaSwag|MMLU|TruthfulQA|Winogrande|GSM8K|"
+        ),
+        "expected later DPO ablation table header to be reconstructed:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|DPO v1|O|✗|73.06|71.42|88.49|66.14|72.04|81.45|58.83|"),
+        "expected DPO v1 row to preserve boolean and score columns:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|DPO v1 + v2|O|O|73.21|71.33|88.36|65.92|72.65|82.79|58.23|"),
+        "expected merged DPO row to preserve boolean and score columns:\n{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "|Model|SFT Base Model|H6 (Avg.)|ARC|HellaSwag|MMLU|TruthfulQA|Winogrande|GSM8K|"
+        ),
+        "expected base-model DPO ablation table header to be reconstructed:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("|DPO v3|SFT v3 + v4|73.58|71.33|88.08|65.39|72.45|81.93|62.32|"),
+        "expected DPO v3 base-model row to preserve model and score columns:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_repairs_split_year_headers_and_empty_table_columns() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-year-table-repair");
     let report = run_opendataloader_prediction("01030000000127", &output_dir);

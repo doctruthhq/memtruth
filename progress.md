@@ -8328,3 +8328,22 @@
 - Remaining boundary: this does not convert ONNX to MNN and does not implement
   the table/layout MNN decoders. It makes that gap explicit and blocks
   promotion until real MNN artifacts and parity evidence exist.
+
+## 2026-06-21 MNN Model Pack Preparation Tool
+
+- Added `scripts/prepare-doctruth-mnn-model-pack.sh`, a build-time converter
+  lane for OpenDataLoader-style ONNX reference manifests. It requires
+  `MNNConvert`/`mnnconvert` or explicit `DOCTRUTH_MNN_CONVERT_BIN`, verifies
+  source cache SHA/size before conversion, writes `.mnn` files to an output
+  cache, and emits a derived MNN manifest with preserved preprocessing, parity,
+  provenance, and promotion gates.
+- Added `scripts/smoke-doctruth-mnn-pack-prepare.sh`. The smoke proves:
+  no converter fails closed with JSON `mnn_convert_unavailable`; a fake
+  converter receives the expected input/output contract; the generated manifest
+  switches artifacts to `backend=mnn` / `format=mnn`; and the result passes the
+  MNN pack readiness gate.
+- Verification passed:
+  `sh scripts/smoke-doctruth-mnn-pack-prepare.sh`.
+- Remaining boundary: this is conversion preparation tooling. It does not
+  bundle converted RT-DETR/TATR `.mnn` artifacts, prove tensor parity against
+  Python/ONNX, or implement the table/layout MNN postprocessors.

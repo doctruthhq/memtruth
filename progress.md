@@ -8307,3 +8307,24 @@
   `cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml opendataloader_promotion_report_blocks_when_model_routes_were_not_started --test benchmark_corpus_contract`.
 - Remaining boundary: this closes the benchmark/promotion accounting hole. It
   does not implement the missing MNN table/layout decoders.
+
+## 2026-06-21 MNN Model Pack Readiness Gate
+
+- Added `scripts/check-doctruth-mnn-pack-readiness.sh`, a machine-readable
+  gate for the production edge MNN lane. It verifies that each artifact is a
+  real `backend=mnn` / `format=mnn` candidate, has a rust-mnn parity contract,
+  exists in the runtime cache, and matches manifest `sha256` and `sizeBytes`.
+- The current OpenDataLoader hybrid reference pack is now reported honestly:
+  the local ONNX RT-DETR/TATR files may be cache `READY`, but they remain
+  `productionReady=false` for edge MNN because they are missing MNN candidate
+  artifacts. The report also records whether `MNNConvert`/`mnnconvert` is
+  available, without making tests depend on this machine having it installed.
+- Wired the readiness gate into `scripts/run-doctruth-mnn-promotion-bench.sh`
+  so OpenDataLoader promotion runs fail before benchmark execution when the
+  model pack is still reference-only or tampered.
+- Verification passed:
+  `sh scripts/smoke-doctruth-mnn-pack-readiness.sh`;
+  `sh scripts/smoke-doctruth-mnn-promotion-bench.sh`.
+- Remaining boundary: this does not convert ONNX to MNN and does not implement
+  the table/layout MNN decoders. It makes that gap explicit and blocks
+  promotion until real MNN artifacts and parity evidence exist.

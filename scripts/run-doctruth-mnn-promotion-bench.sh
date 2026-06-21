@@ -23,6 +23,17 @@ if [ ! -d "$DOCTRUTH_MODEL_CACHE" ]; then
   exit 2
 fi
 
+set +e
+READINESS_REPORT="$(sh "$ROOT/scripts/check-doctruth-mnn-pack-readiness.sh" \
+  --manifest "$DOCTRUTH_MODEL_MANIFEST" \
+  --cache "$DOCTRUTH_MODEL_CACHE" 2>&1)"
+READINESS_STATUS="$?"
+set -e
+if [ "$READINESS_STATUS" -ne 0 ]; then
+  printf '%s\n' "$READINESS_REPORT" >&2
+  exit "$READINESS_STATUS"
+fi
+
 sh "$ROOT/scripts/run-doctruth-opendataloader-bench.sh" \
   --runtime-profile edge-model \
   "$@"

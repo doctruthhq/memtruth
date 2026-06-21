@@ -19,7 +19,49 @@ printf '%s' "mnn-promotion-smoke-table-model" > "$MODEL_BYTES"
 MODEL_SHA="$(shasum -a 256 "$MODEL_BYTES" | awk '{print $1}')"
 MODEL_SIZE="$(wc -c < "$MODEL_BYTES" | tr -d ' ')"
 cat > "$MODEL_MANIFEST" <<EOF_MANIFEST
-{"presets":{"table-lite":[{"name":"slanet-plus","version":"v1","source":"$MODEL_BYTES","sha256":"sha256:$MODEL_SHA","sizeBytes":$MODEL_SIZE,"required":true,"task":"table","backend":"mnn","format":"mnn","precision":"fp32","license":"test"}]},"promotionGates":{"mnn":{"quality":{"overall":0.0,"nid":0.0,"teds":0.0,"mhs":0.0},"resources":{"heavyOracleSteadyRssMb":1500.0}}}}
+{
+  "presets": {
+    "table-lite": [
+      {
+        "name": "slanet-plus",
+        "version": "v1",
+        "source": "$MODEL_BYTES",
+        "sha256": "sha256:$MODEL_SHA",
+        "sizeBytes": $MODEL_SIZE,
+        "required": true,
+        "task": "table",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "test",
+        "preprocessing": {
+          "inputLayout": "NCHW",
+          "dtype": "float32",
+          "colorSpace": "sRGB",
+          "channelOrder": "RGB",
+          "resize": {"width": 800, "height": 800, "keepAspectRatio": false},
+          "resample": "bilinear",
+          "scale": 0.00392156862745098,
+          "mean": [0.485, 0.456, 0.406],
+          "std": [0.229, 0.224, 0.225]
+        },
+        "parity": {
+          "referenceEngine": "python-onnxruntime",
+          "candidateEngine": "rust-mnn",
+          "tensorDumpRequired": true,
+          "firstTensorValuesRequired": true,
+          "maxAbsDiff": 0.000001
+        }
+      }
+    ]
+  },
+  "promotionGates": {
+    "mnn": {
+      "quality": {"overall": 0.0, "nid": 0.0, "teds": 0.0, "mhs": 0.0},
+      "resources": {"heavyOracleSteadyRssMb": 1500.0}
+    }
+  }
+}
 EOF_MANIFEST
 
 cargo build --manifest-path "$ROOT/runtime/doctruth-runtime/Cargo.toml" \

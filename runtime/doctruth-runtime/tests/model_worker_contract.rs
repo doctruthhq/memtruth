@@ -33,7 +33,7 @@ fn parse_pdf_routes_model_assisted_preset_to_configured_worker() {
     assert_eq!(json["parserRun"]["preset"], "table-lite");
     assert_eq!(
         json["parserRun"]["models"],
-        serde_json::json!(["slanet-plus:v1"])
+        serde_json::json!(["xenova-table-transformer-structure-recognition:model-main-2026-06-30"])
     );
     assert_eq!(json["auditGradeStatus"], "AUDIT_GRADE");
     assert_eq!(json["body"]["units"][0]["kind"], "TABLE_CELL");
@@ -157,7 +157,7 @@ fn parse_pdf_auto_preset_table_heavy_routes_to_table_mnn_worker() {
     assert_eq!(json["parserRun"]["modelRouting"]["routedPages"], json!([1]));
     assert_eq!(
         json["parserRun"]["modelRouting"]["models"],
-        json!(["slanet-plus:v1"])
+        json!(["xenova-table-transformer-structure-recognition:model-main-2026-06-30"])
     );
     assert_eq!(json["body"]["units"][0]["kind"], "TABLE_CELL");
     assert_eq!(
@@ -1186,7 +1186,7 @@ fn parse_pdf_accepts_worker_envelope_with_document_payload() {
     assert_eq!(json["parserRun"]["modelRuntime"]["ocrRegions"], 0);
     assert_eq!(
         json["parserRun"]["modelRuntime"]["loadedModels"],
-        json!(["slanet-plus:v1"])
+        json!(["xenova-table-transformer-structure-recognition:model-main-2026-06-30"])
     );
     assert_eq!(
         json["parserRun"]["modelRuntime"]["auxiliaryArtifacts"],
@@ -1201,7 +1201,7 @@ fn parse_pdf_accepts_worker_envelope_with_document_payload() {
     );
     assert_eq!(
         json["parserRun"]["modelRuntime"]["modelArtifacts"][0]["name"],
-        "slanet-plus"
+        "xenova-table-transformer-structure-recognition"
     );
     assert_eq!(
         json["parserRun"]["modelRuntime"]["modelArtifacts"][0]["backend"],
@@ -1249,7 +1249,8 @@ fn ready_mnn_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
     fs::create_dir_all(&cache_dir).unwrap();
     let artifact = b"ready mnn model artifact";
     let artifact_sha = sha256(artifact);
-    let artifact_path = cache_dir.join("slanet-plus-v1.bin");
+    let artifact_path =
+        cache_dir.join("xenova-table-transformer-structure-recognition-model-main-2026-06-30.mnn");
     fs::write(&artifact_path, artifact).unwrap();
     let manifest = temp_path(&format!("{prefix}-manifest"), "json");
     fs::write(
@@ -1258,12 +1259,14 @@ fn ready_mnn_model_manifest(prefix: &str) -> (PathBuf, PathBuf) {
             "presets": {
                 "table-lite": [
                     {
-                        "name": "slanet-plus",
-                        "version": "v1",
+                        "name": "xenova-table-transformer-structure-recognition",
+                        "version": "model-main-2026-06-30",
                         "sha256": artifact_sha,
                         "sizeBytes": artifact.len(),
+                        "cacheFilename": "xenova-table-transformer-structure-recognition-model-main-2026-06-30.mnn",
                         "required": true,
                         "task": "table-structure-recognition",
+                        "role": "table-structure-decoder",
                         "backend": "mnn",
                         "format": "mnn",
                         "precision": "fp32",
@@ -1397,7 +1400,7 @@ print(json.dumps({
             "parserVersion": "test-worker",
             "preset": request["preset"],
             "backend": "pdfbox+model-worker",
-            "models": ["slanet-plus:v1"],
+            "models": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
             "warnings": []
         },
         "auditGradeStatus": "AUDIT_GRADE"
@@ -1413,7 +1416,7 @@ print(json.dumps({
         "rssMb": 188,
         "peakMemoryMb": 221,
         "ocrRegions": 0,
-        "loadedModels": ["slanet-plus:v1"],
+        "loadedModels": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
         "auxiliaryArtifacts": ["table-charset:v1"],
         "unload": {"status": "scheduled", "policy": "idle-after-request"}
     }
@@ -1512,7 +1515,11 @@ assert request["modelRouting"]["route"] == "table-model"
 assert request["modelRuntime"]["preprocessing"]["decoder"] == "table"
 assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
 assert request["modelRuntime"]["preprocessing"]["tensorLayout"] == "NCHW"
-assert request["models"][0]["name"] == "slanet-plus"
+assert request["modelRouting"]["models"] == ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"]
+assert request["requiredModels"][0]["name"] == request["models"][0]["name"]
+assert request["requiredModels"][0]["version"] == request["models"][0]["version"]
+assert request["requiredModels"][0]["identity"] == "xenova-table-transformer-structure-recognition:model-main-2026-06-30"
+assert request["models"][0]["name"] == "xenova-table-transformer-structure-recognition"
 assert request["models"][0]["backend"] == "mnn"
 assert request["models"][0]["format"] == "mnn"
 print(json.dumps({
@@ -1551,7 +1558,7 @@ print(json.dumps({
         "parserVersion": "test-worker",
         "preset": request["preset"],
         "backend": "rust-sidecar+model-worker",
-        "models": ["slanet-plus:v1"],
+        "models": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
         "warnings": []
     },
     "auditGradeStatus": "AUDIT_GRADE",
@@ -1559,7 +1566,7 @@ print(json.dumps({
         "runtime": "mnn",
         "coldStartMs": 9.0,
         "inferenceMs": 2.0,
-        "loadedModels": ["slanet-plus:v1"],
+        "loadedModels": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
         "unload": {"status": "scheduled", "policy": "idle-after-request"}
     }
 }))
@@ -1736,7 +1743,9 @@ import sys
 
 request = json.load(sys.stdin)
 assert request["preset"] == "table-lite"
-assert request["requiredModels"][0]["name"] == "slanet-plus"
+assert request["requiredModels"][0]["name"] == "xenova-table-transformer-structure-recognition"
+assert request["requiredModels"][0]["version"] == "model-main-2026-06-30"
+assert request["requiredModels"][0]["identity"] == "xenova-table-transformer-structure-recognition:model-main-2026-06-30"
 assert request["models"][0]["backend"] == "mnn"
 assert request["models"][0]["format"] == "mnn"
 assert request["models"][0]["cacheStatus"] == "READY"
@@ -1780,7 +1789,7 @@ print(json.dumps({
         "parserVersion": "test-worker",
         "preset": request["preset"],
         "backend": "rust-sidecar+model-worker",
-        "models": ["slanet-plus:v1"],
+        "models": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
         "warnings": []
     },
     "auditGradeStatus": "AUDIT_GRADE"

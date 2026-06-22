@@ -213,9 +213,69 @@ fn runtime_capabilities_json(models: &Value) -> Value {
             "backend": "pdf_oxide-column-aware",
             "slots": ["structure-tree", "xy-cut"]
         },
-        "layout": capability_slot_json(models, "standard", "layout-detection"),
+        "layout": layout_capability_json(models),
         "tables": table_capability_json(models),
-        "ocr": capability_slot_json(models, "ocr", "ocr")
+        "ocr": ocr_capability_json(models)
+    })
+}
+
+fn layout_capability_json(models: &Value) -> Value {
+    let layout_server = capability_slot_json(models, "layout-server", "layout-detection");
+    let standard = capability_slot_json(models, "standard", "layout-detection");
+    let selected = if layout_server["models"]
+        .as_array()
+        .is_some_and(|models| !models.is_empty())
+    {
+        layout_server.clone()
+    } else {
+        standard.clone()
+    };
+    json!({
+        "available": selected["available"].as_bool().unwrap_or(false),
+        "preset": selected["preset"].clone(),
+        "task": "layout-detection",
+        "models": selected["models"].clone(),
+        "slots": ["layout-server", "standard"],
+        "layoutServer": layout_server,
+        "standard": standard
+    })
+}
+
+fn ocr_capability_json(models: &Value) -> Value {
+    let artifacts = models
+        .pointer("/presets/ocr/models")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let text_detection = ocr_role_slot_json(&artifacts, "text-detection");
+    let text_recognition = ocr_role_slot_json(&artifacts, "text-recognition");
+    json!({
+        "available": text_detection["available"].as_bool().unwrap_or(false)
+            && text_recognition["available"].as_bool().unwrap_or(false),
+        "preset": "ocr",
+        "task": "ocr",
+        "requiredRoles": ["text-detection", "text-recognition"],
+        "models": artifacts,
+        "textDetection": text_detection,
+        "textRecognition": text_recognition
+    })
+}
+
+fn ocr_role_slot_json(artifacts: &[Value], required_role: &str) -> Value {
+    let models = artifacts
+        .iter()
+        .filter(|model| match required_role {
+            "text-detection" => model_has_ocr_detection_capability(model),
+            "text-recognition" => model_has_ocr_recognition_capability(model),
+            _ => false,
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    json!({
+        "available": !models.is_empty()
+            && models.iter().all(|model| model.get("cacheStatus").and_then(Value::as_str) == Some("READY")),
+        "role": required_role,
+        "models": models
     })
 }
 
@@ -249,6 +309,100 @@ fn capability_slot_json(models: &Value, preset: &str, task: &str) -> Value {
         "task": task,
         "models": matching
     })
+}
+
+fn model_has_ocr_detection_capability(model: &Value) -> bool {
+    let Some(role) = model.get("role").and_then(Value::as_str) else {
+        return false;
+    };
+
+    role == "text-detection"
+        || (model.get("task").and_then(Value::as_str) == Some("ocr")
+            && role_has_ocr_detection_marker(role))
+}
+
+fn model_has_ocr_recognition_capability(model: &Value) -> bool {
+    let Some(role) = model.get("role").and_then(Value::as_str) else {
+        return false;
+    };
+
+    role == "text-recognition"
+        || (model.get("task").and_then(Value::as_str) == Some("ocr")
+            && role_has_ocr_recognition_marker(role))
+}
+
+fn role_has_ocr_detection_marker(role: &str) -> bool {
+    let role = normalized_role(role);
+    if role_has_metadata_marker(&role) {
+        return false;
+    }
+
+    matches!(
+        role.as_str(),
+        "ocr-detection"
+            | "ocr-text-detection"
+            | "ocr-det"
+            | "text-detection"
+            | "text-det"
+            | "ppocr-detector"
+    ) || role_has_token_sequence(
+        &role,
+        &[
+            &["ocr", "detection"],
+            &["ocr", "det"],
+            &["text", "detection"],
+            &["text", "det"],
+            &["ppocr", "detector"],
+        ],
+    )
+}
+
+fn role_has_ocr_recognition_marker(role: &str) -> bool {
+    let role = normalized_role(role);
+    if role_has_metadata_marker(&role) {
+        return false;
+    }
+
+    matches!(
+        role.as_str(),
+        "ocr-recognition"
+            | "ocr-text-recognition"
+            | "ocr-rec"
+            | "text-recognition"
+            | "text-rec"
+            | "ppocr-recognizer"
+    ) || role_has_token_sequence(
+        &role,
+        &[
+            &["ocr", "recognition"],
+            &["ocr", "rec"],
+            &["text", "recognition"],
+            &["text", "rec"],
+            &["ppocr", "recognizer"],
+        ],
+    )
+}
+
+fn role_has_metadata_marker(role: &str) -> bool {
+    role_tokens(role).iter().any(|token| *token == "charset")
+}
+
+fn role_has_token_sequence(role: &str, sequences: &[&[&str]]) -> bool {
+    let tokens = role_tokens(role);
+    sequences.iter().any(|sequence| {
+        !sequence.is_empty()
+            && tokens
+                .windows(sequence.len())
+                .any(|window| window == *sequence)
+    })
+}
+
+fn role_tokens(role: &str) -> Vec<&str> {
+    role.split('-').filter(|token| !token.is_empty()).collect()
+}
+
+fn normalized_role(role: &str) -> String {
+    role.to_ascii_lowercase().replace('_', "-")
 }
 
 fn model_execution_status(models: &Value) -> &'static str {
@@ -332,8 +486,9 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
     let route = model_route_decision(source_path, requested_preset);
     let effective_preset = route.effective_preset.as_str();
     let required_models = required_model_descriptors(effective_preset);
+    let manifest_configured = configured_model_manifest_path_for_request(request).is_some();
     let model_artifacts =
-        worker_model_artifacts_for_request(request, effective_preset, &required_models);
+        worker_model_artifacts_for_request(request, effective_preset, &required_models)?;
     if profile == "benchmark-oracle" {
         if !required_models.is_empty()
             && model_artifacts_ready_for_profile(profile, &model_artifacts)
@@ -447,16 +602,16 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         profile,
         &required_models,
         &model_artifacts,
+        manifest_configured,
+        route.requires_model_runtime(),
     ));
     let audit_grade_status = if warnings.iter().any(is_severe_warning) {
         "NOT_AUDIT_GRADE"
     } else {
         "AUDIT_GRADE"
     };
-    let model_identities = required_models
-        .iter()
-        .map(|model| model.identity())
-        .collect::<Vec<_>>();
+    let model_identities =
+        model_identities_for_parse_output(manifest_configured, &required_models, &model_artifacts);
     let pages_json = page_json(&page_lines, &page_metadata);
     let parser_run_id = "parser-run-0001";
     let content_blocks = content_blocks_json(&units);
@@ -505,13 +660,17 @@ struct ModelRouteDecision {
 }
 
 impl ModelRouteDecision {
+    fn requires_model_runtime(&self) -> bool {
+        self.decision != "deterministic-only"
+    }
+
     fn to_json(&self, started_model_runtime: bool, model_identities: &[String]) -> Value {
         let route = if started_model_runtime && self.decision == "deterministic-only" {
             "model-runtime"
         } else {
             self.decision.as_str()
         };
-        let requires_model_runtime = self.decision != "deterministic-only";
+        let requires_model_runtime = self.requires_model_runtime();
         let blocked_reason = if requires_model_runtime && !started_model_runtime {
             Value::String("model-runtime-unavailable".to_string())
         } else {
@@ -2156,10 +2315,18 @@ fn configured_model_worker_parse(
         return Ok(None);
     };
     let model_cache = model_cache_directory_for_request(request);
-    let auxiliary_artifacts = model_manifest_auxiliary_artifacts_for_request(request)
+    let auxiliary_artifacts = model_manifest_auxiliary_artifacts_for_request(request)?
         .into_iter()
         .map(|artifact| model_with_cache_status(artifact, &model_cache))
         .collect::<Vec<_>>();
+    let manifest_configured = configured_model_manifest_path_for_request(request).is_some();
+    let required_model_descriptors = if manifest_configured {
+        model_artifacts.to_vec()
+    } else {
+        required_models.iter().map(RequiredModel::json).collect()
+    };
+    let model_identities =
+        model_identities_for_parse_output(manifest_configured, required_models, model_artifacts);
     let worker_request = json!({
         "runtime": RUNTIME,
         "protocol_version": PROTOCOL_VERSION,
@@ -2179,11 +2346,11 @@ fn configured_model_worker_parse(
         "offline_mode": request.get("offline_mode").and_then(Value::as_bool).unwrap_or(true),
         "allow_model_downloads": request.get("allow_model_downloads").and_then(Value::as_bool).unwrap_or(false),
         "modelCacheDirectory": model_cache,
-        "requiredModels": required_models.iter().map(RequiredModel::json).collect::<Vec<_>>(),
+        "requiredModels": required_model_descriptors,
         "models": model_artifacts,
         "auxiliaryArtifacts": auxiliary_artifacts,
         "modelRuntime": model_runtime_request_json(profile, preset, model_artifacts),
-        "modelRouting": route.to_json(true, &required_models.iter().map(RequiredModel::identity).collect::<Vec<_>>())
+        "modelRouting": route.to_json(true, &model_identities)
     });
     let output = run_model_worker(&command, &worker_request)?;
     let response: Value = serde_json::from_str(&output).map_err(|error| {
@@ -2824,15 +2991,22 @@ fn model_cache_directory_for_request(request: &Value) -> String {
 fn model_doctor_json() -> Value {
     let cache_dir = model_cache_directory();
     let manifest = model_manifest_doctor_json();
-    let presets = ["lite", "standard", "table-lite", "table-server", "ocr"]
-        .iter()
-        .map(|preset| {
-            (
-                (*preset).to_string(),
-                preset_doctor_json(preset, &cache_dir),
-            )
-        })
-        .collect::<serde_json::Map<_, _>>();
+    let presets = [
+        "lite",
+        "standard",
+        "layout-server",
+        "table-lite",
+        "table-server",
+        "ocr",
+    ]
+    .iter()
+    .map(|preset| {
+        (
+            (*preset).to_string(),
+            preset_doctor_json(preset, &cache_dir),
+        )
+    })
+    .collect::<serde_json::Map<_, _>>();
     json!({
         "cache": {
             "directory": cache_dir,
@@ -2864,14 +3038,25 @@ fn model_manifest_doctor_json() -> Value {
 
 fn preset_doctor_json(preset: &str, cache_dir: &str) -> Value {
     let required_models = required_model_descriptors(preset);
-    let models = worker_model_artifacts_with_cache_dir(preset, &required_models, cache_dir);
+    let models = match worker_model_artifacts_with_cache_dir(preset, &required_models, cache_dir) {
+        Ok(models) => models,
+        Err(error) => {
+            return json!({
+                "required": !required_models.is_empty(),
+                "allReady": false,
+                "models": [],
+                "statusCode": "MODEL_MANIFEST_INVALID",
+                "manifestError": error_value(&error)
+            });
+        }
+    };
     let all_ready = !models.is_empty()
         && models
             .iter()
             .all(|model| model.get("cacheStatus").and_then(Value::as_str) == Some("READY"));
     json!({
         "required": !required_models.is_empty(),
-        "allReady": all_ready || required_models.is_empty(),
+        "allReady": all_ready || (required_models.is_empty() && models.is_empty()),
         "models": models
     })
 }
@@ -2943,7 +3128,7 @@ fn worker_model_artifacts_for_request(
     request: &Value,
     preset: &str,
     required_models: &[RequiredModel],
-) -> Vec<Value> {
+) -> Result<Vec<Value>, String> {
     worker_model_artifacts_with_manifest_and_cache_dir(
         preset,
         required_models,
@@ -2956,7 +3141,7 @@ fn worker_model_artifacts_with_cache_dir(
     preset: &str,
     required_models: &[RequiredModel],
     cache_dir: &str,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, String> {
     worker_model_artifacts_with_manifest_and_cache_dir(
         preset,
         required_models,
@@ -2970,51 +3155,43 @@ fn worker_model_artifacts_with_manifest_and_cache_dir(
     required_models: &[RequiredModel],
     manifest_path: Option<String>,
     cache_dir: &str,
-) -> Vec<Value> {
-    let manifest_models = model_manifest_artifacts_from_path(preset, manifest_path.as_deref());
-    let models = if manifest_models.is_empty() {
-        required_models.iter().map(RequiredModel::json).collect()
-    } else {
-        manifest_models
+) -> Result<Vec<Value>, String> {
+    let models = match manifest_path.as_deref() {
+        Some(path) => model_manifest_artifacts_from_path(preset, path)?,
+        None => required_models.iter().map(RequiredModel::json).collect(),
     };
-    models
+    Ok(models
         .into_iter()
         .map(|model| model_with_cache_status(model, cache_dir))
-        .collect()
+        .collect())
 }
 
-fn model_manifest_artifacts_from_path(preset: &str, manifest_path: Option<&str>) -> Vec<Value> {
-    let Some(manifest_path) = manifest_path else {
-        return Vec::new();
-    };
-    let Ok(manifest) = read_json_file(Path::new(manifest_path), "MODEL_MANIFEST_INVALID") else {
-        return Vec::new();
-    };
-    manifest
+fn model_manifest_artifacts_from_path(
+    preset: &str,
+    manifest_path: &str,
+) -> Result<Vec<Value>, String> {
+    let manifest = read_json_file(Path::new(manifest_path), "MODEL_MANIFEST_INVALID")?;
+    Ok(manifest
         .pointer(&format!("/presets/{preset}"))
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
-fn model_manifest_auxiliary_artifacts_for_request(request: &Value) -> Vec<Value> {
-    model_manifest_auxiliary_artifacts_from_path(
-        configured_model_manifest_path_for_request(request).as_deref(),
-    )
+fn model_manifest_auxiliary_artifacts_for_request(request: &Value) -> Result<Vec<Value>, String> {
+    match configured_model_manifest_path_for_request(request) {
+        Some(path) => model_manifest_auxiliary_artifacts_from_path(&path),
+        None => Ok(Vec::new()),
+    }
 }
 
-fn model_manifest_auxiliary_artifacts_from_path(manifest_path: Option<&str>) -> Vec<Value> {
-    let Some(manifest_path) = manifest_path else {
-        return Vec::new();
-    };
-    let Ok(manifest) = read_json_file(Path::new(manifest_path), "MODEL_MANIFEST_INVALID") else {
-        return Vec::new();
-    };
-    manifest
+fn model_manifest_auxiliary_artifacts_from_path(manifest_path: &str) -> Result<Vec<Value>, String> {
+    let manifest = read_json_file(Path::new(manifest_path), "MODEL_MANIFEST_INVALID")?;
+    Ok(manifest
         .pointer("/auxiliary")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 fn configured_model_manifest_path() -> Option<String> {
@@ -3102,12 +3279,24 @@ fn verify_model_cache_artifact(path: &Path, model: &Value) -> (&'static str, Str
         .or_else(|| model.get("expectedSha256"))
         .and_then(Value::as_str)
         .unwrap_or("");
+    if placeholder_expected_sha(expected_sha) {
+        return ("PLACEHOLDER_SHA", actual_sha, bytes.len() as u64);
+    }
     let status = if expected_sha == actual_sha {
         "READY"
     } else {
         "SHA_MISMATCH"
     };
     (status, actual_sha, bytes.len() as u64)
+}
+
+fn placeholder_expected_sha(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase().replace([' ', '_'], "-");
+    normalized.is_empty()
+        || normalized == "pending"
+        || normalized.starts_with("pending-")
+        || normalized == "sha256:pending"
+        || normalized.starts_with("sha256:pending-")
 }
 
 fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
@@ -5738,6 +5927,17 @@ fn read_json_file(path: &Path, code: &str) -> Result<Value, String> {
         .map_err(|error| error_json(code, &format!("{}: {error}", path.display())).to_string())?;
     serde_json::from_str(&text)
         .map_err(|error| error_json(code, &format!("{}: {error}", path.display())).to_string())
+}
+
+fn error_value(error: &str) -> Value {
+    serde_json::from_str(error).unwrap_or_else(|_| {
+        json!({
+            "runtime": RUNTIME,
+            "protocol_version": PROTOCOL_VERSION,
+            "error_code": "ERROR",
+            "message": error
+        })
+    })
 }
 
 fn validate_parser_accuracy_manifest(manifest: &Value) -> Result<(), String> {
@@ -9836,6 +10036,11 @@ fn required_model_descriptors(preset: &str) -> Vec<RequiredModel> {
                 expected_sha: "sha256:pending-tatr-v1",
             },
         ],
+        "layout-server" => vec![RequiredModel {
+            name: "layout-rtdetr",
+            version: "v2",
+            expected_sha: "sha256:pending-layout-rtdetr-v2",
+        }],
         "table-lite" => vec![RequiredModel {
             name: "slanet-plus",
             version: "v1",
@@ -9862,12 +10067,75 @@ fn required_model_descriptors(preset: &str) -> Vec<RequiredModel> {
     }
 }
 
+fn model_identities_for_parse_output(
+    manifest_configured: bool,
+    required_models: &[RequiredModel],
+    artifacts: &[Value],
+) -> Vec<String> {
+    if manifest_configured {
+        return artifacts
+            .iter()
+            .filter_map(model_artifact_identity)
+            .collect::<Vec<_>>();
+    }
+    required_models
+        .iter()
+        .map(RequiredModel::identity)
+        .collect::<Vec<_>>()
+}
+
+fn model_artifact_identity(model: &Value) -> Option<String> {
+    if let Some(identity) = model.get("identity").and_then(Value::as_str) {
+        return Some(identity.to_string());
+    }
+    let name = model.get("name").and_then(Value::as_str)?;
+    let version = model.get("version").and_then(Value::as_str)?;
+    Some(format!("{name}:{version}"))
+}
+
 fn model_unavailable_warnings(
     preset: &str,
     profile: &str,
     models: &[RequiredModel],
     artifacts: &[Value],
+    manifest_configured: bool,
+    requires_model_runtime: bool,
 ) -> Vec<Value> {
+    if !requires_model_runtime {
+        return Vec::new();
+    }
+    if manifest_configured {
+        if artifacts.is_empty() {
+            return vec![json!({
+                "code": "model_unavailable_fallback",
+                "severity": "SEVERE",
+                "message": format!(
+                    "No model artifacts are configured for parser preset {} under runtime profile {}. The runtime emitted heuristic output for inspection only because required model is unavailable.",
+                    preset,
+                    profile
+                )
+            })];
+        }
+        return artifacts
+            .iter()
+            .map(|artifact| {
+                let identity = model_artifact_identity(artifact)
+                    .unwrap_or_else(|| "manifest-artifact".to_string());
+                let reason = model_unavailable_reason(profile, artifacts);
+                json!({
+                    "code": "model_unavailable_fallback",
+                    "severity": "SEVERE",
+                    "message": format!(
+                        "Configured model {} is unavailable for parser preset {} under runtime profile {}. The runtime emitted heuristic output for inspection only because {}.",
+                        identity,
+                        preset,
+                        profile,
+                        reason
+                    )
+                })
+            })
+            .collect();
+    }
     models
         .iter()
         .map(|model| {

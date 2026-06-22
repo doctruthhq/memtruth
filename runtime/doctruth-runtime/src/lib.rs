@@ -48,6 +48,8 @@ const OPENDATALOADER_UNDERLINE_THICKNESS_RATIO: f64 = 0.3;
 const OPENDATALOADER_REPLACEMENT_CHARACTER: char = '\u{fffd}';
 const OPENDATALOADER_REPLACEMENT_CHARACTER_STRING: &str = "\u{fffd}";
 const OPENDATALOADER_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java";
+const OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java";
+const OPENDATALOADER_PARAGRAPH_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ParagraphProcessor.java";
 const HUMAN_REVIEWED_PARSER_ACCURACY_METRICS: &[&str] = &[
     "reading_order_f1",
     "quote_anchor_accuracy",
@@ -109,6 +111,9 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         Some("opendataloader_text_processor_probe") => {
             opendataloader_text_processor_probe_json(&request).map(|json| json.to_string())
         }
+        Some("opendataloader_line_paragraph_probe") => {
+            opendataloader_line_paragraph_probe_json(&request).map(|json| json.to_string())
+        }
         Some("verify_benchmark_report") => {
             verify_benchmark_report_json(&request).map(|json| json.to_string())
         }
@@ -163,6 +168,217 @@ fn opendataloader_replace_undefined_characters(text: &str, replacement: Option<&
         }
         _ => text.to_string(),
     }
+}
+
+fn opendataloader_line_paragraph_probe_json(request: &Value) -> Result<Value, String> {
+    let lines = opendataloader_probe_positioned_lines(request)?;
+    let rows = opendataloader_probe_visual_rows(lines);
+    let table_like_rows = rows
+        .iter()
+        .filter(|row| opendataloader_probe_table_like_row(row))
+        .count();
+    let prose_lines = opendataloader_probe_prose_lines(rows);
+    let paragraph_output = opendataloader_probe_paragraph_output(prose_lines);
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader TextLineProcessor/ParagraphProcessor",
+        "paragraphs": paragraph_output.paragraphs,
+        "joinedParagraphs": paragraph_output.joined_paragraphs,
+        "tableLikeRows": table_like_rows,
+        "references": [
+            OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE,
+            OPENDATALOADER_PARAGRAPH_PROCESSOR_REFERENCE
+        ]
+    }))
+}
+
+fn opendataloader_probe_positioned_lines(request: &Value) -> Result<Vec<PositionedLine>, String> {
+    let lines = request
+        .get("lines")
+        .and_then(Value::as_array)
+        .ok_or_else(|| error_json("MISSING_LINES", "request.lines is required").to_string())?;
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, value)| opendataloader_probe_positioned_line(value, index))
+        .collect()
+}
+
+fn opendataloader_probe_positioned_line(
+    value: &Value,
+    index: usize,
+) -> Result<PositionedLine, String> {
+    let text = value.get("text").and_then(Value::as_str).ok_or_else(|| {
+        error_json(
+            "INVALID_LINE_TEXT",
+            &format!("request.lines[{index}].text is required"),
+        )
+        .to_string()
+    })?;
+    let x0 = opendataloader_probe_coordinate(value, index, "x0")?;
+    let y0 = opendataloader_probe_coordinate(value, index, "y0")?;
+    let x1 = opendataloader_probe_coordinate(value, index, "x1")?;
+    let y1 = opendataloader_probe_coordinate(value, index, "y1")?;
+    if x1 <= x0 || y1 <= y0 {
+        return Err(error_json(
+            "INVALID_LINE_BOX",
+            &format!("request.lines[{index}] must satisfy x0 < x1 and y0 < y1"),
+        )
+        .to_string());
+    }
+    let bbox = RuntimeBox { x0, y0, x1, y1 };
+    Ok(PositionedLine {
+        text: text.to_string(),
+        raw_bbox: RawPdfBox { x0, y0, x1, y1 },
+        bbox,
+        page_width: x1.max(PAGE_WIDTH),
+        page_height: y1.max(PAGE_HEIGHT),
+        font_size: (y1 - y0).max(1.0),
+    })
+}
+
+fn opendataloader_probe_coordinate(value: &Value, index: usize, name: &str) -> Result<f64, String> {
+    let coordinate = value.get(name).and_then(Value::as_f64).ok_or_else(|| {
+        error_json(
+            "INVALID_LINE_BOX",
+            &format!("request.lines[{index}].{name} must be a finite number"),
+        )
+        .to_string()
+    })?;
+    if coordinate.is_finite() {
+        Ok(coordinate)
+    } else {
+        Err(error_json(
+            "INVALID_LINE_BOX",
+            &format!("request.lines[{index}].{name} must be a finite number"),
+        )
+        .to_string())
+    }
+}
+
+fn opendataloader_probe_visual_rows(lines: Vec<PositionedLine>) -> Vec<Vec<PositionedLine>> {
+    let mut rows: Vec<Vec<PositionedLine>> = Vec::new();
+    for line in sort_positioned_y_then_x(lines) {
+        if let Some(row) = rows.last_mut() {
+            if opendataloader_probe_same_visual_row(row.first().expect("row has line"), &line) {
+                row.push(line);
+                row.sort_by(|left, right| left.bbox.x0.total_cmp(&right.bbox.x0));
+                continue;
+            }
+        }
+        rows.push(vec![line]);
+    }
+    rows
+}
+
+fn opendataloader_probe_same_visual_row(left: &PositionedLine, right: &PositionedLine) -> bool {
+    let overlap = (left.bbox.y1.min(right.bbox.y1) - left.bbox.y0.max(right.bbox.y0)).max(0.0);
+    let smaller_height = bbox_height(&left.bbox).min(bbox_height(&right.bbox));
+    if smaller_height > 0.0 && overlap / smaller_height >= 0.5 {
+        return true;
+    }
+    let center_delta = (bbox_center_y(&left.bbox) - bbox_center_y(&right.bbox)).abs();
+    center_delta <= bbox_height(&left.bbox).max(bbox_height(&right.bbox)) * 0.35
+}
+
+fn opendataloader_probe_table_like_row(row: &[PositionedLine]) -> bool {
+    if row.len() < 2 {
+        return false;
+    }
+    row.windows(2).any(|pair| {
+        let left = &pair[0];
+        let right = &pair[1];
+        right.bbox.x0 - left.bbox.x1 >= left.font_size.max(right.font_size).max(8.0)
+    })
+}
+
+fn opendataloader_probe_prose_lines(rows: Vec<Vec<PositionedLine>>) -> Vec<PositionedLine> {
+    rows.into_iter()
+        .filter(|row| !opendataloader_probe_table_like_row(row))
+        .flat_map(|row| {
+            if row.len() <= 1 {
+                row
+            } else {
+                vec![merge_positioned_visual_row(row)]
+            }
+        })
+        .collect()
+}
+
+struct OpendataloaderProbeParagraphOutput {
+    paragraphs: Vec<String>,
+    joined_paragraphs: Vec<String>,
+}
+
+fn opendataloader_probe_paragraph_output(
+    lines: Vec<PositionedLine>,
+) -> OpendataloaderProbeParagraphOutput {
+    let mut output = OpendataloaderProbeParagraphOutput {
+        paragraphs: Vec::new(),
+        joined_paragraphs: Vec::new(),
+    };
+    let mut current: Vec<PositionedLine> = Vec::new();
+    for line in lines {
+        if current
+            .last()
+            .is_some_and(|previous| opendataloader_probe_wrapped_pair(previous, &line))
+        {
+            current.push(line);
+        } else {
+            opendataloader_probe_push_paragraph_output(&mut output, &current);
+            current = vec![line];
+        }
+    }
+    opendataloader_probe_push_paragraph_output(&mut output, &current);
+    output
+}
+
+fn opendataloader_probe_push_paragraph_output(
+    output: &mut OpendataloaderProbeParagraphOutput,
+    lines: &[PositionedLine],
+) {
+    if lines.is_empty() {
+        return;
+    }
+    let paragraph = opendataloader_probe_join_line_text(lines);
+    output.paragraphs.push(paragraph.clone());
+    if lines.len() >= 2 {
+        output.joined_paragraphs.push(paragraph);
+    }
+}
+
+fn opendataloader_probe_wrapped_pair(previous: &PositionedLine, next: &PositionedLine) -> bool {
+    let vertical_gap = next.bbox.y0 - previous.bbox.y1;
+    let same_left_edge = (previous.bbox.x0 - next.bbox.x0).abs() <= 8.0;
+    same_left_edge
+        && (-2.0..=previous.font_size.max(next.font_size) * 0.7).contains(&vertical_gap)
+        && !opendataloader_probe_terminal_line(&previous.text)
+}
+
+fn opendataloader_probe_terminal_line(text: &str) -> bool {
+    text.trim_end()
+        .chars()
+        .last()
+        .is_some_and(|ch| matches!(ch, '.' | '!' | '?' | ':' | ';'))
+}
+
+fn opendataloader_probe_join_line_text(lines: &[PositionedLine]) -> String {
+    let mut joined = String::new();
+    for line in lines {
+        let text = line.text.trim();
+        if joined.is_empty() {
+            joined.push_str(text);
+        } else if joined.ends_with('-') {
+            joined.pop();
+            joined.push_str(text);
+        } else {
+            joined.push(' ');
+            joined.push_str(text);
+        }
+    }
+    normalize_text(&joined)
 }
 
 pub fn doctor_json() -> Value {

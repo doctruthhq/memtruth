@@ -4835,6 +4835,17 @@ fn select_opendataloader_pdfs(bench_dir: &Path, request: &Value) -> Result<Vec<P
         .or_else(|| request.get("docId"))
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty());
+    let limit = request.get("limit").and_then(Value::as_u64);
+    if doc_id.is_none()
+        && limit.is_none()
+        && request.get("allow_full200").and_then(Value::as_bool) != Some(true)
+    {
+        return Err(error_json(
+            "FULL200_REQUIRES_EXPLICIT_ALLOW",
+            "Set allow_full200=true to run the full OpenDataLoader Bench corpus",
+        )
+        .to_string());
+    }
     let mut pdfs = if let Some(doc_id) = doc_id {
         let path = pdf_dir.join(format!("{doc_id}.pdf"));
         if !path.is_file() {
@@ -4857,7 +4868,7 @@ fn select_opendataloader_pdfs(bench_dir: &Path, request: &Value) -> Result<Vec<P
         paths.sort();
         paths
     };
-    if let Some(limit) = request.get("limit").and_then(Value::as_u64) {
+    if let Some(limit) = limit {
         pdfs.truncate(limit as usize);
     }
     if pdfs.is_empty() {

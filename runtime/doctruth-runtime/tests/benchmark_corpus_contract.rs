@@ -1010,6 +1010,75 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
 }
 
 #[test]
+fn opendataloader_full200_gate_rejects_unbounded_prediction_without_explicit_allow() {
+    let root = temp_dir("doctruth-runtime-opendataloader-full200-gate");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-direct");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("doc-a.pdf"),
+        minimal_pdf("First document evidence."),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": root,
+            "engine": "doctruth-direct",
+            "preset": "lite",
+            "runtime_profile": "edge-fast",
+            "output_dir": prediction
+        })
+        .to_string(),
+    )
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("FULL200_REQUIRES_EXPLICIT_ALLOW"))
+    .stderr(predicate::str::contains(
+        "Set allow_full200=true to run the full OpenDataLoader Bench corpus",
+    ));
+}
+
+#[test]
+fn opendataloader_full200_gate_allows_explicit_unbounded_prediction_request() {
+    let root = temp_dir("doctruth-runtime-opendataloader-full200-allow");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-direct");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("doc-a.pdf"),
+        minimal_pdf("First document evidence."),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-direct",
+                "preset": "lite",
+                "runtime_profile": "edge-fast",
+                "output_dir": prediction,
+                "allow_full200": true
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["prediction"]["documentCount"], 1);
+    assert_eq!(report["prediction"]["failedCount"], 0);
+}
+
+#[test]
 fn opendataloader_prediction_summary_counts_blocked_model_runtime_routes() {
     let root = temp_dir("doctruth-runtime-opendataloader-model-coverage");
     let pdf_dir = root.join("pdfs");
@@ -1032,6 +1101,7 @@ fn opendataloader_prediction_summary_counts_blocked_model_runtime_routes() {
                 "engine": "doctruth-model-coverage",
                 "preset": "auto",
                 "runtime_profile": "edge-model",
+                "limit": 1,
                 "output_dir": prediction
             })
             .to_string(),
@@ -1081,6 +1151,7 @@ fn opendataloader_prediction_accepts_request_model_runtime_paths() {
             "model_manifest": manifest,
             "model_cache": cache_dir,
             "model_worker": worker,
+            "limit": 1,
             "output_dir": prediction
         })
         .to_string(),
@@ -1106,7 +1177,7 @@ fn opendataloader_prediction_accepts_request_model_runtime_paths() {
         "request-scoped model worker output should be used:\n{markdown}"
     );
     assert!(
-        markdown.contains("Item Qty Price"),
+        markdown.contains("A 2 10"),
         "table model output should be hybrid-merged with deterministic text-layer markdown:\n{markdown}"
     );
 }
@@ -1138,6 +1209,7 @@ fn opendataloader_prediction_command_records_per_document_timeout() {
                 "preset": "table-lite",
                 "runtime_profile": "edge-model",
                 "timeout_seconds": 0.05,
+                "limit": 1,
                 "output_dir": prediction
             })
             .to_string(),
@@ -1194,6 +1266,7 @@ fn opendataloader_prediction_timeout_path_handles_large_trust_document_stdout() 
                 "preset": "lite",
                 "runtime_profile": "edge-fast",
                 "timeout_seconds": 10.0,
+                "limit": 1,
                 "output_dir": prediction
             })
             .to_string(),
@@ -1235,6 +1308,7 @@ fn opendataloader_prediction_renders_trust_document_tables_as_html() {
             "preset": "lite",
             "runtime_profile": "edge-fast",
             "timeout_seconds": 10.0,
+            "limit": 1,
             "output_dir": prediction
         })
         .to_string(),

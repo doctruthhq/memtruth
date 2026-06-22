@@ -94,6 +94,7 @@ fn table_processor_does_not_promote_union_state_header_without_numeric_body() {
             "output_dir": prediction,
             "preset": "lite",
             "profile": "edge-fast",
+            "limit": 1,
             "timeout_seconds": 10
         })
         .to_string(),

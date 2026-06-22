@@ -187,6 +187,7 @@ REQUEST="$(jq -n \
   }
   + (if $doc_id == "" then {} else {doc_id: $doc_id} end)
   + (if $limit == "" then {} else {limit: ($limit | tonumber)} end)
+  + (if $doc_id == "" and $limit == "" then {allow_full200: true} else {} end)
   + (if $timeout_seconds == "" then {} else {timeout_seconds: ($timeout_seconds | tonumber)} end)')"
 
 printf '%s' "$REQUEST" | "$BIN" > "$REPORT_TMP"

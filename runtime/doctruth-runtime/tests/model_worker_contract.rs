@@ -251,6 +251,46 @@ fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
 }
 
 #[test]
+fn parse_pdf_auto_keeps_readable_toc_page_deterministic() {
+    let pdf = opendataloader_worker_fixture("01030000000198.pdf");
+    let worker = write_failing_model_worker();
+    let (cache_dir, manifest) = ready_mnn_model_manifest("doctruth-runtime-auto-toc-cache");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "auto"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar");
+    assert_eq!(json["parserRun"]["preset"], "auto");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["route"],
+        "deterministic-only"
+    );
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["startedModelRuntime"],
+        false
+    );
+    assert!(
+        json["contentBlocks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["text"] == "1. Overview of OCR Pack"),
+        "{json}"
+    );
+}
+
+#[test]
 fn rust_mnn_model_worker_doctor_is_python_free() {
     let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
 

@@ -576,21 +576,26 @@ fn source_looks_table_heavy(source_path: &str) -> bool {
     let Ok(extracted) = extract_pages_with_pdf_oxide(source_path, None) else {
         return false;
     };
-    let segments_by_page = source_page_segments(source_path, extracted.pages.len());
+    let page_graphics = source_page_graphics(source_path, extracted.pages.len());
     extracted
         .pages
         .iter()
         .enumerate()
         .any(|(page_index, page)| {
-            let segments = segments_by_page
-                .get(page_index)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let decision = opendataloader_triage_page(
-                &page.positioned_lines,
-                segments,
-                replacement_character_ratio(&page.positioned_lines),
-            );
+            if readable_toc_page(&page.positioned_lines) {
+                return false;
+            }
+            let graphics = page_graphics.get(page_index).cloned().unwrap_or_default();
+            let input = OpendataloaderTriageInput {
+                text_lines: &page.positioned_lines,
+                segments: &graphics.segments,
+                image_boxes: &graphics.image_boxes,
+                page_box: graphics.page_box,
+                replacement_ratio: replacement_character_ratio(&page.positioned_lines),
+                line_ratio_threshold: 0.3,
+                ..OpendataloaderTriageInput::default()
+            };
+            let decision = opendataloader_triage(input);
             decision.route == "backend"
                 && decision.confidence >= 0.8
                 && (decision.signals.has_vector_table_signal()
@@ -599,19 +604,76 @@ fn source_looks_table_heavy(source_path: &str) -> bool {
         })
 }
 
-fn source_page_segments(source_path: &str, page_count: usize) -> Vec<Vec<Segment>> {
+fn readable_toc_page(lines: &[PositionedLine]) -> bool {
+    let normalized = lines
+        .iter()
+        .map(|line| normalize_text(&line.text).to_lowercase())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if normalized.len() < 4 {
+        return false;
+    }
+    let has_toc_title = normalized
+        .iter()
+        .take(3)
+        .any(|line| matches!(line.as_str(), "contents" | "table of contents"));
+    if !has_toc_title {
+        return false;
+    }
+    let numbered_items = normalized
+        .iter()
+        .filter(|line| numbered_toc_item(line))
+        .count();
+    numbered_items >= 3
+}
+
+fn numbered_toc_item(text: &str) -> bool {
+    let mut chars = text.chars();
+    let mut digit_count = 0usize;
+    while matches!(chars.next(), Some(ch) if {
+        if ch.is_ascii_digit() {
+            digit_count += 1;
+            true
+        } else {
+            false
+        }
+    }) {}
+    digit_count > 0 && text[digit_count..].starts_with(". ")
+}
+
+fn source_page_graphics(source_path: &str, page_count: usize) -> Vec<PageGraphics> {
     let Ok(document) = PdfDocument::open(source_path) else {
-        return vec![Vec::new(); page_count];
+        return vec![PageGraphics::default(); page_count];
     };
     (0..page_count)
         .map(|page_index| {
+            let page_box =
+                pdf_oxide_page_dimensions(&document, page_index)
+                    .ok()
+                    .map(|(width, height)| RuntimeBox {
+                        x0: 0.0,
+                        y0: 0.0,
+                        x1: width,
+                        y1: height,
+                    });
             let Ok(content) = document.get_page_content_data(page_index) else {
-                return Vec::new();
+                return PageGraphics {
+                    page_box,
+                    ..PageGraphics::default()
+                };
             };
             let Ok(operations) = parse_content_stream(&content) else {
-                return Vec::new();
+                return PageGraphics {
+                    page_box,
+                    ..PageGraphics::default()
+                };
             };
-            page_graphics_and_text(&operations).0
+            let (segments, _text_points, image_boxes) = page_graphics_and_text(&operations);
+            PageGraphics {
+                segments,
+                image_boxes,
+                page_box,
+            }
         })
         .collect()
 }
@@ -854,7 +916,7 @@ fn raw_content_safety(document: &PdfDocument, page_index: usize) -> RawContentSa
     let Ok(operations) = parse_content_stream(&content) else {
         return RawContentSafety::default();
     };
-    let (_segments, text_points) = page_graphics_and_text(&operations);
+    let (_segments, text_points, _image_boxes) = page_graphics_and_text(&operations);
     let mut safety = RawContentSafety::default();
     for point in text_points {
         if off_page_text_point(&point) {
@@ -9038,6 +9100,7 @@ struct OpendataloaderTriageInput<'a> {
     line_ratio_threshold: f64,
 }
 
+#[cfg(test)]
 fn opendataloader_triage_page(
     text_lines: &[PositionedLine],
     segments: &[Segment],
@@ -12205,6 +12268,13 @@ struct Segment {
     y1: f64,
 }
 
+#[derive(Debug, Clone, Default)]
+struct PageGraphics {
+    segments: Vec<Segment>,
+    image_boxes: Vec<RuntimeBox>,
+    page_box: Option<RuntimeBox>,
+}
+
 #[derive(Debug, Clone)]
 struct TextPoint {
     x: f64,
@@ -13942,7 +14012,7 @@ fn pdf_oxide_page_primitives(
         .get_page_content_data(page_index)
         .map_err(|error| error.to_string())?;
     let operations = parse_content_stream(&content).map_err(|error| error.to_string())?;
-    let (segments, text_points) = page_graphics_and_text(&operations);
+    let (segments, text_points, _image_boxes) = page_graphics_and_text(&operations);
     let (page_width, page_height) =
         pdf_oxide_page_dimensions(document, page_index).unwrap_or((PAGE_WIDTH, PAGE_HEIGHT));
     Ok((page_width, page_height, segments, text_points))
@@ -15732,17 +15802,109 @@ fn estimate_text_bbox(page_width: f64, page_height: f64, point: &TextPoint) -> R
     )
 }
 
-fn page_graphics_and_text(operations: &[Operator]) -> (Vec<Segment>, Vec<TextPoint>) {
+#[derive(Debug, Clone, Copy)]
+struct GraphicsMatrix {
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+}
+
+impl GraphicsMatrix {
+    fn identity() -> Self {
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
+    }
+
+    fn concat(self, other: Self) -> Self {
+        Self {
+            a: self.a * other.a + self.c * other.b,
+            b: self.b * other.a + self.d * other.b,
+            c: self.a * other.c + self.c * other.d,
+            d: self.b * other.c + self.d * other.d,
+            e: self.a * other.e + self.c * other.f + self.e,
+            f: self.b * other.e + self.d * other.f + self.f,
+        }
+    }
+
+    fn transform(self, x: f64, y: f64) -> (f64, f64) {
+        (
+            self.a * x + self.c * y + self.e,
+            self.b * x + self.d * y + self.f,
+        )
+    }
+
+    fn unit_square_bbox(self) -> RuntimeBox {
+        let points = [
+            self.transform(0.0, 0.0),
+            self.transform(1.0, 0.0),
+            self.transform(0.0, 1.0),
+            self.transform(1.0, 1.0),
+        ];
+        RuntimeBox {
+            x0: points
+                .iter()
+                .map(|point| point.0)
+                .fold(f64::INFINITY, f64::min),
+            y0: points
+                .iter()
+                .map(|point| point.1)
+                .fold(f64::INFINITY, f64::min),
+            x1: points
+                .iter()
+                .map(|point| point.0)
+                .fold(f64::NEG_INFINITY, f64::max),
+            y1: points
+                .iter()
+                .map(|point| point.1)
+                .fold(f64::NEG_INFINITY, f64::max),
+        }
+    }
+}
+
+fn page_graphics_and_text(
+    operations: &[Operator],
+) -> (Vec<Segment>, Vec<TextPoint>, Vec<RuntimeBox>) {
     let mut segments = Vec::new();
+    let mut image_boxes = Vec::new();
     let mut path_points: Vec<(f64, f64)> = Vec::new();
     let mut text_points = Vec::new();
     let mut text_x = 0.0;
     let mut text_y = 0.0;
     let mut font_size = 12.0;
     let mut hidden = false;
+    let mut matrix = GraphicsMatrix::identity();
+    let mut matrix_stack = Vec::new();
 
     for operation in operations {
         match operation {
+            Operator::SaveState => {
+                matrix_stack.push(matrix);
+            }
+            Operator::RestoreState => {
+                matrix = matrix_stack.pop().unwrap_or_else(GraphicsMatrix::identity);
+            }
+            Operator::Cm { a, b, c, d, e, f } => {
+                matrix = matrix.concat(GraphicsMatrix {
+                    a: f64::from(*a),
+                    b: f64::from(*b),
+                    c: f64::from(*c),
+                    d: f64::from(*d),
+                    e: f64::from(*e),
+                    f: f64::from(*f),
+                });
+            }
+            Operator::Do { .. } | Operator::InlineImage { .. } => {
+                image_boxes.push(matrix.unit_square_bbox());
+            }
             Operator::MoveTo { x, y } => {
                 path_points.clear();
                 path_points.push((f64::from(*x), f64::from(*y)));
@@ -15835,7 +15997,7 @@ fn page_graphics_and_text(operations: &[Operator]) -> (Vec<Segment>, Vec<TextPoi
         }
     }
 
-    (segments, text_points)
+    (segments, text_points, image_boxes)
 }
 
 fn push_text_point(
@@ -16947,6 +17109,39 @@ mod tests {
         assert_eq!(decision.route, "backend");
         assert_eq!(decision.confidence, 0.85);
         assert!(decision.signals.has_large_image());
+    }
+
+    #[test]
+    fn opendataloader_readable_toc_page_is_not_table_heavy() {
+        let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../third_party/opendataloader-bench/pdfs/01030000000198.pdf");
+        let graphics = source_page_graphics(source_path.to_str().unwrap(), 1);
+
+        assert!(
+            graphics[0]
+                .image_boxes
+                .iter()
+                .any(|bbox| bbox_area(bbox) > 100_000.0),
+            "expected a page-sized image bbox, got {:?}",
+            graphics[0].image_boxes
+        );
+        let extracted = extract_pages_with_pdf_oxide(source_path.to_str().unwrap(), None).unwrap();
+        let input = OpendataloaderTriageInput {
+            text_lines: &extracted.pages[0].positioned_lines,
+            segments: &graphics[0].segments,
+            image_boxes: &graphics[0].image_boxes,
+            page_box: graphics[0].page_box.clone(),
+            line_ratio_threshold: 0.3,
+            ..OpendataloaderTriageInput::default()
+        };
+        let decision = opendataloader_triage(input);
+        assert!(
+            decision.signals.has_large_image(),
+            "expected large image signal, got {:?}, text_lines={:?}",
+            decision.signals,
+            extracted.pages[0].lines
+        );
+        assert!(!source_looks_table_heavy(source_path.to_str().unwrap()));
     }
 
     #[test]

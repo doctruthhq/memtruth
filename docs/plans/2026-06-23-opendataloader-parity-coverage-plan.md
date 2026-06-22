@@ -823,6 +823,18 @@ git commit -m "feat: port opendataloader table processor contract"
 
 ### Task 8: Add Hybrid And Model Runtime Gap Contracts
 
+**Status:** Completed in `7d49824` (`test: lock opendataloader model runtime gaps`).
+
+Implementation note: the committed model pack already contained pinned real
+OpenDataLoader-style artifacts, so this task did not replace it with pending
+sample entries. The final contract instead locks the real runtime behavior:
+layout capability uses the configured `layout-server` preset, OCR requires
+READY text-detection and text-recognition artifacts, table/OCR artifacts remain
+MNN where required, placeholder checksums including `sha256:pending-*` are
+blocked, invalid explicit manifests return `MODEL_MANIFEST_INVALID`, and
+configured manifests no longer synthesize legacy `RequiredModel` placeholder
+entries in doctor, parse, or worker request payloads.
+
 **Files:**
 - Modify: `runtime/doctruth-runtime/src/lib.rs`
 - Modify: `model-packs/opendataloader-hybrid-models.json`
@@ -1336,4 +1348,3 @@ printf '%s' '{
 ```
 
 Record the result in `docs/parser/reports/opendataloader-full200-2026-06-23.md`.
-

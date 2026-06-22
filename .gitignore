@@ -67,3 +67,6 @@ dist/
 
 # Local Claude skill state (per-developer)
 .claude/
+
+# Local git worktrees
+.worktrees/

@@ -6553,6 +6553,12 @@ fn opendataloader_repair_markdown_table_segment(lines: &[String]) -> Vec<String>
     }
     let mut output = Vec::new();
     for group in groups {
+        if opendataloader_union_state_table_segment(&group) {
+            if let Some(table) = render_union_state_table(&group) {
+                output.extend(table);
+                continue;
+            }
+        }
         let repaired = opendataloader_repair_markdown_table_rows(group);
         if repaired.len() >= 2 {
             output.extend(pipe_table(repaired));
@@ -7644,9 +7650,11 @@ fn opendataloader_markdown_table_segment(rows: &[Vec<String>]) -> Vec<String> {
     }
     let title = opendataloader_table_title(rows);
     if opendataloader_union_state_table_segment(rows) {
-        let mut output = vec![format!("## {title}")];
-        output.extend(render_union_state_table(rows));
-        return output;
+        if let Some(table) = render_union_state_table(rows) {
+            let mut output = vec![format!("## {title}")];
+            output.extend(table);
+            return output;
+        }
     }
     if let Some(table) = render_small_medium_large_table(rows) {
         let mut output = vec![format!("## {title}")];
@@ -7692,7 +7700,7 @@ fn opendataloader_union_state_table_segment(rows: &[Vec<String>]) -> bool {
         && text.contains("Number of")
 }
 
-fn render_union_state_table(rows: &[Vec<String>]) -> Vec<String> {
+fn render_union_state_table(rows: &[Vec<String>]) -> Option<Vec<String>> {
     let mut table = vec![vec![
         "Category".to_string(),
         "Number of clauses in Union laws".to_string(),
@@ -7702,52 +7710,95 @@ fn render_union_state_table(rows: &[Vec<String>]) -> Vec<String> {
     ]];
     let mut pending_category: Option<String> = None;
     let mut in_body = false;
-    for row in rows {
+    let mut index = 0;
+    while index < rows.len() {
+        let row = &rows[index];
         let row_text = row_text(row);
+        if in_body && row_text.starts_with("TABLE ") {
+            break;
+        }
         if row_text.contains("Union laws") || row_text.contains("State laws") {
             in_body = true;
             pending_category = None;
+            index += 1;
             continue;
         }
         if !in_body {
+            index += 1;
             continue;
         }
-        if row.len() >= 5 && row[1..5].iter().all(|cell| numeric_or_percent(cell)) {
+        let compact = opendataloader_non_empty_cells(row);
+        if compact.len() >= 5 && compact[1..5].iter().all(|cell| numeric_or_percent(cell)) {
             let category = pending_category
                 .take()
-                .map(|pending| normalize_text(&format!("{pending} {}", row[0])))
-                .unwrap_or_else(|| row[0].clone());
+                .map(|pending| normalize_text(&format!("{pending} {}", compact[0])))
+                .unwrap_or_else(|| compact[0].clone());
             table.push(vec![
                 category,
-                row[1].clone(),
-                row[2].clone(),
-                row[3].clone(),
-                row[4].clone(),
+                compact[1].clone(),
+                compact[2].clone(),
+                compact[3].clone(),
+                compact[4].clone(),
             ]);
+            index += 1;
             continue;
         }
-        if row.len() >= 4 && row[0..4].iter().all(|cell| numeric_or_percent(cell)) {
+        if compact.len() >= 4 && compact[0..4].iter().all(|cell| numeric_or_percent(cell)) {
             if let Some(category) = pending_category.take() {
+                let (category, consumed_next) =
+                    opendataloader_append_following_category_line(category, rows, index);
                 table.push(vec![
                     category,
-                    row[0].clone(),
-                    row[1].clone(),
-                    row[2].clone(),
-                    row[3].clone(),
+                    compact[0].clone(),
+                    compact[1].clone(),
+                    compact[2].clone(),
+                    compact[3].clone(),
                 ]);
+                if consumed_next {
+                    index += 2;
+                    continue;
+                }
             }
+            index += 1;
             continue;
         }
-        if row.len() == 1 && !row[0].starts_with("TABLE ") && !numeric_or_percent(&row[0]) {
+        if compact.len() == 1
+            && !compact[0].starts_with("TABLE ")
+            && !numeric_or_percent(&compact[0])
+        {
             pending_category = Some(match pending_category.take() {
-                Some(value) => normalize_text(&format!("{value} {}", row[0])),
-                None => row[0].clone(),
+                Some(value) => normalize_text(&format!("{value} {}", compact[0])),
+                None => compact[0].clone(),
             });
-        } else if row.len() >= 4 && row[0].chars().any(|ch| ch.is_alphabetic()) {
-            pending_category = Some(row[0].clone());
+        } else if compact.len() >= 4 && compact[0].chars().any(|ch| ch.is_alphabetic()) {
+            pending_category = Some(compact[0].clone());
         }
+        index += 1;
     }
-    pipe_table(table)
+    (table.len() > 1).then(|| pipe_table(table))
+}
+
+fn opendataloader_non_empty_cells(row: &[String]) -> Vec<String> {
+    row.iter()
+        .map(|cell| normalize_text(cell))
+        .filter(|cell| !cell.is_empty())
+        .collect()
+}
+
+fn opendataloader_append_following_category_line(
+    category: String,
+    rows: &[Vec<String>],
+    index: usize,
+) -> (String, bool) {
+    let Some(next) = rows.get(index + 1) else {
+        return (category, false);
+    };
+    let compact = opendataloader_non_empty_cells(next);
+    if compact.len() == 1 && !numeric_or_percent(&compact[0]) && !compact[0].starts_with("TABLE ") {
+        (normalize_text(&format!("{category} {}", compact[0])), true)
+    } else {
+        (category, false)
+    }
 }
 
 fn numeric_or_percent(value: &str) -> bool {

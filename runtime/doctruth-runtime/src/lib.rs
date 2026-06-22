@@ -1692,12 +1692,19 @@ fn repeated_header_line_keys(pages: &[Vec<PositionedLine>]) -> HashSet<String> {
 fn header_line_key(line: &PositionedLine) -> String {
     let x_bucket = (line.bbox.x0 / 10.0).round() as i64;
     let font_bucket = line.font_size.round() as i64;
-    format!(
-        "{}|{}|{}",
-        normalize_text_for_filter(&line.text),
-        x_bucket,
-        font_bucket
-    )
+    let text_key = if page_number_header_text(&line.text) {
+        "PAGE_NUMBER_HEADER".to_string()
+    } else {
+        normalize_text_for_filter(&line.text)
+    };
+    format!("{}|{}|{}", text_key, x_bucket, font_bucket)
+}
+
+fn page_number_header_text(text: &str) -> bool {
+    static PAGE_NUMBER_HEADER_RE: OnceLock<Regex> = OnceLock::new();
+    PAGE_NUMBER_HEADER_RE
+        .get_or_init(|| Regex::new(r"(?i)^\s*page\s+\d+\s*$").unwrap())
+        .is_match(text)
 }
 
 fn merge_positioned_visual_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
@@ -16915,6 +16922,32 @@ mod tests {
                 "Risk Analysis",
                 "Second page citeable body."
             ]
+        );
+    }
+
+    #[test]
+    fn opendataloader_header_filter_removes_page_number_sequence_headers() {
+        let pages = vec![
+            vec![
+                line("Page 1", 260.0, 900.0, 330.0, 930.0),
+                line("First page citeable body.", 80.0, 620.0, 420.0, 650.0),
+            ],
+            vec![
+                line("Page 2", 260.0, 900.0, 330.0, 930.0),
+                line("Second page citeable body.", 80.0, 620.0, 420.0, 650.0),
+            ],
+        ];
+
+        let filtered = filter_repeated_header_footer_lines(pages);
+        let flattened = filtered
+            .iter()
+            .flatten()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            flattened,
+            ["First page citeable body.", "Second page citeable body."]
         );
     }
 

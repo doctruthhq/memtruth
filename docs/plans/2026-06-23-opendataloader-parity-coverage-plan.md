@@ -946,6 +946,14 @@ git commit -m "test: lock opendataloader model runtime gaps"
 
 ### Task 9: Add Full200 Benchmark Gate Command
 
+**Status:** Completed in `7f80b15` (`feat: guard opendataloader full200 benchmark runs`).
+
+Implementation note: direct `opendataloader_prediction` requests must now set
+`doc_id`, `limit`, or `allow_full200: true`. Existing smoke and contract tests
+were made bounded with `doc_id` or `limit: 1`. The intentional benchmark runner
+`scripts/run-doctruth-opendataloader-bench.sh` injects `allow_full200: true`
+only for its default full200 mode, while bounded script runs omit it.
+
 **Files:**
 - Modify: `runtime/doctruth-runtime/src/lib.rs`
 - Test: `runtime/doctruth-runtime/tests/benchmark_corpus_contract.rs`

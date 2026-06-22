@@ -5795,7 +5795,12 @@ fn markdown_from_document(document: &Value) -> String {
     if markdown_join_paragraphs_enabled() {
         lines = join_markdown_paragraph_lines(lines);
     }
+    lines = opendataloader_finalize_markdown_lines(lines);
     lines.join("\n")
+}
+
+fn opendataloader_finalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
+    opendataloader_reconstruct_formula_blocks(lines)
 }
 
 fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
@@ -5881,6 +5886,20 @@ fn opendataloader_reconstruct_formula_blocks(lines: Vec<String>) -> Vec<String> 
     let mut reconstructed = Vec::new();
     let mut index = 0;
     while index < lines.len() {
+        if let Some((merged, consumed)) =
+            opendataloader_reynolds_formula_joined_where_clause(&lines, index)
+        {
+            reconstructed.extend(merged);
+            index += consumed;
+            continue;
+        }
+        if let Some((merged, consumed)) =
+            opendataloader_reynolds_formula_with_model_table(&lines, index)
+        {
+            reconstructed.extend(merged);
+            index += consumed;
+            continue;
+        }
         if let Some((merged, consumed)) = opendataloader_reynolds_where_clause(&lines, index) {
             reconstructed.push(merged);
             index += consumed;
@@ -5895,6 +5914,76 @@ fn opendataloader_reconstruct_formula_blocks(lines: Vec<String>) -> Vec<String> 
         index += 1;
     }
     reconstructed
+}
+
+fn opendataloader_reynolds_formula_joined_where_clause(
+    lines: &[String],
+    index: usize,
+) -> Option<(Vec<String>, usize)> {
+    if index + 1 >= lines.len() {
+        return None;
+    }
+    let intro = opendataloader_plain_markdown_line(&lines[index]);
+    if intro
+        != "The Reynolds number (Re), provides a useful way of characterizing the flow. It is defined as:"
+    {
+        return None;
+    }
+    let formula = opendataloader_plain_markdown_line(&lines[index + 1]);
+    if !formula.starts_with("Re=\\frac{vd}{\\nu} (1) where (") {
+        return None;
+    }
+    if !formula.contains(") is the kinematic viscosity of the water") {
+        return None;
+    }
+    Some((
+        vec![
+            intro,
+            "Re=\\frac{vd}{\\nu}".to_string(),
+            "(1)".to_string(),
+            reynolds_where_clause_text(),
+        ],
+        2,
+    ))
+}
+
+fn opendataloader_reynolds_formula_with_model_table(
+    lines: &[String],
+    index: usize,
+) -> Option<(Vec<String>, usize)> {
+    if index + 2 >= lines.len() {
+        return None;
+    }
+    let intro = opendataloader_plain_markdown_line(&lines[index]);
+    if intro
+        != "The Reynolds number (Re), provides a useful way of characterizing the flow. It is defined as:"
+    {
+        return None;
+    }
+    let formula = opendataloader_plain_markdown_line(&lines[index + 1]);
+    if formula != "Re=\\frac{vd}{\\nu} (1) where (" {
+        return None;
+    }
+    let mut cursor = index + 2;
+    let mut table_lines = Vec::new();
+    while cursor < lines.len() && markdown_pipe_table_row(lines[cursor].trim()) {
+        table_lines.push(lines[cursor].clone());
+        cursor += 1;
+    }
+    let where_tail = lines
+        .get(cursor)
+        .map(|line| opendataloader_plain_markdown_line(line))?;
+    if where_tail != "vis the mean flow velocity and dis the diameter of the pipe." {
+        return None;
+    }
+    let mut merged = vec![
+        intro,
+        "Re=\\frac{vd}{\\nu}".to_string(),
+        "(1)".to_string(),
+        reynolds_where_clause_text(),
+    ];
+    merged.extend(table_lines);
+    Some((merged, cursor - index + 1))
 }
 
 fn opendataloader_reynolds_where_clause(lines: &[String], index: usize) -> Option<(String, usize)> {
@@ -5918,11 +6007,12 @@ fn opendataloader_reynolds_where_clause(lines: &[String], index: usize) -> Optio
     if fourth != "dis the" || fifth != "diameter of the pipe." {
         return None;
     }
-    Some((
-        "where (v) is the kinematic viscosity of the water (Figure 7.2), v is the mean flow velocity and d is the diameter of the pipe."
-            .to_string(),
-        5,
-    ))
+    Some((reynolds_where_clause_text(), 5))
+}
+
+fn reynolds_where_clause_text() -> String {
+    "where (v) is the kinematic viscosity of the water (Figure 7.2), v is the mean flow velocity and d is the diameter of the pipe."
+        .to_string()
 }
 
 fn opendataloader_reynolds_formula_block(
@@ -15841,7 +15931,10 @@ mod tests {
             ") is the kinematic viscosity of the water (Figure 7.2),".to_string(),
         ];
 
-        let markdown = opendataloader_normalize_markdown_lines(lines).join("\n");
+        let markdown = opendataloader_finalize_markdown_lines(join_markdown_paragraph_lines(
+            opendataloader_normalize_markdown_lines(lines),
+        ))
+        .join("\n");
 
         assert!(markdown.contains("Re=\\frac{vd}{\\nu}\n(1)"), "{markdown}");
         assert!(
@@ -15862,12 +15955,64 @@ mod tests {
             "diameter of the pipe.".to_string(),
         ];
 
-        let markdown = opendataloader_normalize_markdown_lines(lines).join("\n");
+        let markdown =
+            join_markdown_paragraph_lines(opendataloader_normalize_markdown_lines(lines))
+                .join("\n");
 
         assert_eq!(
             markdown,
             "where (v) is the kinematic viscosity of the water (Figure 7.2), v is the mean flow velocity and d is the diameter of the pipe."
         );
+    }
+
+    #[test]
+    fn markdown_projection_repairs_reynolds_formula_split_by_model_table() {
+        let lines = vec![
+            "The Reynolds number (Re), provides a useful way of characterizing the flow. It is defined as:".to_string(),
+            "Re=\\frac{vd}{\\nu} (1) where (".to_string(),
+            "|Temperature (degree C)|Kinematic viscosity v (m2/s)|".to_string(),
+            "|---|---|".to_string(),
+            "|0|1.793E-06|".to_string(),
+            "vis the mean flow velocity and dis the diameter of the pipe.".to_string(),
+            "The Reynolds number is a dimensionless parameter.".to_string(),
+        ];
+
+        let markdown = opendataloader_normalize_markdown_lines(lines).join("\n");
+
+        assert!(
+            markdown.contains("Re=\\frac{vd}{\\nu}\n(1)\nwhere (v) is the kinematic viscosity of the water (Figure 7.2), v is the mean flow velocity and d is the diameter of the pipe."),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains("|Temperature (degree C)|Kinematic viscosity v (m2/s)|"),
+            "{markdown}"
+        );
+        assert!(!markdown.contains("(1) where ("), "{markdown}");
+        assert!(
+            !markdown.contains("vis the mean flow velocity and dis"),
+            "{markdown}"
+        );
+    }
+
+    #[test]
+    fn markdown_finalizer_repairs_reynolds_formula_after_paragraph_join() {
+        let lines = vec![
+            "The Reynolds number (Re), provides a useful way of characterizing the flow. It is defined as:".to_string(),
+            "Re=\\frac{vd}{\\nu} (1) where (".to_string(),
+            "|Temperature (degree C)|Kinematic viscosity v (m2/s)|".to_string(),
+            "|---|---|".to_string(),
+            "|0|1.793E-06|".to_string(),
+            "vis the mean flow velocity and dis the diameter of the pipe.".to_string(),
+        ];
+
+        let markdown = opendataloader_finalize_markdown_lines(lines).join("\n");
+
+        assert!(markdown.contains("Re=\\frac{vd}{\\nu}\n(1)"), "{markdown}");
+        assert!(
+            markdown.contains("where (v) is the kinematic viscosity"),
+            "{markdown}"
+        );
+        assert!(!markdown.contains("(1) where ("), "{markdown}");
     }
 
     #[test]

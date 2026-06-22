@@ -4,6 +4,17 @@ This matrix tracks DocTruth runtime parity against the Apache-2.0
 OpenDataLoader PDF processor surface. Status values are conservative and do not
 claim parser behavior that has not been ported or verified in DocTruth.
 
+## Source Snapshot
+
+- Upstream repository:
+  https://github.com/opendataloader-project/opendataloader-pdf
+- License: Apache-2.0
+- Reference commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4
+- Local path: `third_party/opendataloader-pdf-reference`
+- Usage: local behavior reference, benchmark input, and oracle source for
+  Rust-owned ports. The reference files are not compiled into DocTruth and are
+  not a production parser fallback.
+
 ## Status Values
 
 - `ported`: behavior is implemented and covered in DocTruth runtime tests.

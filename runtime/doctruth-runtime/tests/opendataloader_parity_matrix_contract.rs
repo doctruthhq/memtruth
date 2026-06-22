@@ -108,6 +108,44 @@ fn opendataloader_parity_matrix_doc_links_match_markdown_headings() {
     }
 }
 
+#[test]
+fn opendataloader_source_pin_and_notice_are_recorded() {
+    let repo = repo_root();
+    let source =
+        fs::read_to_string(repo.join("third_party/opendataloader-pdf-reference/SOURCE.md"))
+            .expect("SOURCE.md");
+    assert!(
+        source.contains("Repository: https://github.com/opendataloader-project/opendataloader-pdf")
+    );
+    assert!(source.contains("License: Apache-2.0"));
+    assert!(
+        source.contains("Reference commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4")
+            || source.contains("Pinned commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4")
+            || source.contains("Commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4")
+    );
+    assert!(source.contains("third_party/opendataloader-pdf-reference"));
+    assert!(source.contains("not compiled into DocTruth"));
+    assert!(source.contains("not a production parser fallback"));
+
+    let notice = fs::read_to_string(repo.join("NOTICE")).expect("NOTICE");
+    assert!(notice.contains("OpenDataLoader PDF"));
+    assert!(notice.contains("https://github.com/opendataloader-project/opendataloader-pdf"));
+    assert!(notice.contains("Apache License 2.0"));
+    assert!(notice.contains("d1845179a1286bbb76f9618e8b6c8f51509a52f4"));
+    assert!(notice.contains("third_party/opendataloader-pdf-reference"));
+}
+
+#[test]
+fn opendataloader_parity_docs_record_source_pin() {
+    let markdown =
+        fs::read_to_string(repo_root().join("docs/parser/opendataloader-parity-matrix.md"))
+            .expect("parity matrix markdown exists");
+    assert!(markdown.contains("https://github.com/opendataloader-project/opendataloader-pdf"));
+    assert!(markdown.contains("third_party/opendataloader-pdf-reference"));
+    assert!(markdown.contains("d1845179a1286bbb76f9618e8b6c8f51509a52f4"));
+    assert!(markdown.contains("Apache-2.0") || markdown.contains("Apache License 2.0"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

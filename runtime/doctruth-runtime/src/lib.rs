@@ -10464,6 +10464,16 @@ fn semantic_blocks(units: &[Value]) -> Vec<SemanticBlock> {
             index += 1;
             continue;
         }
+        if let Some(text_end) = text_paragraph_merge_end(units, index) {
+            blocks.push(semantic_block_from_units(
+                units,
+                index,
+                text_end,
+                reading_order,
+            ));
+            index = text_end;
+            continue;
+        }
         let merge_end = heading_line_merge_end(units, index)
             .or_else(|| vertical_heading_merge_end(units, index))
             .unwrap_or(index + 1);
@@ -10594,6 +10604,8 @@ fn semantic_block_from_units(
     };
     if block_type == "heading" {
         text = normalize_heading_text(&text);
+    } else if block_type == "text" && end > start + 1 {
+        text = merged_text_block_text(&units[start..end]);
     }
     SemanticBlock {
         reading_order,
@@ -10615,6 +10627,50 @@ fn semantic_block_from_units(
         evidence_span_ids: collect_array_values(&units[start..end], "evidenceSpanIds"),
         warnings: collect_array_values(&units[start..end], "warnings"),
     }
+}
+
+fn merged_text_block_text(units: &[Value]) -> String {
+    let mut text = String::new();
+    for line in units
+        .iter()
+        .filter_map(|unit| unit.get("text").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        text = merge_markdown_paragraph_line(&text, line);
+    }
+    text
+}
+
+fn text_paragraph_merge_end(units: &[Value], index: usize) -> Option<usize> {
+    if content_block_semantics_at(units, index).0 != "text" {
+        return None;
+    }
+    let first = units.get(index)?;
+    let mut paragraph = candidate_text(first).trim().to_string();
+    let mut end = index + 1;
+    while let Some(candidate) = units.get(end) {
+        if !same_page_unit(first, candidate)
+            || content_block_semantics_at(units, end).0 != "text"
+            || starts_new_content_block_paragraph(candidate_text(candidate), &paragraph)
+        {
+            break;
+        }
+        paragraph = merge_markdown_paragraph_line(&paragraph, candidate_text(candidate).trim());
+        end += 1;
+    }
+    (end > index + 1).then_some(end)
+}
+
+fn starts_new_content_block_paragraph(line: &str, paragraph: &str) -> bool {
+    if paragraph.contains(". ") {
+        return true;
+    }
+    starts_new_markdown_paragraph(line, paragraph)
+}
+
+fn same_page_unit(left: &Value, right: &Value) -> bool {
+    left.get("page") == right.get("page")
 }
 
 fn normalize_heading_text(text: &str) -> String {

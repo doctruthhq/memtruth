@@ -505,6 +505,44 @@ fn parse_pdf_emits_flat_content_blocks_in_reading_order() {
 }
 
 #[test]
+fn parse_pdf_merges_wrapped_text_lines_into_one_content_block() {
+    let pdf = write_pdf_fixture_with_lines(&[
+        "SUMMARY",
+        "This paragraph contin-",
+        "ues on the next line",
+        "Final separate sentence.",
+    ]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let blocks = json["contentBlocks"].as_array().unwrap();
+
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[1]["type"], "text");
+    assert_eq!(
+        blocks[1]["text"],
+        "This paragraph continues on the next line"
+    );
+    assert_eq!(
+        blocks[1]["sourceUnitIds"],
+        json!(["unit-0002", "unit-0003"])
+    );
+    assert_eq!(
+        blocks[1]["evidenceSpanIds"],
+        json!(["span-0002", "span-0003"])
+    );
+    assert_eq!(blocks[2]["text"], "Final separate sentence.");
+}
+
+#[test]
 fn parse_pdf_classifies_list_items_before_heading_rules() {
     let pdf = write_pdf_fixture_with_lines(&["SKILLS", "- Rust parser core", "1. Evidence replay"]);
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

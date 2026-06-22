@@ -2247,6 +2247,7 @@ fn normalize_worker_document(
             .or_insert_with(|| route.to_json(true, &model_identities));
     }
     merge_hybrid_schema_into_worker_document(&mut document);
+    refresh_worker_document_layers(&mut document);
     document
 }
 
@@ -2362,6 +2363,7 @@ fn merge_text_layer_document_into_worker_document(
             }),
         );
     }
+    refresh_worker_document_layers(worker_document);
 }
 
 fn merge_hybrid_schema_into_worker_document(document: &mut Value) {
@@ -2396,14 +2398,85 @@ fn merge_hybrid_schema_into_worker_document(document: &mut Value) {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    if !units_for_blocks.is_empty()
+    let reader_units = reader_layer_units(&units_for_blocks);
+    if !reader_units.is_empty()
         && document
             .get("contentBlocks")
             .and_then(Value::as_array)
             .is_none_or(Vec::is_empty)
     {
-        document["contentBlocks"] = json!(content_blocks_json(&units_for_blocks));
+        document["contentBlocks"] = json!(content_blocks_json(&reader_units));
     }
+}
+
+fn refresh_worker_document_layers(document: &mut Value) {
+    let Some(body) = document.get("body").and_then(Value::as_object) else {
+        return;
+    };
+    let units = body
+        .get("units")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let pages = body
+        .get("pages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if units.is_empty() {
+        return;
+    }
+    let reader_units = reader_layer_units(&units);
+    if reader_units.is_empty() {
+        return;
+    }
+    if document
+        .get("contentBlocks")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty)
+    {
+        document["contentBlocks"] = json!(content_blocks_json(&reader_units));
+    }
+    if parse_trace_pages_present(document) {
+        return;
+    }
+    if pages.is_empty() {
+        return;
+    }
+    let parser_run_id = document
+        .pointer("/parserRun/parserRunId")
+        .and_then(Value::as_str)
+        .unwrap_or("parser-run-worker");
+    let reading_order = document
+        .pointer("/parseTrace/readingOrder")
+        .cloned()
+        .unwrap_or_else(|| {
+            json!({
+                "source": "worker-unit-order",
+                "fallback": false,
+                "confidence": 0.72
+            })
+        });
+    let mut trace = parse_trace_json(&pages, &reader_units, parser_run_id, &reading_order);
+    if let Some(warnings) = document.pointer("/parseTrace/warnings").cloned() {
+        trace["warnings"] = warnings;
+    }
+    document["parseTrace"] = trace;
+}
+
+fn reader_layer_units(units: &[Value]) -> Vec<Value> {
+    units
+        .iter()
+        .filter(|unit| !model_table_structure_unit(unit))
+        .cloned()
+        .collect()
+}
+
+fn parse_trace_pages_present(document: &Value) -> bool {
+    document
+        .pointer("/parseTrace/pages")
+        .and_then(Value::as_array)
+        .is_some_and(|pages| !pages.is_empty())
 }
 
 fn parser_run_model_identities(parser_run: &serde_json::Map<String, Value>) -> Vec<String> {
@@ -17455,6 +17528,165 @@ mod tests {
             "rust-sidecar+model-worker"
         );
         assert_eq!(document["parserRun"]["workerBackend"], "model-worker");
+    }
+
+    #[test]
+    fn worker_normalization_refreshes_content_blocks_and_parse_trace_from_units() {
+        let mut document = json!({
+            "docId": "sha256:test",
+            "source": {
+                "sourceFilename": "worker.pdf",
+                "sourceHash": "sha256:test",
+                "metadata": {"sourceFilename": "worker.pdf", "pageCount": 1}
+            },
+            "body": {
+                "pages": [{"pageNumber": 1, "width": 1000.0, "height": 1000.0}],
+                "units": [{
+                    "unitId": "unit-mnn-table-cell-0001",
+                    "kind": "TABLE_CELL",
+                    "page": 1,
+                    "text": "1.793E-06",
+                    "evidenceSpanIds": ["span-mnn-table-cell-0001"],
+                    "location": {
+                        "page": 1,
+                        "readingOrder": 1,
+                        "boundingBox": {"x0": 10.0, "y0": 20.0, "x1": 90.0, "y1": 40.0}
+                    },
+                    "sourceObjectId": "mnn-table-cell-0001",
+                    "confidence": {"score": 0.74, "rationale": "ocr numeric table grid clustering"},
+                    "warnings": []
+                }],
+                "tables": []
+            },
+            "contentBlocks": [],
+            "parseTrace": {
+                "traceId": "trace-mnn-table-0001",
+                "parserRunId": "parser-run-rust-mnn-table",
+                "readingOrder": {"source": "mnn-table-detection-order", "fallback": false, "confidence": 0.72},
+                "pages": [],
+                "sectionTree": [],
+                "warnings": [{"code": "table_text_assignment_used_ocr_spans"}]
+            },
+            "parserRun": {
+                "parserRunId": "parser-run-rust-mnn-table",
+                "parserVersion": "test-worker",
+                "backend": "mnn-table-rs",
+                "models": [],
+                "warnings": []
+            },
+            "auditGradeStatus": "STRUCTURE_ONLY"
+        });
+        let route = ModelRouteDecision {
+            mode: "explicit-preset".to_string(),
+            decision: "model-runtime".to_string(),
+            effective_preset: "table-lite".to_string(),
+            routed_pages: Vec::new(),
+        };
+
+        document = normalize_worker_document(document, "edge-model", &route, &json!({}));
+
+        assert_eq!(document["contentBlocks"][0]["type"], "table");
+        assert_eq!(document["contentBlocks"][0]["text"], "1.793E-06");
+        assert_eq!(
+            document["parseTrace"]["pages"][0]["readingBlocks"][0]["text"],
+            "1.793E-06"
+        );
+        assert_eq!(
+            document["parseTrace"]["warnings"][0]["code"],
+            "table_text_assignment_used_ocr_spans"
+        );
+    }
+
+    #[test]
+    fn worker_normalization_hides_structural_detection_units_from_reader_layers() {
+        let mut document = json!({
+            "docId": "sha256:test",
+            "source": {
+                "sourceFilename": "worker.pdf",
+                "sourceHash": "sha256:test",
+                "metadata": {"sourceFilename": "worker.pdf", "pageCount": 1}
+            },
+            "body": {
+                "pages": [{"pageNumber": 1, "width": 1000.0, "height": 1000.0}],
+                "units": [
+                    {
+                        "unitId": "unit-mnn-table-detection-0001",
+                        "kind": "TABLE_REGION",
+                        "page": 1,
+                        "text": "table",
+                        "evidenceSpanIds": ["span-mnn-table-detection-0001"],
+                        "location": {
+                            "page": 1,
+                            "readingOrder": 1,
+                            "boundingBox": {"x0": 0.0, "y0": 0.0, "x1": 900.0, "y1": 500.0}
+                        },
+                        "sourceObjectId": "mnn-table-detection-0001",
+                        "confidence": {"score": 0.91, "rationale": "model detection"},
+                        "warnings": []
+                    },
+                    {
+                        "unitId": "unit-mnn-table-cell-0001",
+                        "kind": "TABLE_CELL",
+                        "page": 1,
+                        "text": "Temperature (degree C)",
+                        "evidenceSpanIds": ["span-mnn-table-cell-0001"],
+                        "location": {
+                            "page": 1,
+                            "readingOrder": 2,
+                            "boundingBox": {"x0": 10.0, "y0": 20.0, "x1": 190.0, "y1": 40.0}
+                        },
+                        "sourceObjectId": "mnn-table-cell-0001",
+                        "confidence": {"score": 0.74, "rationale": "ocr numeric table grid clustering"},
+                        "warnings": []
+                    }
+                ],
+                "tables": []
+            },
+            "contentBlocks": [],
+            "parseTrace": {
+                "traceId": "trace-mnn-table-0001",
+                "parserRunId": "parser-run-rust-mnn-table",
+                "readingOrder": {"source": "mnn-table-detection-order", "fallback": false, "confidence": 0.72},
+                "pages": [],
+                "sectionTree": [],
+                "warnings": []
+            },
+            "parserRun": {
+                "parserRunId": "parser-run-rust-mnn-table",
+                "parserVersion": "test-worker",
+                "backend": "mnn-table-rs",
+                "models": [],
+                "warnings": []
+            },
+            "auditGradeStatus": "STRUCTURE_ONLY"
+        });
+        let route = ModelRouteDecision {
+            mode: "explicit-preset".to_string(),
+            decision: "model-runtime".to_string(),
+            effective_preset: "table-lite".to_string(),
+            routed_pages: Vec::new(),
+        };
+
+        document = normalize_worker_document(document, "edge-model", &route, &json!({}));
+
+        assert_eq!(document["body"]["units"].as_array().unwrap().len(), 2);
+        assert_eq!(document["contentBlocks"].as_array().unwrap().len(), 1);
+        assert_eq!(document["contentBlocks"][0]["type"], "table");
+        assert_eq!(
+            document["contentBlocks"][0]["text"],
+            "Temperature (degree C)"
+        );
+        assert_eq!(
+            document["parseTrace"]["pages"][0]["readingBlocks"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            document["parseTrace"]["pages"][0]["readingBlocks"][0]["text"],
+            "Temperature (degree C)"
+        );
     }
 
     fn ordered_text(lines: Vec<PositionedLine>) -> Vec<String> {

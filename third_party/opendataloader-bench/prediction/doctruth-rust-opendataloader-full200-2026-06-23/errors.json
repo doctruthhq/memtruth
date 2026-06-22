@@ -1,0 +1,9 @@
+{
+  "documents": [
+    {
+      "document_id": "01030000000165",
+      "error": "{\"error_code\":\"PDF_EXTRACTION_FAILED\",\"message\":\"PDF text layer did not contain extractable text\",\"protocol_version\":\"1\",\"runtime\":\"doctruth-runtime\"}",
+      "errorCode": "PDF_EXTRACTION_FAILED"
+    }
+  ]
+}

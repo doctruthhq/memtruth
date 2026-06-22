@@ -25,6 +25,24 @@ claim parser behavior that has not been ported or verified in DocTruth.
   DocTruth runtime implementation.
 - `intentionally_skipped`: out of scope for DocTruth runtime by design.
 
+## Latest Full200 Snapshot
+
+- Report:
+  `docs/parser/reports/opendataloader-full200-2026-06-23.md`
+- Artifacts:
+  `third_party/opendataloader-bench/prediction/doctruth-rust-opendataloader-full200-2026-06-23/`
+- DocTruth revision used for run: `c65f0e0`
+- Runtime profile: `edge-fast`
+- Corpus: 200 OpenDataLoader Bench PDFs
+- Prediction: 199 parsed, 1 failed
+- Overall mean: `0.738756`
+- NID mean: `0.859061`
+- TEDS mean: `0.475822`
+- MHS mean: `0.469231`
+- Interpretation: current Rust quality is measurable but not yet
+  OpenDataLoader parity. The main gaps are OCR/text-layer fallback, table
+  structure, and heading hierarchy.
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

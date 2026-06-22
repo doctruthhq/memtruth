@@ -20,6 +20,10 @@ use regex::Regex;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+mod opendataloader_parity;
+
+pub use opendataloader_parity::opendataloader_parity_matrix_json;
+
 const RUNTIME: &str = "doctruth-runtime";
 const PROTOCOL_VERSION: &str = "1";
 const PDF_BACKEND_TARGET: &str = "pdf_oxide";

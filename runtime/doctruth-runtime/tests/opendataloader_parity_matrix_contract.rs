@@ -1,4 +1,6 @@
+use assert_cmd::Command;
 use doctruth_runtime::opendataloader_parity_matrix_json;
+use serde_json::json;
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -39,6 +41,25 @@ fn opendataloader_parity_matrix_lists_required_processors() {
     for expected in REQUIRED_PROCESSORS {
         assert!(names.contains(&expected), "missing processor {expected}");
     }
+}
+
+#[test]
+fn opendataloader_parity_matrix_command_returns_json() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(json!({"command": "opendataloader_parity_matrix"}).to_string())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["source"]["name"], "OpenDataLoader PDF");
+    assert_eq!(
+        json["source"]["path"],
+        "third_party/opendataloader-pdf-reference"
+    );
+    assert!(json["processors"].as_array().unwrap().len() >= 20);
 }
 
 #[test]

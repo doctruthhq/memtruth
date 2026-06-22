@@ -102,6 +102,7 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         Some("opendataloader_promotion_report") => {
             opendataloader_promotion_report_json(&request).map(|json| json.to_string())
         }
+        Some("opendataloader_parity_matrix") => Ok(opendataloader_parity_matrix_json().to_string()),
         Some("verify_benchmark_report") => {
             verify_benchmark_report_json(&request).map(|json| json.to_string())
         }

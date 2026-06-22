@@ -513,16 +513,30 @@ fn opendataloader_markdown_joins_wrapped_executive_summary_paragraph_case_00079(
 }
 
 #[test]
-#[ignore = "requires OCR/table-model path; keep as OpenDataLoader hybrid parity contract, not text-only Rust parser"]
-fn opendataloader_parity_suppresses_raw_lines_after_reconstructed_table() {
+fn opendataloader_real_mnn_suppresses_raw_lines_after_reconstructed_table() {
+    let Some((model_cache, model_manifest, model_worker)) = real_opendataloader_mnn_pack() else {
+        eprintln!("skipping real MNN OpenDataLoader parity test; model pack or worker is missing");
+        return;
+    };
     let output_dir = temp_dir("doctruth-runtime-opendataloader-table-source-suppression");
-    let report = run_opendataloader_prediction("01030000000110", &output_dir);
+    let report = run_opendataloader_prediction_with_real_mnn(
+        "01030000000110",
+        &output_dir,
+        &model_cache,
+        &model_manifest,
+        &model_worker,
+    );
 
     assert_eq!(report["prediction"]["parsedCount"], 1);
+    assert_eq!(
+        report["resourceProfile"]["modelRoutingCoverage"]["startedModelRuntime"],
+        1
+    );
+    assert_eq!(report["resourceProfile"]["modelRuntime"]["runtime"], "mnn");
     let markdown = fs::read_to_string(output_dir.join("markdown/01030000000110.md")).unwrap();
     assert!(
         markdown.contains(
-            "|Temperature (degree C)|Kinematic viscosity v (m2 /s)|Temperature (degree C)|"
+            "|Temperature (degree C)|Kinematic viscosity v (m2/s)|Temperature (degree C)|"
         ),
         "expected reconstructed viscosity table:\n{markdown}"
     );
@@ -531,8 +545,12 @@ fn opendataloader_parity_suppresses_raw_lines_after_reconstructed_table() {
         .expect("table header should be present");
     let after_table = &markdown[table_header..];
     assert!(
-        !after_table.contains("\nKinematic viscosity v (m2 /s)\n\nKinematic viscosity v"),
+        !after_table.contains("\nKinematic viscosity v (m2/s)\n\nKinematic viscosity v"),
         "OpenDataLoader removes table-owned source text after building the table:\n{markdown}"
+    );
+    assert!(
+        !after_table.contains("table projected row header"),
+        "model structure labels should not leak into markdown:\n{markdown}"
     );
 }
 
@@ -3173,6 +3191,52 @@ fn run_opendataloader_prediction(doc_id: &str, output_dir: &PathBuf) -> Value {
         .stdout
         .clone();
     serde_json::from_slice(&output).unwrap()
+}
+
+fn run_opendataloader_prediction_with_real_mnn(
+    doc_id: &str,
+    output_dir: &PathBuf,
+    model_cache: &PathBuf,
+    model_manifest: &PathBuf,
+    model_worker: &PathBuf,
+) -> Value {
+    let bench_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../third_party/opendataloader-bench");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": bench_dir,
+                "output_dir": output_dir,
+                "engine": "doctruth-opendataloader-real-mnn-contract",
+                "doc_id": doc_id,
+                "preset": "table-lite",
+                "runtime_profile": "edge-model",
+                "timeout_seconds": 30,
+                "model_manifest": model_manifest,
+                "model_cache": model_cache,
+                "model_worker": model_worker
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).unwrap()
+}
+
+fn real_opendataloader_mnn_pack() -> Option<(PathBuf, PathBuf, PathBuf)> {
+    if !cfg!(all(feature = "mnn-native", feature = "mnn-ocr")) {
+        return None;
+    }
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let manifest = repo.join("model-packs/opendataloader-hybrid-models.json");
+    let cache = repo.join("target/opendataloader-model-pack-cache");
+    let worker = repo.join("runtime/doctruth-runtime/target/debug/doctruth-mnn-model-worker");
+    (manifest.is_file() && cache.is_dir() && worker.is_file()).then_some((cache, manifest, worker))
 }
 
 fn vendored_opendataloader_pdf(name: &str) -> PathBuf {

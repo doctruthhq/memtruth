@@ -360,6 +360,7 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
         .filter(|name| !name.is_empty())
         .unwrap_or("document.pdf");
     let replacement_character = undefined_character_replacement(request);
+    let replacement_character_configured = undefined_character_replacement_configured(request);
     let extracted = extract_pages_with_pdf_oxide(source_path, replacement_character.as_deref())?;
     let mut extracted_pages = extracted.pages;
     if filter_sensitive_data_enabled(request) {
@@ -414,7 +415,7 @@ fn parse_pdf_json(request: &Value) -> Result<Value, String> {
             "OpenDataLoader-compatible sensitive-data filter redacted parser text because request.filter_sensitive_data was enabled",
         ));
     }
-    if replacement_character.is_some() {
+    if replacement_character_configured {
         warnings.push(parser_warning(
             "undefined_character_replaced",
             "OpenDataLoader-compatible text processor replaced PDF replacement characters because request.undefined_character_replacement was enabled",
@@ -1475,6 +1476,15 @@ fn undefined_character_replacement(request: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .filter(|replacement| !replacement.is_empty())
         .map(ToOwned::to_owned)
+        .or_else(|| Some(" ".to_string()))
+}
+
+fn undefined_character_replacement_configured(request: &Value) -> bool {
+    request
+        .get("undefined_character_replacement")
+        .or_else(|| request.get("undefinedCharacterReplacement"))
+        .and_then(Value::as_str)
+        .is_some_and(|replacement| !replacement.is_empty())
 }
 
 fn replace_undefined_positioned_lines(lines: &mut [PositionedLine], replacement: Option<&str>) {
@@ -16571,6 +16581,25 @@ mod tests {
 
         assert_eq!(lines[0].text, "Hello ? World");
         assert_eq!(lines[1].text, "No issues here");
+    }
+
+    #[test]
+    fn opendataloader_text_processor_defaults_undefined_replacement_to_space() {
+        let request = json!({});
+        let mut lines = vec![line("Revenue \u{fffd} total", 10.0, 100.0, 180.0, 120.0)];
+
+        let replacement = undefined_character_replacement(&request);
+        replace_undefined_positioned_lines(&mut lines, replacement.as_deref());
+        let (kept, warnings) = filter_positioned_lines(lines, &[]);
+
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].text, "Revenue   total");
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| warning["code"] != "invalid_text_encoding_detected"),
+            "{warnings:?}"
+        );
     }
 
     #[test]

@@ -1189,7 +1189,7 @@ fn table_detection_document(
     } else {
         "STRUCTURE_ONLY"
     };
-    warnings.extend(table_detection_warnings(cells.is_empty()));
+    warnings.extend(table_detection_warnings(&cells));
     json!({
         "docId": source_hash,
         "source": {
@@ -2071,7 +2071,7 @@ fn table_json_from_detections(
                     .and_then(Value::as_str)
                     .is_some_and(|text| !text.trim().is_empty())
             }).count(),
-            "rationale": "mnn table-transformer structure detection; cell text assignment pending"
+            "rationale": table_quality_rationale(cells)
         },
         "confidence": {
             "score": 0.72,
@@ -2095,13 +2095,34 @@ fn table_detection_summary(detections: &[TableDetection]) -> Value {
 }
 
 #[cfg(feature = "mnn-native")]
-fn table_detection_warnings(cells_empty: bool) -> Vec<Value> {
-    let mut warnings = vec![json!({
-        "code": "table_cell_text_assignment_pending",
-        "severity": "WARNING",
-        "message": "MNN table model decoded structure boxes, but cell text assignment from text/OCR spans is still pending"
-    })];
-    if cells_empty {
+fn table_quality_rationale(cells: &[Value]) -> &'static str {
+    if table_cells_have_text(cells) {
+        "mnn table-transformer structure detection with assigned cell text"
+    } else {
+        "mnn table-transformer structure detection; cell text assignment pending"
+    }
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_cells_have_text(cells: &[Value]) -> bool {
+    cells.iter().any(|cell| {
+        cell.get("text")
+            .and_then(Value::as_str)
+            .is_some_and(|text| !text.trim().is_empty())
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_detection_warnings(cells: &[Value]) -> Vec<Value> {
+    let mut warnings = Vec::new();
+    if !cells.is_empty() && !table_cells_have_text(cells) {
+        warnings.push(json!({
+            "code": "table_cell_text_assignment_pending",
+            "severity": "WARNING",
+            "message": "MNN table model decoded structure boxes, but cell text assignment from text/OCR spans is still pending"
+        }));
+    }
+    if cells.is_empty() {
         warnings.push(json!({
             "code": "table_mnn_no_cell_grid",
             "severity": "SEVERE",
@@ -2533,6 +2554,15 @@ mod tests {
                 .iter()
                 .all(|warning| warning["code"] != "table_cell_text_assignment_pending"),
             "{warnings:?}"
+        );
+        assert!(
+            table_detection_warnings(&cells)
+                .iter()
+                .all(|warning| warning["code"] != "table_cell_text_assignment_pending")
+        );
+        assert_eq!(
+            table_quality_rationale(&cells),
+            "mnn table-transformer structure detection with assigned cell text"
         );
     }
 

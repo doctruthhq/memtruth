@@ -2319,13 +2319,13 @@ fn merge_text_layer_document_into_worker_document(
     if let Some(pages) = text_body.get("pages").cloned() {
         worker_body.entry("pages".to_string()).or_insert(pages);
     }
-    let mut units = text_body
+    let mut units = worker_body
         .get("units")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     units.extend(
-        worker_body
+        text_body
             .get("units")
             .and_then(Value::as_array)
             .cloned()
@@ -2334,13 +2334,13 @@ fn merge_text_layer_document_into_worker_document(
     if !units.is_empty() {
         worker_body.insert("units".to_string(), json!(units));
     }
-    let mut tables = text_body
+    let mut tables = worker_body
         .get("tables")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     tables.extend(
-        worker_body
+        text_body
             .get("tables")
             .and_then(Value::as_array)
             .cloned()
@@ -2358,7 +2358,7 @@ fn merge_text_layer_document_into_worker_document(
             json!({
                 "textLayer": "pdf_oxide",
                 "modelLayer": "model-worker",
-                "strategy": "text-layer-units-plus-model-units"
+                "strategy": "model-units-plus-text-layer-units"
             }),
         );
     }

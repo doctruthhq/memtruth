@@ -1987,11 +1987,13 @@ fn table_detection_units(
         }));
     }
     for (cell_index, cell) in cells.iter().take(128).enumerate() {
+        let cell_text = cell.get("text").and_then(Value::as_str).unwrap_or("");
+        let cell_warnings = table_cell_unit_warnings(cell_text);
         units.push(json!({
             "unitId": format!("unit-mnn-table-cell-{cell_index:04}"),
             "kind": "TABLE_CELL",
             "page": 1,
-            "text": "",
+            "text": cell_text,
             "evidenceSpanIds": [format!("span-mnn-table-cell-{cell_index:04}")],
             "location": {
                 "page": 1,
@@ -2003,16 +2005,26 @@ fn table_detection_units(
             "sourceObjectId": format!("mnn-table-cell-{cell_index:04}"),
             "confidence": {
                 "score": cell.pointer("/confidence/score").and_then(Value::as_f64).unwrap_or(0.0),
-                "rationale": "mnn table cell skeleton; text assignment pending"
+                "rationale": cell.pointer("/confidence/rationale")
+                    .and_then(Value::as_str)
+                    .unwrap_or("mnn table cell skeleton; text assignment pending")
             },
-            "warnings": [{
-                "code": "table_cell_text_assignment_pending",
-                "severity": "WARNING",
-                "message": "Table structure cell has no assigned text span yet"
-            }]
+            "warnings": cell_warnings
         }));
     }
     units
+}
+
+#[cfg(feature = "mnn-native")]
+fn table_cell_unit_warnings(text: &str) -> Value {
+    if !text.trim().is_empty() {
+        return json!([]);
+    }
+    json!([{
+        "code": "table_cell_text_assignment_pending",
+        "severity": "WARNING",
+        "message": "Table structure cell has no assigned text span yet"
+    }])
 }
 
 #[cfg(feature = "mnn-native")]
@@ -2497,6 +2509,35 @@ mod tests {
     }
 
     #[test]
+    fn table_detection_units_preserve_assigned_cell_text() {
+        let cells = vec![json!({
+            "boundingBox": {"x0": 10.0, "y0": 20.0, "x1": 90.0, "y1": 40.0},
+            "text": "1.793E-06",
+            "confidence": {
+                "score": 0.74,
+                "rationale": "ocr numeric table grid clustering"
+            }
+        })];
+
+        let units = table_detection_units(&[], 1224, 1584, &cells);
+
+        assert_eq!(units[0]["kind"], "TABLE_CELL");
+        assert_eq!(units[0]["text"], "1.793E-06");
+        assert_eq!(
+            units[0]["confidence"]["rationale"],
+            "ocr numeric table grid clustering"
+        );
+        let warnings = units[0]["warnings"].as_array().unwrap();
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| warning["code"] != "table_cell_text_assignment_pending"),
+            "{warnings:?}"
+        );
+    }
+
+    #[cfg(feature = "mnn-ocr")]
+    #[test]
     fn numeric_ocr_grid_reconstructs_four_column_viscosity_rows() {
         let tokens = vec![
             token("0", 216.0, 721.0, 245.0, 749.0),
@@ -2534,6 +2575,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "mnn-ocr")]
     #[test]
     fn numeric_ocr_grid_preserves_sequence_when_temperature_label_is_missing() {
         let tokens = vec![
@@ -2579,6 +2621,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "mnn-ocr")]
     #[test]
     fn numeric_ocr_grid_corrects_viscosity_temperature_ocr_substitutions() {
         let adjacent_tokens = vec![
@@ -2655,6 +2698,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "mnn-ocr")]
     #[test]
     fn numeric_ocr_grid_rejects_far_numeric_rows_outside_main_table() {
         let tokens = vec![
@@ -2685,6 +2729,7 @@ mod tests {
         json!({"text": text})
     }
 
+    #[cfg(feature = "mnn-ocr")]
     fn token(text: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> TableTextToken {
         TableTextToken {
             text: text.to_string(),

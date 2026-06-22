@@ -543,6 +543,51 @@ fn parse_pdf_merges_wrapped_text_lines_into_one_content_block() {
 }
 
 #[test]
+fn parse_pdf_merges_wrapped_text_lines_in_parse_trace_reading_blocks() {
+    let pdf = write_pdf_fixture_with_lines(&[
+        "SUMMARY",
+        "This paragraph contin-",
+        "ues on the next line",
+        "Final separate sentence.",
+    ]);
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let trace_blocks = json["parseTrace"]["pages"][0]["readingBlocks"]
+        .as_array()
+        .unwrap();
+
+    assert_eq!(trace_blocks.len(), 3);
+    assert_eq!(trace_blocks[1]["type"], "text");
+    assert_eq!(
+        trace_blocks[1]["text"],
+        "This paragraph continues on the next line"
+    );
+    assert_eq!(
+        trace_blocks[1]["sourceUnitIds"],
+        json!(["unit-0002", "unit-0003"])
+    );
+    assert_eq!(trace_blocks[1]["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        trace_blocks[1]["lines"][0]["text"],
+        "This paragraph contin-"
+    );
+    assert_eq!(trace_blocks[1]["lines"][1]["text"], "ues on the next line");
+    assert_eq!(
+        trace_blocks[1]["lines"][1]["spans"][0]["evidenceSpanId"],
+        "span-0003"
+    );
+}
+
+#[test]
 fn parse_pdf_classifies_list_items_before_heading_rules() {
     let pdf = write_pdf_fixture_with_lines(&["SKILLS", "- Rust parser core", "1. Evidence replay"]);
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

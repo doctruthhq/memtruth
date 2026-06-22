@@ -10464,16 +10464,6 @@ fn semantic_blocks(units: &[Value]) -> Vec<SemanticBlock> {
             index += 1;
             continue;
         }
-        if let Some(text_end) = text_paragraph_merge_end(units, index) {
-            blocks.push(semantic_block_from_units(
-                units,
-                index,
-                text_end,
-                reading_order,
-            ));
-            index = text_end;
-            continue;
-        }
         let merge_end = heading_line_merge_end(units, index)
             .or_else(|| vertical_heading_merge_end(units, index))
             .unwrap_or(index + 1);
@@ -10484,6 +10474,18 @@ fn semantic_blocks(units: &[Value]) -> Vec<SemanticBlock> {
                     consumed[consumed_index] = true;
                 }
                 index += 1;
+                continue;
+            }
+        }
+        if merge_end == index + 1 {
+            if let Some(text_end) = text_paragraph_merge_end(units, index) {
+                blocks.push(semantic_block_from_units(
+                    units,
+                    index,
+                    text_end,
+                    reading_order,
+                ));
+                index = text_end;
                 continue;
             }
         }
@@ -10646,12 +10648,16 @@ fn text_paragraph_merge_end(units: &[Value], index: usize) -> Option<usize> {
     if content_block_semantics_at(units, index).0 != "text" {
         return None;
     }
+    if protected_text_merge_boundary(units, index) {
+        return None;
+    }
     let first = units.get(index)?;
     let mut paragraph = candidate_text(first).trim().to_string();
     let mut end = index + 1;
     while let Some(candidate) = units.get(end) {
         if !same_page_unit(first, candidate)
             || content_block_semantics_at(units, end).0 != "text"
+            || protected_text_merge_boundary(units, end)
             || starts_new_content_block_paragraph(candidate_text(candidate), &paragraph)
         {
             break;
@@ -10660,6 +10666,19 @@ fn text_paragraph_merge_end(units: &[Value], index: usize) -> Option<usize> {
         end += 1;
     }
     (end > index + 1).then_some(end)
+}
+
+fn protected_text_merge_boundary(units: &[Value], index: usize) -> bool {
+    let text = units.get(index).map(candidate_text).unwrap_or("").trim();
+    numeric_section_marker(text)
+        || bare_two_digit_marker(text)
+        || section_marker_heading(text)
+        || heading_marker_start(units, index)
+        || heading_line_merge_end(units, index).is_some()
+        || vertical_heading_merge_end(units, index).is_some()
+        || vertical_heading_merge_indices(units, index).is_some()
+        || stacked_title_heading_start(units, index)
+        || stacked_title_heading_continuation(units, index)
 }
 
 fn starts_new_content_block_paragraph(line: &str, paragraph: &str) -> bool {
@@ -11191,6 +11210,7 @@ fn merged_unit_bbox_refs(units: &[&Value]) -> Value {
     json!({"x0": merged[0], "y0": merged[1], "x1": merged[2], "y1": merged[3]})
 }
 
+#[cfg(test)]
 fn content_block_type(unit: &Value) -> &'static str {
     let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
     content_block_semantics(unit, text).0
@@ -11905,11 +11925,7 @@ fn trace_page_json(index: usize, page: &Value, units: &[Value]) -> Value {
             .filter(|unit| unit.get("page").and_then(Value::as_u64) == Some(page_number))
             .filter_map(trace_text_span_json)
             .collect::<Vec<_>>(),
-        "readingBlocks": units
-            .iter()
-            .filter(|unit| unit.get("page").and_then(Value::as_u64) == Some(page_number))
-            .filter_map(|unit| trace_block_json(unit, &sections))
-            .collect::<Vec<_>>(),
+        "readingBlocks": trace_reading_blocks_json(units, page_number, &sections),
         "discardedBlocks": [],
         "images": [],
         "tables": [],
@@ -11947,7 +11963,75 @@ fn trace_text_span_json(unit: &Value) -> Option<Value> {
     }))
 }
 
-fn trace_block_json(unit: &Value, sections: &BTreeMap<u64, SectionMetadata>) -> Option<Value> {
+fn trace_reading_blocks_json(
+    units: &[Value],
+    page_number: u64,
+    sections: &BTreeMap<u64, SectionMetadata>,
+) -> Vec<Value> {
+    semantic_blocks(units)
+        .iter()
+        .filter(|block| block.page.as_u64() == Some(page_number))
+        .map(|block| trace_semantic_block_json(block, units, sections))
+        .collect()
+}
+
+fn trace_semantic_block_json(
+    block: &SemanticBlock,
+    units: &[Value],
+    sections: &BTreeMap<u64, SectionMetadata>,
+) -> Value {
+    let source_units = source_units_for_block(units, block);
+    let section = sections
+        .get(&block.reading_order)
+        .cloned()
+        .unwrap_or_else(SectionMetadata::empty);
+    json!({
+        "blockId": format!("block-{:04}", block.reading_order),
+        "type": block.block_type,
+        "textLevel": block.text_level,
+        "text": block.text,
+        "sectionId": section.section_id,
+        "parentSectionId": section.parent_section_id,
+        "sectionPath": section.section_path,
+        "sectionTitlePath": section.section_title_path,
+        "isSectionRoot": section.is_section_root,
+        "bbox": block.bbox,
+        "page": block.page,
+        "readingOrder": block.reading_order,
+        "confidence": trace_block_confidence(&source_units),
+        "modelRunId": "",
+        "sourceUnitIds": block.source_unit_ids,
+        "evidenceSpanIds": block.evidence_span_ids,
+        "warnings": block.warnings,
+        "lines": source_units
+            .iter()
+            .filter_map(|unit| trace_line_from_unit_json(unit))
+            .collect::<Vec<_>>()
+    })
+}
+
+fn source_units_for_block<'a>(units: &'a [Value], block: &SemanticBlock) -> Vec<&'a Value> {
+    block
+        .source_unit_ids
+        .iter()
+        .filter_map(|id| {
+            units
+                .iter()
+                .find(|unit| unit.get("unitId").is_some_and(|unit_id| unit_id == id))
+        })
+        .collect()
+}
+
+fn trace_block_confidence(units: &[&Value]) -> Value {
+    units
+        .iter()
+        .filter_map(|unit| unit.pointer("/confidence/score").and_then(Value::as_f64))
+        .reduce(f64::max)
+        .map(Value::from)
+        .unwrap_or_else(|| json!(0.0))
+}
+
+fn trace_line_from_unit_json(unit: &Value) -> Option<Value> {
     let reading_order = unit.pointer("/location/readingOrder")?.as_u64()?;
     let text = unit.get("text").and_then(Value::as_str).unwrap_or("");
     let evidence_span_id = unit
@@ -11964,28 +12048,13 @@ fn trace_block_json(unit: &Value, sections: &BTreeMap<u64, SectionMetadata>) -> 
         .get("sourceObjectId")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let section = sections
-        .get(&reading_order)
-        .cloned()
-        .unwrap_or_else(SectionMetadata::empty);
-    Some(json!({
-        "blockId": format!("block-{reading_order:04}"),
-        "type": content_block_type(unit),
-        "textLevel": content_block_semantics(unit, text).1,
-        "sectionId": section.section_id,
-        "parentSectionId": section.parent_section_id,
-        "sectionPath": section.section_path,
-        "sectionTitlePath": section.section_title_path,
-        "isSectionRoot": section.is_section_root,
-        "bbox": bbox,
-        "readingOrder": reading_order,
-        "confidence": unit.pointer("/confidence/score").cloned().unwrap_or_else(|| json!(0.0)),
-        "modelRunId": "",
-        "sourceUnitIds": [unit.get("unitId").cloned().unwrap_or_else(|| json!(""))],
-        "evidenceSpanIds": unit.get("evidenceSpanIds").cloned().unwrap_or_else(|| json!([])),
-        "warnings": unit.get("warnings").cloned().unwrap_or_else(|| json!([])),
-        "lines": [trace_line_json(reading_order, text, &bbox, source_object_id, evidence_span_id)]
-    }))
+    Some(trace_line_json(
+        reading_order,
+        text,
+        &bbox,
+        source_object_id,
+        evidence_span_id,
+    ))
 }
 
 fn trace_line_json(

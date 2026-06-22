@@ -112,6 +112,10 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
             opendataloader_probes::opendataloader_line_paragraph_probe_json(&request)
                 .map(|json| json.to_string())
         }
+        Some("opendataloader_structure_probe") => {
+            opendataloader_probes::opendataloader_structure_probe_json(&request)
+                .map(|json| json.to_string())
+        }
         Some("verify_benchmark_report") => {
             verify_benchmark_report_json(&request).map(|json| json.to_string())
         }

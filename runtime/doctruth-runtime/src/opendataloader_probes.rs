@@ -11,6 +11,8 @@ const OPENDATALOADER_REPLACEMENT_CHARACTER_STRING: &str = "\u{fffd}";
 const OPENDATALOADER_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java";
 const OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java";
 const OPENDATALOADER_PARAGRAPH_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ParagraphProcessor.java";
+const OPENDATALOADER_HEADING_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java";
+const OPENDATALOADER_LIST_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ListProcessor.java";
 
 pub(crate) fn opendataloader_text_processor_probe_json(request: &Value) -> Result<Value, String> {
     let text = request
@@ -269,4 +271,213 @@ fn opendataloader_probe_join_line_text(lines: &[PositionedLine]) -> String {
         }
     }
     normalize_text(&joined)
+}
+
+pub(crate) fn opendataloader_structure_probe_json(request: &Value) -> Result<Value, String> {
+    let lines = opendataloader_probe_structure_lines(request)?;
+    let blocks = opendataloader_probe_structure_blocks(lines);
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader structure probe",
+        "blocks": blocks,
+        "references": [
+            OPENDATALOADER_HEADING_PROCESSOR_REFERENCE,
+            OPENDATALOADER_LIST_PROCESSOR_REFERENCE
+        ],
+        "coverageGaps": [
+            {"processor": "LevelProcessor", "reason": "reference_not_vendored"},
+            {"processor": "CaptionProcessor", "reason": "reference_not_vendored"}
+        ]
+    }))
+}
+
+struct OpendataloaderStructureLine {
+    text: String,
+    font_size: f64,
+}
+
+fn opendataloader_probe_structure_lines(
+    request: &Value,
+) -> Result<Vec<OpendataloaderStructureLine>, String> {
+    let lines = request
+        .get("lines")
+        .and_then(Value::as_array)
+        .ok_or_else(|| error_json("MISSING_LINES", "request.lines is required").to_string())?;
+    lines
+        .iter()
+        .enumerate()
+        .map(opendataloader_probe_structure_line)
+        .collect()
+}
+
+fn opendataloader_probe_structure_line(
+    (index, value): (usize, &Value),
+) -> Result<OpendataloaderStructureLine, String> {
+    let text = value.get("text").and_then(Value::as_str).ok_or_else(|| {
+        error_json(
+            "INVALID_STRUCTURE_LINE",
+            &format!("request.lines[{index}].text is required"),
+        )
+        .to_string()
+    })?;
+    let font_size = value
+        .get("fontSize")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| {
+            error_json(
+                "INVALID_STRUCTURE_LINE",
+                &format!("request.lines[{index}].fontSize must be a finite number"),
+            )
+            .to_string()
+        })?;
+    if !font_size.is_finite() {
+        return Err(error_json(
+            "INVALID_STRUCTURE_LINE",
+            &format!("request.lines[{index}].fontSize must be a finite number"),
+        )
+        .to_string());
+    }
+    Ok(OpendataloaderStructureLine {
+        text: text.to_string(),
+        font_size,
+    })
+}
+
+fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>) -> Vec<Value> {
+    let mut blocks = Vec::new();
+    let mut pending_list = Vec::new();
+    for line in lines {
+        if let Some(item) = opendataloader_probe_letter_list_item(&line.text) {
+            if !opendataloader_probe_next_letter_list_item(&pending_list, &item) {
+                opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
+            }
+            pending_list.push(item);
+            continue;
+        }
+        opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
+        blocks.push(opendataloader_probe_structure_block(line));
+    }
+    opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
+    blocks
+}
+
+fn opendataloader_probe_next_letter_list_item(
+    pending_list: &[OpendataloaderLetterListItem],
+    item: &OpendataloaderLetterListItem,
+) -> bool {
+    let Some(previous) = pending_list.last() else {
+        return item.ordinal == 0;
+    };
+    previous.case == item.case && previous.ordinal + 1 == item.ordinal
+}
+
+fn opendataloader_probe_flush_list_block(
+    blocks: &mut Vec<Value>,
+    pending_list: &mut Vec<OpendataloaderLetterListItem>,
+) {
+    if pending_list.is_empty() {
+        return;
+    }
+    if pending_list.len() == 1 {
+        let item = pending_list.pop().expect("pending list has item");
+        blocks.push(json!({"type": "paragraph", "text": item.original_text}));
+        return;
+    }
+    let items: Vec<String> = std::mem::take(pending_list)
+        .into_iter()
+        .map(|item| item.item_text)
+        .collect();
+    blocks.push(json!({
+        "type": "list",
+        "items": items,
+        "source": "OpenDataLoader ListProcessor"
+    }));
+}
+
+fn opendataloader_probe_structure_block(line: OpendataloaderStructureLine) -> Value {
+    if opendataloader_probe_caption(&line.text) {
+        json!({"type": "caption", "text": line.text, "source": "derived-caption-pattern"})
+    } else if opendataloader_probe_heading(&line) {
+        json!({
+            "type": "heading",
+            "text": line.text,
+            "level": 1,
+            "source": "OpenDataLoader HeadingProcessor"
+        })
+    } else {
+        json!({"type": "paragraph", "text": line.text})
+    }
+}
+
+fn opendataloader_probe_heading(line: &OpendataloaderStructureLine) -> bool {
+    line.font_size >= 14.0 && opendataloader_probe_numbered_heading(&line.text)
+}
+
+fn opendataloader_probe_numbered_heading(text: &str) -> bool {
+    let Some(marker) = text.split_whitespace().next() else {
+        return false;
+    };
+    let marker = marker.trim_end_matches('.');
+    let parts: Vec<&str> = marker.split('.').collect();
+    parts.len() >= 2
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+}
+
+fn opendataloader_probe_caption(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    let mut words = trimmed.split_whitespace();
+    let Some(label) = words.next() else {
+        return false;
+    };
+    if !matches!(label, "Figure" | "Table") {
+        return false;
+    }
+    words
+        .next()
+        .is_some_and(opendataloader_probe_caption_number_marker)
+}
+
+fn opendataloader_probe_caption_number_marker(marker: &str) -> bool {
+    let marker = marker.trim_end_matches('.');
+    !marker.is_empty() && marker.chars().all(|ch| ch.is_ascii_digit())
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum OpendataloaderLetterCase {
+    Lower,
+    Upper,
+}
+
+struct OpendataloaderLetterListItem {
+    original_text: String,
+    item_text: String,
+    ordinal: u8,
+    case: OpendataloaderLetterCase,
+}
+
+fn opendataloader_probe_letter_list_item(text: &str) -> Option<OpendataloaderLetterListItem> {
+    let trimmed = text.trim_start();
+    let mut chars = trimmed.chars();
+    let letter = chars.next()?;
+    let marker = chars.next()?;
+    let rest = chars.as_str().trim_start();
+    if letter.is_ascii_alphabetic() && matches!(marker, ')' | '.') && !rest.is_empty() {
+        let case = if letter.is_ascii_lowercase() {
+            OpendataloaderLetterCase::Lower
+        } else {
+            OpendataloaderLetterCase::Upper
+        };
+        Some(OpendataloaderLetterListItem {
+            original_text: trimmed.to_string(),
+            item_text: rest.to_string(),
+            ordinal: letter.to_ascii_lowercase() as u8 - b'a',
+            case,
+        })
+    } else {
+        None
+    }
 }

@@ -6121,6 +6121,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
     let normalized =
         opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized));
+    let normalized = opendataloader_merge_trailing_section_marker_headings(normalized);
     opendataloader_drop_report_title_before_executive_summary(normalized)
 }
 
@@ -7319,6 +7320,46 @@ fn opendataloader_merge_split_headings(lines: Vec<String>) -> Vec<String> {
         index += 1;
     }
     merged
+}
+
+fn opendataloader_merge_trailing_section_marker_headings(lines: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if let Some(merged) =
+            opendataloader_trailing_section_marker_heading(&lines[index], lines.get(index + 1))
+        {
+            out.push(merged);
+            index += 2;
+        } else {
+            out.push(lines[index].clone());
+            index += 1;
+        }
+    }
+    out
+}
+
+fn opendataloader_trailing_section_marker_heading(
+    line: &str,
+    next: Option<&String>,
+) -> Option<String> {
+    let next = next?;
+    let title = strip_markdown_heading_marker(next);
+    if title.is_empty() || !title_case_markdown_heading(&title) {
+        return None;
+    }
+    let marker = trailing_section_marker(line)?;
+    Some(format!("# {marker} {title}"))
+}
+
+fn trailing_section_marker(line: &str) -> Option<String> {
+    static TRAILING_SECTION_RE: OnceLock<Regex> = OnceLock::new();
+    let line = strip_markdown_heading_marker(line);
+    TRAILING_SECTION_RE
+        .get_or_init(|| Regex::new(r"\b(\d+(?:\.\d+)+)\s*$").unwrap())
+        .captures(&line)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| matched.as_str().to_string())
 }
 
 fn opendataloader_section_number_heading(text: &str) -> bool {
@@ -10496,6 +10537,7 @@ fn preserves_empty_table_cells(table: &TableExtraction) -> bool {
     table.rationale == "borderless aligned text table extraction"
         || table.rationale == "party registration bbox table extraction"
         || table.rationale == "opendataloader foreign ownership table repair"
+        || table.rationale == "opendataloader column-major numeric table extraction"
         || table.rationale.contains("matrix cluster")
 }
 
@@ -10526,6 +10568,7 @@ fn table_method(rationale: &str) -> &'static str {
         || rationale.contains("captioned numeric")
         || rationale.contains("matrix cluster")
         || rationale.contains("compact numeric")
+        || rationale.contains("column-major numeric")
     {
         "cluster"
     } else if rationale.contains("line-table") {
@@ -13197,6 +13240,17 @@ fn extract_tables_from_positioned_lines(
             }
         }
         if tables.len() == before_borderless {
+            for table in opendataloader_column_major_numeric_tables_from_points(
+                page_number,
+                page_width,
+                page_height,
+                &points,
+                tables.len() + 1,
+            ) {
+                tables.push(table);
+            }
+        }
+        if tables.len() == before_borderless {
             if let Some(table) = opendataloader_dense_cluster_table_from_points(
                 page_number,
                 page_width,
@@ -14598,6 +14652,193 @@ fn opendataloader_dense_cluster_table_from_points(
         points,
         table_index,
     )
+}
+
+fn opendataloader_column_major_numeric_tables_from_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    first_table_index: usize,
+) -> Vec<TableExtraction> {
+    let rows = opendataloader_all_visual_rows(points)
+        .into_iter()
+        .map(opendataloader_merge_cell_fragments)
+        .collect::<Vec<_>>();
+    let mut tables = Vec::new();
+    let mut index = 0;
+    while index < rows.len() {
+        if !opendataloader_year_numeric_header_row(&rows[index]) {
+            index += 1;
+            continue;
+        }
+        let body_end = opendataloader_year_numeric_body_end(&rows, index + 1);
+        if body_end.saturating_sub(index + 1) < 3 {
+            index += 1;
+            continue;
+        }
+        let table_rows = rows[index..body_end].to_vec();
+        if let Some(table) = opendataloader_column_major_numeric_table_from_rows(
+            page_number,
+            page_width,
+            page_height,
+            &table_rows,
+            first_table_index + tables.len(),
+        ) {
+            tables.push(table);
+            index = body_end;
+        } else {
+            index += 1;
+        }
+    }
+    tables
+}
+
+fn opendataloader_all_visual_rows(points: &[TextPoint]) -> Vec<Vec<TextPoint>> {
+    let mut points = points
+        .iter()
+        .filter(|point| !point.text.trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    points.sort_by(|left, right| {
+        right
+            .y
+            .total_cmp(&left.y)
+            .then_with(|| left.x.total_cmp(&right.x))
+    });
+    let mut rows: Vec<Vec<TextPoint>> = Vec::new();
+    for point in points {
+        if let Some(row) = rows
+            .iter_mut()
+            .find(|row| (row[0].y - point.y).abs() <= 2.0)
+        {
+            row.push(point);
+            row.sort_by(|left, right| left.x.total_cmp(&right.x));
+        } else {
+            rows.push(vec![point]);
+        }
+    }
+    rows
+}
+
+fn opendataloader_merge_cell_fragments(row: Vec<TextPoint>) -> Vec<TextPoint> {
+    let mut merged: Vec<TextPoint> = Vec::new();
+    for point in sorted_sparse_row(row) {
+        let Some(previous) = merged.last_mut() else {
+            merged.push(point);
+            continue;
+        };
+        if opendataloader_same_cell_fragment(previous, &point) {
+            let separator = if opendataloader_join_header_without_space(previous, &point) {
+                ""
+            } else {
+                " "
+            };
+            previous.text =
+                normalize_text(&format!("{}{}{}", previous.text, separator, point.text));
+            previous.width = (point.x + point.width - previous.x).max(previous.width);
+            previous.font_size = previous.font_size.max(point.font_size);
+        } else {
+            merged.push(point);
+        }
+    }
+    merged
+}
+
+fn opendataloader_same_cell_fragment(left: &TextPoint, right: &TextPoint) -> bool {
+    if (left.y - right.y).abs() > 2.0 {
+        return false;
+    }
+    let gap = right.x - (left.x + left.width);
+    gap <= left.font_size.max(right.font_size) * 0.45
+}
+
+fn opendataloader_join_header_without_space(left: &TextPoint, right: &TextPoint) -> bool {
+    let combined = format!("{}{}", left.text, right.text);
+    combined.eq_ignore_ascii_case("year")
+        || combined.ends_with("-Year")
+        || right.text.eq_ignore_ascii_case("ear")
+}
+
+fn opendataloader_year_numeric_header_row(row: &[TextPoint]) -> bool {
+    if row.len() < 4 {
+        return false;
+    }
+    normalize_text(&row[0].text).eq_ignore_ascii_case("year")
+        && row
+            .iter()
+            .skip(1)
+            .filter(|point| opendataloader_numeric_year_header_cell(&point.text))
+            .count()
+            >= 2
+}
+
+fn opendataloader_numeric_year_header_cell(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    normalized.ends_with("-Year")
+        || matches!(
+            normalized.as_str(),
+            "Recovery Rate"
+                | "Unadjusted Basis"
+                | "Depreciation Expense"
+                | "Accumulated Depreciation"
+        )
+}
+
+fn opendataloader_year_numeric_body_end(rows: &[Vec<TextPoint>], start: usize) -> usize {
+    let mut end = start;
+    while rows
+        .get(end)
+        .is_some_and(|row| opendataloader_year_numeric_body_row(row))
+    {
+        end += 1;
+    }
+    end
+}
+
+fn opendataloader_year_numeric_body_row(row: &[TextPoint]) -> bool {
+    row.first().is_some_and(|point| {
+        normalize_text(&point.text)
+            .chars()
+            .all(|ch| ch.is_ascii_digit())
+    }) && row.iter().skip(1).any(|point| {
+        opendataloader_numeric_cell(&point.text) || opendataloader_currency_cell(&point.text)
+    })
+}
+
+fn opendataloader_currency_cell(text: &str) -> bool {
+    let normalized = normalize_text(text).replace('$', "").replace(',', "");
+    opendataloader_numeric_cell(&normalized)
+}
+
+fn opendataloader_column_major_numeric_table_from_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let anchors = opendataloader_column_major_anchors(rows)?;
+    if anchors.len() < 4 || rows.len() < 4 {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        rows,
+        &anchors,
+        table_index,
+        "opendataloader column-major numeric table extraction",
+    )
+}
+
+fn opendataloader_column_major_anchors(rows: &[Vec<TextPoint>]) -> Option<Vec<f64>> {
+    let header = rows.first()?;
+    let mut anchors = header.iter().map(|point| point.x).collect::<Vec<_>>();
+    anchors.sort_by(f64::total_cmp);
+    anchors.dedup_by(|left, right| (*left - *right).abs() <= 18.0);
+    Some(anchors)
 }
 
 fn opendataloader_dense_cluster_table_from_candidate_points(
@@ -17524,6 +17765,35 @@ mod tests {
 
         assert!(opendataloader_neighbor_table_link(&first, &second));
         assert!(!opendataloader_neighbor_table_link(&first, &different));
+    }
+
+    #[test]
+    fn opendataloader_column_major_numeric_table_reconstructs_split_year_case() {
+        let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../third_party/opendataloader-bench/pdfs/01030000000127.pdf");
+        let extracted = extract_pages_with_pdf_oxide(source_path.to_str().unwrap(), None).unwrap();
+        let positioned_pages = extracted
+            .pages
+            .iter()
+            .map(|page| page.positioned_lines.clone())
+            .collect::<Vec<_>>();
+
+        let tables = extract_tables_from_positioned_lines(&positioned_pages, &[]);
+
+        let table = tables
+            .iter()
+            .find(|table| {
+                table.rationale == "opendataloader column-major numeric table extraction"
+                    && table_cell_text(table, 0, 0) == "Year"
+                    && table_cell_text(table, 0, 1) == "3-Year"
+            })
+            .expect("expected column-major year table");
+        assert_eq!(table_row_count(table), 9);
+        assert_eq!(table_column_count(table), 4);
+        assert_eq!(table_cell_text(table, 0, 2), "5-Year");
+        assert_eq!(table_cell_text(table, 0, 3), "7-Year");
+        assert_eq!(table_cell_text(table, 1, 1), "33.0%");
+        assert_eq!(table_cell_text(table, 8, 3), "4.46%");
     }
 
     #[test]

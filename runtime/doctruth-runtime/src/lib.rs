@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -1646,16 +1646,12 @@ fn filter_repeated_header_footer_lines(
     if pages.len() < 2 {
         return pages;
     }
+    let repeated_header_keys = repeated_header_line_keys(&pages);
     let footer_pages = pages
         .iter()
         .filter(|page| page.iter().any(footer_band_line))
         .count();
-    let header_pages = pages
-        .iter()
-        .filter(|page| page.iter().any(header_band_line))
-        .count();
     let filter_footers = footer_pages == pages.len();
-    let filter_headers = header_pages == pages.len();
     pages
         .into_iter()
         .map(|page| {
@@ -1663,7 +1659,7 @@ fn filter_repeated_header_footer_lines(
                 .iter()
                 .filter(|line| {
                     !(filter_footers && footer_band_line(line))
-                        && !(filter_headers && header_band_line(line))
+                        && !repeated_header_keys.contains(&header_line_key(line))
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -1674,6 +1670,34 @@ fn filter_repeated_header_footer_lines(
             }
         })
         .collect()
+}
+
+fn repeated_header_line_keys(pages: &[Vec<PositionedLine>]) -> HashSet<String> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for page in pages {
+        let mut page_keys = HashSet::new();
+        for line in page.iter().filter(|line| header_band_line(line)) {
+            page_keys.insert(header_line_key(line));
+        }
+        for key in page_keys {
+            *counts.entry(key).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .filter_map(|(key, count)| (count >= 2).then_some(key))
+        .collect()
+}
+
+fn header_line_key(line: &PositionedLine) -> String {
+    let x_bucket = (line.bbox.x0 / 10.0).round() as i64;
+    let font_bucket = line.font_size.round() as i64;
+    format!(
+        "{}|{}|{}",
+        normalize_text_for_filter(&line.text),
+        x_bucket,
+        font_bucket
+    )
 }
 
 fn merge_positioned_visual_lines(lines: Vec<PositionedLine>) -> Vec<PositionedLine> {
@@ -16861,6 +16885,37 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(flattened, ["First citeable line.", "Second citeable line."]);
+    }
+
+    #[test]
+    fn opendataloader_header_filter_keeps_unique_top_body_titles() {
+        let pages = vec![
+            vec![
+                line("Revenue Model", 80.0, 900.0, 420.0, 930.0),
+                line("First page citeable body.", 80.0, 620.0, 420.0, 650.0),
+            ],
+            vec![
+                line("Risk Analysis", 80.0, 900.0, 420.0, 930.0),
+                line("Second page citeable body.", 80.0, 620.0, 420.0, 650.0),
+            ],
+        ];
+
+        let filtered = filter_repeated_header_footer_lines(pages);
+        let flattened = filtered
+            .iter()
+            .flatten()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            flattened,
+            [
+                "Revenue Model",
+                "First page citeable body.",
+                "Risk Analysis",
+                "Second page citeable body."
+            ]
+        );
     }
 
     #[test]

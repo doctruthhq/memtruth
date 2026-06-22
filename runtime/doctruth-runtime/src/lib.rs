@@ -45,6 +45,9 @@ const OPENDATALOADER_MAX_RULE_TO_TEXT_HEIGHT_RATIO: f64 = 0.25;
 const OPENDATALOADER_UNDERLINE_MIN_OVERLAP_RATIO: f64 = 0.08;
 const OPENDATALOADER_UNDERLINE_BASELINE_EPSILON: f64 = 0.35;
 const OPENDATALOADER_UNDERLINE_THICKNESS_RATIO: f64 = 0.3;
+const OPENDATALOADER_REPLACEMENT_CHARACTER: char = '\u{fffd}';
+const OPENDATALOADER_REPLACEMENT_CHARACTER_STRING: &str = "\u{fffd}";
+const OPENDATALOADER_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java";
 const HUMAN_REVIEWED_PARSER_ACCURACY_METRICS: &[&str] = &[
     "reading_order_f1",
     "quote_anchor_accuracy",
@@ -103,11 +106,62 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
             opendataloader_promotion_report_json(&request).map(|json| json.to_string())
         }
         Some("opendataloader_parity_matrix") => Ok(opendataloader_parity_matrix_json().to_string()),
+        Some("opendataloader_text_processor_probe") => {
+            opendataloader_text_processor_probe_json(&request).map(|json| json.to_string())
+        }
         Some("verify_benchmark_report") => {
             verify_benchmark_report_json(&request).map(|json| json.to_string())
         }
         Some(_) => Err(error_json("UNKNOWN_COMMAND", "unsupported runtime command").to_string()),
         None => Err(error_json("MISSING_COMMAND", "request.command is required").to_string()),
+    }
+}
+
+fn opendataloader_text_processor_probe_json(request: &Value) -> Result<Value, String> {
+    let text = request
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| error_json("MISSING_TEXT", "request.text is required").to_string())?;
+    let (replacement_count, replacement_ratio) = opendataloader_replacement_char_metrics(text);
+    let replacement = request
+        .get("undefined_character_replacement")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            request
+                .get("undefinedCharacterReplacement")
+                .and_then(Value::as_str)
+        });
+    let processed_text = opendataloader_replace_undefined_characters(text, replacement);
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader TextProcessor",
+        "text": processed_text,
+        "replacementCount": replacement_count,
+        "replacementRatio": replacement_ratio,
+        "reference": OPENDATALOADER_TEXT_PROCESSOR_REFERENCE
+    }))
+}
+
+fn opendataloader_replacement_char_metrics(text: &str) -> (usize, f64) {
+    let replacement_count = text
+        .encode_utf16()
+        .filter(|code_unit| *code_unit == OPENDATALOADER_REPLACEMENT_CHARACTER as u16)
+        .count();
+    let total_code_units = text.encode_utf16().count();
+    match total_code_units {
+        0 => (0, 0.0),
+        total => (replacement_count, replacement_count as f64 / total as f64),
+    }
+}
+
+fn opendataloader_replace_undefined_characters(text: &str, replacement: Option<&str>) -> String {
+    match replacement {
+        Some(value) if value != OPENDATALOADER_REPLACEMENT_CHARACTER_STRING => {
+            text.replace(OPENDATALOADER_REPLACEMENT_CHARACTER_STRING, value)
+        }
+        _ => text.to_string(),
     }
 }
 

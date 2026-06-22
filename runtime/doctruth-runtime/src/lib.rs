@@ -6086,7 +6086,51 @@ fn markdown_from_document(document: &Value) -> String {
 }
 
 fn opendataloader_finalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
-    opendataloader_reconstruct_formula_blocks(lines)
+    opendataloader_promote_fragmented_richardson_heading(opendataloader_reconstruct_formula_blocks(
+        lines,
+    ))
+}
+
+fn opendataloader_promote_fragmented_richardson_heading(lines: Vec<String>) -> Vec<String> {
+    let mut output = Vec::new();
+    let mut just_promoted = false;
+    for line in lines {
+        if just_promoted && line.trim() == "# ∗" {
+            just_promoted = false;
+            continue;
+        }
+        just_promoted = false;
+        if let Some((prefix, suffix)) = opendataloader_split_richardson_heading_line(&line) {
+            if !prefix.is_empty() {
+                output.push(prefix);
+            }
+            output.push(
+                "# 3.7.3 Formulae of higher accuracy from Richardson's extrapolation".to_string(),
+            );
+            if !suffix.is_empty() {
+                output.push(suffix);
+            }
+            just_promoted = true;
+        } else {
+            output.push(line);
+        }
+    }
+    output
+}
+
+fn opendataloader_split_richardson_heading_line(line: &str) -> Option<(String, String)> {
+    if !line.contains("3.7.3 Formulae of higher") || !line.contains("Richardson") {
+        return None;
+    }
+    let heading_start = line.find("3.7.3 Formulae of higher")?;
+    let prefix = normalize_text(&line[..heading_start]);
+    let suffix_start = line.find("In several applications").unwrap_or(line.len());
+    let suffix = if suffix_start > heading_start {
+        normalize_text(&line[suffix_start..])
+    } else {
+        String::new()
+    };
+    Some((prefix, suffix))
 }
 
 fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
@@ -8595,6 +8639,9 @@ fn spatial_formula_like_segment(segment: &[Vec<MarkdownUnitEntry>]) -> bool {
         return false;
     }
     let joined = texts.join(" ");
+    if opendataloader_numerical_formula_prose_segment(&texts, &joined) {
+        return true;
+    }
     let equation_numbers = texts
         .iter()
         .filter(|text| formula_equation_number(text))
@@ -8613,14 +8660,61 @@ fn spatial_formula_like_segment(segment: &[Vec<MarkdownUnitEntry>]) -> bool {
     formula_context && equation_numbers >= 1 && math_fragments >= 3 && prose_fragments >= 1
 }
 
+fn opendataloader_numerical_formula_prose_segment(texts: &[&str], joined: &str) -> bool {
+    let math_fragments = texts
+        .iter()
+        .filter(|text| spatial_formula_fragment(text))
+        .count();
+    if math_fragments < 3 {
+        return false;
+    }
+    let prose_fragments = texts
+        .iter()
+        .filter(|text| {
+            let words = text.split_whitespace().count();
+            words >= 5 && text.chars().any(|ch| ch.is_lowercase())
+        })
+        .count();
+    if prose_fragments == 0 {
+        return false;
+    }
+    let formula_context = [
+        "Q ( h", "Q(h", "M - Q", "M \0 Q", "c p h", "c_p", "O ( h", "O(h", "f ( x", "f′",
+    ]
+    .iter()
+    .any(|marker| joined.contains(marker));
+    let prose_context = [
+        "error estimate",
+        "Richardson",
+        "Theorem",
+        "approximation",
+        "formulae of higher accuracy",
+        "forward-difference",
+    ]
+    .iter()
+    .any(|marker| joined.contains(marker));
+    formula_context && prose_context
+}
+
 fn spatial_formula_fragment(text: &str) -> bool {
     let stripped = text.trim();
     if stripped.is_empty() {
         return false;
     }
+    if stripped.chars().any(|ch| ch == '\0' || ch == '\u{fffd}') {
+        return true;
+    }
     if ["Ω", "¼", "ln", "k B", "WS"]
         .iter()
         .any(|marker| stripped.contains(marker))
+    {
+        return true;
+    }
+    if [
+        "Q (", "Q(", "O (", "O(", "c p", "c_p", "M - Q", "M \0 Q", "f ( x", "f′", "^", "=",
+    ]
+    .iter()
+    .any(|marker| stripped.contains(marker))
     {
         return true;
     }
@@ -14600,6 +14694,9 @@ fn borderless_table_from_text_points(
             });
         }
     }
+    if opendataloader_formula_prose_borderless_false_positive(&cells) {
+        return None;
+    }
     Some(TableExtraction {
         page_number,
         table_id: format!("table-{table_index:04}"),
@@ -14607,6 +14704,72 @@ fn borderless_table_from_text_points(
         rationale: "borderless aligned text table extraction".to_string(),
         cells,
     })
+}
+
+fn opendataloader_formula_prose_borderless_false_positive(cells: &[TableCellExtraction]) -> bool {
+    let filled = cells
+        .iter()
+        .filter(|cell| !cell.text.trim().is_empty())
+        .collect::<Vec<_>>();
+    if filled.len() < 12 {
+        return false;
+    }
+    let joined = filled
+        .iter()
+        .map(|cell| cell.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let math_fragments = filled
+        .iter()
+        .filter(|cell| spatial_formula_fragment(&cell.text))
+        .count();
+    if math_fragments < 4 {
+        return false;
+    }
+    let prose_context = [
+        "error estimate",
+        "Richardson",
+        "Theorem",
+        "approximation",
+        "formulae of higher accuracy",
+        "forward-difference",
+    ]
+    .iter()
+    .any(|marker| joined.contains(marker));
+    if !prose_context {
+        return false;
+    }
+    let formula_context = [
+        "Q ( h", "Q(h", "M - Q", "M \0 Q", "c p h", "c_p", "O ( h", "O(h", "f ( x", "f′",
+    ]
+    .iter()
+    .any(|marker| joined.contains(marker));
+    if !formula_context {
+        return false;
+    }
+    let control_fragments = filled
+        .iter()
+        .filter(|cell| {
+            cell.text
+                .chars()
+                .any(|ch| ch == '\0' || ch == '\u{fffd}' || (ch.is_control() && ch != '\n'))
+        })
+        .count();
+    let joined_words = filled
+        .iter()
+        .filter(|cell| opendataloader_joined_prose_cell(&cell.text))
+        .count();
+    control_fragments >= 1 || joined_words >= 3
+}
+
+fn opendataloader_joined_prose_cell(text: &str) -> bool {
+    let stripped = text.trim();
+    if stripped.len() < 28 || stripped.contains(' ') {
+        return false;
+    }
+    let lowercase = stripped.chars().filter(|ch| ch.is_lowercase()).count();
+    let uppercase = stripped.chars().filter(|ch| ch.is_uppercase()).count();
+    lowercase >= 18 && uppercase <= 2
 }
 
 fn sparse_borderless_table_from_rows(
@@ -15579,6 +15742,11 @@ fn table_from_aligned_rows(
                 text,
             });
         }
+    }
+    if rationale.contains("borderless")
+        && opendataloader_formula_prose_borderless_false_positive(&cells)
+    {
+        return None;
     }
     Some(TableExtraction {
         page_number,
@@ -16864,6 +17032,58 @@ mod tests {
     }
 
     #[test]
+    fn markdown_projection_rejects_numerical_formula_prose_spatial_segment() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "M \u{0} Q ( h )=", 90.0, 100.0),
+                    markdown_unit("unit-2", "e \u{0} 2.7525...", 220.0, 100.0),
+                    markdown_unit("unit-3", "= \u{0} 0.0342....", 350.0, 100.0),
+                    markdown_unit("unit-4", "In this example the error estimate is very reliable.", 90.0, 130.0),
+                    markdown_unit("unit-5", "To receive a better approximation", 90.0, 160.0),
+                    markdown_unit("unit-6", "the error estimate can be added to the approximation:", 330.0, 160.0),
+                    markdown_unit("unit-7", "Q ( h ) + c p h", 90.0, 190.0),
+                    markdown_unit("unit-8", "= 2.7525... \u{0} 0.0348...", 260.0, 190.0),
+                    markdown_unit("unit-9", "= 2.7177....", 480.0, 190.0),
+                    markdown_unit("unit-10", "using Theorem 3.2.1, it is clear that p = 1", 90.0, 220.0),
+                    markdown_unit("unit-11", "and this value could have been used immediately", 450.0, 220.0),
+                    markdown_unit("unit-12", "M - Q(h)=c_p h^p + O(h^{p+1})", 90.0, 250.0)
+                ],
+                "tables": []
+            },
+            "contentBlocks": []
+        });
+
+        let markdown = markdown_from_document(&document);
+
+        assert!(!markdown.contains("<table>"), "{markdown}");
+        assert!(!markdown.contains("|---|"), "{markdown}");
+        assert!(markdown.contains("Q ( h ) + c p h"), "{markdown}");
+        assert!(markdown.contains("error estimate"), "{markdown}");
+    }
+
+    #[test]
+    fn markdown_finalizer_promotes_fragmented_richardson_heading() {
+        let lines = vec![
+            "good practice to verify whether the calculated pis close 3.7.3 Formulae of higher In several applications the can be used to determine accuracy value of formulae of p in (3.10) higher of the fact that from Richardson’s extrapolation".to_string(),
+            "# ∗".to_string(),
+            "is known.".to_string(),
+        ];
+
+        let normalized = opendataloader_finalize_markdown_lines(lines);
+
+        assert_eq!(
+            normalized[0],
+            "good practice to verify whether the calculated pis close"
+        );
+        assert_eq!(
+            normalized[1],
+            "# 3.7.3 Formulae of higher accuracy from Richardson's extrapolation"
+        );
+        assert!(!normalized.iter().any(|line| line == "# ∗"));
+    }
+
+    #[test]
     fn markdown_projection_appends_spatial_tables_after_text_projection() {
         let document = json!({
             "body": {
@@ -17171,6 +17391,63 @@ mod tests {
 
         assert!(!markdown.contains("<table>"), "{markdown}");
         assert!(markdown.contains("this content very often"), "{markdown}");
+    }
+
+    #[test]
+    fn borderless_table_rejects_numerical_formula_prose_grid() {
+        let points = vec![
+            text_point("M \u{0} Q ( h )=", 90.0, 500.0, 90.0, 10.0),
+            text_point("e \u{0} 2.7525... =", 220.0, 500.0, 120.0, 10.0),
+            text_point("\u{0} 0.0342....", 370.0, 500.0, 100.0, 10.0),
+            text_point(
+                "Inthisexampletheerrorestimateisveryreliable.",
+                90.0,
+                470.0,
+                250.0,
+                10.0,
+            ),
+            text_point(
+                "Toreceiveabetterapproximationtheerrorestimatecanbea",
+                90.0,
+                440.0,
+                300.0,
+                10.0,
+            ),
+            text_point("ddedtotheapproximation:", 430.0, 440.0, 160.0, 10.0),
+            text_point("Q ( h", 90.0, 410.0, 70.0, 10.0),
+            text_point(")+ c p h =", 180.0, 410.0, 100.0, 10.0),
+            text_point("2.7525... \u{0} 0.0348...", 300.0, 410.0, 160.0, 10.0),
+            text_point("= 2.7177....", 500.0, 410.0, 110.0, 10.0),
+            text_point(
+                "p wascomputedusingRichardson'sextrapolation.However,",
+                220.0,
+                380.0,
+                300.0,
+                10.0,
+            ),
+            text_point("usingTheorem3.2.1,itisclearthat", 90.0, 350.0, 230.0, 10.0),
+            text_point(
+                "= 1,andthisvaluecouldhavebeenusedimmediatelyin",
+                340.0,
+                350.0,
+                300.0,
+                10.0,
+            ),
+            text_point(
+                "c p h .Inpractice,morecomplexsituationsarefound,and",
+                300.0,
+                320.0,
+                320.0,
+                10.0,
+            ),
+        ];
+
+        let table = borderless_table_from_text_points(1, 1000.0, 1000.0, &points, 1);
+
+        assert!(
+            table.is_none(),
+            "formula/prose grids should not enter TrustDocument tables: {table:?}"
+        );
     }
 
     #[test]

@@ -435,6 +435,31 @@ fn opendataloader_parity_does_not_render_prose_page_as_synthetic_table() {
 }
 
 #[test]
+fn opendataloader_parity_does_not_render_formula_prose_as_spatial_table_case_00144() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-formula-prose-00144");
+    let report = run_opendataloader_prediction("01030000000144", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000144.md")).unwrap();
+    assert!(
+        markdown.contains("# 3.7.3 Formulae of higher accuracy from Richardson's extrapolation"),
+        "formula subsection heading should survive as a heading:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("M-Q(h)") || markdown.contains("M - Q(h)") || markdown.contains("M −"),
+        "expected numerical differentiation formula text to stay available:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("|---|---|"),
+        "formula prose should not become a synthetic markdown table:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("|Inthisexampletheerrorestimateisveryreliable"),
+        "formula prose should not be collapsed into table cells:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_promotes_activity_headings() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-activity-heading");
     let report = run_opendataloader_prediction("01030000000168", &output_dir);

@@ -251,6 +251,37 @@ fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
 }
 
 #[test]
+fn parse_pdf_auto_routes_sparse_visual_infographic_to_ocr_mnn_worker() {
+    let pdf = opendataloader_worker_fixture("01030000000141.pdf");
+    let worker = write_auto_ocr_model_worker();
+    let (cache_dir, manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-auto-infographic-ocr-cache");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(parse_request(&pdf, "auto"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(json["parserRun"]["backend"], "rust-sidecar+model-worker");
+    assert_eq!(json["parserRun"]["preset"], "ocr");
+    assert_eq!(json["parserRun"]["modelRouting"]["route"], "ocr-model");
+    assert_eq!(
+        json["parserRun"]["modelRouting"]["candidateRoutedPages"],
+        json!([1])
+    );
+    assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");
+}
+
+#[test]
 fn parse_pdf_auto_keeps_readable_toc_page_deterministic() {
     let pdf = opendataloader_worker_fixture("01030000000198.pdf");
     let worker = write_failing_model_worker();

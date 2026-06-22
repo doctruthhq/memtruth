@@ -9,6 +9,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
 use pdf_oxide::document::PdfDocument;
+use pdf_oxide::editor::DocumentInfo;
 use pdf_oxide::layout::TextSpan;
 use pdf_oxide::pipeline::page_reading_order;
 use pdf_oxide::rendering::{RenderOptions, render_page};
@@ -519,7 +520,27 @@ impl ModelRouteDecision {
 
 fn model_route_decision(source_path: &str, requested_preset: &str) -> ModelRouteDecision {
     if requested_preset == "auto" {
+        if let Some(routed_pages) = source_large_infographic_pages(source_path) {
+            return ModelRouteDecision {
+                mode: "auto".to_string(),
+                decision: "ocr-model".to_string(),
+                effective_preset: "ocr".to_string(),
+                routed_pages,
+            };
+        }
+    }
+    if requested_preset == "auto" {
         if let Some(routed_pages) = source_empty_text_pages(source_path) {
+            return ModelRouteDecision {
+                mode: "auto".to_string(),
+                decision: "ocr-model".to_string(),
+                effective_preset: "ocr".to_string(),
+                routed_pages,
+            };
+        }
+    }
+    if requested_preset == "auto" {
+        if let Some(routed_pages) = source_sparse_visual_text_pages(source_path) {
             return ModelRouteDecision {
                 mode: "auto".to_string(),
                 decision: "ocr-model".to_string(),
@@ -569,6 +590,81 @@ fn source_empty_text_pages(source_path: &str) -> Option<Vec<u64>> {
         Some(routed_pages)
     } else {
         None
+    }
+}
+
+fn source_large_infographic_pages(source_path: &str) -> Option<Vec<u64>> {
+    let document = PdfDocument::open(source_path).ok()?;
+    let page_count = document.page_count().ok()?;
+    if page_count != 1 {
+        return None;
+    }
+    let (width, height) = pdf_oxide_page_dimensions(&document, 0).ok()?;
+    if width * height < 1_000_000.0 {
+        return None;
+    }
+    let info = pdf_document_info(&document);
+    if !pdf_info_looks_visual_infographic(&info) {
+        return None;
+    }
+    Some(vec![1])
+}
+
+fn pdf_document_info(document: &PdfDocument) -> DocumentInfo {
+    let Some(info_ref) = document
+        .trailer()
+        .as_dict()
+        .and_then(|dict| dict.get("Info"))
+        .and_then(|object| object.as_reference())
+    else {
+        return DocumentInfo::default();
+    };
+    document
+        .load_object(info_ref)
+        .map(|object| DocumentInfo::from_object(&object))
+        .unwrap_or_default()
+}
+
+fn pdf_info_looks_visual_infographic(info: &DocumentInfo) -> bool {
+    let haystack = [
+        info.title.as_deref().unwrap_or_default(),
+        info.subject.as_deref().unwrap_or_default(),
+        info.creator.as_deref().unwrap_or_default(),
+        info.producer.as_deref().unwrap_or_default(),
+    ]
+    .join("\n")
+    .to_ascii_lowercase();
+    let illustrator_origin = haystack.contains("illustrator");
+    let infographic_hint = haystack.contains("infographic");
+    illustrator_origin && infographic_hint
+}
+
+fn source_sparse_visual_text_pages(source_path: &str) -> Option<Vec<u64>> {
+    let page_graphics = source_page_graphics_from_document(source_path)?;
+    let routed_pages = page_graphics
+        .iter()
+        .enumerate()
+        .filter_map(|(page_index, graphics)| {
+            let text_chars = graphics
+                .text_points
+                .iter()
+                .map(|point| point.text.chars().count())
+                .sum::<usize>();
+            let sparse_text = graphics.text_points.len() <= 2 || text_chars < 64;
+            let visual_density = graphics.segments.len() >= 32 || !graphics.image_boxes.is_empty();
+            let page_area = graphics
+                .page_box
+                .as_ref()
+                .map(bbox_area)
+                .unwrap_or(PAGE_WIDTH * PAGE_HEIGHT);
+            let large_canvas = page_area >= 1_000_000.0;
+            (sparse_text && visual_density && large_canvas).then_some(page_index as u64 + 1)
+        })
+        .collect::<Vec<_>>();
+    if routed_pages.is_empty() {
+        None
+    } else {
+        Some(routed_pages)
     }
 }
 
@@ -642,40 +738,54 @@ fn numbered_toc_item(text: &str) -> bool {
 }
 
 fn source_page_graphics(source_path: &str, page_count: usize) -> Vec<PageGraphics> {
-    let Ok(document) = PdfDocument::open(source_path) else {
-        return vec![PageGraphics::default(); page_count];
-    };
-    (0..page_count)
-        .map(|page_index| {
-            let page_box =
-                pdf_oxide_page_dimensions(&document, page_index)
-                    .ok()
-                    .map(|(width, height)| RuntimeBox {
-                        x0: 0.0,
-                        y0: 0.0,
-                        x1: width,
-                        y1: height,
-                    });
-            let Ok(content) = document.get_page_content_data(page_index) else {
-                return PageGraphics {
-                    page_box,
-                    ..PageGraphics::default()
-                };
-            };
-            let Ok(operations) = parse_content_stream(&content) else {
-                return PageGraphics {
-                    page_box,
-                    ..PageGraphics::default()
-                };
-            };
-            let (segments, _text_points, image_boxes) = page_graphics_and_text(&operations);
-            PageGraphics {
-                segments,
-                image_boxes,
-                page_box,
-            }
+    source_page_graphics_from_document(source_path)
+        .map(|mut graphics| {
+            graphics.resize(page_count, PageGraphics::default());
+            graphics.truncate(page_count);
+            graphics
         })
-        .collect()
+        .unwrap_or_else(|| vec![PageGraphics::default(); page_count])
+}
+
+fn source_page_graphics_from_document(source_path: &str) -> Option<Vec<PageGraphics>> {
+    let Ok(document) = PdfDocument::open(source_path) else {
+        return None;
+    };
+    let page_count = document.page_count().ok()?;
+    Some(
+        (0..page_count)
+            .map(|page_index| {
+                let page_box =
+                    pdf_oxide_page_dimensions(&document, page_index)
+                        .ok()
+                        .map(|(width, height)| RuntimeBox {
+                            x0: 0.0,
+                            y0: 0.0,
+                            x1: width,
+                            y1: height,
+                        });
+                let Ok(content) = document.get_page_content_data(page_index) else {
+                    return PageGraphics {
+                        page_box,
+                        ..PageGraphics::default()
+                    };
+                };
+                let Ok(operations) = parse_content_stream(&content) else {
+                    return PageGraphics {
+                        page_box,
+                        ..PageGraphics::default()
+                    };
+                };
+                let (segments, text_points, image_boxes) = page_graphics_and_text(&operations);
+                PageGraphics {
+                    segments,
+                    image_boxes,
+                    text_points,
+                    page_box,
+                }
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn runtime_profile(request: &Value) -> Result<&str, String> {
@@ -12272,6 +12382,7 @@ struct Segment {
 struct PageGraphics {
     segments: Vec<Segment>,
     image_boxes: Vec<RuntimeBox>,
+    text_points: Vec<TextPoint>,
     page_box: Option<RuntimeBox>,
 }
 
@@ -17142,6 +17253,16 @@ mod tests {
             extracted.pages[0].lines
         );
         assert!(!source_looks_table_heavy(source_path.to_str().unwrap()));
+    }
+
+    #[test]
+    fn opendataloader_sparse_visual_page_routes_to_ocr_before_table() {
+        let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../third_party/opendataloader-bench/pdfs/01030000000141.pdf");
+
+        let routed_pages = source_large_infographic_pages(source_path.to_str().unwrap());
+
+        assert_eq!(routed_pages, Some(vec![1]));
     }
 
     #[test]

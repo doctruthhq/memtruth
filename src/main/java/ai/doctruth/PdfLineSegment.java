@@ -13,6 +13,8 @@ final class PdfLineSegment {
     private static final Pattern RESPONSIBILITY_SUBHEADING = Pattern.compile(
             ".*\\b(?:analysis|design|documentation|inspection|management|mapping|optimization|profiling|support|troubleshooting)\\b.*:",
             Pattern.CASE_INSENSITIVE);
+    private static final double LINE_ASCENT_FACTOR = 1.67;
+    private static final double LINE_DESCENT_FACTOR = 0.31;
 
     final List<TextPosition> positions;
     final String text;
@@ -63,8 +65,8 @@ final class PdfLineSegment {
                 PdfTextPositionMetrics.renderWithInferredSpaces(copy),
                 x0,
                 x1,
-                baseline - height * 1.67,
-                baseline + height * 0.31,
+                baseline - height * LINE_ASCENT_FACTOR,
+                baseline + height * LINE_DESCENT_FACTOR,
                 baseline,
                 boldCount > copy.size() / 2);
     }

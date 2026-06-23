@@ -27,7 +27,7 @@ final class PdfGeometryReadingOrderSorter {
         var horizontal = bestHorizontalCut(lines);
         var vertical = bestVerticalCut(lines);
         if (horizontal.gap() < MIN_GAP && vertical.gap() < MIN_GAP) {
-            return sortTopLeft(lines);
+            return sortColumnThenTopLeft(lines);
         }
         return horizontal.gap() >= vertical.gap()
                 ? flatten(splitHorizontal(lines, horizontal.position()))
@@ -114,6 +114,18 @@ final class PdfGeometryReadingOrderSorter {
         sorted.sort(Comparator.comparingDouble((PdfLineSegment line) -> line.y0)
                 .thenComparingDouble(line -> line.x0));
         return sorted;
+    }
+
+    private static List<PdfLineSegment> sortColumnThenTopLeft(List<PdfLineSegment> lines) {
+        var sorted = new ArrayList<>(lines);
+        sorted.sort(Comparator.comparingInt(PdfGeometryReadingOrderSorter::fallbackColumn)
+                .thenComparingDouble(line -> line.y0)
+                .thenComparingDouble(line -> line.x0));
+        return sorted;
+    }
+
+    private static int fallbackColumn(PdfLineSegment line) {
+        return line.columnIndex < 0 ? Integer.MAX_VALUE : line.columnIndex;
     }
 
     private static double centerX(PdfLineSegment line) {

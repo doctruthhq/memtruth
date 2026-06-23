@@ -46,6 +46,31 @@ class PdfGeometryReadingOrderTest {
                 "RIGHT BELOW");
     }
 
+    @Test
+    @DisplayName("no-cut fallback keeps dense two-column text column-contiguous")
+    void noCutFallbackKeepsDenseTwoColumnTextColumnContiguous() throws Exception {
+        var pdfPath = writePositionedPdf(List.of(
+                run(
+                        "DENSE HEADER BRIDGES BOTH COLUMNS AND SUPPRESSES A CLEAN VERTICAL CUT",
+                        50f,
+                        720f,
+                        10f,
+                        Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("LEFT COLUMN FIRST DETAIL", 50f, 710f),
+                run("RIGHT COLUMN FIRST DETAIL", 320f, 710f),
+                run("LEFT COLUMN SECOND DETAIL", 50f, 700f),
+                run("RIGHT COLUMN SECOND DETAIL", 320f, 700f)));
+
+        var text = renderedText(pdfPath);
+
+        assertThat(text).containsSubsequence(
+                "DENSE HEADER BRIDGES BOTH COLUMNS",
+                "LEFT COLUMN FIRST DETAIL",
+                "LEFT COLUMN SECOND DETAIL",
+                "RIGHT COLUMN FIRST DETAIL",
+                "RIGHT COLUMN SECOND DETAIL");
+    }
+
     private String renderedText(Path pdfPath) throws IOException {
         try (var pdf = Loader.loadPDF(pdfPath.toFile())) {
             return PdfPageBlockExtractor.detectBlocksOnPage(pdf, 1).stream()

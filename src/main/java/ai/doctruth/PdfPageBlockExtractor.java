@@ -54,7 +54,8 @@ final class PdfPageBlockExtractor {
         stripper.setStartPage(pageNumber);
         stripper.setEndPage(pageNumber);
         stripper.getText(pdf);
-        return positions;
+        var mediaBox = pdf.getPage(pageNumber - 1).getMediaBox();
+        return PdfTextPositionFilter.filter(positions, mediaBox.getWidth(), mediaBox.getHeight());
     }
 
     private static List<PdfTextBlock> renderBlocks(

@@ -11,6 +11,8 @@ DOC_ID=""
 LIMIT=""
 PRESET="auto"
 RUNTIME_PROFILE="${DOCTRUTH_RUNTIME_PROFILE:-edge-model}"
+BACKEND="${DOCTRUTH_OPENDATALOADER_BACKEND:-opendataloader-java-core}"
+JAVA_BACKEND_COMMAND="${DOCTRUTH_OPENDATALOADER_JAVA_BACKEND_COMMAND:-}"
 OUTPUT_DIR=""
 EVALUATOR="rust"
 TIMEOUT_SECONDS=""
@@ -30,6 +32,8 @@ Options:
   --limit N                    Run first N PDFs.
   --preset NAME                DocTruth parser preset.
   --runtime-profile PROFILE    edge-fast or edge-model.
+  --backend NAME               opendataloader-java-core by default; rust-edge-fast for heuristic runtime smoke.
+  --java-backend-command CMD   Java backend stdio command. Defaults to java -jar target/*-all.jar opendataloader-backend --stdio-jsonl.
   --runtime-bin PATH           doctruth-runtime binary.
   --release                    Build and run the release runtime binary.
   --output-dir DIR             Prediction output directory.
@@ -64,6 +68,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --runtime-profile)
       RUNTIME_PROFILE="$2"
+      shift 2
+      ;;
+    --backend)
+      BACKEND="$2"
+      shift 2
+      ;;
+    --java-backend-command)
+      JAVA_BACKEND_COMMAND="$2"
       shift 2
       ;;
     --runtime-bin)
@@ -139,6 +151,35 @@ if [ -z "$BIN" ]; then
   BIN="$ROOT/runtime/doctruth-runtime/target/$BUILD_PROFILE/doctruth-runtime"
 fi
 
+case "$BACKEND" in
+  opendataloader-java-core|rust-edge-fast) ;;
+  *)
+    echo "--backend must be opendataloader-java-core or rust-edge-fast" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$BACKEND" = "opendataloader-java-core" ] && [ -z "$JAVA_BACKEND_COMMAND" ]; then
+  if [ -n "${JAVA:-}" ]; then
+    JAVA_BIN="$JAVA"
+  elif [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA_BIN="$JAVA_HOME/bin/java"
+  elif [ -x "/opt/homebrew/opt/openjdk/bin/java" ]; then
+    JAVA_BIN="/opt/homebrew/opt/openjdk/bin/java"
+  else
+    JAVA_BIN="java"
+  fi
+  CLI_JAR="${DOCTRUTH_JAVA_CLI_JAR:-}"
+  if [ -z "$CLI_JAR" ]; then
+    CLI_JAR="$(find "$ROOT/target" -maxdepth 1 -name 'doctruth-java-*-all.jar' 2>/dev/null | sort | tail -1 || true)"
+  fi
+  if [ -z "$CLI_JAR" ] || [ ! -f "$CLI_JAR" ]; then
+    mvn -q -DskipTests package >/dev/null
+    CLI_JAR="$(find "$ROOT/target" -maxdepth 1 -name 'doctruth-java-*-all.jar' | sort | tail -1)"
+  fi
+  JAVA_BACKEND_COMMAND="$JAVA_BIN -jar $CLI_JAR opendataloader-backend --stdio-jsonl"
+fi
+
 USE_LOCAL_MNN_OCR=0
 if [ "$RUNTIME_PROFILE" = "edge-model" ] \
   && [ -z "${DOCTRUTH_MODEL_MANIFEST:-}" ] \
@@ -175,12 +216,15 @@ REQUEST="$(jq -n \
   --arg limit "$LIMIT" \
   --arg preset "$PRESET" \
   --arg runtime_profile "$RUNTIME_PROFILE" \
+  --arg backend "$BACKEND" \
+  --arg java_backend_command "$JAVA_BACKEND_COMMAND" \
   --arg output_dir "$OUTPUT_DIR" \
   --arg timeout_seconds "$TIMEOUT_SECONDS" \
   '{
     command: "opendataloader_prediction",
     bench_dir: $bench_dir,
     engine: $engine,
+    backend: $backend,
     preset: $preset,
     runtime_profile: $runtime_profile,
     output_dir: $output_dir
@@ -188,6 +232,7 @@ REQUEST="$(jq -n \
   + (if $doc_id == "" then {} else {doc_id: $doc_id} end)
   + (if $limit == "" then {} else {limit: ($limit | tonumber)} end)
   + (if $doc_id == "" and $limit == "" then {allow_full200: true} else {} end)
+  + (if $java_backend_command == "" then {} else {java_backend_command: $java_backend_command} end)
   + (if $timeout_seconds == "" then {} else {timeout_seconds: ($timeout_seconds | tonumber)} end)')"
 
 printf '%s' "$REQUEST" | "$BIN" > "$REPORT_TMP"

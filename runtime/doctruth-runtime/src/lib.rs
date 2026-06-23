@@ -5292,6 +5292,7 @@ fn maybe_start_java_backend(
         return Ok((None, Value::Null, Value::Null));
     }
     let argv = java_backend_command(request)?;
+    validate_default_backend_command(&argv)?;
     let started = Instant::now();
     let client = OpenDataLoaderJavaBackendClient::spawn(&argv)
         .map_err(|error| error_json("JAVA_BACKEND_START_FAILED", &error).to_string())?;
@@ -5341,6 +5342,23 @@ fn java_backend_command_value(value: &Value) -> Result<Vec<String>, String> {
         "java_backend_command must be a non-empty string or string array",
     )
     .to_string())
+}
+
+fn validate_default_backend_command(argv: &[String]) -> Result<(), String> {
+    let command = argv.join(" ").to_ascii_lowercase();
+    let forbidden = ["python", "docling", "torch", "opendataloader-hybrid"]
+        .into_iter()
+        .find(|term| command.contains(term));
+    if let Some(term) = forbidden {
+        return Err(error_json(
+            "PYTHON_DEFAULT_BACKEND_FORBIDDEN",
+            &format!(
+                "default opendataloader-java-core backend command must not include {term}; Python/OpenDataLoader original runners are oracle-only"
+            ),
+        )
+        .to_string());
+    }
+    Ok(())
 }
 
 fn parse_for_opendataloader_prediction(

@@ -5,11 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import ai.doctruth.spi.SignatureProvider;
@@ -153,38 +151,6 @@ class TrustDocumentRenderedOutputTest {
     }
 
     @Test
-    @DisplayName("runtime layered party headings render as text content blocks")
-    void runtimeLayeredPartyHeadingsRenderAsTextContentBlocks() throws Exception {
-        var doc = layeredDocument(runtimeParserRun(), "Party A: Acme Industrial Materials Pty Ltd");
-
-        assertThat(contentBlockType(doc)).isEqualTo("text");
-    }
-
-    @Test
-    @DisplayName("runtime layered contract headings remain headings")
-    void runtimeLayeredContractHeadingsRemainHeadings() throws Exception {
-        var doc = layeredDocument(runtimeParserRun(), "Contract: Commercial Terms");
-
-        assertThat(contentBlockType(doc)).isEqualTo("heading");
-    }
-
-    @Test
-    @DisplayName("runtime layered party obligation headings remain headings")
-    void runtimeLayeredPartyObligationHeadingsRemainHeadings() throws Exception {
-        var doc = layeredDocument(runtimeParserRun(), "Party A: Obligations");
-
-        assertThat(contentBlockType(doc)).isEqualTo("heading");
-    }
-
-    @Test
-    @DisplayName("oracle layered headings are not normalized during rendering")
-    void oracleLayeredHeadingsAreNotNormalizedDuringRendering() throws Exception {
-        var doc = layeredDocument(oracleParserRun(), "Party A: Acme Industrial Materials Pty Ltd");
-
-        assertThat(contentBlockType(doc)).isEqualTo("heading");
-    }
-
-    @Test
     @DisplayName("compact_llm preserves table ids and parser/unit warnings")
     void compactLlmPreservesTableIdsAndWarnings() {
         var doc = documentWithWarnings();
@@ -268,52 +234,6 @@ class TrustDocumentRenderedOutputTest {
                         new TableSection(List.of(List.of("Company", "Role"), List.of("Acme", "Engineer")), LOC)),
                 META);
         return TrustDocument.fromParsed(parsed, "sha256:source", PARSER_RUN);
-    }
-
-    private static TrustDocument layeredDocument(ParserRun parserRun, String blockText) throws IOException {
-        var parsed = new ParsedDocument(
-                "doc-layered",
-                List.of(new TextSection(blockText, LOC, BlockKind.BODY, Optional.of(BOX))),
-                META);
-        return TrustDocument.fromParsed(parsed, "sha256:source", parserRun)
-                .withLayeredOutputs(layeredContentBlocks(blockText), MAPPER.createObjectNode());
-    }
-
-    private static com.fasterxml.jackson.databind.JsonNode layeredContentBlocks(String text) {
-        var blocks = MAPPER.createArrayNode();
-        var block = MAPPER.createObjectNode();
-        block.put("blockId", "runtime-block-0001");
-        block.put("type", "heading");
-        block.put("page", 1);
-        block.put("readingOrder", 1);
-        block.put("text", text);
-        block.set("sourceUnitIds", MAPPER.valueToTree(List.of("unit-0001")));
-        block.set("evidenceSpanIds", MAPPER.valueToTree(List.of("span-0001")));
-        block.set("warnings", MAPPER.createArrayNode());
-        blocks.add(block);
-        return blocks;
-    }
-
-    private static String contentBlockType(TrustDocument doc) throws IOException {
-        var out = new StringWriter();
-        doc.writeContentBlocks(out);
-        return MAPPER.readTree(out.toString()).path("contentBlocks").get(0).path("type").asText();
-    }
-
-    private static ParserRun runtimeParserRun() {
-        return new ParserRun("parser-run-runtime", "runtime-test", "lite", "rust-sidecar", List.of(), List.of());
-    }
-
-    private static ParserRun oracleParserRun() {
-        return new ParserRun(
-                "parser-run-opendataloader-hybrid-oracle",
-                "opendataloader-hybrid-oracle",
-                "benchmark-oracle",
-                "opendataloader-hybrid-oracle",
-                List.of(),
-                List.of(),
-                Map.of(),
-                1L);
     }
 
     private static TrustDocument documentWithWarnings() {

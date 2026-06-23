@@ -21,6 +21,7 @@ final class PdfPageBlockExtractor {
     private static final int ALLCAPS_MAX_LEN = 60;
     private static final double DIGIT_HEAVY_RATIO = 0.30;
     private static final Pattern NUMBERED_LIST = Pattern.compile("^\\s*\\d+[.)]\\s+");
+    private static final Pattern KEY_VALUE_FIELD = Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
     private static final String LIST_BULLETS = "•▪*-·";
 
     private PdfPageBlockExtractor() {
@@ -200,6 +201,9 @@ final class PdfPageBlockExtractor {
                 || NUMBERED_LIST.matcher(blockText).find()) {
             return BlockKind.LIST;
         }
+        if (looksLikeKeyValueField(trimmed)) {
+            return BlockKind.BODY;
+        }
         if (pageMedianHeight > 0 && avgCharHeight > pageMedianHeight * HEADING_HEIGHT_FACTOR) {
             return BlockKind.HEADING;
         }
@@ -238,6 +242,10 @@ final class PdfPageBlockExtractor {
             return false;
         }
         return (double) counts.digits() / head.length() < DIGIT_HEAVY_RATIO;
+    }
+
+    private static boolean looksLikeKeyValueField(String trimmed) {
+        return !trimmed.contains("\n") && KEY_VALUE_FIELD.matcher(trimmed).matches();
     }
 
     private static String firstLine(String trimmed) {

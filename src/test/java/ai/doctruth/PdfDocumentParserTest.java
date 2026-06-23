@@ -354,6 +354,13 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("classify(): key-value field lines stay BODY even when the line is visually taller")
+        void classifyKeyValueFieldStaysBody() {
+            assertThat(PdfDocumentParser.classify("Party A: Acme Industrial Materials Pty Ltd", 18.0, 12.0))
+                    .isEqualTo(BlockKind.BODY);
+        }
+
+        @Test
         @DisplayName("classify(): 'MAKLUMAT PERIBADI' at body size → HEADING via all-caps rule")
         void classifyHeadingByAllCaps() {
             assertThat(PdfDocumentParser.classify("MAKLUMAT PERIBADI", 12.0, 12.0))

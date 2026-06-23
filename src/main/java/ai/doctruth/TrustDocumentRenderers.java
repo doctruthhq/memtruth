@@ -12,7 +12,6 @@ import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -26,13 +25,6 @@ final class TrustDocumentRenderers {
 
     private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
     private static final int STREAM_WRITE_CHARS = 256;
-    private static final Pattern LEGAL_PARTY_FIELD_HEADING =
-            Pattern.compile("^party\\s+[ab]\\s*:\\s+(.+)$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern LEGAL_PARTY_ENTITY_VALUE = Pattern.compile(
-            ".*(?:\\bpty\\s+ltd\\.?|\\bltd\\.?|\\blimited\\b|\\bllc\\.?"
-                    + "|\\binc\\.?|\\bcorp\\.?|\\bcorporation\\b|\\bcompany\\b|\\bco\\.?"
-                    + "|\\bplc\\b|\\bgmbh\\b)(?:\\s|$|[,.;]).*",
-            Pattern.CASE_INSENSITIVE);
 
     private TrustDocumentRenderers() {
         throw new AssertionError("no instances");
@@ -80,9 +72,7 @@ final class TrustDocumentRenderers {
         root.put("format", "doctruth.content_blocks.v1");
         root.put("docId", doc.docId());
         root.put("sourceHash", doc.source().sourceHash());
-        root.set("contentBlocks", TrustDocumentLayeredOutputs.contentBlocks(doc)
-                .map(blocks -> normalizedContentBlocks(doc, blocks))
-                .orElseGet(() -> contentBlocks(doc)));
+        root.set("contentBlocks", TrustDocumentLayeredOutputs.contentBlocks(doc).orElseGet(() -> contentBlocks(doc)));
         return root;
     }
 
@@ -99,31 +89,6 @@ final class TrustDocumentRenderers {
         ArrayNode blocks = MAPPER.createArrayNode();
         sortedUnits(doc).forEach(unit -> blocks.add(contentBlock(unit)));
         return blocks;
-    }
-
-    private static JsonNode normalizedContentBlocks(TrustDocument doc, JsonNode blocks) {
-        if (!isRuntimeSidecar(doc.parserRun()) || !blocks.isArray()) {
-            return blocks;
-        }
-        blocks.forEach(TrustDocumentRenderers::normalizeContentBlock);
-        return blocks;
-    }
-
-    private static boolean isRuntimeSidecar(ParserRun parserRun) {
-        return parserRun.backend().startsWith("rust-sidecar");
-    }
-
-    private static void normalizeContentBlock(JsonNode block) {
-        if (block instanceof ObjectNode object
-                && "heading".equals(object.path("type").asText())
-                && isLegalPartyFieldHeading(object.path("text").asText())) {
-            object.put("type", "text");
-        }
-    }
-
-    private static boolean isLegalPartyFieldHeading(String text) {
-        var matcher = LEGAL_PARTY_FIELD_HEADING.matcher(text.strip());
-        return matcher.matches() && LEGAL_PARTY_ENTITY_VALUE.matcher(matcher.group(1)).matches();
     }
 
     private static ObjectNode contentBlock(TrustUnit unit) {

@@ -12712,6 +12712,9 @@ fn unit_bbox_height(unit: &Value) -> Option<f64> {
 }
 
 fn content_block_semantics(unit: &Value, text: &str) -> (&'static str, Value) {
+    if key_value_field_line(text) {
+        return ("text", Value::Null);
+    }
     match unit.get("kind").and_then(Value::as_str).unwrap_or("") {
         "TABLE_CELL" => return ("table", Value::Null),
         "HEADING" => {
@@ -12733,6 +12736,27 @@ fn content_block_semantics(unit: &Value, text: &str) -> (&'static str, Value) {
         return ("heading", json!(level));
     }
     ("text", Value::Null)
+}
+
+fn key_value_field_line(text: &str) -> bool {
+    let trimmed = text.trim();
+    let Some((label, value)) = trimmed.split_once(':') else {
+        return false;
+    };
+    let label = label.trim();
+    let value = value.trim();
+    !label.is_empty()
+        && !value.is_empty()
+        && !trimmed.contains('\n')
+        && label.chars().count() <= 40
+        && label
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphanumeric())
+        && label.chars().all(|ch| {
+            ch.is_alphanumeric()
+                || matches!(ch, ' ' | '/' | '&' | '(' | ')' | '.' | '-')
+        })
 }
 
 fn heading_fragment_context(units: &[Value], index: usize, text: &str) -> bool {
@@ -18257,6 +18281,25 @@ mod tests {
                 "As a developer:",
                 "Use the SDK."
             ]
+        );
+    }
+
+    #[test]
+    fn content_blocks_render_key_value_heading_units_as_text() {
+        let mut unit = markdown_unit(
+            "unit-1",
+            "Party A: Acme Industrial Materials Pty Ltd",
+            80.0,
+            60.0,
+        );
+        unit["kind"] = json!("HEADING");
+
+        let normalized = content_blocks_json(&[unit]);
+
+        assert_eq!(normalized[0]["type"], "text");
+        assert_eq!(
+            normalized[0]["normalizedText"],
+            "Party A: Acme Industrial Materials Pty Ltd"
         );
     }
 

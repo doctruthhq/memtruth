@@ -1049,6 +1049,14 @@ git commit -m "feat: guard opendataloader full200 benchmark runs"
 
 ### Task 10: Run Fresh DocTruth Full200 And Bucket Failures
 
+**Status:** Completed in `35ca6d0` (`test: record opendataloader full200 baseline`).
+
+Implementation note: the actual evaluation command required explicit
+`ground_truth_dir`, `prediction_dir`, and `output_path`. The committed baseline
+records 200 documents, 199 parsed, 1 failed, `overall_mean = 0.738756`,
+`nid_mean = 0.859061`, `teds_mean = 0.475822`, and `mhs_mean = 0.469231`.
+The report intentionally says this is not yet OpenDataLoader parity.
+
 **Files:**
 - Create: `docs/parser/reports/opendataloader-full200-<date>.md`
 - Generated: `third_party/opendataloader-bench/prediction/doctruth-rust-opendataloader-full200-<date>/`

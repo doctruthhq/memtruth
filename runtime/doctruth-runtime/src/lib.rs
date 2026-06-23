@@ -8444,12 +8444,45 @@ fn starts_new_markdown_paragraph(line: &str, paragraph: &str) -> bool {
     if markdown_list_item(trimmed) || markdown_table_or_figure_caption(trimmed) {
         return true;
     }
+    if short_colon_label_boundary(trimmed) {
+        return true;
+    }
     if paragraph.ends_with(['.', '?', '!', ':', ';']) {
         return true;
     }
     line.chars().next().is_some_and(char::is_uppercase)
         && line.split_whitespace().count() <= 8
         && paragraph.split_whitespace().count() <= 8
+}
+
+fn short_colon_label_boundary(line: &str) -> bool {
+    let Some(label) = line.strip_suffix(':').map(str::trim) else {
+        return false;
+    };
+    if label.is_empty()
+        || label.ends_with(['.', '?', '!', ';'])
+        || label.contains("://")
+        || label.split_whitespace().count() > 4
+    {
+        return false;
+    }
+    let words = label.split_whitespace().collect::<Vec<_>>();
+    if !words.iter().all(|word| {
+        word.chars()
+            .all(|ch| ch.is_alphabetic() || ch == '-' || ch == '\'')
+    }) {
+        return false;
+    }
+    if words.len() >= 3
+        && words[0] == "As"
+        && matches!(words[1], "a" | "an")
+        && words[2].chars().next().is_some_and(char::is_lowercase)
+    {
+        return true;
+    }
+    words
+        .iter()
+        .all(|word| word.chars().next().is_some_and(char::is_uppercase))
 }
 
 fn merge_markdown_paragraph_line(paragraph: &str, line: &str) -> String {
@@ -17835,6 +17868,92 @@ mod tests {
                 "1. First item",
                 "Second short heading",
                 "Trailing body."
+            ]
+        );
+    }
+
+    #[test]
+    fn markdown_projection_splits_short_colon_role_labels_from_prior_prose() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit("unit-1", "Intro sentence.", 80.0, 60.0),
+                    markdown_unit("unit-2", "As a developer:", 80.0, 90.0),
+                    markdown_unit("unit-3", "Use the SDK.", 80.0, 120.0),
+                    markdown_unit(
+                        "unit-4",
+                        "This introduction continues across enough extracted words to look like flowing prose",
+                        80.0,
+                        170.0
+                    ),
+                    markdown_unit("unit-5", "As a homeowner:", 80.0, 200.0),
+                    markdown_unit("unit-6", "Review the permit notes.", 80.0, 230.0)
+                ],
+                "tables": []
+            }
+        });
+
+        assert_eq!(
+            markdown_from_document(&document),
+            [
+                "Intro sentence.",
+                "As a developer:",
+                "Use the SDK.",
+                "This introduction continues across enough extracted words to look like flowing prose",
+                "As a homeowner:",
+                "Review the permit notes."
+            ]
+            .join("\n")
+        );
+    }
+
+    #[test]
+    fn markdown_projection_does_not_split_broad_colon_continuations() {
+        let document = json!({
+            "body": {
+                "units": [
+                    markdown_unit(
+                        "unit-1",
+                        "The callback URL https://example.com:443 stays inline",
+                        80.0,
+                        60.0
+                    ),
+                    markdown_unit("unit-2", "and keeps flowing.", 80.0, 90.0)
+                ],
+                "tables": []
+            }
+        });
+
+        assert_eq!(
+            markdown_from_document(&document),
+            "The callback URL https://example.com:443 stays inline and keeps flowing."
+        );
+    }
+
+    #[test]
+    fn content_blocks_split_short_colon_role_labels_from_prior_prose() {
+        let units = vec![
+            markdown_unit(
+                "unit-1",
+                "This introduction continues across enough extracted words to look like flowing prose",
+                80.0,
+                60.0,
+            ),
+            markdown_unit("unit-2", "As a developer:", 80.0, 90.0),
+            markdown_unit("unit-3", "Use the SDK.", 80.0, 120.0),
+        ];
+
+        let normalized = content_blocks_json(&units)
+            .into_iter()
+            .map(|block| block["normalizedText"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            normalized,
+            vec![
+                "This introduction continues across enough extracted words to look like flowing prose",
+                "As a developer:",
+                "Use the SDK."
             ]
         );
     }

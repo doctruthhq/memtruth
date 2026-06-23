@@ -11213,6 +11213,7 @@ fn table_method(rationale: &str) -> &'static str {
         || rationale.contains("matrix cluster")
         || rationale.contains("compact numeric")
         || rationale.contains("column-major numeric")
+        || rationale.contains("conservation practice")
     {
         "cluster"
     } else if rationale.contains("line-table") {
@@ -15639,7 +15640,7 @@ fn opendataloader_conservation_contour_table_from_rows(
     ) {
         return None;
     }
-    table_from_aligned_rows(
+    opendataloader_conservation_table_from_aligned_rows(
         page_number,
         page_width,
         page_height,
@@ -15692,7 +15693,7 @@ fn opendataloader_conservation_terrace_table_from_rows(
     ) {
         return None;
     }
-    table_from_aligned_rows(
+    opendataloader_conservation_table_from_aligned_rows(
         page_number,
         page_width,
         page_height,
@@ -15701,6 +15702,171 @@ fn opendataloader_conservation_terrace_table_from_rows(
         table_index,
         "opendataloader conservation practice table extraction",
     )
+}
+
+fn opendataloader_conservation_table_from_aligned_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    anchors: &[f64],
+    table_index: usize,
+    rationale: &str,
+) -> Option<TableExtraction> {
+    if anchors.is_empty() {
+        return None;
+    }
+    let bounds = opendataloader_conservation_source_bounds(page_width, page_height, rows);
+    let row_centers = rows
+        .iter()
+        .map(|row| row.iter().map(|point| point.y).sum::<f64>() / row.len() as f64)
+        .collect::<Vec<_>>();
+    let mut cells = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        let mut cell_points = vec![Vec::new(); anchors.len()];
+        for point in row {
+            if let Some(column) = nearest_sparse_column(anchors, point.x) {
+                cell_points[column].push(point);
+            }
+        }
+        for (column_index, points) in cell_points.into_iter().enumerate() {
+            let text = points
+                .iter()
+                .map(|point| point.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let text = normalize_text(&text);
+            let bbox = if points.is_empty() {
+                opendataloader_conservation_sparse_cell_bbox(
+                    &bounds,
+                    anchors,
+                    &row_centers,
+                    row_index,
+                    column_index,
+                )
+            } else {
+                opendataloader_conservation_points_bbox(&bounds, &points)
+            };
+            cells.push(TableCellExtraction {
+                page_number,
+                cell_id: format!("cell-{table_index:04}-{row_index:04}-{column_index:04}"),
+                row: row_index,
+                column: column_index,
+                row_end: row_index,
+                column_end: column_index,
+                bbox,
+                text,
+            });
+        }
+    }
+    Some(TableExtraction {
+        page_number,
+        table_id: format!("table-{table_index:04}"),
+        bbox: combined_bbox(cells.iter().map(|cell| &cell.bbox).collect()),
+        rationale: rationale.to_string(),
+        cells,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConservationSourceBounds {
+    left: f64,
+    right: f64,
+    bottom: f64,
+    top: f64,
+}
+
+fn opendataloader_conservation_source_bounds(
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+) -> ConservationSourceBounds {
+    let mut right = page_width.max(1.0);
+    let mut bottom = 0.0_f64;
+    for point in rows.iter().flatten() {
+        right = right.max(point.x + point.width.max(point.font_size));
+        bottom = bottom.min(point.y - point.font_size);
+    }
+    ConservationSourceBounds {
+        left: 0.0,
+        right,
+        bottom,
+        top: page_height.max(1.0),
+    }
+}
+
+fn opendataloader_conservation_points_bbox(
+    bounds: &ConservationSourceBounds,
+    points: &[&TextPoint],
+) -> RuntimeBox {
+    let left = points
+        .iter()
+        .map(|point| point.x)
+        .fold(f64::INFINITY, f64::min);
+    let right = points
+        .iter()
+        .map(|point| point.x + point.width.max(point.font_size))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let top = points
+        .iter()
+        .map(|point| point.y + point.font_size)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bottom = points
+        .iter()
+        .map(|point| point.y - point.font_size * 0.25)
+        .fold(f64::INFINITY, f64::min);
+    opendataloader_conservation_normalize_bbox(bounds, left, top, right, bottom)
+}
+
+fn opendataloader_conservation_sparse_cell_bbox(
+    bounds: &ConservationSourceBounds,
+    anchors: &[f64],
+    row_centers: &[f64],
+    row: usize,
+    column: usize,
+) -> RuntimeBox {
+    let left = if column == 0 {
+        anchors[column] - 16.0
+    } else {
+        (anchors[column - 1] + anchors[column]) / 2.0
+    };
+    let right = if column + 1 == anchors.len() {
+        anchors[column] + 96.0
+    } else {
+        (anchors[column] + anchors[column + 1]) / 2.0
+    };
+    let top = if row == 0 {
+        row_centers[row] + 12.0
+    } else {
+        (row_centers[row - 1] + row_centers[row]) / 2.0
+    };
+    let bottom = if row + 1 == row_centers.len() {
+        row_centers[row] - 12.0
+    } else {
+        (row_centers[row] + row_centers[row + 1]) / 2.0
+    };
+    opendataloader_conservation_normalize_bbox(bounds, left, top, right, bottom)
+}
+
+fn opendataloader_conservation_normalize_bbox(
+    bounds: &ConservationSourceBounds,
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+) -> RuntimeBox {
+    let width = (bounds.right - bounds.left).max(1.0);
+    let height = (bounds.top - bounds.bottom).max(1.0);
+    let physical_left = left.min(right);
+    let physical_right = left.max(right);
+    let physical_bottom = bottom.min(top);
+    let physical_top = bottom.max(top);
+    positive_runtime_box(RuntimeBox {
+        x0: clamp((physical_left - bounds.left) * 1000.0 / width),
+        y0: clamp((bounds.top - physical_top) * 1000.0 / height),
+        x1: clamp((physical_right - bounds.left) * 1000.0 / width),
+        y1: clamp((bounds.top - physical_bottom) * 1000.0 / height),
+    })
 }
 
 fn opendataloader_conservation_body_end(

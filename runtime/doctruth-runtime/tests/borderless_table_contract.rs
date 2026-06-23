@@ -149,27 +149,64 @@ fn parse_pdf_emits_conservation_practice_tables_real_case() {
 
     let json: Value = serde_json::from_slice(&output).unwrap();
     let tables = json["body"]["tables"].as_array().unwrap();
-    let cell_text = tables
+    let conservation_tables = tables
         .iter()
-        .filter_map(|table| table["cells"].as_array())
-        .flat_map(|cells| cells.iter())
-        .filter_map(|cell| cell["text"].as_str())
+        .filter(|table| {
+            table["quality"]["rationale"] == "opendataloader conservation practice table extraction"
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        conservation_tables.len() >= 2,
+        "expected contour and terrace conservation tables, got {tables:?}"
+    );
+    for table in &conservation_tables {
+        assert_ne!(
+            table["method"], "unknown",
+            "table method must be classified"
+        );
+        assert_table_cell_bboxes_sane(table);
+    }
+
+    let contour = conservation_tables
+        .iter()
+        .find(|table| table_cell_text(table).contains("Strip Width (ft)"))
+        .expect("missing contour strip conservation table");
+    assert_eq!(contour["quality"]["columnCount"], 6);
+    assert!(contour["quality"]["rowCount"].as_u64().unwrap_or(0) >= 8);
+    assert_table_has_cells(
+        contour,
+        &[
+            "Slope Gradient",
+            "Strip Width (ft)",
+            "P Value",
+            "1 - 2",
+            "0.30",
+        ],
+    );
+
+    let terrace = conservation_tables
+        .iter()
+        .find(|table| table_cell_text(table).contains("Terrace Interval"))
+        .expect("missing terrace conservation table");
+    assert_eq!(terrace["quality"]["columnCount"], 5);
+    assert!(terrace["quality"]["rowCount"].as_u64().unwrap_or(0) >= 8);
+    assert_table_has_cells(
+        terrace,
+        &[
+            "Terrace Interval",
+            "Underground Outlets",
+            "Pt Values",
+            "110-140",
+            "0.8",
+        ],
+    );
+
+    let cell_text = conservation_tables
+        .iter()
+        .map(|table| table_cell_text(table))
         .collect::<Vec<_>>()
         .join("\n");
-
-    assert!(!tables.is_empty(), "expected structured tables, got none");
-    for expected in [
-        "Strip Width (ft)",
-        "Slope Gradient",
-        "P Value",
-        "Terrace Interval",
-        "Underground Outlets",
-    ] {
-        assert!(
-            cell_text.contains(expected),
-            "expected table cell text to include {expected:?}, got {cell_text:?}"
-        );
-    }
     assert!(
         !cell_text.contains("146 | Soil Erosion and Conservation"),
         "page footer should not be swallowed into table cells: {cell_text:?}"
@@ -551,6 +588,42 @@ fn assert_no_dense_cluster_table(json: &Value, label: &str) {
         }),
         "{label} should not be emitted as dense cluster table: {tables:?}"
     );
+}
+
+fn table_cell_text(table: &Value) -> String {
+    table["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|cell| cell["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn assert_table_has_cells(table: &Value, expected_cells: &[&str]) {
+    let cell_text = table_cell_text(table);
+    for expected in expected_cells {
+        assert!(
+            cell_text.contains(expected),
+            "expected table cell text to include {expected:?}, got {cell_text:?}"
+        );
+    }
+}
+
+fn assert_table_cell_bboxes_sane(table: &Value) {
+    for cell in table["cells"].as_array().unwrap() {
+        let bbox = &cell["boundingBox"];
+        let x0 = bbox["x0"].as_f64().unwrap();
+        let y0 = bbox["y0"].as_f64().unwrap();
+        let x1 = bbox["x1"].as_f64().unwrap();
+        let y1 = bbox["y1"].as_f64().unwrap();
+        assert!(x1 > x0, "cell bbox must have nonzero width: {cell:?}");
+        assert!(y1 > y0, "cell bbox must have nonzero height: {cell:?}");
+        assert!(
+            y0 < 995.0 && y1 < 1000.0,
+            "cell bbox should not collapse to bottom-page placeholder values: {cell:?}"
+        );
+    }
 }
 
 fn write_borderless_table_pdf_fixture() -> PathBuf {

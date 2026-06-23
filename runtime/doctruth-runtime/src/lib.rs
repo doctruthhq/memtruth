@@ -12712,12 +12712,12 @@ fn unit_bbox_height(unit: &Value) -> Option<f64> {
 }
 
 fn content_block_semantics(unit: &Value, text: &str) -> (&'static str, Value) {
-    if key_value_field_line(text) {
-        return ("text", Value::Null);
-    }
     match unit.get("kind").and_then(Value::as_str).unwrap_or("") {
         "TABLE_CELL" => return ("table", Value::Null),
         "HEADING" => {
+            if key_value_field_line(text) {
+                return ("text", Value::Null);
+            }
             return (
                 "heading",
                 unit.get("textLevel").cloned().unwrap_or_else(|| json!(1)),
@@ -12731,6 +12731,9 @@ fn content_block_semantics(unit: &Value, text: &str) -> (&'static str, Value) {
     }
     if list_item(text) {
         return ("list", Value::Null);
+    }
+    if key_value_field_line(text) {
+        return ("text", Value::Null);
     }
     if let Some(level) = heading_level(text) {
         return ("heading", json!(level));
@@ -18301,6 +18304,16 @@ mod tests {
             normalized[0]["normalizedText"],
             "Party A: Acme Industrial Materials Pty Ltd"
         );
+    }
+
+    #[test]
+    fn content_blocks_keep_explicit_table_cells_with_key_value_text_as_table() {
+        let mut unit = markdown_unit("unit-1", "Total Value: AUD 2,450,000", 80.0, 60.0);
+        unit["kind"] = json!("TABLE_CELL");
+
+        let normalized = content_blocks_json(&[unit]);
+
+        assert_eq!(normalized[0]["type"], "table");
     }
 
     #[test]

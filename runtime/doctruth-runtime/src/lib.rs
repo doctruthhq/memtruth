@@ -103,6 +103,9 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         Some("opendataloader_promotion_report") => {
             opendataloader_promotion_report_json(&request).map(|json| json.to_string())
         }
+        Some("opendataloader_compare_reports") => {
+            opendataloader_compare_reports_json(&request).map(|json| json.to_string())
+        }
         Some("opendataloader_parity_matrix") => Ok(opendataloader_parity_matrix_json().to_string()),
         Some("opendataloader_text_processor_probe") => {
             opendataloader_probes::opendataloader_text_processor_probe_json(&request)
@@ -4770,6 +4773,166 @@ fn opendataloader_promotion_report_json(request: &Value) -> Result<Value, String
         "resourceProfile": resource_profile,
         "mnnPromotion": mnn_promotion
     }))
+}
+
+fn opendataloader_compare_reports_json(request: &Value) -> Result<Value, String> {
+    let reference_path = compare_report_path(request, "reference_evaluation")?;
+    let candidate_path = compare_report_path(request, "candidate_evaluation")?;
+    let missing = [
+        ("reference", &reference_path),
+        ("candidate", &candidate_path),
+    ]
+    .into_iter()
+    .filter_map(|(role, path)| {
+        (!path.is_file()).then(|| {
+            json!({
+                "role": role,
+                "path": path.to_string_lossy()
+            })
+        })
+    })
+    .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Ok(json!({
+            "runtime": RUNTIME,
+            "protocol_version": PROTOCOL_VERSION,
+            "error_code": "COMPARISON_INPUT_MISSING",
+            "message": "reference_evaluation and candidate_evaluation must point to readable evaluation JSON files",
+            "missing": missing
+        }));
+    }
+
+    let reference = read_json_file(&reference_path, "COMPARISON_INPUT_INVALID")?;
+    let candidate = read_json_file(&candidate_path, "COMPARISON_INPUT_INVALID")?;
+    let reference_metrics = opendataloader_comparison_metrics(&reference);
+    let candidate_metrics = opendataloader_comparison_metrics(&candidate);
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "reference": reference_metrics,
+        "candidate": candidate_metrics,
+        "delta": opendataloader_comparison_delta(&reference_metrics, &candidate_metrics),
+        "bottomRegressionCases": opendataloader_bottom_regression_cases(&reference, &candidate)
+    }))
+}
+
+fn compare_report_path(request: &Value, key: &str) -> Result<PathBuf, String> {
+    request
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            error_json(
+                "COMPARISON_INPUT_INVALID",
+                &format!("request.{key} is required"),
+            )
+            .to_string()
+        })
+}
+
+fn opendataloader_comparison_metrics(report: &Value) -> Value {
+    json!({
+        "overall": optional_metric_json(comparison_metric(report, "overall")),
+        "nid": optional_metric_json(comparison_metric(report, "nid")),
+        "teds": optional_metric_json(comparison_metric(report, "teds")),
+        "mhs": optional_metric_json(comparison_metric(report, "mhs"))
+    })
+}
+
+fn comparison_metric(report: &Value, metric: &str) -> Option<f64> {
+    let mean_key = format!("{metric}_mean");
+    report
+        .pointer(&format!("/metrics/score/{mean_key}"))
+        .or_else(|| report.pointer(&format!("/metrics/{mean_key}")))
+        .or_else(|| report.get(&mean_key))
+        .and_then(Value::as_f64)
+        .map(round_metric)
+}
+
+fn opendataloader_comparison_delta(reference: &Value, candidate: &Value) -> Value {
+    json!({
+        "overall": comparison_delta_metric(reference, candidate, "overall"),
+        "nid": comparison_delta_metric(reference, candidate, "nid"),
+        "teds": comparison_delta_metric(reference, candidate, "teds"),
+        "mhs": comparison_delta_metric(reference, candidate, "mhs")
+    })
+}
+
+fn comparison_delta_metric(reference: &Value, candidate: &Value, metric: &str) -> Value {
+    match (
+        reference.get(metric).and_then(Value::as_f64),
+        candidate.get(metric).and_then(Value::as_f64),
+    ) {
+        (Some(reference), Some(candidate)) => json!(round_metric(candidate - reference)),
+        _ => Value::Null,
+    }
+}
+
+fn opendataloader_bottom_regression_cases(reference: &Value, candidate: &Value) -> Value {
+    let reference_documents = comparison_documents_by_id(reference);
+    let mut cases = candidate
+        .get("documents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|candidate_document| {
+            let document_id = candidate_document
+                .get("document_id")
+                .and_then(Value::as_str)?;
+            let reference_document = reference_documents.get(document_id)?;
+            let reference_scores = comparison_document_scores(reference_document);
+            let candidate_scores = comparison_document_scores(candidate_document);
+            let delta = opendataloader_comparison_delta(&reference_scores, &candidate_scores);
+            let overall_delta = delta.get("overall").and_then(Value::as_f64)?;
+            (overall_delta < 0.0).then(|| {
+                json!({
+                    "document_id": document_id,
+                    "reference": reference_scores,
+                    "candidate": candidate_scores,
+                    "delta": delta
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    cases.sort_by(|left, right| {
+        let left_delta = left
+            .pointer("/delta/overall")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        let right_delta = right
+            .pointer("/delta/overall")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        left_delta.total_cmp(&right_delta)
+    });
+    cases.truncate(10);
+    json!(cases)
+}
+
+fn comparison_documents_by_id(report: &Value) -> BTreeMap<String, &Value> {
+    report
+        .get("documents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|document| {
+            document
+                .get("document_id")
+                .and_then(Value::as_str)
+                .map(|id| (id.to_string(), document))
+        })
+        .collect()
+}
+
+fn comparison_document_scores(document: &Value) -> Value {
+    let scores = document.get("scores").unwrap_or(&Value::Null);
+    json!({
+        "overall": optional_metric_json(scores.get("overall").and_then(Value::as_f64)),
+        "nid": optional_metric_json(scores.get("nid").and_then(Value::as_f64)),
+        "teds": optional_metric_json(scores.get("teds").and_then(Value::as_f64)),
+        "mhs": optional_metric_json(scores.get("mhs").and_then(Value::as_f64))
+    })
 }
 
 fn opendataloader_evaluation_path(request: &Value) -> Result<PathBuf, String> {

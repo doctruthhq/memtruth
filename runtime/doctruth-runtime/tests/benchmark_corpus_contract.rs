@@ -1639,6 +1639,109 @@ fn opendataloader_evaluate_prediction_writes_rust_evaluation_without_python() {
 }
 
 #[test]
+fn opendataloader_comparison_reports_missing_inputs_as_success_json() {
+    let root = temp_dir("doctruth-runtime-opendataloader-comparison-missing");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_compare_reports",
+                "reference_evaluation": root.join("missing-reference.json"),
+                "candidate_evaluation": root.join("missing-candidate.json")
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["error_code"], "COMPARISON_INPUT_MISSING");
+}
+
+#[test]
+fn opendataloader_comparison_reports_deltas_and_bottom_regressions() {
+    let root = temp_dir("doctruth-runtime-opendataloader-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let reference = root.join("reference-evaluation.json");
+    let candidate = root.join("candidate-evaluation.json");
+    fs::write(
+        &reference,
+        json!({
+            "metrics": {
+                "score": {
+                    "overall_mean": 0.80,
+                    "nid_mean": 0.90,
+                    "teds_mean": 0.70,
+                    "mhs_mean": 0.80
+                }
+            },
+            "documents": [{
+                "document_id": "doc-a",
+                "scores": {"overall": 0.90, "nid": 1.0, "teds": 0.80, "mhs": 0.90}
+            }, {
+                "document_id": "doc-b",
+                "scores": {"overall": 0.70, "nid": 0.80, "teds": 0.60, "mhs": 0.70}
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        &candidate,
+        json!({
+            "metrics": {
+                "score": {
+                    "overall_mean": 0.75,
+                    "nid_mean": 0.91,
+                    "teds_mean": 0.60,
+                    "mhs_mean": 0.74
+                }
+            },
+            "documents": [{
+                "document_id": "doc-a",
+                "scores": {"overall": 0.65, "nid": 0.92, "teds": 0.50, "mhs": 0.53}
+            }, {
+                "document_id": "doc-b",
+                "scores": {"overall": 0.74, "nid": 0.82, "teds": 0.70, "mhs": 0.70}
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_compare_reports",
+                "reference_evaluation": reference,
+                "candidate_evaluation": candidate
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["reference"]["overall"], 0.80);
+    assert_eq!(report["candidate"]["teds"], 0.60);
+    assert_eq!(report["delta"]["overall"], -0.05);
+    assert_eq!(report["delta"]["nid"], 0.01);
+    assert_eq!(report["delta"]["teds"], -0.10);
+    assert_eq!(report["bottomRegressionCases"][0]["document_id"], "doc-a");
+    assert_eq!(
+        report["bottomRegressionCases"][0]["delta"]["overall"],
+        -0.25
+    );
+}
+
+#[test]
 fn opendataloader_evaluator_matches_upstream_heading_and_table_normalization() {
     let root = temp_dir("doctruth-runtime-opendataloader-evaluator-normalization");
     let gt = root.join("ground-truth/markdown");

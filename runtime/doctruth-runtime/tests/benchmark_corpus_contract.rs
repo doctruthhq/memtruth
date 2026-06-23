@@ -121,6 +121,25 @@ fn opendataloader_parity_promotes_standalone_question_headings() {
 }
 
 #[test]
+fn opendataloader_parity_keeps_explanatory_questions_as_prose() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-question-prose");
+    let report = run_opendataloader_prediction("01030000000032", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000032.md")).unwrap();
+    assert!(
+        markdown
+            .lines()
+            .any(|line| line == "What could this expression possibly mean?"),
+        "ordinary explanatory question should remain a plain line:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("# What could this expression possibly mean?"),
+        "ordinary explanatory question should not be promoted:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_reconstructs_long_text_comparative_table() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-long-table");
     let report = run_opendataloader_prediction("01030000000088", &output_dir);

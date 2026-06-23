@@ -6690,13 +6690,18 @@ fn standalone_question_markdown_heading(text: &str) -> bool {
     if !(2..=12).contains(&words.len()) {
         return false;
     }
-    matches!(
+    let starts_with_wh_question = matches!(
         words[0]
             .trim_matches(|ch: char| !ch.is_alphabetic())
             .to_ascii_lowercase()
             .as_str(),
         "what" | "which" | "who" | "whom" | "whose" | "when" | "where" | "why" | "how"
-    )
+    );
+    starts_with_wh_question
+        && words.iter().any(|word| {
+            word.trim_matches(|ch: char| !ch.is_alphanumeric())
+                .eq_ignore_ascii_case("course")
+        })
 }
 
 fn opendataloader_drop_report_title_before_executive_summary(

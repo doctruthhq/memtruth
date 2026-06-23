@@ -1090,6 +1090,62 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
 }
 
 #[test]
+fn opendataloader_prediction_can_route_through_warm_java_backend() {
+    let root = temp_dir("doctruth-runtime-opendataloader-java-backend");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-java-core");
+    let starts = root.join("java-backend-starts.txt");
+    let worker = write_fake_java_backend_worker(&root);
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(pdf_dir.join("doc-a.pdf"), minimal_pdf("First document.")).unwrap();
+    fs::write(pdf_dir.join("doc-b.pdf"), minimal_pdf("Second document.")).unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": root,
+                "engine": "doctruth-java-core",
+                "backend": "opendataloader-java-core",
+                "java_backend_command": ["sh", worker, starts],
+                "limit": 2,
+                "preset": "lite",
+                "runtime_profile": "edge-fast",
+                "output_dir": prediction
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["backend"], "opendataloader-java-core");
+    assert_eq!(report["prediction"]["backend"], "opendataloader-java-core");
+    assert_eq!(report["prediction"]["documentCount"], 2);
+    assert_eq!(report["prediction"]["failedCount"], 0);
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["backend"], "opendataloader-java-core");
+    assert_eq!(
+        summary["documents"][0]["backend"],
+        "opendataloader-java-core"
+    );
+    assert!(summary["javaBackendStartupMs"].is_number());
+    assert_eq!(fs::read_to_string(starts).unwrap().lines().count(), 1);
+    assert!(
+        fs::read_to_string(prediction.join("markdown/doc-a.md"))
+            .unwrap()
+            .contains("Java backend markdown")
+    );
+}
+
+#[test]
 fn opendataloader_full200_gate_rejects_unbounded_prediction_without_explicit_allow() {
     let root = temp_dir("doctruth-runtime-opendataloader-full200-gate");
     let pdf_dir = root.join("pdfs");
@@ -3609,6 +3665,21 @@ fn temp_dir(prefix: &str) -> PathBuf {
         "{prefix}-{}-{nanos}-{sequence}",
         std::process::id()
     ))
+}
+
+fn write_fake_java_backend_worker(root: &PathBuf) -> PathBuf {
+    fs::create_dir_all(root).unwrap();
+    let worker = root.join("fake-java-backend.sh");
+    fs::write(
+        &worker,
+r##"echo start >> "$1"
+while IFS= read -r line; do
+  printf '%s\n' '{"ok":true,"backend":"opendataloader-java-core","schemaVersion":"doctruth.opendataloader.backend.v1","markdown":"# Java backend markdown\n\nfrom fake warm worker\n","metrics":{"elapsedMs":3},"trustDocument":{"parserRun":{"backend":"opendataloader-java-core","preset":"lite"}}}'
+done
+"##,
+    )
+    .unwrap();
+    worker
 }
 
 fn run_opendataloader_prediction(doc_id: &str, output_dir: &PathBuf) -> Value {

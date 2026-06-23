@@ -7,6 +7,7 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use opendataloader_java_backend::OpenDataLoaderJavaBackendClient;
 use pdf_oxide::content::{Operator, TextElement, parse_content_stream};
 use pdf_oxide::document::PdfDocument;
 use pdf_oxide::editor::DocumentInfo;
@@ -3859,6 +3860,11 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         .and_then(Value::as_str)
         .unwrap_or("lite");
     let profile = runtime_profile(request)?;
+    let backend = request
+        .get("backend")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("rust-edge-fast");
     if profile == "benchmark-oracle" {
         return Err(error_json(
             "PROFILE_NOT_SUPPORTED",
@@ -3873,6 +3879,7 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         engine,
         preset,
         profile,
+        backend,
         timeout_seconds,
         &pdfs,
         request,
@@ -3892,6 +3899,7 @@ fn opendataloader_prediction_json(request: &Value) -> Result<Value, String> {
         "runtime": RUNTIME,
         "protocol_version": PROTOCOL_VERSION,
         "engine": engine,
+        "backend": backend,
         "prediction": prediction,
         "metrics": external.values,
         "externalMetrics": external.report,
@@ -5089,6 +5097,7 @@ fn write_opendataloader_prediction_artifacts(
     engine: &str,
     preset: &str,
     profile: &str,
+    backend: &str,
     timeout_seconds: Option<f64>,
     pdfs: &[PathBuf],
     request: &Value,
@@ -5098,6 +5107,8 @@ fn write_opendataloader_prediction_artifacts(
         error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
     })?;
     let started = Instant::now();
+    let (mut java_backend, java_backend_startup_ms, java_backend_command) =
+        maybe_start_java_backend(backend, request)?;
     let mut documents = Vec::new();
     let mut errors = Vec::new();
     for pdf in pdfs {
@@ -5123,7 +5134,12 @@ fn write_opendataloader_prediction_artifacts(
             "model_cache": request_scoped_string(request, &["model_cache", "modelCache", "modelCacheDirectory"]),
             "model_worker": request_scoped_string(request, &["model_worker", "modelWorker", "modelCommand"])
         });
-        let mut result = parse_pdf_for_prediction(&parse_request, timeout_seconds);
+        let mut result = parse_for_opendataloader_prediction(
+            backend,
+            java_backend.as_mut(),
+            &parse_request,
+            timeout_seconds,
+        );
         let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);
         if timeout_seconds.is_some_and(|timeout| elapsed / 1000.0 > timeout) {
             result = Err(error_json(
@@ -5134,10 +5150,12 @@ fn write_opendataloader_prediction_artifacts(
         }
         match result {
             Ok(document) => {
-                fs::write(&markdown_path, markdown_from_document(&document)).map_err(|error| {
+                let markdown = markdown_for_prediction_result(backend, &document);
+                fs::write(&markdown_path, markdown).map_err(|error| {
                     error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
                 })?;
                 documents.push(opendataloader_prediction_document_summary_from_document(
+                    backend,
                     &document,
                     &document_id,
                     &markdown_path,
@@ -5163,6 +5181,7 @@ fn write_opendataloader_prediction_artifacts(
                     "errorCode": error_code,
                     "error": error,
                     "runtimeProfile": profile,
+                    "backend": backend,
                     "modelRuntime": Value::Null,
                     "modelRouting": Value::Null
                 }));
@@ -5179,6 +5198,9 @@ fn write_opendataloader_prediction_artifacts(
     let summary = json!({
         "engine_name": engine,
         "engine_version": env!("CARGO_PKG_VERSION"),
+        "backend": backend,
+        "javaBackendCommand": java_backend_command,
+        "javaBackendStartupMs": java_backend_startup_ms,
         "runtime_contract": "TrustDocument",
         "runtime_profile": profile,
         "document_count": document_count,
@@ -5204,6 +5226,7 @@ fn write_opendataloader_prediction_artifacts(
     .map_err(|error| error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string())?;
     Ok(json!({
         "engine": engine,
+        "backend": backend,
         "path": output_dir.to_string_lossy(),
         "markdownPath": markdown_dir.to_string_lossy(),
         "documentCount": document_count,
@@ -5261,6 +5284,133 @@ fn model_routing_coverage_json(documents: &[Value]) -> Value {
     })
 }
 
+fn maybe_start_java_backend(
+    backend: &str,
+    request: &Value,
+) -> Result<(Option<OpenDataLoaderJavaBackendClient>, Value, Value), String> {
+    if backend != "opendataloader-java-core" {
+        return Ok((None, Value::Null, Value::Null));
+    }
+    let argv = java_backend_command(request)?;
+    let started = Instant::now();
+    let client = OpenDataLoaderJavaBackendClient::spawn(&argv)
+        .map_err(|error| error_json("JAVA_BACKEND_START_FAILED", &error).to_string())?;
+    Ok((
+        Some(client),
+        json!(round_metric(started.elapsed().as_secs_f64() * 1000.0)),
+        json!(argv),
+    ))
+}
+
+fn java_backend_command(request: &Value) -> Result<Vec<String>, String> {
+    for key in ["java_backend_command", "javaBackendCommand"] {
+        if let Some(value) = request.get(key) {
+            return java_backend_command_value(value);
+        }
+    }
+    Err(error_json(
+        "JAVA_BACKEND_COMMAND_REQUIRED",
+        "backend=opendataloader-java-core requires java_backend_command",
+    )
+    .to_string())
+}
+
+fn java_backend_command_value(value: &Value) -> Result<Vec<String>, String> {
+    if let Some(command) = value.as_str() {
+        let argv = command
+            .split_whitespace()
+            .filter(|part| !part.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if !argv.is_empty() {
+            return Ok(argv);
+        }
+    }
+    if let Some(array) = value.as_array() {
+        let argv = array
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if argv.len() == array.len() && !argv.is_empty() {
+            return Ok(argv);
+        }
+    }
+    Err(error_json(
+        "JAVA_BACKEND_COMMAND_INVALID",
+        "java_backend_command must be a non-empty string or string array",
+    )
+    .to_string())
+}
+
+fn parse_for_opendataloader_prediction(
+    backend: &str,
+    java_backend: Option<&mut OpenDataLoaderJavaBackendClient>,
+    request: &Value,
+    timeout_seconds: Option<f64>,
+) -> Result<Value, String> {
+    if backend == "opendataloader-java-core" {
+        return parse_pdf_with_java_backend(java_backend, request, timeout_seconds);
+    }
+    if backend == "rust-edge-fast" {
+        return parse_pdf_for_prediction(request, timeout_seconds);
+    }
+    Err(error_json(
+        "OPENDATALOADER_BACKEND_UNSUPPORTED",
+        &format!("unsupported opendataloader backend: {backend}"),
+    )
+    .to_string())
+}
+
+fn parse_pdf_with_java_backend(
+    java_backend: Option<&mut OpenDataLoaderJavaBackendClient>,
+    request: &Value,
+    timeout_seconds: Option<f64>,
+) -> Result<Value, String> {
+    let started = Instant::now();
+    let backend = java_backend.ok_or_else(|| {
+        error_json(
+            "JAVA_BACKEND_NOT_STARTED",
+            "java backend client is not available",
+        )
+        .to_string()
+    })?;
+    let response = backend.send(&json!({
+        "document": request.get("source_path").and_then(Value::as_str).unwrap_or(""),
+        "preset": request.get("preset").and_then(Value::as_str).unwrap_or("lite")
+    }))?;
+    if timeout_seconds.is_some_and(|timeout| started.elapsed().as_secs_f64() > timeout) {
+        return Err(error_json(
+            "PARSE_TIMEOUT",
+            "OpenDataLoader prediction parse exceeded timeout_seconds",
+        )
+        .to_string());
+    }
+    if response.get("ok").and_then(Value::as_bool) == Some(false) {
+        let code = response
+            .get("errorCode")
+            .and_then(Value::as_str)
+            .unwrap_or("JAVA_BACKEND_PARSE_FAILED");
+        let message = response
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        return Err(error_json(code, message).to_string());
+    }
+    Ok(response)
+}
+
+fn markdown_for_prediction_result(backend: &str, document: &Value) -> String {
+    if backend == "opendataloader-java-core" {
+        return document
+            .get("markdown")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+    }
+    markdown_from_document(document)
+}
+
 fn parse_pdf_for_prediction(
     request: &Value,
     timeout_seconds: Option<f64>,
@@ -5291,21 +5441,29 @@ fn error_code_from_json(error: &str) -> String {
 }
 
 fn opendataloader_prediction_document_summary_from_document(
+    backend: &str,
     document: &Value,
     document_id: &str,
     markdown_path: &Path,
     elapsed: f64,
 ) -> Value {
+    let parser_document = if backend == "opendataloader-java-core" {
+        document.get("trustDocument").unwrap_or(document)
+    } else {
+        document
+    };
     json!({
         "document_id": document_id,
         "status": "parsed",
+        "backend": backend,
         "elapsed": elapsed,
         "markdown_path": markdown_path.to_string_lossy(),
         "error": Value::Null,
-        "preset": document.pointer("/parserRun/preset").cloned().unwrap_or(Value::Null),
-        "runtimeProfile": document.pointer("/parserRun/profile").cloned().unwrap_or(Value::Null),
-        "modelRuntime": document.pointer("/parserRun/modelRuntime").cloned().unwrap_or(Value::Null),
-        "modelRouting": document.pointer("/parserRun/modelRouting").cloned().unwrap_or(Value::Null)
+        "preset": parser_document.pointer("/parserRun/preset").cloned().unwrap_or(Value::Null),
+        "runtimeProfile": parser_document.pointer("/parserRun/profile").cloned().unwrap_or(Value::Null),
+        "modelRuntime": parser_document.pointer("/parserRun/modelRuntime").cloned().unwrap_or(Value::Null),
+        "modelRouting": parser_document.pointer("/parserRun/modelRouting").cloned().unwrap_or(Value::Null),
+        "javaBackendElapsedMs": document.pointer("/metrics/elapsedMs").cloned().unwrap_or(Value::Null)
     })
 }
 

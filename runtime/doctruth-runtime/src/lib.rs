@@ -4796,6 +4796,8 @@ fn opendataloader_compare_reports_json(request: &Value) -> Result<Value, String>
         return Ok(json!({
             "runtime": RUNTIME,
             "protocol_version": PROTOCOL_VERSION,
+            "ok": false,
+            "status": "error",
             "error_code": "COMPARISON_INPUT_MISSING",
             "message": "reference_evaluation and candidate_evaluation must point to readable evaluation JSON files",
             "missing": missing
@@ -4812,6 +4814,7 @@ fn opendataloader_compare_reports_json(request: &Value) -> Result<Value, String>
         "reference": reference_metrics,
         "candidate": candidate_metrics,
         "delta": opendataloader_comparison_delta(&reference_metrics, &candidate_metrics),
+        "coverage": opendataloader_comparison_coverage(&reference, &candidate),
         "bottomRegressionCases": opendataloader_bottom_regression_cases(&reference, &candidate)
     }))
 }
@@ -4867,6 +4870,42 @@ fn comparison_delta_metric(reference: &Value, candidate: &Value, metric: &str) -
         (Some(reference), Some(candidate)) => json!(round_metric(candidate - reference)),
         _ => Value::Null,
     }
+}
+
+fn opendataloader_comparison_coverage(reference: &Value, candidate: &Value) -> Value {
+    let reference_ids = comparison_document_ids(reference);
+    let candidate_ids = comparison_document_ids(candidate);
+    let reference_only = reference_ids
+        .difference(&candidate_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let candidate_only = candidate_ids
+        .difference(&reference_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let compared_count = reference_ids.intersection(&candidate_ids).count();
+    json!({
+        "comparedCount": compared_count,
+        "referenceOnlyCount": reference_only.len(),
+        "candidateOnlyCount": candidate_only.len(),
+        "referenceOnlyDocumentIds": reference_only,
+        "candidateOnlyDocumentIds": candidate_only
+    })
+}
+
+fn comparison_document_ids(report: &Value) -> BTreeSet<String> {
+    report
+        .get("documents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|document| {
+            document
+                .get("document_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect()
 }
 
 fn opendataloader_bottom_regression_cases(reference: &Value, candidate: &Value) -> Value {

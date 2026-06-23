@@ -1658,6 +1658,8 @@ fn opendataloader_comparison_reports_missing_inputs_as_success_json() {
         .clone();
 
     let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["ok"], false);
+    assert_eq!(report["status"], "error");
     assert_eq!(report["error_code"], "COMPARISON_INPUT_MISSING");
 }
 
@@ -1684,6 +1686,9 @@ fn opendataloader_comparison_reports_deltas_and_bottom_regressions() {
             }, {
                 "document_id": "doc-b",
                 "scores": {"overall": 0.70, "nid": 0.80, "teds": 0.60, "mhs": 0.70}
+            }, {
+                "document_id": "doc-ref-only",
+                "scores": {"overall": 0.20, "nid": 0.20, "teds": 0.20, "mhs": 0.20}
             }]
         })
         .to_string(),
@@ -1706,6 +1711,9 @@ fn opendataloader_comparison_reports_deltas_and_bottom_regressions() {
             }, {
                 "document_id": "doc-b",
                 "scores": {"overall": 0.74, "nid": 0.82, "teds": 0.70, "mhs": 0.70}
+            }, {
+                "document_id": "doc-candidate-only",
+                "scores": {"overall": 0.99, "nid": 0.99, "teds": 0.99, "mhs": 0.99}
             }]
         })
         .to_string(),
@@ -1739,6 +1747,18 @@ fn opendataloader_comparison_reports_deltas_and_bottom_regressions() {
         report["bottomRegressionCases"][0]["delta"]["overall"],
         -0.25
     );
+    assert_eq!(report["coverage"]["comparedCount"], 2);
+    assert_eq!(report["coverage"]["referenceOnlyCount"], 1);
+    assert_eq!(report["coverage"]["candidateOnlyCount"], 1);
+    assert_eq!(
+        report["coverage"]["referenceOnlyDocumentIds"],
+        json!(["doc-ref-only"])
+    );
+    assert_eq!(
+        report["coverage"]["candidateOnlyDocumentIds"],
+        json!(["doc-candidate-only"])
+    );
+    assert_eq!(report["bottomRegressionCases"].as_array().unwrap().len(), 1);
 }
 
 #[test]

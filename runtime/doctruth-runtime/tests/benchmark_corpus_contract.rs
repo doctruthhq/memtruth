@@ -100,6 +100,27 @@ fn opendataloader_parity_repairs_spaced_letter_and_fragmented_headings() {
 }
 
 #[test]
+fn opendataloader_parity_promotes_standalone_question_headings() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-question-heading");
+    let report = run_opendataloader_prediction("01030000000179", &output_dir);
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000179.md")).unwrap();
+    assert!(
+        markdown.contains("# What tool(s) do you typically use in your course?"),
+        "standalone tool question should be promoted:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("# What supporting materials do you utilize for this course?"),
+        "standalone materials question should be promoted:\n{markdown}"
+    );
+    assert!(
+        !markdown.contains("# Figure 12.2"),
+        "figure captions should not be promoted as question headings:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_reconstructs_long_text_comparative_table() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-long-table");
     let report = run_opendataloader_prediction("01030000000088", &output_dir);

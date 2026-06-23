@@ -6518,8 +6518,37 @@ fn markdown_from_document(document: &Value) -> String {
 
 fn opendataloader_finalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     opendataloader_promote_fragmented_richardson_heading(opendataloader_reconstruct_formula_blocks(
-        lines,
+        opendataloader_promote_joined_activity_headings(lines),
     ))
+}
+
+fn opendataloader_promote_joined_activity_headings(lines: Vec<String>) -> Vec<String> {
+    let mut output = Vec::new();
+    for line in lines {
+        if let Some((heading, suffix)) = opendataloader_split_joined_activity_heading(&line) {
+            output.push(format!("# {heading}"));
+            if !suffix.is_empty() {
+                output.push(suffix);
+            }
+        } else {
+            output.push(line);
+        }
+    }
+    output
+}
+
+fn opendataloader_split_joined_activity_heading(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.starts_with('#') || !trimmed.starts_with("Activity ") {
+        return None;
+    }
+    let close_paren = trimmed.find(") ")?;
+    let heading = normalize_text(&trimmed[..=close_paren]);
+    if !activity_markdown_heading(&heading) {
+        return None;
+    }
+    let suffix = normalize_text(&trimmed[close_paren + 1..]);
+    Some((heading, suffix))
 }
 
 fn opendataloader_promote_fragmented_richardson_heading(lines: Vec<String>) -> Vec<String> {
@@ -6597,6 +6626,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized =
         opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized));
     let normalized = opendataloader_merge_trailing_section_marker_headings(normalized);
+    let normalized = opendataloader_promote_standalone_question_headings(normalized);
     opendataloader_drop_report_title_before_executive_summary(normalized)
 }
 
@@ -6625,6 +6655,48 @@ fn opendataloader_promote_initial_title_line(mut lines: Vec<String>) -> Vec<Stri
         *first = format!("# {}", normalize_text(first));
     }
     lines
+}
+
+fn opendataloader_promote_standalone_question_headings(lines: Vec<String>) -> Vec<String> {
+    lines
+        .into_iter()
+        .map(|line| {
+            if line.starts_with('#') || !standalone_question_markdown_heading(&line) {
+                line
+            } else {
+                format!("# {}", normalize_text(&line))
+            }
+        })
+        .collect()
+}
+
+fn standalone_question_markdown_heading(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > 100
+        || !trimmed.ends_with('?')
+        || is_numeric_value_line(trimmed)
+        || list_item(trimmed)
+    {
+        return false;
+    }
+    if trimmed.starts_with("Figure ") || trimmed.starts_with("Table ") {
+        return false;
+    }
+    if trimmed.contains(". ") || trimmed.contains(';') || trimmed.contains(':') {
+        return false;
+    }
+    let words = trimmed.split_whitespace().collect::<Vec<_>>();
+    if !(2..=12).contains(&words.len()) {
+        return false;
+    }
+    matches!(
+        words[0]
+            .trim_matches(|ch: char| !ch.is_alphabetic())
+            .to_ascii_lowercase()
+            .as_str(),
+        "what" | "which" | "who" | "whom" | "whose" | "when" | "where" | "why" | "how"
+    )
 }
 
 fn opendataloader_drop_report_title_before_executive_summary(

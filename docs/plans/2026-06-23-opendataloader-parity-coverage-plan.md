@@ -1155,6 +1155,16 @@ Do not commit the whole prediction directory unless the repo policy explicitly w
 
 ### Task 11: Compare Against OpenDataLoader Hybrid Baseline
 
+**Status:** Completed in `24051b1` (`feat: compare opendataloader benchmark reports`)
+and tightened in `473adab` (`fix: report opendataloader comparison coverage`).
+
+Implementation note: `opendataloader_compare_reports` now compares existing
+evaluation JSON artifacts without rerunning full200, reads the current
+`metrics.score.*_mean` and `documents[].scores` format, emits
+reference/candidate/delta metrics, bottom regression cases, and coverage
+metadata for compared/reference-only/candidate-only documents. The recorded
+hybrid comparison covers the same 200 documents on both sides.
+
 **Files:**
 - Modify: `runtime/doctruth-runtime/src/lib.rs`
 - Test: `runtime/doctruth-runtime/tests/benchmark_corpus_contract.rs`

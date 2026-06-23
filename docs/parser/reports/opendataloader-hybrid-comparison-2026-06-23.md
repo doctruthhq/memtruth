@@ -16,6 +16,17 @@
 | TEDS | 0.927643 | 0.475822 | -0.451821 |
 | MHS | 0.820776 | 0.469231 | -0.351545 |
 
+## Coverage
+
+| Field | Value |
+| --- | ---: |
+| Compared documents | 200 |
+| Reference-only documents | 0 |
+| Candidate-only documents | 0 |
+
+Both reports cover the same 200 OpenDataLoader Bench documents. The deltas are
+therefore quality gaps, not corpus mismatch artifacts.
+
 ## Bottom Regression Cases
 
 | Document | Overall Delta | NID Delta | TEDS Delta | MHS Delta |

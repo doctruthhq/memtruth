@@ -659,6 +659,7 @@ final class TrustDocumentRenderers {
 
     private static String blockType(TrustUnit unit) {
         return switch (unit.kind()) {
+            case HEADING -> "heading";
             case TABLE_CELL -> "table";
             case FIGURE_CAPTION -> "image";
             default -> "text";

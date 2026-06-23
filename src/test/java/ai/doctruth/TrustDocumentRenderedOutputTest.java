@@ -115,6 +115,20 @@ class TrustDocumentRenderedOutputTest {
     }
 
     @Test
+    @DisplayName("content_blocks preserves heading block type")
+    void contentBlocksPreserveHeadingBlockType() throws Exception {
+        var doc = sampleDocument();
+        var out = new java.io.StringWriter();
+
+        doc.writeContentBlocks(out);
+
+        var root = MAPPER.readTree(out.toString());
+        var firstBlock = root.path("contentBlocks").get(0);
+        assertThat(firstBlock.path("type").asText()).isEqualTo("heading");
+        assertThat(firstBlock.path("text").asText()).isEqualTo("Work Experience");
+    }
+
+    @Test
     @DisplayName("markdown_anchored includes bbox metadata when available")
     void markdownAnchoredIncludesBboxMetadata() {
         var doc = sampleDocument();
@@ -147,7 +161,7 @@ class TrustDocumentRenderedOutputTest {
 
         String compact = doc.toCompactLlm();
 
-        assertThat(compact).contains("u|unit-0001|TEXT_BLOCK|p1|span-0001|Work Experience|bbox=100,100,500,200");
+        assertThat(compact).contains("u|unit-0001|HEADING|p1|span-0001|Work Experience|bbox=100,100,500,200");
     }
 
     @Test

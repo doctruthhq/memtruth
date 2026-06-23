@@ -52,6 +52,9 @@ public final class OpenDataLoaderTrustDocumentAdapter {
     }
 
     private static String blockKind(TrustUnit unit) {
+        if (unit.kind() == TrustUnitKind.HEADING) {
+            return "heading";
+        }
         if (unit.kind() == TrustUnitKind.TABLE_CELL) {
             return "table_cell";
         }

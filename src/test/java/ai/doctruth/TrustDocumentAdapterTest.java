@@ -34,7 +34,7 @@ class TrustDocumentAdapterTest {
         assertThat(doc.source().sourceHash()).isEqualTo("sha256:source");
         assertThat(doc.body().pages()).extracting(TrustPage::pageNumber).containsExactly(1, 2);
         assertThat(doc.body().units()).hasSize(2);
-        assertThat(doc.body().units().get(0).kind()).isEqualTo(TrustUnitKind.TEXT_BLOCK);
+        assertThat(doc.body().units().get(0).kind()).isEqualTo(TrustUnitKind.HEADING);
         assertThat(doc.body().units().get(0).location().boundingBox()).contains(BOX);
         assertThat(doc.body().units().get(0).evidence().evidenceSpanIds()).containsExactly("span-0001");
         assertThat(doc.body().units().get(1).kind()).isEqualTo(TrustUnitKind.FIGURE_CAPTION);
@@ -70,4 +70,3 @@ class TrustDocumentAdapterTest {
                 .hasMessageContaining("parserRun");
     }
 }
-

@@ -252,13 +252,16 @@ public record TrustDocument(
         }
         units.add(new TrustUnit(
                 unitId(unitIndex),
-                trustUnitKind(parserRun),
+                trustUnitKind(section, parserRun),
                 locationFrom(section.location(), section.boundingBox(), unitIndex),
                 new TrustUnitContent(section.text(), sourceObjectId(unitIndex)),
                 evidenceFrom(unitIndex)));
     }
 
-    private static TrustUnitKind trustUnitKind(ParserRun parserRun) {
+    private static TrustUnitKind trustUnitKind(TextSection section, ParserRun parserRun) {
+        if (section.kind() == BlockKind.HEADING) {
+            return TrustUnitKind.HEADING;
+        }
         return parserRun.backend().contains("ocr") ? TrustUnitKind.OCR_REGION : TrustUnitKind.TEXT_BLOCK;
     }
 

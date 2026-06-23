@@ -34,9 +34,12 @@ class OpenDataLoaderJavaBackendContractTest {
         assertThat(response.blocks().getFirst().pageIndex()).isZero();
         assertThat(response.blocks().getFirst().readingOrder()).isGreaterThanOrEqualTo(0);
         assertThat(response.blocks().getFirst().text()).contains("OpenDataLoader Java Core");
+        assertThat(response.blocks().getFirst().kind()).isEqualTo("heading");
         assertThat(response.blocks().getFirst().bbox()).isPresent();
         assertThat(response.tables()).isNotNull();
-        assertThat(response.headings()).isNotNull();
+        assertThat(response.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("OpenDataLoader Java Core");
         assertThat(response.sourceMap()).isNotEmpty();
         assertThat(response.sourceMap().getFirst().unitId()).isEqualTo(response.blocks().getFirst().sourceUnitId());
         assertThat(response.warnings()).isNotNull();

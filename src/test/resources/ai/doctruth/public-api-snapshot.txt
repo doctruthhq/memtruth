@@ -879,7 +879,7 @@ TYPE record ai.doctruth.TrustUnitEvidence [public final]
   method java.util.List warnings() [public]
 
 TYPE enum ai.doctruth.TrustUnitKind [public final]
-  enum-constants HEADING, TEXT_BLOCK, LINE_SPAN, TABLE_CELL, FIGURE_CAPTION, KEY_VALUE_REGION, OCR_REGION
+  enum-constants TEXT_BLOCK, LINE_SPAN, TABLE_CELL, FIGURE_CAPTION, KEY_VALUE_REGION, OCR_REGION, HEADING
   method ai.doctruth.TrustUnitKind valueOf(java.lang.String) [public static]
   method ai.doctruth.TrustUnitKind[] values() [public static]
 

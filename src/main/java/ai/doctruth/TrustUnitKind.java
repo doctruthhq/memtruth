@@ -6,11 +6,11 @@ package ai.doctruth;
  * @since 1.0.0
  */
 public enum TrustUnitKind {
-    HEADING,
     TEXT_BLOCK,
     LINE_SPAN,
     TABLE_CELL,
     FIGURE_CAPTION,
     KEY_VALUE_REGION,
-    OCR_REGION
+    OCR_REGION,
+    HEADING
 }

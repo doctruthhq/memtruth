@@ -4,6 +4,10 @@ This matrix tracks DocTruth runtime parity against the Apache-2.0
 OpenDataLoader PDF processor surface. Status values are conservative and do not
 claim parser behavior that has not been ported or verified in DocTruth.
 
+Current execution boundary: Java/OpenDataLoader-compatible parser core is the
+current quality source of truth. Rust owns the runtime shell and Python
+replacement boundary. Python/OpenDataLoader original runners are oracle-only.
+
 ## Source Snapshot
 
 - Upstream repository:
@@ -12,12 +16,14 @@ claim parser behavior that has not been ported or verified in DocTruth.
 - Reference commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4
 - Local path: `third_party/opendataloader-pdf-reference`
 - Usage: local behavior reference, benchmark input, and oracle source for
-  Rust-owned ports. The reference files are not compiled into DocTruth and are
-  not a production parser fallback.
+  Java parser-core ports first, with Rust ports only after benchmark evidence
+  supports replacement. The reference files are not compiled into DocTruth and
+  are not a production parser fallback.
 
 ## Status Values
 
-- `ported`: behavior is implemented and covered in DocTruth runtime tests.
+- `ported`: behavior is implemented and covered in DocTruth Java parser-core
+  tests, plus Rust shell tests when benchmark/runtime packaging is affected.
 - `partial`: related behavior exists, but parity is incomplete or still under
   verification.
 - `not_ported`: no DocTruth-owned runtime equivalent has been added yet.
@@ -39,9 +45,11 @@ claim parser behavior that has not been ported or verified in DocTruth.
 - NID mean: `0.859061`
 - TEDS mean: `0.475822`
 - MHS mean: `0.469231`
-- Interpretation: current Rust quality is measurable but not yet
+- Interpretation: current Rust edge-fast quality is measurable but not yet
   OpenDataLoader parity. The main gaps are OCR/text-layer fallback, table
-  structure, and heading hierarchy.
+  structure, and heading hierarchy. The corrected parity path promotes the
+  Java/OpenDataLoader-compatible backend as the quality core and keeps Rust as
+  the benchmark/model/process shell.
 
 ## DocumentProcessor
 

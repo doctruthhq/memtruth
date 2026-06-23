@@ -4,8 +4,9 @@ Status: accepted
 
 ## Context
 
-DocTruth v1 is moving parser ownership into `doctruth-runtime`. The legacy
-research stack was heterogeneous:
+DocTruth v1 keeps parser-quality ownership in the Java/OpenDataLoader-compatible
+core while moving model-worker and Python replacement ownership into
+`doctruth-runtime`. The legacy research stack was heterogeneous:
 
 ```text
 RT-DETR/TATR       ONNXRuntime artifacts and tensor decoders
@@ -20,16 +21,17 @@ dependencies even when they only needed text-layer evidence.
 
 ## Decision
 
-For DocTruth v1, Rust core means:
+For DocTruth v1, Rust runtime-shell ownership means:
 
 ```text
-doctruth-runtime owns parser orchestration
+doctruth-runtime owns warm parser process orchestration
 doctruth-runtime owns model manifest/cache validation
 doctruth-runtime owns source hash and request envelope construction
 doctruth-runtime owns worker response validation and normalization
 doctruth-runtime owns benchmark_corpus execution
 doctruth-runtime owns audit-grade warning propagation
 heavy model execution happens through Rust-owned local workers
+heavy model execution may happen in isolated local workers
 ```
 
 The production model worker is a local, explicit, auditable Rust process
@@ -57,15 +59,17 @@ parserRun.models = required model identities
 
 ## Consequences
 
-- The CLI is Rust-first without bundling PaddleOCR, PaddlePaddle, RapidOCR, or
-  ONNXRuntime Python environments into the production package.
+- The CLI is Rust-shell-first without bundling PaddleOCR, PaddlePaddle,
+  RapidOCR, or ONNXRuntime Python environments into the production package.
 - Release packages include the Rust runtime and Rust MNN worker, not Python
   worker adapters.
 - Real MNN inference remains behind the Rust worker implementation and model
   manifest/cache contract; replacing the protocol stub with actual MNN calls is
   an implementation task, not a license to reintroduce Python production
   residency.
-- Parser accuracy still requires labeled corpus evidence. Passing generated
+- In-process Rust model execution remains a future optimization.
+- Parser accuracy remains owned by the Java/OpenDataLoader-compatible quality
+  core until benchmark parity proves a replacement. Passing generated
   real-route smokes proves integration, not production accuracy.
 
 ## Verification

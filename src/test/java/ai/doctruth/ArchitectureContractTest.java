@@ -25,7 +25,7 @@ class ArchitectureContractTest {
 
         assertThat(adr)
                 .contains("Status: accepted")
-                .contains("doctruth-runtime owns parser orchestration")
+                .contains("doctruth-runtime owns warm parser process orchestration")
                 .contains("heavy model execution may happen in isolated local workers")
                 .contains("parserRun.backend = rust-sidecar+model-worker")
                 .contains("In-process Rust model execution remains a future optimization");
@@ -36,16 +36,19 @@ class ArchitectureContractTest {
         String prd = Files.readString(Path.of("docs/pdf-parser-runtime-prd.md"));
 
         assertThat(prd)
-                .contains("| PDF substrate | `pdf_oxide` |")
+                .contains("Java/OpenDataLoader-compatible parser core is the current quality source of truth")
+                .contains("Rust owns the runtime shell and Python replacement boundary")
+                .contains("Python/OpenDataLoader original runners are oracle-only")
+                .contains("| PDF substrate | Java/PDFBox + OpenDataLoader-compatible processors |")
                 .contains("| Runtime packaging | Kreuzberg |")
-                .contains("| Reading-order edge cases | `pdf_oxide` + OpenDataLoader PDF |")
+                .contains("| Reading-order edge cases | OpenDataLoader PDF |")
                 .contains("| Parser safety filters | OpenDataLoader PDF |")
                 .contains("| Unified document contract | Docling |")
                 .contains("| Layered output products | MinerU |")
                 .contains("| Evidence/trust | DocTruth |")
                 .contains("No external parser output is canonical.")
                 .contains("No external schema is canonical.")
-                .contains("No Java parser path is canonical.")
+                .contains("No external project schema is canonical.")
                 .contains("TrustDocument is canonical.");
     }
 

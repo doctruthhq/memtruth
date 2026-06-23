@@ -7,28 +7,31 @@ Last updated: 2026-06-13
 
 ## 0. Non-Negotiable Runtime Direction
 
-DocTruth parser ownership is Rust-core by contract.
+DocTruth parser ownership is quality-core first, Rust-shell first.
 
 ```text
-Rust core/runtime:
-  owns PDF parsing, reading order, layout/table/OCR routing, evidence spans,
-  parser warnings, audit-grade decisions, benchmark execution, and
-  TrustDocument emission.
+Java/OpenDataLoader-compatible parser core:
+  owns the current PDF parsing quality path, PDFBox compatibility, text
+  extraction, reading order, layout/table heuristics, heading reconstruction,
+  evidence spans, parser warnings, source refs, and TrustDocument emission.
 
-Java:
-  is only SDK, CLI, API, release packaging, lifecycle, and compatibility
-  wrapper around the Rust core.
+Rust runtime shell:
+  owns warm process orchestration, benchmark execution, OpenDataLoader Bench
+  prediction packaging, resource accounting, model manifest/cache validation,
+  MNN worker protocol, and Python/Torch/Docling replacement.
 
-Java/PDFBox:
-  is legacy migration surface and differential oracle only. It must never be
-  the default parser core, the product direction, or the place where new parser
-  quality work lands.
+Python/OpenDataLoader original runners:
+  are oracle-only and may not become production fallback.
 ```
 
-Missing Rust runtime is an installation/configuration error for the main parser
-path. It is not a reason to silently parse with Java/PDFBox. Java/PDFBox may be
-selected only through explicit legacy/oracle controls such as
-`ParserBackendMode.PDFBOX` or `--backend pdfbox`.
+Java/OpenDataLoader-compatible parser core is the current quality source of truth.
+Rust owns the runtime shell and Python replacement boundary.
+Python/OpenDataLoader original runners are oracle-only.
+
+Rust parser-core replacement is a future ADR after benchmark parity, not the
+current default parser-quality architecture. Missing Rust runtime is an
+installation/configuration error for benchmark shell/model-worker execution,
+but it is not a reason to claim the Java parser-quality core is legacy-only.
 
 Current production model-worker direction:
 
@@ -38,7 +41,8 @@ Production package:
   doctruth-mnn-model-worker
 
 Production runtime:
-  Rust-owned parser orchestration
+  Java-owned parser-quality core
+  Rust-owned process/runtime orchestration
   Rust-owned model manifest/cache validation
   Rust-owned worker protocol and TrustDocument normalization
 
@@ -90,9 +94,8 @@ evidence/audit semantics.
 
 ## 2. Problem
 
-Earlier DocTruth PDF parsing used a Java/PDFBox baseline. That baseline is now
-legacy/oracle only because real-world documents expose failure modes that
-directly damage evidence quality:
+Earlier DocTruth PDF parsing used a Java/PDFBox baseline. That baseline exposed
+real-world failure modes that directly damage evidence quality:
 
 ```text
 multi-column reading order
@@ -106,15 +109,20 @@ headers/footers polluting source spans
 wrong bbox unions after section coalescing
 ```
 
-If these errors survive into `TrustDocument`, `EvidenceSpan`, or `Citation`,
-then the audit trail becomes formally present but substantively wrong.
+The conclusion is not to discard Java/PDFBox before parity is proven. The
+correct near-term direction is to harden the Java/OpenDataLoader-compatible
+parser core, measure it against OpenDataLoader Bench, and let Rust replace the
+Python/Torch/Docling outer runtime. If these errors survive into
+`TrustDocument`, `EvidenceSpan`, or `Citation`, then the audit trail becomes
+formally present but substantively wrong.
 
 ## 3. Product Thesis
 
 DocTruth should become an evidence-first document runtime:
 
 ```text
-Kreuzberg-style Rust runtime and local model operations
+Java/PDFBox/OpenDataLoader-compatible parser-quality core
++ Kreuzberg-style Rust runtime shell and local model operations
 + Docling/MinerU-style layered document contracts
 + OpenDataLoader-style geometric reading order and safety filters
 + DocTruth-level citation, provenance, confidence, audit, and replay semantics
@@ -134,19 +142,19 @@ use them as layered references:
 
 ```text
 Rust PDF substrate:
-  pdf_oxide by default for PDF bytes, object parsing, text extraction,
-  structure-tree-aware reading order, XY-Cut column-aware reading order,
-  page geometry, rendering, content-stream safety checks, line-table
-  heuristics, and bbox evidence. lopdf is not a DocTruth runtime dependency.
+  pdf_oxide as a future Rust parser-module candidate for PDF bytes, object
+  parsing, text extraction, structure-tree-aware reading order, XY-Cut
+  column-aware reading order, page geometry, rendering, content-stream safety
+  checks, line-table heuristics, and bbox evidence.
 
 Geometry and reading order:
-  pdf_oxide's native ReadingOrder::ColumnAware first. OpenDataLoader-style
-  XY-Cut++ scenarios and filters are used as additional behavioral references
-  where they improve resume/sidebar/header/footer/table cases.
+  Java/PDFBox/OpenDataLoader-compatible processors first. OpenDataLoader-style
+  XY-Cut++ scenarios and filters are used as behavioral references where they
+  improve resume/sidebar/header/footer/table cases.
 
 Runtime and model operations:
-  Kreuzberg-style Rust core, language wrappers, local model cache, model
-  manifest, feature-gated heavy capabilities, and sidecar/worker handoff.
+  Kreuzberg-style Rust runtime shell, language wrappers, local model cache,
+  model manifest, feature-gated heavy capabilities, and sidecar/worker handoff.
 
 Document representation:
   Docling/MinerU-style lossless document model, readable block stream,
@@ -162,44 +170,41 @@ heuristics: each reference project informs one layer, and `TrustDocument`
 remains the single canonical contract that all parser observations must flow
 through.
 
-### PDFBox Replacement Boundary
+### Java Quality Core / Rust Shell Boundary
 
-The Rust replacement for Java/PDFBox is not a single one-for-one library swap.
-It is this boundary:
+The current work is not a direct PDFBox replacement. The immediate boundary is:
 
 ```text
-PDFBox today:
+Java quality core:
   PDF bytes -> text/page geometry/rendering/table heuristics -> Java objects
 
-DocTruth v1 target:
-  pdf_oxide -> Rust parser observations -> DocTruth geometry/table/OCR/model
-  modules -> TrustDocument -> Java wrapper/CLI/MCP
+DocTruth parity target:
+  Java/PDFBox + OpenDataLoader-compatible processors
+  -> TrustDocument
+  -> Rust runtime shell for corpus/model/process packaging
+  -> OpenDataLoader Bench reports
 ```
 
 Current implementation status:
 
 ```text
-pdf_oxide owns:
-  text-layer page extraction
-  ColumnAware / XY-Cut reading order entrypoint
-  span bbox extraction
-  page MediaBox geometry
-  rendered page PNG hashes
-  raw content-stream parsing for parser-safety checks
-  line-table primitive extraction
+Java parser core owns:
+  current PDFBox text-layer extraction
+  page geometry and bbox evidence
+  layout and semantic section coalescing
+  table heuristics and borderless table recovery
+  TrustDocument emission
 
-DocTruth owns:
-  normalized bboxes
-  TrustUnit/TrustTable/TrustPage contracts
-  content_blocks.json and parse_trace.json
-  warnings and audit-grade decisions
-  source maps and replayable evidence artifacts
+Rust runtime shell owns:
+  OpenDataLoader Bench prediction packaging
+  corpus runner and resource accounting
+  MNN model-worker protocol
+  Python/Torch/Docling replacement boundary
+  future parser modules after parity is proven
 ```
 
-This means `pdf_oxide` can replace the PDFBox substrate without replacing
-DocTruth's evidence model. `pdf_oxide` may emit Markdown/HTML/structured data,
-but DocTruth must still normalize through `TrustDocument` so audit and replay
-semantics stay stable.
+This means Rust can remove the expensive Python/Docling/Torch outer runtime
+without prematurely discarding the Java/PDFBox parser quality path.
 
 ### Reference Composition Guardrails
 
@@ -207,11 +212,11 @@ The reference projects do not compete if each one stays in its lane:
 
 | Layer | Primary reference | DocTruth decision |
 | --- | --- | --- |
-| PDF substrate | `pdf_oxide` | Default Rust PDF backend for bytes, text, page geometry, rendering, structure-tree and XY-Cut reading-order entrypoints |
-| Runtime packaging | Kreuzberg | Rust core first; Java/Python/JS are wrappers or launchers, not parser owners |
+| PDF substrate | Java/PDFBox + OpenDataLoader-compatible processors | Current parser-quality backend for bytes, text, page geometry, reading order, table heuristics, and source refs |
+| Runtime packaging | Kreuzberg | Rust shell first; Java owns current parser quality; Python/Docling/Torch are oracle-only |
 | Model operations | Kreuzberg | Local manifest/cache/doctor/worker handoff; heavy models opt-in |
-| Reading-order edge cases | `pdf_oxide` + OpenDataLoader PDF | Use `pdf_oxide` first; port/verify OpenDataLoader-style XY-Cut++ cases where they improve two-column/sidebar/cross-layout behavior |
-| Parser safety filters | OpenDataLoader PDF | Hidden/off-page/tiny/duplicate/background text filters must become Rust warnings and audit gates |
+| Reading-order edge cases | OpenDataLoader PDF | Port/verify OpenDataLoader-style XY-Cut++ cases where they improve two-column/sidebar/cross-layout behavior |
+| Parser safety filters | OpenDataLoader PDF | Hidden/off-page/tiny/duplicate/background text filters must become Java parser-core warnings and audit gates first |
 | Unified document contract | Docling | Lossless canonical model, lossy exports, provenance-rich chunks |
 | Layered output products | MinerU | Markdown, flat content blocks, middle/trace structure, debug artifacts |
 | Evidence/trust | DocTruth | Source refs, quote hashes, bbox/table-cell citations, audit gates, benchmark reports, replay packages |
@@ -221,16 +226,16 @@ Conflict rule:
 ```text
 No external parser output is canonical.
 No external schema is canonical.
-No Java parser path is canonical.
+No external project schema is canonical.
 TrustDocument is canonical.
 ```
 
 Current guardrail status: `ArchitectureContractTest` asserts this composition
 table and conflict rule so future docs changes cannot quietly promote
-Kreuzberg, Docling, MinerU, OpenDataLoader, or Java/PDFBox into the canonical
+Kreuzberg, Docling, MinerU, OpenDataLoader, or PDFBox into the canonical
 DocTruth contract.
 
-If `pdf_oxide`, an OpenDataLoader-style rule, a model worker, and a tagged-PDF
+If Java/PDFBox, an OpenDataLoader-style rule, a model worker, and a tagged-PDF
 structure tree disagree, DocTruth should not silently pick a winner in strict
 mode. It should record parser provenance, emit a warning when the disagreement
 is material, and block audit-grade output for severe cases such as uncertain
@@ -415,15 +420,15 @@ References:
 ### Benchmark Learning Status
 
 This table is the source of truth for what has been learned, implemented, and
-verified from the reference projects. "Complete" means the behavior is covered by
-DocTruth-owned tests or smoke scripts. "Partial" means the contract or adapter is
-implemented, but the broad accuracy or Rust-core ownership requirement is still
-open.
+verified from the reference projects. "Complete" means the behavior is covered
+by DocTruth-owned tests or smoke scripts. "Partial" means the contract or
+adapter is implemented, but the broad accuracy or benchmark-parity requirement
+is still open.
 
 | Source | Learned capability | DocTruth status | Evidence | Remaining gap |
 | --- | --- | --- | --- | --- |
-| Kreuzberg | Rust parser/runtime as the product core | Complete for Goal 1 defaultization, partial for broad parser-quality depth | `runtime/doctruth-runtime` has `parse_pdf`, `benchmark_corpus`, model-worker handoff, packaged sidecar, Java CLI/MCP/SDK sidecar wiring, OCR runtime-first selection, path-first SDK backend selection, Rust-default CLI shorthand output, missing-runtime failures for default TrustDocument parsing, and `pdf_oxide` text-layer extraction, page geometry, rendered image hashes, bbox-backed line units, content-stream safety checks, and line-table extraction | Future parser-quality phases must broaden labeled accuracy coverage and real-world table/OCR/model calibration |
-| Kreuzberg | `pdf_oxide`-style Rust PDF backend | Complete for default PDF substrate and table/debug MVP | Current Rust runtime uses `pdf_oxide` for text-layer page extraction, span bbox evidence, column-order post-processing, page MediaBox geometry, default rendered PNG page hashes, raw content-stream safety checks, and line-table extraction; `parserRun.pdfBackend.current` reports `pdf_oxide` and `status` reports `DEFAULT` | Broaden against real-world PDFs and keep model-assisted layout/table/OCR accuracy gates calibrated |
+| Kreuzberg | Rust runtime shell as the product runtime | Complete for shell/worker packaging, partial for broad parser-quality depth | `runtime/doctruth-runtime` has benchmark/corpus commands, model-worker handoff, packaged sidecar, Java CLI/MCP/SDK wiring, OCR/model routing contracts, resource reports, and OpenDataLoader Bench prediction packaging | Future parser-quality phases must harden the Java/OpenDataLoader-compatible core first, then prove any Rust parser replacement with benchmark evidence |
+| Kreuzberg | `pdf_oxide`-style Rust PDF backend | Experimental/secondary for parser-quality parity | Current Rust runtime has `pdf_oxide` text-layer extraction, span bbox evidence, column-order post-processing, page MediaBox geometry, rendered PNG page hashes, raw content-stream safety checks, and line-table extraction | Keep as a future parser module candidate; do not make it the current OpenDataLoader parity source of truth |
 | Kreuzberg | Local model cache and manifest-driven model handoff | Complete for cache/manifest/handoff and Rust-owned production worker protocol, partial for real MNN inference | Cache warm, SHA verification, model descriptors, runtime hints, Java and Rust doctor output, Java and Rust worker request metadata, `doctruth-mnn-model-worker` discovery, and Rust MNN worker protocol smoke | Real MNN OCR/table/layout inference, resource-profile reports, and broad accuracy/release artifact evidence are still pending |
 | Kreuzberg | RT-DETR-style layout detection | Complete for adapter/smoke and Rust runtime real-artifact entrypoint, partial for accuracy | Synthetic ONNX RT-DETR decoder smokes, opt-in public `Kreuzberg/layout-models` RT-DETR smoke, and `DOCTRUTH_RUNTIME_REAL_MODEL_ARTIFACTS=1` Rust runtime smoke | Broad labeled multi-layout corpus and calibrated layout-quality targets |
 | Kreuzberg | TATR-style table structure recognition | Complete for adapter/smoke and Rust runtime real-artifact entrypoint, partial for accuracy | Synthetic TATR decoder smokes, opt-in public Xenova TATR ONNX smoke with rendered-page input and row/column post-processing, and `DOCTRUTH_RUNTIME_REAL_MODEL_ARTIFACTS=1` Rust runtime smoke | Calibrated table normalization and labeled real-world table corpus |
@@ -434,8 +439,8 @@ open.
 | Docling | Unified document model | Complete for v1 contract | `TrustDocument`, `TrustUnit`, `TrustPage`, `TrustTable`, provenance, warnings, parser/model metadata | Contract can still grow for images/captions/forms as model coverage expands |
 | Docling | Lossless JSON with lossy Markdown/HTML exports | Complete | Deterministic JSON/audit/Markdown/HTML/plain/compact render contracts and source-map sidecars | Export parity should be rechecked when new unit kinds are added |
 | Docling | Provenance-first chunks for AI/RAG | Complete for v1 | Chunk/source-map/evidence contracts, compact LLM output, MCP evidence tools, citation verification | Broader chunking strategy can improve after real corpus feedback |
-| Docling | Parser backend/pipeline separation | Complete for Goal 1 defaultization, partial for later legacy-API migration | Parser presets, explicit Java oracle mode, sidecar backend, local worker protocols, Rust runtime commands, SDK backend modes, path-first Rust SDK parsing, MCP Rust parsing, and Rust-default CLI shorthand output | Java/PDFBox is not a primary parser core. Legacy document-first extraction remains compatibility-only until that older extraction API is reworked around the Rust runtime. |
-| OpenDataLoader PDF | XY-Cut++ reading order | Complete for Rust MVP, partial for broad corpus | Rust runtime has an attributed OpenDataLoader-style XY-Cut++ sorter covering cross-layout elements, adaptive horizontal/vertical cuts, narrow-outlier gap retry, two-column layouts, row-section preference, and sidebars | Broaden against labeled real-world PDF corpus and keep Java out of parser ownership |
+| Docling | Parser backend/pipeline separation | Complete for shell/API separation, partial for later legacy-API migration | Parser presets, Java parser-quality backend, sidecar backend, local worker protocols, Rust runtime commands, SDK backend modes, MCP integration, and CLI output profiles | Keep Java/PDFBox/OpenDataLoader-compatible parsing as current quality core while Rust owns process/model/benchmark shell |
+| OpenDataLoader PDF | XY-Cut++ reading order | Partial for current Java quality core and Rust experimental path | Rust runtime has an attributed OpenDataLoader-style XY-Cut++ sorter, but current parity execution should copy/adapt OpenDataLoader behavior into Java parser-core tests first | Broaden against labeled real-world PDF corpus and benchmark before claiming parity |
 | OpenDataLoader PDF | Tagged-PDF structure tree preference | Complete for Rust MVP, partial for broad semantic tag export | Rust runtime uses `pdf_oxide` canonical page reading order so trustworthy Tagged-PDF structure trees beat geometric ordering, emits `parserRun.readingOrder` and `parseTrace.readingOrder`, and falls back to XY-Cut with a structured warning when `/MarkInfo /Suspects true` marks the tree unreliable | Broaden against real tagged PDFs and expose richer role/heading/list/table semantics through `TrustDocument` without making external parser schemas canonical |
 | OpenDataLoader PDF | Parser safety/content filters | Complete for Rust MVP, partial for broad visual validation | Reference content filters remove hidden/off-page/tiny/duplicate/background text and whitespace artifacts before grouping; Rust runtime now filters duplicate, whitespace-only, off-page, tiny, near-white/background-like, and invisible render-mode text-layer spans, emits severe parser-safety warnings, and blocks audit-grade output | Add robust rendered-page background comparison and broaden warning taxonomy against labeled real-world fixtures |
 | OpenDataLoader PDF | Table border/cluster heuristics | Complete for Rust MVP, partial for broad table accuracy | Rust runtime normalizes `pdf_oxide` text-spatial borderless table detection plus `pdf_oxide` content-stream line-table extraction into `TrustDocument` tables; covered behavior includes bordered grids, merged cells, row spans, and adjacent-page continuations | Broaden table metrics against labeled real-world fixtures and calibrate model-assisted table recognition |
@@ -648,18 +653,19 @@ public API compatibility tests
 release packaging checks
 ```
 
-Disallowed Java-first responsibilities:
+Disallowed Java-first responsibilities after a future Rust-core ADR:
 
 ```text
-new default PDF parsing logic
 new OCR/table/layout model execution logic
 new parser-quality benchmark ownership
-new evidence reconciliation semantics
-new audit-grade parser decisions that Rust cannot reproduce
+unmeasured parser-quality changes
+unattributed copied reference behavior
+audit-grade parser decisions without benchmark evidence
 ```
 
-Java/PDFBox is a legacy migration surface and regression oracle only. It is not
-a fallback product path and not the parser-runtime architecture.
+Current Java/PDFBox/OpenDataLoader-compatible parsing is the quality core. It is
+not a fallback. Rust owns the runtime shell around it and any future Rust parser
+replacement must be benchmark-proven before becoming default.
 
 ### G4. Local-First Runtime
 
@@ -1230,8 +1236,8 @@ copies input incrementally into a temporary file instead of calling
 `InputStream.readAllBytes()`, then uses the same Rust-runtime path as file
 parsing so source hashes and page-image metadata remain consistent. The
 byte-array upload API still necessarily receives bytes already materialized by
-the caller. Java/PDFBox remains available only when a caller explicitly selects
-the legacy/oracle backend.
+the caller. Java/PDFBox/OpenDataLoader-compatible parsing remains the current
+quality backend while Rust owns shell/runtime behavior.
 
 LLM-facing Markdown must be deterministic: the same parser version, preset,
 model versions, and source hash should produce byte-stable output unless the
@@ -2062,24 +2068,25 @@ fallback/audit contract for its protocol and all Java wrapper paths. It can
 route model-assisted presets to configured workers, including real RT-DETR/TATR
 artifact smokes and SLANeXT/OCR worker-protocol smokes, but it still does not
 execute ONNX, PaddleOCR/SLANeXT, RapidOCR, or MNN models in the Rust process
-itself. Java/PDFBox compatibility code must not become a parallel model-worker
+itself. Java/PDFBox parser-quality code must not become a parallel model-worker
 implementation.
 
-Current Rust-first default status: the Rust runtime is no longer binary-only;
-its protocol entrypoints are callable through the `doctruth-runtime` library
-crate, while `src/main.rs` is a thin process wrapper. The product direction is:
-Rust runtime is the parser core, `pdf_oxide` is the default Rust PDF backend
-direction, and Java/PDFBox is wrapper/oracle/legacy compatibility only.
-Path-first SDK parsing and CLI parsing must use the Rust runtime by default;
-missing runtime is an installation error, not a normal Java fallback.
-Java/PDFBox is available only when the caller explicitly selects
-`ParserBackendMode.PDFBOX` or equivalent legacy/oracle mode.
+Current Java-quality-core / Rust-shell status: the Rust runtime is no longer
+binary-only; its protocol entrypoints are callable through the
+`doctruth-runtime` library crate, while `src/main.rs` is a thin process wrapper.
+The product direction for this parity phase is: Java/OpenDataLoader-compatible
+parser core is current parser-quality default, Rust runtime is the shell for
+process lifecycle, model workers, resource accounting, benchmark packaging, and
+future parser modules after benchmark parity. Missing Rust runtime is an
+installation error for shell/model/benchmark behavior, not proof that the Java
+quality core is legacy.
 The path-first SDK parser exposes explicit backend selection:
 `DocTruth.withProvider(provider).parsePdf(path).withParser(preset).backend(AUTO)`
-uses the configured Rust runtime, `.backend(PDFBOX)` is an explicit Java/PDFBox
-oracle mode, and `.backend(SIDECAR)` requires a configured runtime. CLI parsing
-follows the same rule: default Rust runtime, explicit `--backend pdfbox` only
-for oracle/legacy comparison. Source install and release tarballs now ship
+uses the configured parser policy, `.backend(PDFBOX)` selects the Java quality
+core explicitly, and `.backend(SIDECAR)` requires a configured runtime shell.
+CLI parsing follows the same rule: Java quality core for current parser-quality
+work, Rust shell for process/model/benchmark behavior, explicit
+`--backend pdfbox` only for Java-core selection. Source install and release tarballs now ship
 `bin/doctruth-runtime`, and the `bin/doctruth` launcher exports
 `DOCTRUTH_RUNTIME_COMMAND` automatically when that same-directory runtime is
 present.

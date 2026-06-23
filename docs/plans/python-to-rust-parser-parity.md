@@ -1,13 +1,21 @@
 # Python to Rust Parser Parity Checklist
 
-DocTruth production parsing must be Rust-owned. Python paths are legacy oracle,
-smoke, or test harness support only. This checklist tracks the remaining
-behavior that must move from Python adapters into `runtime/doctruth-runtime`
-before OpenDataLoader Bench is used as a final acceptance gate.
+DocTruth production runtime must be Rust-shell-owned, while current production
+parser quality is Java/OpenDataLoader-core-owned. Python paths are legacy
+oracle, smoke, or test harness support only. This checklist tracks the remaining
+outer-runtime behavior that must move from Python adapters into
+`runtime/doctruth-runtime` before OpenDataLoader Bench is used as a final
+acceptance gate.
+
+This checklist does not mean "rewrite Java/PDFBox parser quality in Rust now."
+The current parser-quality source of truth is the Java/OpenDataLoader-compatible
+backend. Rust owns benchmark packaging, warm process orchestration, resource
+accounting, model-worker protocols, and the Python replacement boundary.
 
 ## Projection and Markdown
 
-- [x] Rust-owned OpenDataLoader prediction command and evaluator path.
+- [x] Rust-owned OpenDataLoader prediction command and evaluator path for
+  packaging/reporting.
 - [x] Content block rendering without duplicated source units.
 - [x] Page-number noise filtering.
 - [x] Render TrustDocument tables as GFM-compatible HTML tables.

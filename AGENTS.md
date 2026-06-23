@@ -6,48 +6,66 @@ provenance, parser warnings, audit JSON, and `TrustDocument` output.
 
 ## Runtime Architecture
 
-DocTruth's parser/runtime core is Rust.
+DocTruth's current parser-quality core is Java/PDFBox with
+OpenDataLoader-compatible processors. This is the quality source of truth until
+OpenDataLoader benchmark parity is reached and a separate Rust-core ADR is
+accepted.
 
 ```text
 Java SDK / CLI / API
-  -> Rust native binding or Rust sidecar process
-  -> runtime/doctruth-runtime
+  -> Java/OpenDataLoader-compatible parser core
+  -> TrustDocument
+  -> Rust runtime shell for corpus/model/process orchestration
   -> evidence-native TrustDocument
 ```
 
-`runtime/doctruth-runtime` is the authoritative home for:
+Java/OpenDataLoader-compatible parser core is the current quality source of
+truth for:
 
 ```text
 PDF parsing
-page rasterization
-layout detection
-table recognition
-OCR routing and OCR evidence
-model/cache verification
-benchmark-corpus execution
+PDFBox compatibility
+text extraction
+layout geometry
+reading order
+table heuristics
+heading reconstruction
 parser warnings
-audit-grade parser decisions
-evidence reconciliation
-TrustDocument emission
+source refs
+TrustDocument normalization
 ```
 
-The default Rust PDF substrate is `pdf_oxide`, not a Java/PDFBox rewrite in
-Java and not a parallel parser core. Treat `pdf_oxide` as the replacement for
-PDFBox's low-level duties: PDF bytes, object and content-stream parsing,
-text-layer extraction, structure-tree and column-aware reading order
-entrypoints, page geometry, rendering, table-line primitives, parser-safety
-checks, and bbox evidence. `lopdf` is not a DocTruth runtime dependency or
-default parser-core component.
+Rust owns the runtime shell and Python replacement boundary:
 
-Java remains only the stable enterprise-facing SDK, CLI, API, packaging,
-lifecycle, and compatibility wrapper around the Rust core. Java/PDFBox is not a
-parser runtime strategy. It may exist only as a legacy migration surface and
-differential oracle for tests, never as the default parser path.
+```text
+warm backend process lifecycle
+benchmark-corpus execution
+OpenDataLoader Bench prediction packaging
+resource accounting
+model/cache verification
+MNN model worker protocol
+Python/Torch/Docling replacement
+fail-closed model routing
+```
+
+`runtime/doctruth-runtime` is therefore the authoritative home for the local
+runtime shell, model-worker boundary, benchmark runner, resource reports, and
+future Rust parser modules. It is not allowed to silently replace the Java
+quality core until benchmark parity proves that replacement.
+
+`pdf_oxide` remains a useful Rust PDF substrate candidate and future parser
+module, but it is not the current default parser-quality source of truth for
+OpenDataLoader parity work.
+
+Java remains the stable enterprise-facing SDK, CLI, API, packaging, lifecycle,
+and current parser-quality backend. Java/PDFBox is not legacy-only in the
+current OpenDataLoader parity plan.
 
 Do not add new parser-quality, OCR/table/layout, model-execution,
 benchmark-corpus, audit-grade parser, or evidence-reconciliation behavior only
-to Java. Java changes are aligned only when they expose, package, adapt,
-compatibility-test, or error-map behavior owned by the Rust runtime.
+to Rust when the Java/OpenDataLoader-compatible backend is the quality source of
+truth. Rust changes are aligned when they expose, package, run, measure, or
+model-augment behavior owned by the Java parser core.
 
 ## Resource Gates
 
@@ -127,8 +145,9 @@ Java SDK/CLI compatibility contracts
 ```
 
 When changing parser behavior, add tests at the Rust runtime boundary first.
-Then add Java tests only for SDK/CLI packaging, adapter behavior, compatibility,
-or error mapping.
+For parser-quality behavior in the current OpenDataLoader parity plan, add Java
+backend tests first, then Rust runtime tests for process lifecycle, packaging,
+resource accounting, model-worker routing, and benchmark output.
 
 ## Parser Reference Boundaries
 
@@ -152,8 +171,9 @@ contracts before they can be audit-grade.
 Kreuzberg implementation code must not be copied because its code license is
 not compatible with DocTruth's OSS direction. OpenDataLoader PDF v2+
 Apache-2.0 implementation ideas may be ported only with attribution, source
-commit notes, and NOTICE updates. Prefer Rust-owned ports and behavior tests
-over vendoring Java classes.
+commit notes, and NOTICE updates. Prefer Java parser-core ports for parser
+quality first, with Rust ports added only after benchmark evidence supports
+them.
 
 OpenDataLoader Bench is vendored under
 `third_party/opendataloader-bench/` at the source commit recorded in its
@@ -166,7 +186,9 @@ When parser-quality evidence is needed, first build or update a DocTruth ->
 OpenDataLoader Bench adapter:
 
 ```text
-DocTruth Rust runtime output
+DocTruth Java/OpenDataLoader-compatible parser output
+  -> TrustDocument
+  -> Rust runtime shell packaging
   -> OpenDataLoader Bench-compatible prediction markdown/artifact
   -> OpenDataLoader Bench evaluator / evaluation.json
   -> DocTruth benchmark report external_metrics
@@ -174,7 +196,8 @@ DocTruth Rust runtime output
 ```
 
 OpenDataLoader parity is measured, not asserted. A behavior is considered
-ported only when it has a Rust contract test, an upstream source reference, and
+ported only when it has a Java parser-core contract test, a Rust shell contract
+test when runtime packaging is affected, an upstream source reference, and
 either a focused OpenDataLoader Bench case or a full200 report showing the
 effect. Until full200 reaches the accepted baseline, DocTruth should be
 described as OpenDataLoader-inspired and progressively porting parity, not
@@ -193,7 +216,15 @@ or low-confidence table structure.
 
 ## Verification
 
-For Rust parser/runtime changes:
+For Java parser-quality changes:
+
+```bash
+mvn test
+mvn verify -P recorded
+git diff --check
+```
+
+For Rust runtime-shell, model-worker, or corpus changes:
 
 ```bash
 cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check
@@ -209,7 +240,7 @@ sh scripts/smoke-doctruth-runtime-model-worker.sh
 sh scripts/smoke-doctruth-runtime-benchmark-corpus.sh
 ```
 
-For Java SDK/CLI compatibility changes:
+For Java SDK/CLI compatibility-only changes:
 
 ```bash
 mvn test
@@ -217,10 +248,11 @@ mvn verify -P recorded
 git diff --check
 ```
 
-Do not claim the parser-runtime PRD complete while any parser-quality,
+Do not claim OpenDataLoader parity complete while parser-quality,
 model/cache, layout/table/OCR, corpus, audit-grade, or evidence-reconciliation
-behavior remains Java-only. If a Java path exists for compatibility, it must be
-documented and tested as wrapper/legacy/oracle behavior, not product core.
+behavior lacks benchmark evidence. If a Rust parser path exists, it must be
+documented and tested as experimental or secondary until it matches the Java
+quality core on the benchmark gate.
 
 ## Contribution Rules
 

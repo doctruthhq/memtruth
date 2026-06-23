@@ -2,7 +2,8 @@
 
 Date: 2026-06-18
 
-Status: plan
+Status: superseded for execution by
+`docs/plans/2026-06-23-java-core-rust-shell-opendataloader-parity.md`
 
 Owner: DocTruth
 
@@ -12,6 +13,14 @@ Make DocTruth practical for edge and local-agent use by turning the proven
 OpenDataLoader hybrid quality path into a DocTruth-owned runtime path, then
 progressively replacing the Python/Torch-heavy pieces with Rust and MNN-first
 lazy model runtime.
+
+Correction: this plan's practical intent was to preserve OpenDataLoader-quality
+parsing while Rustifying the expensive Python/Docling/Torch outer runtime. It
+must not be read as "replace the Java/PDFBox/OpenDataLoader-compatible parser
+quality core with a from-scratch Rust parser before benchmark parity." Current
+execution keeps the Java/OpenDataLoader-compatible parser core as the quality
+source of truth and makes Rust own the runtime shell, MNN worker boundary,
+benchmark runner, resource accounting, and Python replacement path.
 
 This plan supersedes the idea that DocTruth v1 should first become a fully
 from-scratch Rust parser. The more practical route is:

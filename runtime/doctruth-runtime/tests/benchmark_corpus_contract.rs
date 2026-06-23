@@ -62,6 +62,46 @@ fn opendataloader_prediction_timeout_path_does_not_spawn_per_document_child() {
 }
 
 #[test]
+fn opendataloader_prediction_ocr_routes_scanned_pdf_through_model_worker() {
+    let output_dir = temp_dir("doctruth-runtime-opendataloader-ocr-worker-route");
+    let worker = write_auto_ocr_model_worker();
+    let (model_cache, model_manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-opendataloader-ocr-cache");
+    let report = run_opendataloader_prediction_with_auto_ocr_mnn(
+        "01030000000165",
+        &output_dir,
+        &model_cache,
+        &model_manifest,
+        &worker,
+    );
+
+    assert_eq!(report["prediction"]["parsedCount"], 1);
+    assert_eq!(report["prediction"]["failedCount"], 0);
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["parsed_count"], 1);
+    assert_eq!(summary["failed_count"], 0);
+    assert_eq!(summary["documents"][0]["preset"], "ocr");
+    assert_eq!(
+        summary["documents"][0]["modelRouting"]["route"],
+        "ocr-model"
+    );
+    assert_eq!(
+        summary["documents"][0]["modelRouting"]["startedModelRuntime"],
+        true
+    );
+    assert_eq!(summary["model_routing_coverage"]["startedModelRuntime"], 1);
+
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000165.md")).unwrap();
+    assert!(
+        markdown.contains("Auto OCR evidence"),
+        "prediction markdown should come from the OCR model worker:\n{markdown}"
+    );
+}
+
+#[test]
 fn opendataloader_parity_merges_stacked_caps_heading_like_reference() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-stacked-heading");
     let report = run_opendataloader_prediction("01030000000092", &output_dir);
@@ -3363,6 +3403,88 @@ print(json.dumps({
     path
 }
 
+fn write_auto_ocr_model_worker() -> PathBuf {
+    let path = temp_dir("doctruth-runtime-opendataloader-ocr-worker").with_extension("py");
+    fs::write(
+        &path,
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+request = json.load(sys.stdin)
+assert request["preset"] == "ocr"
+assert request["modelRouting"]["mode"] == "auto"
+assert request["modelRouting"]["decision"] == "model-runtime"
+assert request["modelRouting"]["route"] == "ocr-model"
+assert request["modelRuntime"]["preprocessing"]["decoder"] == "ocr"
+assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
+models = request["models"]
+auxiliary = request["auxiliaryArtifacts"]
+assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
+assert all(model["backend"] == "mnn" and model["format"] == "mnn" for model in models), models
+assert len(auxiliary) == 1, auxiliary
+assert auxiliary[0]["role"] == "recognition-charset", auxiliary
+print(json.dumps({
+    "docId": request["source_hash"],
+    "source": {
+        "sourceFilename": "auto-ocr-worker.pdf",
+        "sourceHash": request["source_hash"],
+        "metadata": {"sourceFilename": "auto-ocr-worker.pdf", "pageCount": 1}
+    },
+    "body": {
+        "pages": [{
+            "pageNumber": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "textLayerAvailable": False,
+            "imageHash": "sha256:" + "0" * 64
+        }],
+        "units": [{
+            "unitId": "unit-0001",
+            "kind": "OCR_REGION",
+            "page": 1,
+            "text": "Auto OCR evidence",
+            "evidenceSpanIds": ["span-0001"],
+            "location": {
+                "page": 1,
+                "readingOrder": 1,
+                "boundingBox": {"x0": 20.0, "y0": 20.0, "x1": 200.0, "y1": 80.0}
+            },
+            "sourceObjectId": "auto-ocr-worker-region-1",
+            "confidence": {"score": 0.91, "rationale": "fake auto ocr worker"},
+            "warnings": []
+        }],
+        "tables": []
+    },
+    "parserRun": {
+        "parserVersion": "test-worker",
+        "preset": request["preset"],
+        "backend": "rapidocr-worker",
+        "models": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
+        "warnings": []
+    },
+    "auditGradeStatus": "AUDIT_GRADE",
+    "metrics": {
+        "runtime": "mnn",
+        "coldStartMs": 10.0,
+        "inferenceMs": 5.0,
+        "loadedModels": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
+        "unload": {"status": "scheduled", "policy": "idle-after-request"}
+    }
+}))
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+    path
+}
+
 fn write_slow_model_worker() -> PathBuf {
     let path = temp_dir("doctruth-runtime-slow-model-worker").with_extension("py");
     fs::write(
@@ -3410,6 +3532,66 @@ fn ready_mnn_model_manifest() -> (PathBuf, PathBuf) {
                     }
                 ]
             }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    (cache_dir, manifest)
+}
+
+fn ready_mnn_ocr_model_pack_manifest(prefix: &str) -> (PathBuf, PathBuf) {
+    let cache_dir = temp_dir(prefix);
+    fs::create_dir_all(&cache_dir).unwrap();
+    let det = b"ready mnn ppocr det";
+    let rec = b"ready mnn ppocr rec";
+    let keys = b"abc\n";
+    fs::write(cache_dir.join("ppocr-v5-mobile-det-v0.1.3.bin"), det).unwrap();
+    fs::write(cache_dir.join("ppocr-v5-mobile-rec-v0.1.3.bin"), rec).unwrap();
+    fs::write(cache_dir.join("ppocr-keys-v5-v0.1.3.bin"), keys).unwrap();
+    let manifest = temp_dir(&format!("{prefix}-manifest")).with_extension("json");
+    fs::write(
+        &manifest,
+        json!({
+            "presets": {
+                "ocr": [
+                    {
+                        "name": "ppocr-v5-mobile-det",
+                        "version": "v0.1.3",
+                        "sha256": sha256_bytes(det),
+                        "sizeBytes": det.len(),
+                        "required": true,
+                        "task": "ocr",
+                        "role": "text-detection",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "precision": "fp32",
+                        "license": "test"
+                    },
+                    {
+                        "name": "ppocr-v5-mobile-rec",
+                        "version": "v0.1.3",
+                        "sha256": sha256_bytes(rec),
+                        "sizeBytes": rec.len(),
+                        "required": true,
+                        "task": "ocr",
+                        "role": "text-recognition",
+                        "backend": "mnn",
+                        "format": "mnn",
+                        "precision": "fp32",
+                        "license": "test"
+                    }
+                ]
+            },
+            "auxiliary": [
+                {
+                    "name": "ppocr-keys-v5",
+                    "version": "v0.1.3",
+                    "sha256": sha256_bytes(keys),
+                    "sizeBytes": keys.len(),
+                    "role": "recognition-charset",
+                    "license": "test"
+                }
+            ]
         })
         .to_string(),
     )
@@ -3474,6 +3656,42 @@ fn run_opendataloader_prediction_with_real_mnn(
                 "engine": "doctruth-opendataloader-real-mnn-contract",
                 "doc_id": doc_id,
                 "preset": "table-lite",
+                "runtime_profile": "edge-model",
+                "timeout_seconds": 30,
+                "model_manifest": model_manifest,
+                "model_cache": model_cache,
+                "model_worker": model_worker
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).unwrap()
+}
+
+fn run_opendataloader_prediction_with_auto_ocr_mnn(
+    doc_id: &str,
+    output_dir: &PathBuf,
+    model_cache: &PathBuf,
+    model_manifest: &PathBuf,
+    model_worker: &PathBuf,
+) -> Value {
+    let bench_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../third_party/opendataloader-bench");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_prediction",
+                "bench_dir": bench_dir,
+                "output_dir": output_dir,
+                "engine": "doctruth-opendataloader-ocr-mnn-contract",
+                "doc_id": doc_id,
+                "preset": "auto",
+                "profile": "edge-model",
                 "runtime_profile": "edge-model",
                 "timeout_seconds": 30,
                 "model_manifest": model_manifest,

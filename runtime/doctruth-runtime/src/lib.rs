@@ -5301,6 +5301,7 @@ fn opendataloader_prediction_document_summary_from_document(
         "elapsed": elapsed,
         "markdown_path": markdown_path.to_string_lossy(),
         "error": Value::Null,
+        "preset": document.pointer("/parserRun/preset").cloned().unwrap_or(Value::Null),
         "runtimeProfile": document.pointer("/parserRun/profile").cloned().unwrap_or(Value::Null),
         "modelRuntime": document.pointer("/parserRun/modelRuntime").cloned().unwrap_or(Value::Null),
         "modelRouting": document.pointer("/parserRun/modelRouting").cloned().unwrap_or(Value::Null)

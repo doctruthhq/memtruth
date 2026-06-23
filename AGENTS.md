@@ -173,6 +173,13 @@ DocTruth Rust runtime output
   -> audit-grade parser-quality gate
 ```
 
+OpenDataLoader parity is measured, not asserted. A behavior is considered
+ported only when it has a Rust contract test, an upstream source reference, and
+either a focused OpenDataLoader Bench case or a full200 report showing the
+effect. Until full200 reaches the accepted baseline, DocTruth should be
+described as OpenDataLoader-inspired and progressively porting parity, not
+OpenDataLoader-equivalent.
+
 Do not claim parser-quality work is blocked only because DocTruth lacks its own
 human-reviewed corpus. The DocTruth-owned human-reviewed corpus and review
 workstation are follow-up assets for evidence-specific labels. They supplement

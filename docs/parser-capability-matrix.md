@@ -18,6 +18,21 @@ explicitly for migration or differential testing. Heavy layout, table, and OCR
 model execution remains local-worker and opt-in; those smokes prove integration
 through the real route, not broad production parser accuracy.
 
+## OpenDataLoader Parity Gate
+
+OpenDataLoader parity is measured, not asserted. A behavior is considered
+ported only when it has a Rust contract test, an upstream source reference, and
+either a focused OpenDataLoader Bench case or a full200 report showing the
+effect. Until full200 reaches the accepted baseline, DocTruth should be
+described as OpenDataLoader-inspired and progressively porting parity, not
+OpenDataLoader-equivalent.
+
+OpenDataLoader Bench is the external parser-quality foundation for reading
+order, heading hierarchy, table fidelity, and parser speed. DocTruth's
+`TrustDocument`, source refs, quote hashes, parser warnings, and replay gates
+remain canonical; OpenDataLoader artifacts are comparison inputs, not canonical
+DocTruth output.
+
 | Source | Text Anchor | Visual Anchor | Current Notes |
 | --- | --- | --- | --- |
 | PDF text | page, line, char offset | optional page-normalized bbox | Best-supported path for reviewer highlights |

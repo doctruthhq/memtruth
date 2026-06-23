@@ -167,6 +167,38 @@ fn opendataloader_parity_docs_record_source_pin() {
     assert!(markdown.contains("Apache-2.0") || markdown.contains("Apache License 2.0"));
 }
 
+#[test]
+fn docs_define_opendataloader_parity_as_measured_not_asserted() {
+    for path in [
+        "docs/pdf-parser-runtime-prd.md",
+        "docs/parser-capability-matrix.md",
+        "AGENTS.md",
+    ] {
+        let text = fs::read_to_string(repo_root().join(path)).expect(path);
+        let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            !text.contains("OpenDataLoader parity complete"),
+            "{path} must not claim full parity without the full200 gate"
+        );
+        assert!(
+            normalized.contains("OpenDataLoader parity is measured, not asserted"),
+            "{path} must define OpenDataLoader parity done criteria"
+        );
+        for phrase in [
+            "Rust contract test",
+            "upstream source reference",
+            "focused OpenDataLoader Bench case or a full200 report",
+            "Until full200 reaches the accepted baseline",
+            "not OpenDataLoader-equivalent",
+        ] {
+            assert!(
+                normalized.contains(phrase),
+                "{path} must preserve OpenDataLoader parity gate phrase: {phrase}"
+            );
+        }
+    }
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

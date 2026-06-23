@@ -2318,6 +2318,23 @@ text-layer foundation, while table fidelity, heading hierarchy, OCR fallback,
 and slow-sample timeout/parallelism remain required parser-quality work before
 DocTruth can claim OpenDataLoader/Docling level extraction quality.
 
+OpenDataLoader parity is measured, not asserted. A behavior is considered
+ported only when it has a Rust contract test, an upstream source reference, and
+either a focused OpenDataLoader Bench case or a full200 report showing the
+effect. Until full200 reaches the accepted baseline, DocTruth should be
+described as OpenDataLoader-inspired and progressively porting parity, not
+OpenDataLoader-equivalent.
+
+The current recorded full200 baseline is
+`docs/parser/reports/opendataloader-full200-2026-06-23.md` with 200 documents,
+199 parsed, 1 failed, `overall_mean=0.738756`, `nid_mean=0.859061`,
+`teds_mean=0.475822`, and `mhs_mean=0.469231`. The paired comparison report is
+`docs/parser/reports/opendataloader-hybrid-comparison-2026-06-23.md`; it covers
+the same 200 documents as the OpenDataLoader hybrid baseline and records a
+remaining delta of `overall=-0.167816`, `nid=-0.074670`, `teds=-0.451821`, and
+`mhs=-0.351545`. This means the current gap is primarily quality, especially
+tables and heading hierarchy, not corpus mismatch.
+
 The Rust-owned runner supports `--timeout-seconds` without returning to the
 Python prediction adapter. When this option is present, `opendataloader_prediction`
 spawns the current `doctruth-runtime` binary per document, sends a normal

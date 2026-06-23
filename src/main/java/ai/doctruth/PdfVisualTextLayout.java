@@ -29,7 +29,7 @@ final class PdfVisualTextLayout {
         }
         attachInlineDateSegments(lineSegments);
         attachInlineFieldValueSegments(lineSegments);
-        lineSegments.sort(PdfVisualTextLayout::compareLineSegments);
+        lineSegments = PdfGeometryReadingOrderSorter.sort(lineSegments);
 
         var groups = new ArrayList<List<TextPosition>>();
         float lineHeight = (float) Math.max(pageMedianHeight, PdfTextPositionMetrics.MIN_LINE_HEIGHT);
@@ -57,18 +57,6 @@ final class PdfVisualTextLayout {
                 .reduce((left, right) -> left + "\n" + right)
                 .orElse("")
                 .stripTrailing();
-    }
-
-    private static int compareLineSegments(PdfLineSegment left, PdfLineSegment right) {
-        int column = Integer.compare(left.columnIndex, right.columnIndex);
-        if (column != 0) {
-            return column;
-        }
-        int y = Double.compare(left.baseline, right.baseline);
-        if (y != 0) {
-            return y;
-        }
-        return Double.compare(left.x0, right.x0);
     }
 
     private static List<PdfLineSegment> splitIntoLineSegments(List<TextPosition> positions, double medianHeight) {

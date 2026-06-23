@@ -18,15 +18,27 @@ final class PdfLineSegment {
     final String text;
     final double x0;
     final double x1;
+    final double y0;
+    final double y1;
     final double baseline;
     final boolean bold;
     int columnIndex = -1;
 
-    private PdfLineSegment(List<TextPosition> positions, String text, double x0, double x1, double baseline, boolean bold) {
+    private PdfLineSegment(
+            List<TextPosition> positions,
+            String text,
+            double x0,
+            double x1,
+            double y0,
+            double y1,
+            double baseline,
+            boolean bold) {
         this.positions = positions;
         this.text = text;
         this.x0 = x0;
         this.x1 = x1;
+        this.y0 = y0;
+        this.y1 = y1;
         this.baseline = baseline;
         this.bold = bold;
     }
@@ -41,12 +53,18 @@ final class PdfLineSegment {
                 .max()
                 .orElse(x0);
         double baseline = copy.stream().mapToDouble(TextPosition::getYDirAdj).max().orElse(0.0);
+        double height = copy.stream()
+                .mapToDouble(TextPosition::getHeightDir)
+                .max()
+                .orElse(PdfTextPositionMetrics.MIN_LINE_HEIGHT);
         long boldCount = copy.stream().filter(PdfTextPositionMetrics::isBold).count();
         return new PdfLineSegment(
                 new ArrayList<>(copy),
                 PdfTextPositionMetrics.renderWithInferredSpaces(copy),
                 x0,
                 x1,
+                baseline - height * 1.67,
+                baseline + height * 0.31,
                 baseline,
                 boldCount > copy.size() / 2);
     }

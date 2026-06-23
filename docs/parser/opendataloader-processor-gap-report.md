@@ -22,7 +22,7 @@ Status values are intentionally conservative:
 | PDF text normalization | partial | `PdfDocumentParserTest` | current-full200 text buckets | Basic text-layer extraction exists, but normalization still contributes to reading-order/text mismatch buckets. |
 | Hidden/off-page/tiny/background text filtering | partial | `PdfTextPositionFilterTest` | current-full200 text-noise bucket | Text-position filtering now covers tiny, off-page, blank/control-only text; contrast/background filtering is still pending. |
 | Duplicate text suppression | partial | `PdfTextPositionFilterTest` | current-full200 text-noise bucket | Same-text overlapping duplicates are filtered; full OpenDataLoader chunk-level duplicate parity is still pending. |
-| XY-Cut geometry reading order | partial | `PdfTwoColumnSemanticSectionTest` | current-full200 reading-order bucket | Two-column behavior exists, but full XY-Cut++ projection parity is not proven. |
+| XY-Cut geometry reading order | partial | `PdfGeometryReadingOrderTest` | current-full200 reading-order bucket | Projection-cut ordering now covers a full-width heading between two-column regions; full XY-Cut++ projection parity is not proven. |
 | Paragraph and line merging | partial | `PdfDocumentParserTest` | current-full200 reading-order bucket | Basic merging exists; OpenDataLoader paragraph heuristics are not fully matched. |
 | Heading promotion and hierarchy | partial | `PdfTwoColumnSemanticSectionTest` | current-full200 heading buckets | Headings are detected, but hierarchy mismatch remains one of the largest gaps. |
 | Table detection | partial | `PdfPageTableExtractorTest` | current-full200 table buckets | Regular table extraction exists but does not yet match all OpenDataLoader table cases. |

@@ -61,10 +61,12 @@ Reference implementations adapted in DocTruth-owned code:
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableStructureNormalizer.java
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java
   License: Apache License 2.0
-  Adaptation: Rust-owned reading order, content filtering, line grouping,
-  cluster-table fallback, table-structure normalization, and heading behavior
-  in runtime/doctruth-runtime/src/lib.rs; TrustDocument remains the only
-  canonical DocTruth output contract.
+  Adaptation: Java-owned geometry projection reading order in
+  src/main/java/ai/doctruth/PdfGeometryReadingOrderSorter.java plus
+  Rust-owned reading order, content filtering, line grouping, cluster-table
+  fallback, table-structure normalization, and heading behavior in
+  runtime/doctruth-runtime/src/lib.rs; TrustDocument remains the only canonical
+  DocTruth output contract.
 
 Test-scope dependencies (not bundled in published artifacts):
 

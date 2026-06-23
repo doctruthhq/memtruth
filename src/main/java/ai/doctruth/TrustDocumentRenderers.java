@@ -27,7 +27,12 @@ final class TrustDocumentRenderers {
     private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
     private static final int STREAM_WRITE_CHARS = 256;
     private static final Pattern LEGAL_PARTY_FIELD_HEADING =
-            Pattern.compile("^party\\s+[ab]\\s*:\\s+\\S.*", Pattern.CASE_INSENSITIVE);
+            Pattern.compile("^party\\s+[ab]\\s*:\\s+(.+)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LEGAL_PARTY_ENTITY_VALUE = Pattern.compile(
+            ".*(?:\\bpty\\s+ltd\\.?|\\bltd\\.?|\\blimited\\b|\\bllc\\.?"
+                    + "|\\binc\\.?|\\bcorp\\.?|\\bcorporation\\b|\\bcompany\\b|\\bco\\.?"
+                    + "|\\bplc\\b|\\bgmbh\\b)(?:\\s|$|[,.;]).*",
+            Pattern.CASE_INSENSITIVE);
 
     private TrustDocumentRenderers() {
         throw new AssertionError("no instances");
@@ -117,7 +122,8 @@ final class TrustDocumentRenderers {
     }
 
     private static boolean isLegalPartyFieldHeading(String text) {
-        return LEGAL_PARTY_FIELD_HEADING.matcher(text.strip()).matches();
+        var matcher = LEGAL_PARTY_FIELD_HEADING.matcher(text.strip());
+        return matcher.matches() && LEGAL_PARTY_ENTITY_VALUE.matcher(matcher.group(1)).matches();
     }
 
     private static ObjectNode contentBlock(TrustUnit unit) {

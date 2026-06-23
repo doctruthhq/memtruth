@@ -169,6 +169,14 @@ class TrustDocumentRenderedOutputTest {
     }
 
     @Test
+    @DisplayName("runtime layered party obligation headings remain headings")
+    void runtimeLayeredPartyObligationHeadingsRemainHeadings() throws Exception {
+        var doc = layeredDocument(runtimeParserRun(), "Party A: Obligations");
+
+        assertThat(contentBlockType(doc)).isEqualTo("heading");
+    }
+
+    @Test
     @DisplayName("oracle layered headings are not normalized during rendering")
     void oracleLayeredHeadingsAreNotNormalizedDuringRendering() throws Exception {
         var doc = layeredDocument(oracleParserRun(), "Party A: Acme Industrial Materials Pty Ltd");

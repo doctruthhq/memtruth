@@ -5103,10 +5103,19 @@ fn write_opendataloader_prediction_artifacts(
     request: &Value,
 ) -> Result<Value, String> {
     let markdown_dir = output_dir.join("markdown");
+    let cases_dir = output_dir.join("cases");
+    let failures_dir = output_dir.join("failures");
     fs::create_dir_all(&markdown_dir).map_err(|error| {
         error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
     })?;
+    fs::create_dir_all(&cases_dir).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
+    fs::create_dir_all(&failures_dir).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
     let started = Instant::now();
+    let start_memory = process_memory_usage();
     let (mut java_backend, java_backend_startup_ms, java_backend_command) =
         maybe_start_java_backend(backend, request)?;
     let mut documents = Vec::new();
@@ -5158,9 +5167,19 @@ fn write_opendataloader_prediction_artifacts(
                     backend,
                     &document,
                     &document_id,
+                    &source_hash,
                     &markdown_path,
                     elapsed,
                 ));
+                if let Some(document_summary) = documents.last() {
+                    fs::write(
+                        cases_dir.join(format!("{document_id}.json")),
+                        pretty_json(document_summary)?,
+                    )
+                    .map_err(|error| {
+                        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+                    })?;
+                }
             }
             Err(error) => {
                 let error_code = error_code_from_json(&error);
@@ -5173,21 +5192,32 @@ fn write_opendataloader_prediction_artifacts(
                     "errorCode": error_code,
                     "error": error
                 }));
-                documents.push(json!({
+                let failure = json!({
                     "document_id": document_id,
                     "status": "failed",
                     "elapsed": elapsed,
                     "markdown_path": markdown_path.to_string_lossy(),
+                    "sourceSha256": source_hash,
                     "errorCode": error_code,
                     "error": error,
                     "runtimeProfile": profile,
                     "backend": backend,
                     "modelRuntime": Value::Null,
                     "modelRouting": Value::Null
-                }));
+                });
+                fs::write(
+                    failures_dir.join(format!("{document_id}.json")),
+                    pretty_json(&failure)?,
+                )
+                .map_err(|write_error| {
+                    error_json("BENCHMARK_REPORT_WRITE_FAILED", &write_error.to_string())
+                        .to_string()
+                })?;
+                documents.push(failure);
             }
         }
     }
+    let end_memory = process_memory_usage();
     let parsed_count = documents
         .iter()
         .filter(|document| document.get("status").and_then(Value::as_str) == Some("parsed"))
@@ -5224,6 +5254,37 @@ fn write_opendataloader_prediction_artifacts(
         pretty_json(&json!({"documents": errors}))?,
     )
     .map_err(|error| error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string())?;
+    let resources = opendataloader_prediction_resources_json(
+        backend,
+        &java_backend_startup_ms,
+        &java_backend_command,
+        document_count,
+        parsed_count,
+        failed_count,
+        total_elapsed,
+        start_memory,
+        end_memory,
+    );
+    fs::write(output_dir.join("resources.json"), pretty_json(&resources)?).map_err(|error| {
+        error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string()
+    })?;
+    let comparison = opendataloader_prediction_reference_comparison_placeholder(
+        engine,
+        backend,
+        document_count,
+        parsed_count,
+        failed_count,
+    );
+    fs::write(
+        output_dir.join("reference-comparison.json"),
+        pretty_json(&comparison)?,
+    )
+    .map_err(|error| error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string())?;
+    fs::write(
+        output_dir.join("reference-comparison.md"),
+        opendataloader_prediction_reference_comparison_markdown(&comparison),
+    )
+    .map_err(|error| error_json("BENCHMARK_REPORT_WRITE_FAILED", &error.to_string()).to_string())?;
     Ok(json!({
         "engine": engine,
         "backend": backend,
@@ -5233,6 +5294,68 @@ fn write_opendataloader_prediction_artifacts(
         "parsedCount": parsed_count,
         "failedCount": failed_count
     }))
+}
+
+fn opendataloader_prediction_resources_json(
+    backend: &str,
+    java_backend_startup_ms: &Value,
+    java_backend_command: &Value,
+    document_count: usize,
+    parsed_count: usize,
+    failed_count: usize,
+    total_elapsed_ms: f64,
+    start_memory: ProcessMemoryUsage,
+    end_memory: ProcessMemoryUsage,
+) -> Value {
+    json!({
+        "backend": backend,
+        "documentCount": document_count,
+        "parsedCount": parsed_count,
+        "failedCount": failed_count,
+        "totalElapsedMs": total_elapsed_ms,
+        "javaBackendStartupMs": java_backend_startup_ms,
+        "javaBackendCommand": java_backend_command,
+        "rssSamples": {
+            "measurement": "process-rss",
+            "startMb": start_memory.rss_mb,
+            "endMb": end_memory.rss_mb,
+            "peakMb": end_memory.peak_memory_mb.max(start_memory.peak_memory_mb)
+        }
+    })
+}
+
+fn opendataloader_prediction_reference_comparison_placeholder(
+    engine: &str,
+    backend: &str,
+    document_count: usize,
+    parsed_count: usize,
+    failed_count: usize,
+) -> Value {
+    json!({
+        "status": "not-run",
+        "reason": "reference evaluation was not provided for this prediction run",
+        "candidate": {
+            "engine": engine,
+            "backend": backend,
+            "documentCount": document_count,
+            "parsedCount": parsed_count,
+            "failedCount": failed_count
+        }
+    })
+}
+
+fn opendataloader_prediction_reference_comparison_markdown(comparison: &Value) -> String {
+    let engine = comparison
+        .pointer("/candidate/engine")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let backend = comparison
+        .pointer("/candidate/backend")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    format!(
+        "# Reference comparison not run\n\nCandidate engine: `{engine}`\n\nBackend: `{backend}`\n\nRun `opendataloader_compare_reports` with a reference evaluation to produce score deltas.\n"
+    )
 }
 
 fn model_routing_coverage_json(documents: &[Value]) -> Value {
@@ -5462,6 +5585,7 @@ fn opendataloader_prediction_document_summary_from_document(
     backend: &str,
     document: &Value,
     document_id: &str,
+    source_hash: &str,
     markdown_path: &Path,
     elapsed: f64,
 ) -> Value {
@@ -5476,6 +5600,7 @@ fn opendataloader_prediction_document_summary_from_document(
         "backend": backend,
         "elapsed": elapsed,
         "markdown_path": markdown_path.to_string_lossy(),
+        "sourceSha256": source_hash,
         "error": Value::Null,
         "preset": parser_document.pointer("/parserRun/preset").cloned().unwrap_or(Value::Null),
         "runtimeProfile": parser_document.pointer("/parserRun/profile").cloned().unwrap_or(Value::Null),

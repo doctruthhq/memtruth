@@ -1087,6 +1087,42 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
     let errors: Value =
         serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
     assert_eq!(errors["documents"], json!([]));
+
+    let case: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("cases/doc-a.json")).unwrap())
+            .unwrap();
+    assert_eq!(case["document_id"], "doc-a");
+    assert_eq!(case["status"], "parsed");
+    assert!(
+        case["sourceSha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
+    assert_eq!(
+        fs::read_dir(prediction.join("failures")).unwrap().count(),
+        0
+    );
+
+    let resources: Value =
+        serde_json::from_str(&fs::read_to_string(prediction.join("resources.json")).unwrap())
+            .unwrap();
+    assert_eq!(resources["backend"], "rust-edge-fast");
+    assert_eq!(resources["documentCount"], 1);
+    assert_eq!(resources["parsedCount"], 1);
+    assert!(resources["totalElapsedMs"].as_f64().unwrap_or(0.0) >= 0.0);
+
+    let comparison: Value = serde_json::from_str(
+        &fs::read_to_string(prediction.join("reference-comparison.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(comparison["status"], "not-run");
+    assert_eq!(comparison["candidate"]["engine"], "doctruth-direct");
+    assert!(
+        fs::read_to_string(prediction.join("reference-comparison.md"))
+            .unwrap()
+            .contains("Reference comparison not run")
+    );
 }
 
 #[test]

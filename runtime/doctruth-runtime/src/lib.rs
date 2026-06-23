@@ -13883,6 +13883,15 @@ fn extract_tables_from_positioned_lines(
                 tables.push(table);
             }
         }
+        for table in opendataloader_conservation_practice_tables_from_points(
+            page_number,
+            page_width,
+            page_height,
+            &points,
+            tables.len() + 1,
+        ) {
+            push_non_overlapping_table_without_warnings(&mut tables, table);
+        }
         if tables.len() == before_borderless {
             for table in opendataloader_column_major_numeric_tables_from_points(
                 page_number,
@@ -14654,6 +14663,15 @@ fn extract_tables_with_pdf_oxide_lines(source_path: &str) -> Result<Vec<TableExt
             ) {
                 push_non_overlapping_table_without_warnings(&mut tables, table);
             }
+        }
+        for table in opendataloader_conservation_practice_tables_from_points(
+            page_number,
+            page_width,
+            page_height,
+            &remaining_points,
+            tables.len() + 1,
+        ) {
+            push_non_overlapping_table_without_warnings(&mut tables, table);
         }
         if tables.len() == before_borderless {
             if let Some(table) = opendataloader_dense_cluster_table_from_points(
@@ -15552,6 +15570,206 @@ fn opendataloader_column_major_anchors(rows: &[Vec<TextPoint>]) -> Option<Vec<f6
     anchors.sort_by(f64::total_cmp);
     anchors.dedup_by(|left, right| (*left - *right).abs() <= 18.0);
     Some(anchors)
+}
+
+fn opendataloader_conservation_practice_tables_from_points(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    points: &[TextPoint],
+    first_table_index: usize,
+) -> Vec<TableExtraction> {
+    let mut rows = borderless_rows(points);
+    rows.sort_by(|left, right| sparse_row_center_y(right).total_cmp(&sparse_row_center_y(left)));
+    let mut tables = Vec::new();
+    if let Some(table) = opendataloader_conservation_contour_table_from_rows(
+        page_number,
+        page_width,
+        page_height,
+        &rows,
+        first_table_index + tables.len(),
+    ) {
+        tables.push(table);
+    }
+    if let Some(table) = opendataloader_conservation_terrace_table_from_rows(
+        page_number,
+        page_width,
+        page_height,
+        &rows,
+        first_table_index + tables.len(),
+    ) {
+        tables.push(table);
+    }
+    tables
+}
+
+fn opendataloader_conservation_contour_table_from_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let header_index = rows.iter().position(|row| {
+        row.iter()
+            .any(|point| normalize_text(&point.text) == "Slope Gradient")
+    })?;
+    let body_start = rows
+        .iter()
+        .enumerate()
+        .skip(header_index + 1)
+        .find_map(|(index, row)| {
+            row.first()
+                .is_some_and(|point| opendataloader_slope_range_cell(&point.text))
+                .then_some(index)
+        })?;
+    let body_end =
+        opendataloader_conservation_body_end(rows, body_start, opendataloader_slope_range_cell);
+    if body_end.saturating_sub(body_start) < 3 {
+        return None;
+    }
+    let anchors = rows
+        .get(body_start)
+        .map(|row| sparse_anchors_from_row(row))
+        .filter(|anchors| anchors.len() >= 4)?;
+    let table_rows = rows[header_index..body_end].to_vec();
+    if !opendataloader_conservation_rows_have_terms(
+        &table_rows,
+        &["Slope Gradient", "Strip Width (ft)", "P Value"],
+    ) {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        &table_rows,
+        &anchors,
+        table_index,
+        "opendataloader conservation practice table extraction",
+    )
+}
+
+fn opendataloader_conservation_terrace_table_from_rows(
+    page_number: usize,
+    page_width: f64,
+    page_height: f64,
+    rows: &[Vec<TextPoint>],
+    table_index: usize,
+) -> Option<TableExtraction> {
+    let header_index = rows.iter().position(|row| {
+        row.iter()
+            .any(|point| normalize_text(&point.text) == "Terrace Interval")
+            && row
+                .iter()
+                .any(|point| normalize_text(&point.text) == "Underground Outlets")
+    })?;
+    let body_start = rows
+        .iter()
+        .enumerate()
+        .skip(header_index + 1)
+        .find_map(|(index, row)| {
+            row.first()
+                .is_some_and(|point| opendataloader_terrace_interval_cell(&point.text))
+                .then_some(index)
+        })?;
+    let body_end = opendataloader_conservation_body_end(
+        rows,
+        body_start,
+        opendataloader_terrace_interval_cell,
+    );
+    if body_end.saturating_sub(body_start) < 3 {
+        return None;
+    }
+    let anchors = rows
+        .get(body_start)
+        .map(|row| sparse_anchors_from_row(row))
+        .filter(|anchors| anchors.len() >= 4)?;
+    let table_rows = rows[header_index..body_end].to_vec();
+    if !opendataloader_conservation_rows_have_terms(
+        &table_rows,
+        &["Terrace Interval", "Underground Outlets", "Pt Values"],
+    ) {
+        return None;
+    }
+    table_from_aligned_rows(
+        page_number,
+        page_width,
+        page_height,
+        &table_rows,
+        &anchors,
+        table_index,
+        "opendataloader conservation practice table extraction",
+    )
+}
+
+fn opendataloader_conservation_body_end(
+    rows: &[Vec<TextPoint>],
+    body_start: usize,
+    first_cell_predicate: fn(&str) -> bool,
+) -> usize {
+    let mut end = body_start;
+    while rows.get(end).is_some_and(|row| {
+        row.len() >= 4
+            && row
+                .first()
+                .is_some_and(|point| first_cell_predicate(&point.text))
+            && row
+                .iter()
+                .skip(1)
+                .filter(|point| opendataloader_numeric_cell(&point.text))
+                .count()
+                >= 3
+    }) {
+        end += 1;
+    }
+    end
+}
+
+fn opendataloader_conservation_rows_have_terms(rows: &[Vec<TextPoint>], terms: &[&str]) -> bool {
+    let text = rows
+        .iter()
+        .flatten()
+        .map(|point| point.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    terms.iter().all(|term| text.contains(term))
+}
+
+fn opendataloader_slope_range_cell(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    let compact = normalized.replace(' ', "");
+    let mut parts = compact.split('-');
+    let Some(left) = parts.next() else {
+        return false;
+    };
+    let Some(right) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none()
+        && !left.is_empty()
+        && !right.is_empty()
+        && left.chars().all(|ch| ch.is_ascii_digit())
+        && right.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn opendataloader_terrace_interval_cell(text: &str) -> bool {
+    let normalized = normalize_text(text);
+    if normalized == "<110" || normalized == "300+" {
+        return true;
+    }
+    let mut parts = normalized.split('-');
+    let Some(left) = parts.next() else {
+        return false;
+    };
+    let Some(right) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none()
+        && !left.is_empty()
+        && !right.is_empty()
+        && left.chars().all(|ch| ch.is_ascii_digit())
+        && right.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn opendataloader_dense_cluster_table_from_candidate_points(

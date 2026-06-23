@@ -132,6 +132,51 @@ fn parse_pdf_emits_cluster_table_for_opendataloader_sparse_real_case() {
 }
 
 #[test]
+fn parse_pdf_emits_conservation_practice_tables_real_case() {
+    let pdf = opendataloader_fixture("01030000000170.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(format!(
+            r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:conservation-practice","preset":"auto","offline_mode":true}}"#,
+            pdf.display()
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let cell_text = tables
+        .iter()
+        .filter_map(|table| table["cells"].as_array())
+        .flat_map(|cells| cells.iter())
+        .filter_map(|cell| cell["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(!tables.is_empty(), "expected structured tables, got none");
+    for expected in [
+        "Strip Width (ft)",
+        "Slope Gradient",
+        "P Value",
+        "Terrace Interval",
+        "Underground Outlets",
+    ] {
+        assert!(
+            cell_text.contains(expected),
+            "expected table cell text to include {expected:?}, got {cell_text:?}"
+        );
+    }
+    assert!(
+        !cell_text.contains("146 | Soil Erosion and Conservation"),
+        "page footer should not be swallowed into table cells: {cell_text:?}"
+    );
+}
+
+#[test]
 fn parse_pdf_emits_cluster_table_for_opendataloader_service_flow_real_case() {
     let pdf = opendataloader_fixture("01030000000200.pdf");
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();

@@ -18,6 +18,7 @@ final class Usage {
                   doctruth ingest-audit <pdf-dir> [--json] [--limit N] [-o audit.json]
                   doctruth benchmark-corpus <manifest.json> [--json] [--offline] [--report-out <report.json>]
                   doctruth benchmark-oracle --engine opendataloader-hybrid <document> [--json|--format <format>]
+                  doctruth opendataloader-backend --stdio-jsonl
                   doctruth cache warm <manifest.json> --preset <preset> [--cache <dir>] [--offline] [--json]
                   doctruth schema <schema.json> [--json]
                   doctruth extract <document> -s <schema.json> [-o out/]

@@ -20,6 +20,7 @@ use regex::Regex;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+pub mod opendataloader_java_backend;
 mod opendataloader_parity;
 mod opendataloader_probes;
 

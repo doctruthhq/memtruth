@@ -28,7 +28,7 @@ Status values are intentionally conservative:
 | Table detection | partial | `PdfPageTableExtractorTest` | current-full200 table buckets | Regular table extraction exists but does not yet match all OpenDataLoader table cases. |
 | Borderless table clustering | partial | `PdfBorderlessTableExtractionTest` | current-full200 table buckets | Borderless heuristic exists; cluster parity and row/column reconstruction remain incomplete. |
 | Table cell grid reconstruction | partial | `OpenDataLoaderBackendProtocolTest` | current-full200 TEDS bucket | TrustTable cells are projected, but OpenDataLoader-equivalent grid semantics are not complete. |
-| Caption binding | missing | TBD | TBD | Figure/table caption processor is not implemented as a dedicated parity stage. |
+| Caption binding | partial | `PdfDocumentParserTest`, `OpenDataLoaderJavaBackendContractTest`, `TrustDocumentRenderedOutputTest` | current-full200 caption buckets pending | Standalone table/figure-style captions adjacent to detected tables are promoted into `FigureSection`, preserve bbox evidence, and project as `caption` blocks in `content_blocks` and OpenDataLoader-shaped `blocks[]`; broader figure, image, and full-bench caption parity is still pending. |
 | OCR region routing | partial | `OcrPresetTest` | scanned/OCR corpus pending | OCR routing exists through worker SPI, but OpenDataLoader strategy parity is not proven. |
 | Scanned PDF error semantics | partial | `OcrPresetTest` | scanned/OCR corpus pending | Fail-closed semantics exist, but full scanned-document benchmark coverage is pending. |
 

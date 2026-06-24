@@ -270,7 +270,7 @@ public record TrustDocument(
         units.add(new TrustUnit(
                 unitId(unitIndex),
                 TrustUnitKind.FIGURE_CAPTION,
-                locationFrom(section.location(), Optional.empty(), unitIndex),
+                locationFrom(section.location(), section.boundingBox(), unitIndex),
                 new TrustUnitContent(caption, sourceObjectId(unitIndex)),
                 evidenceFrom(unitIndex)));
     }

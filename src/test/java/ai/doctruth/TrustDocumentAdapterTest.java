@@ -24,7 +24,7 @@ class TrustDocumentAdapterTest {
                 "doc-1",
                 List.of(
                         new TextSection("Work Experience", LOC, BlockKind.HEADING, Optional.of(BOX)),
-                        new FigureSection("Architecture diagram", LOC)),
+                        new FigureSection("Architecture diagram", LOC, Optional.of(BOX))),
                 META);
 
         var doc = TrustDocument.fromParsed(parsed, "sha256:source", PARSER_RUN);
@@ -38,6 +38,7 @@ class TrustDocumentAdapterTest {
         assertThat(doc.body().units().get(0).location().boundingBox()).contains(BOX);
         assertThat(doc.body().units().get(0).evidence().evidenceSpanIds()).containsExactly("span-0001");
         assertThat(doc.body().units().get(1).kind()).isEqualTo(TrustUnitKind.FIGURE_CAPTION);
+        assertThat(doc.body().units().get(1).location().boundingBox()).contains(BOX);
         assertThat(doc.auditGradeStatus()).isEqualTo(AuditGradeStatus.UNKNOWN);
     }
 

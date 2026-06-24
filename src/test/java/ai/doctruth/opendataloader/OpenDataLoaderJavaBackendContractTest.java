@@ -62,6 +62,17 @@ class OpenDataLoaderJavaBackendContractTest {
         });
     }
 
+    @Test
+    void adjacentTableCaptionProjectsAsCaptionBlock() throws Exception {
+        var response = new OpenDataLoaderJavaBackend()
+                .parse(new OpenDataLoaderBackendRequest(writeCaptionedTablePdf(), ParserPreset.LITE));
+
+        assertThat(response.blocks())
+                .filteredOn(block -> "caption".equals(block.kind()))
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("Table 1. Quarterly revenue by region");
+    }
+
     private Path writePdf(String firstLine, String secondLine) throws Exception {
         var path = tempDir.resolve(firstLine.replaceAll("[^A-Za-z0-9]+", "-").toLowerCase() + ".pdf");
         try (var doc = new PDDocument()) {
@@ -80,5 +91,42 @@ class OpenDataLoaderJavaBackendContractTest {
             doc.save(path.toFile());
         }
         return path;
+    }
+
+    private Path writeCaptionedTablePdf() throws Exception {
+        var path = tempDir.resolve("captioned-table.pdf");
+        try (var doc = new PDDocument()) {
+            var page = new PDPage();
+            doc.addPage(page);
+            try (var content = new PDPageContentStream(doc, page)) {
+                writeText(content, "Table 1. Quarterly revenue by region", 72, 705);
+                drawLine(content, 72, 680, 360, 680);
+                drawLine(content, 72, 640, 360, 640);
+                drawLine(content, 72, 600, 360, 600);
+                drawLine(content, 72, 680, 72, 600);
+                drawLine(content, 216, 680, 216, 600);
+                drawLine(content, 360, 680, 360, 600);
+                writeText(content, "Region", 100, 655);
+                writeText(content, "Revenue", 245, 655);
+                writeText(content, "North", 100, 615);
+                writeText(content, "$10M", 245, 615);
+            }
+            doc.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static void writeText(PDPageContentStream stream, String text, float x, float y) throws Exception {
+        stream.beginText();
+        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        stream.newLineAtOffset(x, y);
+        stream.showText(text);
+        stream.endText();
+    }
+
+    private static void drawLine(PDPageContentStream stream, float x0, float y0, float x1, float y1) throws Exception {
+        stream.moveTo(x0, y0);
+        stream.lineTo(x1, y1);
+        stream.stroke();
     }
 }

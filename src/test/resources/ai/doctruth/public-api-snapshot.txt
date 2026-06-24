@@ -153,13 +153,15 @@ TYPE record ai.doctruth.ExtractionResult [public final]
   method void writeAudit(java.nio.file.Path) [public]
 
 TYPE record ai.doctruth.FigureSection [public final]
-  record-components java.lang.String caption, ai.doctruth.SourceLocation location
+  record-components java.lang.String caption, ai.doctruth.SourceLocation location, java.util.Optional boundingBox
   ctor FigureSection(java.lang.String, ai.doctruth.SourceLocation)
+  ctor FigureSection(java.lang.String, ai.doctruth.SourceLocation, java.util.Optional)
   method ai.doctruth.SourceLocation location() [public]
   method boolean equals(java.lang.Object) [public final]
   method int hashCode() [public final]
   method java.lang.String caption() [public]
   method java.lang.String toString() [public final]
+  method java.util.Optional boundingBox() [public]
 
 TYPE class ai.doctruth.GeminiProvider [public]
   ctor GeminiProvider(java.lang.String)

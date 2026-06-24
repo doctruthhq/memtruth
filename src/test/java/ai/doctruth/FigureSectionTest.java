@@ -3,6 +3,8 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.Test;
 class FigureSectionTest {
 
     private static final SourceLocation LOC = new SourceLocation(1, 1, 1, 1, 0);
+    private static final BoundingBox BOX = new BoundingBox(100, 100, 500, 200);
 
     @Nested
     @DisplayName("happy path")
@@ -33,6 +36,15 @@ class FigureSectionTest {
 
             assertThat(section.caption()).isEqualTo("Figure 1: Quarterly Revenue");
             assertThat(section.location()).isEqualTo(LOC);
+            assertThat(section.boundingBox()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("accepts an optional caption bounding box")
+        void captionBoundingBox() {
+            var section = new FigureSection("Figure 1", LOC, Optional.of(BOX));
+
+            assertThat(section.boundingBox()).contains(BOX);
         }
 
         @Test
@@ -80,6 +92,14 @@ class FigureSectionTest {
             assertThatThrownBy(() -> new FigureSection("Figure 1", null))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("location");
+        }
+
+        @Test
+        @DisplayName("rejects null boundingBox optional with NullPointerException")
+        void nullBoundingBox() {
+            assertThatThrownBy(() -> new FigureSection("Figure 1", LOC, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("boundingBox");
         }
     }
 }

@@ -1,6 +1,7 @@
 package ai.doctruth;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A figure (image, chart, diagram) recovered from the source document, represented by its
@@ -10,14 +11,21 @@ import java.util.Objects;
  * <p>Invariants: {@code caption} and {@code location} are non-null. Empty {@code caption} is
  * allowed (some figures have no caption).
  *
- * @param caption  the figure's caption text, possibly empty.
- * @param location the source-document span this figure was recovered from.
+ * @param caption     the figure's caption text, possibly empty.
+ * @param location    the source-document span this figure was recovered from.
+ * @param boundingBox optional normalized source-region box for the caption.
  * @since 0.1.0
  */
-public record FigureSection(String caption, SourceLocation location) implements ParsedSection {
+public record FigureSection(String caption, SourceLocation location, Optional<BoundingBox> boundingBox)
+        implements ParsedSection {
+
+    public FigureSection(String caption, SourceLocation location) {
+        this(caption, location, Optional.empty());
+    }
 
     public FigureSection {
         Objects.requireNonNull(caption, "caption");
         Objects.requireNonNull(location, "location");
+        Objects.requireNonNull(boundingBox, "boundingBox");
     }
 }

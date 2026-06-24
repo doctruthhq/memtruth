@@ -248,7 +248,7 @@ final class ParsedDocumentMarkdown {
                 case TableSection table -> new MarkdownBlock(
                         section, "", BlockKind.OTHER, table.location(), Optional.empty(), originalIndex);
                 case FigureSection figure -> new MarkdownBlock(
-                        section, figure.caption(), BlockKind.OTHER, figure.location(), Optional.empty(), originalIndex);
+                        section, figure.caption(), BlockKind.OTHER, figure.location(), figure.boundingBox(), originalIndex);
             };
         }
 

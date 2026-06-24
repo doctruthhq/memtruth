@@ -647,7 +647,7 @@ final class TrustDocumentRenderers {
         return switch (unit.kind()) {
             case HEADING -> "heading";
             case TABLE_CELL -> "table";
-            case FIGURE_CAPTION -> "image";
+            case FIGURE_CAPTION -> "caption";
             default -> "text";
         };
     }

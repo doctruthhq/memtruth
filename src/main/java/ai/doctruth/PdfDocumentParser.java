@@ -265,8 +265,13 @@ public final class PdfDocumentParser {
                 continue;
             }
             appendTablesBeforeBlock(sections, pendingTables, block);
-            sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
-            counts.merge(block.kind(), 1, Integer::sum);
+            var caption = PdfCaptionBinder.bindCaption(block, tables);
+            if (caption.isPresent()) {
+                sections.add(caption.get());
+            } else {
+                sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
+                counts.merge(block.kind(), 1, Integer::sum);
+            }
         }
         pendingTables.stream().map(PdfPageTableExtractor.TableBlock::section).forEach(sections::add);
         LOG.debug("page={} blocks={} tables={} kinds={}", page, blocks.size(), tables.size(), counts);

@@ -59,7 +59,7 @@ public final class OpenDataLoaderTrustDocumentAdapter {
             return "table_cell";
         }
         if (unit.kind() == TrustUnitKind.FIGURE_CAPTION) {
-            return "figure_caption";
+            return "caption";
         }
         if (unit.kind() == TrustUnitKind.OCR_REGION) {
             return "ocr_region";

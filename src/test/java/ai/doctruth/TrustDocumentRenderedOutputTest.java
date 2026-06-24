@@ -196,6 +196,23 @@ class TrustDocumentRenderedOutputTest {
     }
 
     @Test
+    @DisplayName("content_blocks renders figure caption units as caption blocks")
+    void contentBlocksRenderFigureCaptionsAsCaptionBlocks() throws Exception {
+        var parsed = new ParsedDocument(
+                "doc-caption",
+                List.of(new FigureSection("Figure 1. Revenue trend", LOC)),
+                META);
+        var doc = TrustDocument.fromParsed(parsed, "sha256:caption", PARSER_RUN);
+        var out = new java.io.StringWriter();
+
+        doc.writeContentBlocks(out);
+
+        var firstBlock = MAPPER.readTree(out.toString()).path("contentBlocks").get(0);
+        assertThat(firstBlock.path("type").asText()).isEqualTo("caption");
+        assertThat(firstBlock.path("text").asText()).isEqualTo("Figure 1. Revenue trend");
+    }
+
+    @Test
     @DisplayName("markdown_anchored includes bbox metadata when available")
     void markdownAnchoredIncludesBboxMetadata() {
         var doc = sampleDocument();

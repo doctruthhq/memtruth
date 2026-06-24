@@ -183,6 +183,34 @@ class PdfDocumentParserTest {
             assertThat(doc.sections())
                     .allSatisfy(s -> assertThat(((TextSection) s).kind()).isNotNull());
         }
+
+        @Test
+        @DisplayName("standalone table captions adjacent to a table become FigureSection caption blocks")
+        void adjacentTableCaptionBecomesCaptionSection() throws Exception {
+            var pdfPath = writeCaptionedTablePdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(3);
+            assertThat(doc.sections().get(0)).isInstanceOf(TextSection.class);
+            assertThat(doc.sections().get(1)).isInstanceOf(FigureSection.class);
+            assertThat(doc.sections().get(2)).isInstanceOf(TableSection.class);
+            assertThat(((FigureSection) doc.sections().get(1)).caption())
+                    .isEqualTo("Table 1. Quarterly revenue by region");
+        }
+
+        @Test
+        @DisplayName("caption-like body sentences are not promoted without standalone caption shape")
+        void captionLikeBodySentenceStaysTextSection() throws Exception {
+            var pdfPath = writeSinglePagePdf(tempDir, "Figure 4.3 illustrates the process but this is body text.");
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(1);
+            assertThat(doc.sections().getFirst()).isInstanceOf(TextSection.class);
+            assertThat(((TextSection) doc.sections().getFirst()).text())
+                    .contains("Figure 4.3 illustrates the process");
+        }
     }
 
     @Nested
@@ -444,6 +472,45 @@ class PdfDocumentParserTest {
             pdf.save(path.toFile());
         }
         return path;
+    }
+
+    private static Path writeCaptionedTablePdf(Path dir) throws IOException {
+        var path = dir.resolve("captioned-table-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            var page = new PDPage();
+            pdf.addPage(page);
+            try (var cs = new PDPageContentStream(pdf, page)) {
+                writeText(cs, "Revenue overview", 50, 750);
+                writeText(cs, "Table 1. Quarterly revenue by region", 72, 705);
+                drawLine(cs, 72, 680, 360, 680);
+                drawLine(cs, 72, 640, 360, 640);
+                drawLine(cs, 72, 600, 360, 600);
+                drawLine(cs, 72, 680, 72, 600);
+                drawLine(cs, 216, 680, 216, 600);
+                drawLine(cs, 360, 680, 360, 600);
+                writeText(cs, "Region", 100, 655);
+                writeText(cs, "Revenue", 245, 655);
+                writeText(cs, "North", 100, 615);
+                writeText(cs, "$10M", 245, 615);
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static void writeText(PDPageContentStream stream, String text, float x, float y) throws IOException {
+        stream.beginText();
+        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        stream.newLineAtOffset(x, y);
+        stream.showText(text);
+        stream.endText();
+    }
+
+    private static void drawLine(PDPageContentStream stream, float x0, float y0, float x1, float y1)
+            throws IOException {
+        stream.moveTo(x0, y0);
+        stream.lineTo(x1, y1);
+        stream.stroke();
     }
 
     record Run(String text, float fontSize, float lineHeightAdvance) {}

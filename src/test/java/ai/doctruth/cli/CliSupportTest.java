@@ -36,12 +36,13 @@ class CliSupportTest {
     @Test
     void parsedDocumentJsonHandlesAllSectionTypes() throws Exception {
         var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var figureBox = new BoundingBox(10, 20, 110, 40);
         var doc = new ParsedDocument(
                 "doc",
                 java.util.List.of(
                         new TextSection("hello", loc, BlockKind.BODY),
                         new TableSection(java.util.List.of(java.util.List.of("a")), loc),
-                        new FigureSection("chart", loc)),
+                        new FigureSection("chart", loc, Optional.of(figureBox))),
                 new DocumentMetadata("sample.pdf", 1, Optional.empty()));
 
         var tree = MAPPER.readTree(ParsedDocumentJson.toJson(doc));
@@ -49,6 +50,7 @@ class CliSupportTest {
         assertThat(tree.path("sections").get(0).path("type").asText()).isEqualTo("text");
         assertThat(tree.path("sections").get(1).path("type").asText()).isEqualTo("table");
         assertThat(tree.path("sections").get(2).path("type").asText()).isEqualTo("figure");
+        assertThat(tree.path("sections").get(2).path("boundingBox").path("x0").asDouble()).isEqualTo(10.0);
     }
 
     @Test
@@ -120,6 +122,25 @@ class CliSupportTest {
                         ## Candidate Name
 
                         • Lead production planning for day-to-day shipment release.
+                        """);
+    }
+
+    @Test
+    void parsedDocumentMarkdownUsesFigureCaptionBboxReadingOrder() {
+        var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var doc = new ParsedDocument(
+                "doc",
+                java.util.List.of(
+                        new TextSection("Body below caption", loc, BlockKind.BODY, Optional.of(new BoundingBox(10, 200, 300, 220))),
+                        new FigureSection("Table 1. Revenue", loc, Optional.of(new BoundingBox(10, 100, 300, 120)))),
+                new DocumentMetadata("sample.pdf", 1, Optional.empty()));
+
+        assertThat(ParsedDocumentMarkdown.toMarkdown(doc))
+                .isEqualTo(
+                        """
+                        [Figure: Table 1. Revenue]
+
+                        Body below caption
                         """);
     }
 

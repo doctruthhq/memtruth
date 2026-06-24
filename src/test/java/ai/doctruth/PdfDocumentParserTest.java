@@ -153,6 +153,72 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("OCR page routing preserves region-level reading order and bounding boxes")
+        void lowTextPageRoutesOcrRegionsAsSeparateSections() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> new OcrPageResult(
+                    "second visual line\nfirst visual line",
+                    0.91,
+                    List.of(
+                            new OcrRegion("second visual line", 50, 160, 220, 30, 0.91),
+                            new OcrRegion("first visual line", 50, 80, 200, 30, 0.93)),
+                    pageNumber);
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(doc.sections()).hasSize(2);
+            assertThat(((TextSection) doc.sections().get(0)).text()).isEqualTo("second visual line");
+            assertThat(((TextSection) doc.sections().get(1)).text()).isEqualTo("first visual line");
+            var firstBox = ((TextSection) doc.sections().get(0)).boundingBox().orElseThrow();
+            var secondBox = ((TextSection) doc.sections().get(1)).boundingBox().orElseThrow();
+            assertThat(firstBox.y0()).isGreaterThan(secondBox.y0());
+        }
+
+        @Test
+        @DisplayName("OCR region source locations are compact after blank regions and multi-line regions")
+        void lowTextPageRoutesOcrRegionsWithCompactLineRanges() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> new OcrPageResult(
+                    "first line\nsecond line\nthird line",
+                    0.91,
+                    List.of(
+                            new OcrRegion("first line\nsecond line", 50, 80, 200, 60, 0.93),
+                            new OcrRegion("   ", 50, 150, 200, 30, 0.5),
+                            new OcrRegion("third line", 50, 190, 200, 30, 0.91)),
+                    pageNumber);
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(doc.sections()).hasSize(2);
+            var first = (TextSection) doc.sections().get(0);
+            var second = (TextSection) doc.sections().get(1);
+            assertThat(first.location().lineStart()).isEqualTo(1);
+            assertThat(first.location().lineEnd()).isEqualTo(2);
+            assertThat(second.location().lineStart()).isEqualTo(3);
+            assertThat(second.location().lineEnd()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("OCR page routing falls back to one aggregate section when no regions are returned")
+        void lowTextPageRoutesOcrTextWithoutRegionsAsAggregateSection() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> new OcrPageResult(
+                    "OCR recovered page text",
+                    0.91,
+                    List.of(),
+                    pageNumber);
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(doc.sections()).hasSize(1);
+            var section = (TextSection) doc.sections().getFirst();
+            assertThat(section.text()).isEqualTo("OCR recovered page text");
+            assertThat(section.location().lineStart()).isEqualTo(1);
+            assertThat(section.location().lineEnd()).isEqualTo(1);
+            assertThat(section.boundingBox()).contains(new BoundingBox(0, 0, 1000, 1000));
+        }
+
+        @Test
         @DisplayName("usable text-layer PDF pages do not call OCR")
         void usableTextLayerPagesDoNotCallOcr() throws Exception {
             var pdfPath = writeSinglePagePdf(

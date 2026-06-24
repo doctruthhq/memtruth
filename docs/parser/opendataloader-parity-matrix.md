@@ -88,8 +88,10 @@ recovery and is not yet a full upstream processor port.
 
 ## CaptionProcessor
 
-Status: `not_ported`. A dedicated caption processor equivalent has not been
-ported into the DocTruth Rust runtime.
+Status: `partial`. Standalone table/figure-style captions adjacent to detected
+tables are promoted into bbox-backed caption blocks in the Java/OpenDataLoader-
+compatible parser core. Broader image/figure caption behavior and full-bench
+caption evidence remain pending.
 
 ## LevelProcessor
 
@@ -154,5 +156,7 @@ comparison or oracle surface, not as a DocTruth runtime output contract.
 
 ## OcrStrategy
 
-Status: `partial`. OCR routing is part of the runtime contract, but full
+Status: `partial`. OCR routing is part of the runtime contract. Worker-returned
+OCR regions are preserved as bbox-backed parser sections and adapt into
+`OCR_REGION` trust units when the parser backend is OCR-shaped, but full
 OpenDataLoader strategy parity has not been verified.

@@ -221,13 +221,45 @@ public final class PdfDocumentParser {
             LOG.debug("skipping blank OCR page page={}", page);
             return;
         }
+        if (appendOcrRegionSections(result, page, image.getWidth(), image.getHeight(), sections)) {
+            LOG.debug("page={} routed=ocr regions={} confidence={}", page, result.regions().size(), result.confidence());
+            return;
+        }
+        appendAggregateOcrSection(result, page, image.getWidth(), image.getHeight(), sections);
+        LOG.debug("page={} routed=ocr chars={} confidence={}", page, result.text().length(), result.confidence());
+    }
+
+    private static boolean appendOcrRegionSections(
+            OcrPageResult result, int page, int imageWidth, int imageHeight, List<ParsedSection> sections) {
+        if (result.regions().isEmpty()) {
+            return false;
+        }
+        int firstSize = sections.size();
+        int nextLine = 1;
+        for (var region : result.regions()) {
+            String text = region.text().strip();
+            if (text.isBlank()) {
+                continue;
+            }
+            int lineCount = Math.max(1, (int) text.lines().count());
+            sections.add(new TextSection(
+                    text,
+                    new SourceLocation(page, page, nextLine, nextLine + lineCount - 1, 0),
+                    BlockKind.BODY,
+                    ocrRegionBoundingBox(region, imageWidth, imageHeight)));
+            nextLine += lineCount;
+        }
+        return sections.size() > firstSize;
+    }
+
+    private static void appendAggregateOcrSection(
+            OcrPageResult result, int page, int imageWidth, int imageHeight, List<ParsedSection> sections) {
         int lineCount = Math.max(1, (int) result.text().lines().count());
         sections.add(new TextSection(
                 result.text().stripTrailing(),
                 new SourceLocation(page, page, 1, lineCount, 0),
                 BlockKind.BODY,
-                ocrBoundingBox(result, image.getWidth(), image.getHeight())));
-        LOG.debug("page={} routed=ocr chars={} confidence={}", page, result.text().length(), result.confidence());
+                ocrBoundingBox(result, imageWidth, imageHeight)));
     }
 
     private static Optional<BoundingBox> ocrBoundingBox(OcrPageResult result, int imageWidth, int imageHeight) {
@@ -243,6 +275,17 @@ public final class PdfDocumentParser {
                 clamp1000(y0 * 1000.0 / imageHeight),
                 clamp1000(x1 * 1000.0 / imageWidth),
                 clamp1000(y1 * 1000.0 / imageHeight)));
+    }
+
+    private static Optional<BoundingBox> ocrRegionBoundingBox(OcrRegion region, int imageWidth, int imageHeight) {
+        if (imageWidth <= 0 || imageHeight <= 0) {
+            return Optional.of(new BoundingBox(0.0, 0.0, 1000.0, 1000.0));
+        }
+        return Optional.of(new BoundingBox(
+                clamp1000(region.x() * 1000.0 / imageWidth),
+                clamp1000(region.y() * 1000.0 / imageHeight),
+                clamp1000((region.x() + region.width()) * 1000.0 / imageWidth),
+                clamp1000((region.y() + region.height()) * 1000.0 / imageHeight)));
     }
 
     private static double clamp1000(double value) {

@@ -59,6 +59,24 @@ class TrustDocumentAdapterTest {
     }
 
     @Test
+    @DisplayName("OCR parser runs adapt region-backed text sections into OCR_REGION trust units")
+    void adaptsOcrRegionSectionsToOcrUnits() {
+        var ocrRun = new ParserRun("1.0.0", "ocr", "pdfbox-ocr", List.of("ocr-router:v1"), List.of());
+        var parsed = new ParsedDocument(
+                "doc-1",
+                List.of(
+                        new TextSection("first OCR region", LOC, BlockKind.BODY, Optional.of(BOX)),
+                        new TextSection("second OCR region", new SourceLocation(1, 1, 2, 2, 0), BlockKind.BODY, Optional.of(BOX))),
+                META);
+
+        var doc = TrustDocument.fromParsed(parsed, "sha256:source", ocrRun);
+
+        assertThat(doc.body().units()).hasSize(2);
+        assertThat(doc.body().units()).extracting(TrustUnit::kind).containsOnly(TrustUnitKind.OCR_REGION);
+        assertThat(doc.body().units()).allSatisfy(unit -> assertThat(unit.location().boundingBox()).contains(BOX));
+    }
+
+    @Test
     @DisplayName("rejects blank source hash and null parser run")
     void rejectsInvalidAdapterInputs() {
         var parsed = new ParsedDocument("doc-1", List.of(), META);

@@ -257,19 +257,50 @@ public final class PdfDocumentParser {
         }
         var counts = new EnumMap<BlockKind, Integer>(BlockKind.class);
         var tables = PdfPageTableExtractor.detectTableBlocksOnPage(pdf, page);
+        var pendingTables = new ArrayList<>(tables.stream()
+                .sorted(PdfDocumentParser::compareTableBlocks)
+                .toList());
         for (var block : blocks) {
             if (insideAnyTable(block, tables)) {
                 continue;
             }
+            appendTablesBeforeBlock(sections, pendingTables, block);
             sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
             counts.merge(block.kind(), 1, Integer::sum);
         }
-        tables.stream().map(PdfPageTableExtractor.TableBlock::section).forEach(sections::add);
+        pendingTables.stream().map(PdfPageTableExtractor.TableBlock::section).forEach(sections::add);
         LOG.debug("page={} blocks={} tables={} kinds={}", page, blocks.size(), tables.size(), counts);
+    }
+
+    private static void appendTablesBeforeBlock(
+            List<ParsedSection> sections, List<PdfPageTableExtractor.TableBlock> pendingTables, PdfTextBlock block) {
+        if (block.boundingBox().isEmpty()) {
+            return;
+        }
+        var iterator = pendingTables.iterator();
+        while (iterator.hasNext()) {
+            var table = iterator.next();
+            if (isBeforeOrSameReadingPosition(table.boundingBox(), block.boundingBox().get())) {
+                sections.add(table.section());
+                iterator.remove();
+            }
+        }
     }
 
     private static boolean insideAnyTable(PdfTextBlock block, List<PdfPageTableExtractor.TableBlock> tables) {
         return tables.stream().anyMatch(table -> table.contains(block));
+    }
+
+    private static int compareTableBlocks(PdfPageTableExtractor.TableBlock left, PdfPageTableExtractor.TableBlock right) {
+        int y = Double.compare(left.boundingBox().y0(), right.boundingBox().y0());
+        return y != 0 ? y : Double.compare(left.boundingBox().x0(), right.boundingBox().x0());
+    }
+
+    private static boolean isBeforeOrSameReadingPosition(BoundingBox table, BoundingBox block) {
+        if (table.y0() < block.y0() - 1.0) {
+            return true;
+        }
+        return Math.abs(table.y0() - block.y0()) <= 1.0 && table.x0() <= block.x0();
     }
 
     static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight) {

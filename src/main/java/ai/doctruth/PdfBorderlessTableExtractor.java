@@ -19,11 +19,11 @@ final class PdfBorderlessTableExtractor {
     static List<PdfPageTableExtractor.TableBlock> detect(
             List<TextPosition> positions, int pageNumber, double pageWidth, double pageHeight) {
         var rows = borderlessRows(positions);
-        if (!looksLikeAlignedTable(rows)) {
+        var anchors = columnAnchors(rows);
+        if (!looksLikeAlignedTable(rows, anchors)) {
             return List.of();
         }
-        int columns = rows.getFirst().cells().size();
-        var values = rows.stream().map(row -> cellTexts(row, columns)).toList();
+        var values = rows.stream().map(row -> cellTexts(row, anchors)).toList();
         var allPositions = rows.stream()
                 .flatMap(row -> row.cells().stream())
                 .flatMap(cell -> cell.positions().stream())
@@ -36,7 +36,7 @@ final class PdfBorderlessTableExtractor {
                 values,
                 new SourceLocation(pageNumber, pageNumber, 1, values.size(), 0),
                 box,
-                cellRegions(rows, pageWidth, pageHeight));
+                cellRegions(rows, anchors, pageWidth, pageHeight));
         return List.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
     }
 
@@ -69,17 +69,33 @@ final class PdfBorderlessTableExtractor {
         return new BorderlessRow(cells);
     }
 
-    private static boolean looksLikeAlignedTable(List<BorderlessRow> rows) {
-        if (rows.size() < 2 || !sameColumnCount(rows) || hasLongCell(rows) || hasBoldCell(rows)) {
+    private static boolean looksLikeAlignedTable(List<BorderlessRow> rows, List<Double> anchors) {
+        if (rows.size() < 2 || anchors.size() < 2 || hasLongCell(rows) || hasBoldCell(rows)) {
             return false;
         }
-        var anchors = rows.getFirst().cells().stream().map(BorderlessCell::x0).toList();
         return rows.stream().allMatch(row -> alignedWithAnchors(row, anchors));
     }
 
-    private static boolean sameColumnCount(List<BorderlessRow> rows) {
-        int columns = rows.getFirst().cells().size();
-        return rows.stream().allMatch(row -> row.cells().size() == columns);
+    private static List<Double> columnAnchors(List<BorderlessRow> rows) {
+        var sorted = rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .map(BorderlessCell::x0)
+                .sorted()
+                .toList();
+        var anchors = new ArrayList<Double>();
+        var cluster = new ArrayList<Double>();
+        for (double x : sorted) {
+            if (cluster.isEmpty() || Math.abs(x - average(cluster)) <= COLUMN_ALIGNMENT_EPSILON) {
+                cluster.add(x);
+            } else {
+                anchors.add(average(cluster));
+                cluster = new ArrayList<>(List.of(x));
+            }
+        }
+        if (!cluster.isEmpty()) {
+            anchors.add(average(cluster));
+        }
+        return List.copyOf(anchors);
     }
 
     private static boolean hasLongCell(List<BorderlessRow> rows) {
@@ -97,34 +113,67 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean alignedWithAnchors(BorderlessRow row, List<Double> anchors) {
-        for (int i = 0; i < anchors.size(); i++) {
-            if (Math.abs(row.cells().get(i).x0() - anchors.get(i)) > COLUMN_ALIGNMENT_EPSILON) {
+        for (var cell : row.cells()) {
+            if (nearestAnchor(cell, anchors) < 0) {
                 return false;
             }
         }
         return true;
     }
 
-    private static List<String> cellTexts(BorderlessRow row, int columns) {
-        return row.cells().subList(0, columns).stream().map(BorderlessCell::text).toList();
+    private static List<String> cellTexts(BorderlessRow row, List<Double> anchors) {
+        var values = new ArrayList<String>(java.util.Collections.nCopies(anchors.size(), ""));
+        for (var cell : row.cells()) {
+            int column = nearestAnchor(cell, anchors);
+            if (column >= 0) {
+                values.set(column, cell.text());
+            }
+        }
+        return List.copyOf(values);
     }
 
-    private static List<TableCellRegion> cellRegions(List<BorderlessRow> rows, double pageWidth, double pageHeight) {
+    private static List<TableCellRegion> cellRegions(
+            List<BorderlessRow> rows, List<Double> anchors, double pageWidth, double pageHeight) {
         var regions = new ArrayList<TableCellRegion>();
         for (int row = 0; row < rows.size(); row++) {
-            addRowRegions(regions, row, rows.get(row).cells(), pageWidth, pageHeight);
+            addRowRegions(regions, row, rows.get(row).cells(), anchors, pageWidth, pageHeight);
         }
         return List.copyOf(regions);
     }
 
     private static void addRowRegions(
-            List<TableCellRegion> regions, int row, List<BorderlessCell> cells, double pageWidth, double pageHeight) {
-        for (int column = 0; column < cells.size(); column++) {
-            int columnIndex = column;
-            PdfTextPositionBoxes.layoutBox(cells.get(column).positions(), pageWidth, pageHeight)
-                    .map(box -> new TableCellRegion(row, columnIndex, box))
+            List<TableCellRegion> regions,
+            int row,
+            List<BorderlessCell> cells,
+            List<Double> anchors,
+            double pageWidth,
+            double pageHeight) {
+        for (var cell : cells) {
+            int column = nearestAnchor(cell, anchors);
+            if (column < 0) {
+                continue;
+            }
+            PdfTextPositionBoxes.layoutBox(cell.positions(), pageWidth, pageHeight)
+                    .map(box -> new TableCellRegion(row, column, box))
                     .ifPresent(regions::add);
         }
+    }
+
+    private static int nearestAnchor(BorderlessCell cell, List<Double> anchors) {
+        int best = -1;
+        double bestDistance = Double.MAX_VALUE;
+        for (int column = 0; column < anchors.size(); column++) {
+            double distance = Math.abs(cell.x0() - anchors.get(column));
+            if (distance < bestDistance) {
+                best = column;
+                bestDistance = distance;
+            }
+        }
+        return bestDistance <= COLUMN_ALIGNMENT_EPSILON ? best : -1;
+    }
+
+    private static double average(List<Double> values) {
+        return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
     }
 
     private static List<List<TextPosition>> groupByBaseline(List<TextPosition> positions) {

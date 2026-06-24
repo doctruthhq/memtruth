@@ -24,7 +24,7 @@ class PdfMergedTableExtractionTest {
 
     @Test
     void borderedTablePreservesHorizontalMergedCellColumnSpan() throws Exception {
-        var document = TrustDocumentParser.parse(writeMergedCellTablePdf());
+        var document = parsePdfBox(writeMergedCellTablePdf());
 
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
@@ -42,7 +42,7 @@ class PdfMergedTableExtractionTest {
 
     @Test
     void borderedTablePreservesVerticalMergedCellRowSpan() throws Exception {
-        var document = TrustDocumentParser.parse(writeRowSpanTablePdf());
+        var document = parsePdfBox(writeRowSpanTablePdf());
 
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
@@ -240,6 +240,16 @@ class PdfMergedTableExtractionTest {
         stream.newLineAtOffset(x, y);
         stream.showText(text);
         stream.endText();
+    }
+
+    private static TrustDocument parsePdfBox(Path pdf) throws ParseException {
+        var request = new ParserRequest(
+                pdf,
+                TrustDocumentParser.sha256SourceFile(pdf),
+                ParserPreset.LITE.parserRun("pdfbox"),
+                true,
+                false);
+        return new PdfBoxParserBackend().parse(request).withEvaluatedAuditGrade();
     }
 
     private static TrustDocument expectedDocument() {

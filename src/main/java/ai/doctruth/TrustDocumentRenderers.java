@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -183,22 +184,13 @@ final class TrustDocumentRenderers {
 
     static String toMarkdownClean(TrustDocument doc) {
         var out = new StringBuilder();
-        doc.body().units().stream()
-                .filter(unit -> unit.kind() != TrustUnitKind.TABLE_CELL)
-                .sorted(Comparator.comparingInt(unit -> unit.location().readingOrder()))
-                .forEach(unit -> appendBlock(out, unit.content().text()));
-        doc.body().tables().forEach(table -> appendBlock(out, tableMarkdown(table)));
+        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tableMarkdown, unit -> unit.content().text());
         return out.toString().stripTrailing() + "\n";
     }
 
     static void writeMarkdownClean(TrustDocument doc, Writer writer) throws IOException {
         boolean[] wrote = new boolean[] {false};
-        for (var unit : cleanMarkdownUnits(doc)) {
-            writeBlock(writer, wrote, unit.content().text());
-        }
-        for (var table : doc.body().tables()) {
-            writeBlock(writer, wrote, tableMarkdown(table));
-        }
+        writeCleanBlocksInReadingOrder(doc, writer, wrote, TrustDocumentRenderers::tableMarkdown, unit -> unit.content().text());
         writeChunked(writer, "\n");
     }
 
@@ -264,19 +256,13 @@ final class TrustDocumentRenderers {
 
     static String toPlainText(TrustDocument doc) {
         var out = new StringBuilder();
-        cleanMarkdownUnits(doc).forEach(unit -> appendBlock(out, unit.content().text()));
-        doc.body().tables().forEach(table -> appendBlock(out, tablePlainText(table)));
+        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tablePlainText, unit -> unit.content().text());
         return out.toString().stripTrailing() + "\n";
     }
 
     static void writePlainText(TrustDocument doc, Writer writer) throws IOException {
         boolean[] wrote = new boolean[] {false};
-        for (var unit : cleanMarkdownUnits(doc)) {
-            writeBlock(writer, wrote, unit.content().text());
-        }
-        for (var table : doc.body().tables()) {
-            writeBlock(writer, wrote, tablePlainText(table));
-        }
+        writeCleanBlocksInReadingOrder(doc, writer, wrote, TrustDocumentRenderers::tablePlainText, unit -> unit.content().text());
         writeChunked(writer, "\n");
     }
 
@@ -760,6 +746,74 @@ final class TrustDocumentRenderers {
         out.append(rendered.strip());
     }
 
+    private static void appendCleanBlocksInReadingOrder(
+            TrustDocument doc,
+            StringBuilder out,
+            Function<TrustTable, String> tableRenderer,
+            Function<TrustUnit, String> unitRenderer) {
+        var emittedTables = new java.util.HashSet<String>();
+        for (var unit : sortedUnits(doc)) {
+            if (unit.kind() == TrustUnitKind.TABLE_CELL) {
+                tableForUnit(doc, unit).ifPresent(table -> {
+                    if (emittedTables.add(table.tableId())) {
+                        appendBlock(out, tableRenderer.apply(table));
+                    }
+                });
+            } else {
+                appendBlock(out, unitRenderer.apply(unit));
+            }
+        }
+        appendTablesWithoutUnits(doc, emittedTables, table -> appendBlock(out, tableRenderer.apply(table)));
+    }
+
+    private static void writeCleanBlocksInReadingOrder(
+            TrustDocument doc,
+            Writer writer,
+            boolean[] wrote,
+            Function<TrustTable, String> tableRenderer,
+            Function<TrustUnit, String> unitRenderer) throws IOException {
+        var emittedTables = new java.util.HashSet<String>();
+        for (var unit : sortedUnits(doc)) {
+            if (unit.kind() == TrustUnitKind.TABLE_CELL) {
+                var table = tableForUnit(doc, unit);
+                if (table.isPresent() && emittedTables.add(table.get().tableId())) {
+                    writeBlock(writer, wrote, tableRenderer.apply(table.get()));
+                }
+            } else {
+                writeBlock(writer, wrote, unitRenderer.apply(unit));
+            }
+        }
+        writeTablesWithoutUnits(doc, emittedTables, table -> writeBlock(writer, wrote, tableRenderer.apply(table)));
+    }
+
+    private static java.util.Optional<TrustTable> tableForUnit(TrustDocument doc, TrustUnit unit) {
+        return doc.body().tables().stream()
+                .filter(table -> table.tableId().equals(unit.content().sourceObjectId())
+                        || table.cells().stream()
+                                .anyMatch(cell -> cell.cellId().equals(unit.content().sourceObjectId())))
+                .findFirst();
+    }
+
+    private static void appendTablesWithoutUnits(
+            TrustDocument doc,
+            java.util.Set<String> emittedTables,
+            java.util.function.Consumer<TrustTable> appender) {
+        for (var table : doc.body().tables()) {
+            if (emittedTables.add(table.tableId())) {
+                appender.accept(table);
+            }
+        }
+    }
+
+    private static void writeTablesWithoutUnits(
+            TrustDocument doc, java.util.Set<String> emittedTables, TableAppender appender) throws IOException {
+        for (var table : doc.body().tables()) {
+            if (emittedTables.add(table.tableId())) {
+                appender.append(table);
+            }
+        }
+    }
+
     private static void writeBlock(Writer writer, boolean[] wrote, String rendered) throws IOException {
         if (rendered.isBlank()) {
             return;
@@ -1174,6 +1228,11 @@ final class TrustDocumentRenderers {
     @FunctionalInterface
     private interface FragmentAppender {
         void append(StringBuilder out);
+    }
+
+    @FunctionalInterface
+    private interface TableAppender {
+        void append(TrustTable table) throws IOException;
     }
 
     private record RenderedSourceMap(

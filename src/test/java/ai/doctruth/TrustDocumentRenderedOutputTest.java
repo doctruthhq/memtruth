@@ -99,6 +99,73 @@ class TrustDocumentRenderedOutputTest {
     }
 
     @Test
+    @DisplayName("markdown_clean renders tables at their source reading position")
+    void markdownCleanRendersTablesInlineWithSurroundingText() {
+        var parsed = new ParsedDocument(
+                "doc-inline-table",
+                List.of(
+                        new TextSection("Before table", LOC, BlockKind.BODY, Optional.of(BOX)),
+                        new TableSection(List.of(List.of("Name", "Score"), List.of("Alex", "98")), LOC),
+                        new TextSection("After table", LOC, BlockKind.BODY, Optional.of(BOX))),
+                META);
+        var doc = TrustDocument.fromParsed(parsed, "sha256:inline", PARSER_RUN);
+
+        assertThat(doc.toMarkdownClean()).isEqualTo("""
+                Before table
+
+                | Name | Score |
+                | --- | --- |
+                | Alex | 98 |
+
+                After table
+                """);
+    }
+
+    @Test
+    @DisplayName("markdown_clean renders runtime table-id source units inline")
+    void markdownCleanRendersRuntimeTableIdSourceUnitsInline() {
+        var table = new TrustTable(
+                "table-0001",
+                1,
+                Optional.empty(),
+                new Confidence(1.0, "runtime table"),
+                List.of(
+                        new TrustTableCell(
+                                "cell-0001-0000-0000",
+                                new TrustCellRange(0, 0),
+                                new TrustCellRange(0, 0),
+                                Optional.empty(),
+                                "Name"),
+                        new TrustTableCell(
+                                "cell-0001-0001-0000",
+                                new TrustCellRange(1, 1),
+                                new TrustCellRange(0, 0),
+                                Optional.empty(),
+                                "Alex")));
+        var units = List.of(
+                trustUnit(1, TrustUnitKind.TEXT_BLOCK, "Before table", "section-0001"),
+                trustUnit(2, TrustUnitKind.TABLE_CELL, "Name", "table-0001"),
+                trustUnit(3, TrustUnitKind.TABLE_CELL, "Alex", "table-0001"),
+                trustUnit(4, TrustUnitKind.TEXT_BLOCK, "After table", "section-0004"));
+        var doc = new TrustDocument(
+                "doc-runtime-table",
+                new TrustDocumentSource("runtime.pdf", "sha256:runtime", META),
+                new TrustDocumentBody(List.of(new TrustPage(1, 1000, 1000, true, "")), units, List.of(table)),
+                PARSER_RUN,
+                AuditGradeStatus.UNKNOWN);
+
+        assertThat(doc.toMarkdownClean()).isEqualTo("""
+                Before table
+
+                | Name |
+                | --- |
+                | Alex |
+
+                After table
+                """);
+    }
+
+    @Test
     @DisplayName("plain text preserves content without markdown or evidence syntax")
     void plainTextIsCleanConsumptionView() {
         var doc = sampleDocument();
@@ -248,6 +315,18 @@ class TrustDocumentRenderedOutputTest {
                         new TableSection(List.of(List.of("Company", "Role"), List.of("Acme", "Engineer")), LOC)),
                 META);
         return TrustDocument.fromParsed(parsed, "sha256:source", PARSER_RUN);
+    }
+
+    private static TrustUnit trustUnit(int index, TrustUnitKind kind, String text, String sourceObjectId) {
+        return new TrustUnit(
+                "unit-%04d".formatted(index),
+                kind,
+                new TrustUnitLocation(1, Optional.of(BOX), index),
+                new TrustUnitContent(text, sourceObjectId),
+                new TrustUnitEvidence(
+                        List.of("span-%04d".formatted(index)),
+                        new Confidence(1.0, "test unit"),
+                        List.of()));
     }
 
     private static TrustDocument documentWithWarnings() {

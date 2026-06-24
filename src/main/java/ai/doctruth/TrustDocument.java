@@ -295,9 +295,10 @@ public record TrustDocument(
 
     private static int addUnboundedTableCells(
             TableSection section, int tableIndex, List<TrustTableCell> cells, List<TrustUnit> units, int unitIndex) {
+        int columnCount = tableColumnCount(section);
         for (int row = 0; row < section.rows().size(); row++) {
-            for (int column = 0; column < section.rows().get(row).size(); column++) {
-                String text = section.rows().get(row).get(column);
+            for (int column = 0; column < columnCount; column++) {
+                String text = tableCellText(section, row, column);
                 String cellId = "cell-%04d-%04d-%04d".formatted(tableIndex, row, column);
                 cells.add(new TrustTableCell(
                         cellId,
@@ -315,27 +316,52 @@ public record TrustDocument(
 
     private static int addRegionBackedTableCells(
             TableSection section, int tableIndex, List<TrustTableCell> cells, List<TrustUnit> units, int unitIndex) {
-        for (var region : section.cellRegions()) {
-            String text = tableCellText(section, region.row(), region.column());
-            String cellId = "cell-%04d-%04d-%04d".formatted(tableIndex, region.row(), region.column());
-            var cellBox = Optional.of(region.boundingBox());
-            var cellLocation = new SourceLocation(
-                    region.page(),
-                    region.page(),
-                    section.location().lineStart(),
-                    section.location().lineEnd(),
-                    section.location().charOffset());
-            cells.add(new TrustTableCell(
-                    cellId,
-                    new TrustCellRange(region.row(), region.rowEnd()),
-                    new TrustCellRange(region.column(), region.columnEnd()),
-                    cellBox,
-                    text));
-            if (!text.isBlank()) {
-                units.add(tableCellUnit(unitIndex++, cellLocation, cellBox, text, cellId));
+        int columnCount = tableColumnCount(section);
+        for (int row = 0; row < section.rows().size(); row++) {
+            for (int column = 0; column < columnCount; column++) {
+                if (coveredBySpanningRegion(section, row, column)) {
+                    continue;
+                }
+                var region = tableCellRegion(section, row, column);
+                String text = tableCellText(section, row, column);
+                String cellId = "cell-%04d-%04d-%04d".formatted(tableIndex, row, column);
+                var cellBox = region.map(TableCellRegion::boundingBox);
+                var cellLocation = region
+                        .map(value -> new SourceLocation(
+                                value.page(),
+                                value.page(),
+                                section.location().lineStart(),
+                                section.location().lineEnd(),
+                                section.location().charOffset()))
+                        .orElse(section.location());
+                cells.add(new TrustTableCell(
+                        cellId,
+                        new TrustCellRange(row, region.map(TableCellRegion::rowEnd).orElse(row)),
+                        new TrustCellRange(column, region.map(TableCellRegion::columnEnd).orElse(column)),
+                        cellBox,
+                        text));
+                if (!text.isBlank()) {
+                    units.add(tableCellUnit(unitIndex++, cellLocation, cellBox, text, cellId));
+                }
             }
         }
         return unitIndex;
+    }
+
+    private static boolean coveredBySpanningRegion(TableSection section, int row, int column) {
+        return section.cellRegions().stream()
+                .filter(region -> region.row() != row || region.column() != column)
+                .anyMatch(region -> region.row() <= row
+                        && region.rowEnd() >= row
+                        && region.column() <= column
+                        && region.columnEnd() >= column);
+    }
+
+    private static Optional<TableCellRegion> tableCellRegion(TableSection section, int row, int column) {
+        return section.cellRegions().stream()
+                .filter(region -> region.row() == row)
+                .filter(region -> region.column() == column)
+                .findFirst();
     }
 
     private static String tableCellText(TableSection section, int row, int column) {
@@ -343,6 +369,10 @@ public record TrustDocument(
             return "";
         }
         return section.rows().get(row).get(column);
+    }
+
+    private static int tableColumnCount(TableSection section) {
+        return section.rows().stream().mapToInt(List::size).max().orElse(0);
     }
 
     private static TrustUnit tableCellUnit(

@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import ai.doctruth.spi.OcrEngine;
 import ai.doctruth.spi.OcrPageResult;
@@ -45,6 +46,11 @@ public final class PdfDocumentParser {
             "(?i)^(?:page\\s+)?\\d+\\s*(?:/|of)\\s*\\d+$|^page\\s+\\d+$");
     private static final Pattern LEGAL_OR_CONFIDENTIAL_FURNITURE = Pattern.compile(
             "(?i).*(confidential|proprietary|copyright|all rights reserved|draft|internal use).*");
+    private static final Pattern STANDALONE_BODY_FIELD =
+            Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
+    private static final double PARAGRAPH_VERTICAL_GAP = 32.0;
+    private static final double PARAGRAPH_LEFT_TOLERANCE = 24.0;
+    private static final double PARAGRAPH_MIN_HORIZONTAL_OVERLAP = 0.50;
 
     private PdfDocumentParser() {
         throw new AssertionError("no instances");
@@ -325,12 +331,18 @@ public final class PdfDocumentParser {
         var pendingTables = new ArrayList<>(tables.stream()
                 .sorted(PdfDocumentParser::compareTableBlocks)
                 .toList());
+        var pendingParagraph = new ArrayList<PdfTextBlock>();
         for (var block : blocks) {
             if (insideAnyTable(block, tables)) {
                 continue;
             }
+            if (hasTablesBeforeBlock(pendingTables, block)) {
+                flushParagraph(sections, pendingParagraph);
+                appendTablesBeforeBlock(sections, pendingTables, block);
+            }
             var furnitureKey = furnitureKey(block);
             if (furnitureKey.isPresent() && furniture.contains(furnitureKey.get())) {
+                flushParagraph(sections, pendingParagraph);
                 discarded.add(new DiscardedBlock(
                         page,
                         furnitureKey.get().reason(),
@@ -338,17 +350,117 @@ public final class PdfDocumentParser {
                         block.boundingBox()));
                 continue;
             }
-            appendTablesBeforeBlock(sections, pendingTables, block);
             var caption = PdfCaptionBinder.bindCaption(block, tables);
             if (caption.isPresent()) {
+                flushParagraph(sections, pendingParagraph);
                 sections.add(caption.get());
+            } else if (block.kind() == BlockKind.BODY && canAppendParagraph(pendingParagraph, block)) {
+                pendingParagraph.add(block);
             } else {
-                sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
+                flushParagraph(sections, pendingParagraph);
+                if (block.kind() == BlockKind.BODY) {
+                    pendingParagraph.add(block);
+                } else {
+                    sections.add(new TextSection(block.text(), block.location(), block.kind(), block.boundingBox()));
+                }
                 counts.merge(block.kind(), 1, Integer::sum);
             }
         }
+        flushParagraph(sections, pendingParagraph);
         pendingTables.stream().map(PdfPageTableExtractor.TableBlock::section).forEach(sections::add);
         LOG.debug("page={} blocks={} tables={} kinds={}", page, blocks.size(), tables.size(), counts);
+    }
+
+    private static boolean canAppendParagraph(List<PdfTextBlock> pendingParagraph, PdfTextBlock block) {
+        return pendingParagraph.isEmpty() || sameWrappedParagraph(pendingParagraph.getLast(), block);
+    }
+
+    private static void flushParagraph(List<ParsedSection> sections, List<PdfTextBlock> pendingParagraph) {
+        if (pendingParagraph.isEmpty()) {
+            return;
+        }
+        sections.add(mergedParagraph(pendingParagraph));
+        pendingParagraph.clear();
+    }
+
+    private static TextSection mergedParagraph(List<PdfTextBlock> blocks) {
+        if (blocks.size() == 1) {
+            var block = blocks.getFirst();
+            return new TextSection(paragraphText(block.text()), block.location(), block.kind(), block.boundingBox());
+        }
+        var first = blocks.getFirst();
+        var last = blocks.getLast();
+        var location = new SourceLocation(
+                first.location().pageStart(),
+                last.location().pageEnd(),
+                first.location().lineStart(),
+                Math.max(first.location().lineEnd(), last.location().lineEnd()),
+                first.location().charOffset());
+        return new TextSection(
+                blocks.stream().map(PdfTextBlock::text).map(PdfDocumentParser::paragraphText).collect(Collectors.joining(" ")),
+                location,
+                BlockKind.BODY,
+                paragraphBox(blocks));
+    }
+
+    private static String paragraphText(String text) {
+        return text.lines()
+                .map(String::strip)
+                .filter(line -> !line.isEmpty())
+                .collect(Collectors.joining(" "));
+    }
+
+    private static Optional<BoundingBox> paragraphBox(List<PdfTextBlock> blocks) {
+        double x0 = Double.POSITIVE_INFINITY;
+        double y0 = Double.POSITIVE_INFINITY;
+        double x1 = Double.NEGATIVE_INFINITY;
+        double y1 = Double.NEGATIVE_INFINITY;
+        boolean found = false;
+        for (var block : blocks) {
+            if (block.boundingBox().isEmpty()) {
+                continue;
+            }
+            var box = block.boundingBox().orElseThrow();
+            x0 = Math.min(x0, box.x0());
+            y0 = Math.min(y0, box.y0());
+            x1 = Math.max(x1, box.x1());
+            y1 = Math.max(y1, box.y1());
+            found = true;
+        }
+        return found ? Optional.of(new BoundingBox(x0, y0, x1, y1)) : Optional.empty();
+    }
+
+    private static boolean sameWrappedParagraph(PdfTextBlock previous, PdfTextBlock current) {
+        if (previous.boundingBox().isEmpty() || current.boundingBox().isEmpty() || !samePage(previous, current)) {
+            return false;
+        }
+        var a = previous.boundingBox().orElseThrow();
+        var b = current.boundingBox().orElseThrow();
+        double verticalGap = b.y0() - a.y1();
+        return verticalGap >= 0.0
+                && verticalGap <= PARAGRAPH_VERTICAL_GAP
+                && alignedParagraphLines(a, b)
+                && !looksLikeStandaloneBodyField(previous.text())
+                && !looksLikeStandaloneBodyField(current.text());
+    }
+
+    private static boolean alignedParagraphLines(BoundingBox previous, BoundingBox current) {
+        if (Math.abs(previous.x0() - current.x0()) <= PARAGRAPH_LEFT_TOLERANCE) {
+            return true;
+        }
+        double overlap = Math.max(0.0, Math.min(previous.x1(), current.x1()) - Math.max(previous.x0(), current.x0()));
+        double minWidth = Math.max(1.0, Math.min(previous.x1() - previous.x0(), current.x1() - current.x0()));
+        return overlap / minWidth >= PARAGRAPH_MIN_HORIZONTAL_OVERLAP;
+    }
+
+    private static boolean looksLikeStandaloneBodyField(String text) {
+        String trimmed = text.strip();
+        return !trimmed.contains("\n") && STANDALONE_BODY_FIELD.matcher(trimmed).matches();
+    }
+
+    private static boolean samePage(PdfTextBlock previous, PdfTextBlock current) {
+        return previous.location().pageStart() == current.location().pageStart()
+                && previous.location().pageEnd() == current.location().pageEnd();
     }
 
     private static Set<FurnitureKey> repeatedFurnitureKeys(Map<Integer, PageBlocks> pages) {
@@ -426,6 +538,13 @@ public final class PdfDocumentParser {
                 iterator.remove();
             }
         }
+    }
+
+    private static boolean hasTablesBeforeBlock(
+            List<PdfPageTableExtractor.TableBlock> pendingTables, PdfTextBlock block) {
+        return block.boundingBox().isPresent()
+                && pendingTables.stream()
+                        .anyMatch(table -> isBeforeOrSameReadingPosition(table.boundingBox(), block.boundingBox().get()));
     }
 
     private static boolean insideAnyTable(PdfTextBlock block, List<PdfPageTableExtractor.TableBlock> tables) {

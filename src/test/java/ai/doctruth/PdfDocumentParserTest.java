@@ -547,6 +547,102 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("wrapped BODY lines split into visual blocks are merged into one paragraph")
+        void wrappedBodyBlocksMergeIntoOneParagraph() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("The buyer requires audit-ready extraction", 12f, 32f),
+                            new Run("with stable citations across wrapped", 12f, 32f),
+                            new Run("paragraph lines in the source PDF.", 12f, 32f)));
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(1);
+            var section = (TextSection) doc.sections().getFirst();
+            assertThat(section.kind()).isEqualTo(BlockKind.BODY);
+            assertThat(section.text())
+                    .isEqualTo("The buyer requires audit-ready extraction with stable citations across wrapped paragraph lines in the source PDF.");
+            assertThat(section.location().lineStart()).isEqualTo(1);
+            assertThat(section.location().lineEnd()).isEqualTo(3);
+            assertThat(section.boundingBox()).hasValueSatisfying(box -> {
+                assertThat(box.x0()).isLessThan(box.x1());
+                assertThat(box.y0()).isLessThan(box.y1());
+            });
+        }
+
+        @Test
+        @DisplayName("wrapped BODY paragraph renders as one clean Markdown and content block")
+        void wrappedBodyParagraphRendersAsOneContentBlock() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("Clean Markdown should not keep", 12f, 32f),
+                            new Run("each wrapped paragraph line as", 12f, 32f),
+                            new Run("a separate document block.", 12f, 32f)));
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var trust = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+
+            assertThat(trust.toMarkdownClean()).isEqualTo("""
+                    Clean Markdown should not keep each wrapped paragraph line as a separate document block.
+                    """);
+            var out = new StringWriter();
+            trust.writeContentBlocks(out);
+            var blocks = MAPPER.readTree(out.toString()).path("contentBlocks");
+            assertThat(blocks).hasSize(1);
+            assertThat(blocks.get(0).path("text").asText())
+                    .isEqualTo("Clean Markdown should not keep each wrapped paragraph line as a separate document block.");
+            assertThat(blocks.get(0).path("sourceUnitIds")).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("single BODY block with internal wrapped lines renders without hard line breaks")
+        void singleBodyBlockWithInternalWrappedLinesRendersAsOneParagraph() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("Single visual block keeps", 12f, 14f),
+                            new Run("wrapped body lines as", 12f, 14f),
+                            new Run("one paragraph.", 12f, 14f)));
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var section = (TextSection) parsed.sections().getFirst();
+
+            assertThat(parsed.sections()).hasSize(1);
+            assertThat(section.kind()).isEqualTo(BlockKind.BODY);
+            assertThat(section.text()).isEqualTo("Single visual block keeps wrapped body lines as one paragraph.");
+            assertThat(section.location().lineStart()).isEqualTo(1);
+            assertThat(section.location().lineEnd()).isEqualTo(3);
+            assertThat(section.boundingBox()).isPresent();
+
+            var trust = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+            assertThat(trust.toMarkdownClean()).isEqualTo("""
+                    Single visual block keeps wrapped body lines as one paragraph.
+                    """);
+            var out = new StringWriter();
+            trust.writeContentBlocks(out);
+            var blocks = MAPPER.readTree(out.toString()).path("contentBlocks");
+            assertThat(blocks).hasSize(1);
+            assertThat(blocks.get(0).path("text").asText())
+                    .isEqualTo("Single visual block keeps wrapped body lines as one paragraph.");
+        }
+
+        @Test
+        @DisplayName("separate list items are not merged as one wrapped paragraph")
+        void separateListItemsAreNotParagraphMerged() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("- first requirement", 12f, 32f),
+                            new Run("- second requirement", 12f, 32f)));
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(2);
+            assertThat(doc.sections())
+                    .allSatisfy(section -> assertThat(((TextSection) section).kind()).isEqualTo(BlockKind.LIST));
+        }
+
+        @Test
         @DisplayName("classify(): bullet-prefix → LIST")
         void classifyBullet() {
             assertThat(PdfDocumentParser.classify("• a bulleted item", 12.0, 12.0))

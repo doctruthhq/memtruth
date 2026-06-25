@@ -3,6 +3,7 @@ package ai.doctruth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.apache.pdfbox.text.TextPosition;
 
@@ -11,6 +12,8 @@ final class PdfBorderlessTableExtractor {
     private static final double BASELINE_EPSILON = 2.0;
     private static final double COLUMN_ALIGNMENT_EPSILON = 8.0;
     private static final int MAX_CELL_CHARS = 32;
+    private static final Pattern NUMERIC_CELL = Pattern.compile(
+            "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
 
     private PdfBorderlessTableExtractor() {
         throw new AssertionError("no instances");
@@ -70,10 +73,13 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean looksLikeAlignedTable(List<BorderlessRow> rows, List<Double> anchors) {
-        if (rows.size() < 2 || anchors.size() < 2 || hasLongCell(rows) || hasBoldCell(rows)) {
+        if (rows.size() < 2 || anchors.size() < 2 || hasLongDataCell(rows) || hasBoldDataCell(rows)) {
             return false;
         }
-        return rows.stream().allMatch(row -> alignedWithAnchors(row, anchors));
+        if (!rows.stream().allMatch(row -> alignedWithAnchors(row, anchors))) {
+            return false;
+        }
+        return !hasLongHeaderCell(rows) || hasNumericDataRows(rows);
     }
 
     private static List<Double> columnAnchors(List<BorderlessRow> rows) {
@@ -98,18 +104,40 @@ final class PdfBorderlessTableExtractor {
         return List.copyOf(anchors);
     }
 
-    private static boolean hasLongCell(List<BorderlessRow> rows) {
-        return rows.stream()
+    private static boolean hasLongDataCell(List<BorderlessRow> rows) {
+        return dataRows(rows).stream()
                 .flatMap(row -> row.cells().stream())
                 .map(BorderlessCell::text)
                 .anyMatch(text -> text.length() > MAX_CELL_CHARS);
     }
 
-    private static boolean hasBoldCell(List<BorderlessRow> rows) {
-        return rows.stream()
+    private static boolean hasBoldDataCell(List<BorderlessRow> rows) {
+        return dataRows(rows).stream()
                 .flatMap(row -> row.cells().stream())
                 .flatMap(cell -> cell.positions().stream())
                 .anyMatch(PdfTextPositionMetrics::isBold);
+    }
+
+    private static boolean hasLongHeaderCell(List<BorderlessRow> rows) {
+        return !rows.isEmpty() && rows.getFirst().cells().stream().map(BorderlessCell::text)
+                .anyMatch(text -> text.length() > MAX_CELL_CHARS);
+    }
+
+    private static boolean hasNumericDataRows(List<BorderlessRow> rows) {
+        return dataRows(rows).stream().anyMatch(PdfBorderlessTableExtractor::isNumericHeavyRow);
+    }
+
+    private static boolean isNumericHeavyRow(BorderlessRow row) {
+        long numeric = row.cells().stream().map(BorderlessCell::text).filter(PdfBorderlessTableExtractor::isNumericCell).count();
+        return numeric >= 2 && numeric * 2 >= row.cells().size();
+    }
+
+    private static boolean isNumericCell(String text) {
+        return NUMERIC_CELL.matcher(text.strip()).matches();
+    }
+
+    private static List<BorderlessRow> dataRows(List<BorderlessRow> rows) {
+        return rows.size() <= 1 ? List.of() : rows.subList(1, rows.size());
     }
 
     private static boolean alignedWithAnchors(BorderlessRow row, List<Double> anchors) {
@@ -122,14 +150,20 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static List<String> cellTexts(BorderlessRow row, List<Double> anchors) {
-        var values = new ArrayList<String>(java.util.Collections.nCopies(anchors.size(), ""));
-        for (var cell : row.cells()) {
-            int column = nearestAnchor(cell, anchors);
+        var columnPositions = new ArrayList<List<TextPosition>>();
+        for (int i = 0; i < anchors.size(); i++) {
+            columnPositions.add(new ArrayList<>());
+        }
+        for (var position : row.positions()) {
+            int column = anchorColumn(position.getXDirAdj(), anchors);
             if (column >= 0) {
-                values.set(column, cell.text());
+                columnPositions.get(column).add(position);
             }
         }
-        return List.copyOf(values);
+        return columnPositions.stream()
+                .map(PdfTextPositionMetrics::sortByX)
+                .map(PdfTextPositionMetrics::renderWithInferredSpaces)
+                .toList();
     }
 
     private static List<TableCellRegion> cellRegions(
@@ -172,6 +206,29 @@ final class PdfBorderlessTableExtractor {
         return bestDistance <= COLUMN_ALIGNMENT_EPSILON ? best : -1;
     }
 
+    private static int anchorColumn(double x, List<Double> anchors) {
+        int best = 0;
+        double bestDistance = Double.MAX_VALUE;
+        for (int column = 0; column < anchors.size(); column++) {
+            double distance = Math.abs(x - anchors.get(column));
+            if (distance < bestDistance) {
+                best = column;
+                bestDistance = distance;
+            }
+        }
+        if (best > 0 && x < midpoint(anchors.get(best - 1), anchors.get(best))) {
+            return best - 1;
+        }
+        if (best + 1 < anchors.size() && x > midpoint(anchors.get(best), anchors.get(best + 1))) {
+            return best + 1;
+        }
+        return best;
+    }
+
+    private static double midpoint(double left, double right) {
+        return left + (right - left) / 2.0;
+    }
+
     private static double average(List<Double> values) {
         return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
     }
@@ -210,7 +267,12 @@ final class PdfBorderlessTableExtractor {
                 List.copyOf(positions));
     }
 
-    private record BorderlessRow(List<BorderlessCell> cells) {}
+    private record BorderlessRow(List<BorderlessCell> cells) {
+
+        List<TextPosition> positions() {
+            return cells.stream().flatMap(cell -> cell.positions().stream()).toList();
+        }
+    }
 
     private record BorderlessCell(String text, double x0, List<TextPosition> positions) {}
 }

@@ -11,6 +11,7 @@ import java.util.Optional;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,18 @@ class PdfBorderlessTableExtractionTest {
                 | --- | --- | --- |
                 | Alex |  | 98 |
                 | Blair | Ops | 91 |""");
+    }
+
+    @Test
+    void longHeaderNumericRowsProduceBorderlessTable() throws Exception {
+        var document = parsePdfBox(writeLongHeaderNumericTablePdf());
+
+        assertThat(document.body().tables()).hasSize(1);
+        assertThat(document.toMarkdownClean()).contains("""
+                | Temperature (degree C) | Kinematic viscosity coefficient v (m2/s) | Temperature (degree C) | Kinematic viscosity coefficient v (m2/s) |
+                | --- | --- | --- | --- |
+                | 0 | 1.793E-06 | 25 | 8.930E-07 |
+                | 1 | 1.732E-06 | 26 | 8.760E-07 |""");
     }
 
     @Test
@@ -93,6 +106,30 @@ class PdfBorderlessTableExtractionTest {
         return path;
     }
 
+    private Path writeLongHeaderNumericTablePdf() throws IOException {
+        var path = tempDir.resolve("long-header-numeric-table.pdf");
+        try (var pdf = new PDDocument()) {
+            var page = new PDPage(new PDRectangle(1000, 792));
+            pdf.addPage(page);
+            try (var stream = new PDPageContentStream(pdf, page)) {
+                writeText(stream, "Temperature (degree C)", 40, 700, 8);
+                writeText(stream, "Kinematic viscosity coefficient v (m2/s)", 280, 700, 8);
+                writeText(stream, "Temperature (degree C)", 560, 700, 8);
+                writeText(stream, "Kinematic viscosity coefficient v (m2/s)", 760, 700, 8);
+                writeText(stream, "0", 40, 670, 8);
+                writeText(stream, "1.793E-06", 280, 670, 8);
+                writeText(stream, "25", 560, 670, 8);
+                writeText(stream, "8.930E-07", 760, 670, 8);
+                writeText(stream, "1", 40, 640, 8);
+                writeText(stream, "1.732E-06", 280, 640, 8);
+                writeText(stream, "26", 560, 640, 8);
+                writeText(stream, "8.760E-07", 760, 640, 8);
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
     private Path writeRaggedBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("ragged-borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -132,8 +169,12 @@ class PdfBorderlessTableExtractionTest {
     }
 
     private static void writeText(PDPageContentStream stream, String text, float x, float y) throws IOException {
+        writeText(stream, text, x, y, 12);
+    }
+
+    private static void writeText(PDPageContentStream stream, String text, float x, float y, float fontSize) throws IOException {
         stream.beginText();
-        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), fontSize);
         stream.newLineAtOffset(x, y);
         stream.showText(text);
         stream.endText();

@@ -560,6 +560,14 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("classify(): year-leading sentence fragments stay BODY")
+        void classifyYearLeadingSentenceFragmentStaysBody() {
+            assertThat(PdfDocumentParser.classify(
+                            "1991. The biggest challenges came from cross-border logistics.", 18.0, 12.0))
+                    .isEqualTo(BlockKind.BODY);
+        }
+
+        @Test
         @DisplayName("classify(): avg height 1.5× page median → HEADING")
         void classifyHeadingBySize() {
             assertThat(PdfDocumentParser.classify("Some Title", 18.0, 12.0)).isEqualTo(BlockKind.HEADING);
@@ -576,6 +584,16 @@ class PdfDocumentParserTest {
         @DisplayName("classify(): 'MAKLUMAT PERIBADI' at body size → HEADING via all-caps rule")
         void classifyHeadingByAllCaps() {
             assertThat(PdfDocumentParser.classify("MAKLUMAT PERIBADI", 12.0, 12.0))
+                    .isEqualTo(BlockKind.HEADING);
+        }
+
+        @Test
+        @DisplayName("classify(): common section titles remain HEADING")
+        void classifyCommonSectionTitlesRemainHeading() {
+            assertThat(PdfDocumentParser.classify("WORK EXPERIENCE", 12.0, 12.0))
+                    .isEqualTo(BlockKind.HEADING);
+            assertThat(PdfDocumentParser.classify("EDUCATION", 12.0, 12.0)).isEqualTo(BlockKind.HEADING);
+            assertThat(PdfDocumentParser.classify("Executive Summary", 18.0, 12.0))
                     .isEqualTo(BlockKind.HEADING);
         }
 

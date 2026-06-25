@@ -12,12 +12,17 @@ final class PdfSemanticSectionCoalescer {
     private static final double COLUMN_OVERLAP_RATIO = 0.12;
     private static final double COLUMN_CENTER_TOLERANCE = 180.0;
     private static final double BELOW_HEADING_TOLERANCE = 8.0;
+    private static final double SPLIT_TITLE_ALIGNMENT_TOLERANCE = 24.0;
+    private static final double SPLIT_TITLE_HORIZONTAL_GAP = 24.0;
+    private static final double SPLIT_TITLE_OVERLAP_RATIO = 0.50;
+    private static final double SPLIT_TITLE_VERTICAL_GAP = 12.0;
 
     private PdfSemanticSectionCoalescer() {
         throw new AssertionError("no instances");
     }
 
     static List<PdfTextBlock> coalesce(List<PdfTextBlock> blocks) {
+        blocks = reconstructSplitSectionTitles(blocks);
         var anchors = semanticAnchors(blocks);
         if (anchors.isEmpty()) {
             return blocks;
@@ -49,6 +54,98 @@ final class PdfSemanticSectionCoalescer {
         }
         out.sort(PdfTextBlockGeometry::compareTopLeft);
         return attachOrphanRowValues(out);
+    }
+
+    private static List<PdfTextBlock> reconstructSplitSectionTitles(List<PdfTextBlock> blocks) {
+        var out = new ArrayList<PdfTextBlock>();
+        for (int i = 0; i < blocks.size(); i++) {
+            var current = blocks.get(i);
+            if (i + 1 < blocks.size() && canMergeSplitSectionTitle(current, blocks.get(i + 1))) {
+                out.add(mergeSplitSectionTitle(current, blocks.get(++i)));
+            } else {
+                out.add(current);
+            }
+        }
+        return out;
+    }
+
+    private static boolean canMergeSplitSectionTitle(PdfTextBlock first, PdfTextBlock second) {
+        if (first.boundingBox().isEmpty() || second.boundingBox().isEmpty()) {
+            return false;
+        }
+        if (first.text().contains("\n") || second.text().contains("\n") || !samePage(first, second)) {
+            return false;
+        }
+        String merged = first.text().strip() + " " + second.text().strip();
+        return PdfResumeSectionNames.isKnown(merged)
+                && (first.kind() == BlockKind.HEADING || second.kind() == BlockKind.HEADING)
+                && splitTitleFragmentsFit(first, second);
+    }
+
+    private static boolean samePage(PdfTextBlock first, PdfTextBlock second) {
+        return first.location().pageStart() == second.location().pageStart()
+                && first.location().pageEnd() == second.location().pageEnd();
+    }
+
+    private static boolean splitTitleFragmentsFit(PdfTextBlock first, PdfTextBlock second) {
+        var a = first.boundingBox().orElseThrow();
+        var b = second.boundingBox().orElseThrow();
+        return stackedTitleFragments(a, b) || sameRowTitleFragments(a, b);
+    }
+
+    private static boolean stackedTitleFragments(BoundingBox first, BoundingBox second) {
+        double gap = second.y0() - first.y1();
+        if (gap < 0.0 || gap > SPLIT_TITLE_VERTICAL_GAP) {
+            return false;
+        }
+        return splitTitleAligned(first, second) || horizontalOverlapRatio(first, second) >= SPLIT_TITLE_OVERLAP_RATIO;
+    }
+
+    private static boolean sameRowTitleFragments(BoundingBox first, BoundingBox second) {
+        return verticalOverlapRatio(first, second) >= 0.45
+                && horizontalGap(first, second) <= SPLIT_TITLE_HORIZONTAL_GAP;
+    }
+
+    private static boolean splitTitleAligned(BoundingBox first, BoundingBox second) {
+        return Math.abs(first.x0() - second.x0()) <= SPLIT_TITLE_ALIGNMENT_TOLERANCE
+                || Math.abs(PdfTextBlockGeometry.centerX(first) - PdfTextBlockGeometry.centerX(second))
+                        <= SPLIT_TITLE_ALIGNMENT_TOLERANCE;
+    }
+
+    private static double horizontalOverlapRatio(BoundingBox first, BoundingBox second) {
+        double overlap = Math.max(0.0, Math.min(first.x1(), second.x1()) - Math.max(first.x0(), second.x0()));
+        double minWidth = Math.max(1.0, Math.min(first.x1() - first.x0(), second.x1() - second.x0()));
+        return overlap / minWidth;
+    }
+
+    private static double verticalOverlapRatio(BoundingBox first, BoundingBox second) {
+        double overlap = Math.max(0.0, Math.min(first.y1(), second.y1()) - Math.max(first.y0(), second.y0()));
+        double minHeight = Math.max(1.0, Math.min(first.y1() - first.y0(), second.y1() - second.y0()));
+        return overlap / minHeight;
+    }
+
+    private static double horizontalGap(BoundingBox first, BoundingBox second) {
+        if (first.x1() <= second.x0()) {
+            return second.x0() - first.x1();
+        }
+        if (second.x1() <= first.x0()) {
+            return first.x0() - second.x1();
+        }
+        return 0.0;
+    }
+
+    private static PdfTextBlock mergeSplitSectionTitle(PdfTextBlock first, PdfTextBlock second) {
+        var loc = new SourceLocation(
+                first.location().pageStart(),
+                second.location().pageEnd(),
+                first.location().lineStart(),
+                Math.max(first.location().lineEnd(), second.location().lineEnd()),
+                first.location().charOffset());
+        return new PdfTextBlock(
+                first.text().strip() + " " + second.text().strip(),
+                BlockKind.HEADING,
+                loc,
+                union(first, second));
     }
 
     private static void attachSameRowSectionValues(
@@ -198,6 +295,16 @@ final class PdfSemanticSectionCoalescer {
             return true;
         }
         return Math.abs(PdfTextBlockGeometry.centerX(a) - PdfTextBlockGeometry.centerX(b)) <= COLUMN_CENTER_TOLERANCE;
+    }
+
+    private static Optional<BoundingBox> union(PdfTextBlock first, PdfTextBlock second) {
+        var a = first.boundingBox().orElseThrow();
+        var b = second.boundingBox().orElseThrow();
+        return Optional.of(new BoundingBox(
+                Math.min(a.x0(), b.x0()),
+                Math.min(a.y0(), b.y0()),
+                Math.max(a.x1(), b.x1()),
+                Math.max(a.y1(), b.y1())));
     }
 
     private static boolean startsSemanticSection(PdfTextBlock block) {

@@ -21,6 +21,7 @@ final class PdfPageBlockExtractor {
     private static final int ALLCAPS_MAX_LEN = 60;
     private static final double DIGIT_HEAVY_RATIO = 0.30;
     private static final Pattern NUMBERED_LIST = Pattern.compile("^\\s*\\d+[.)]\\s+");
+    private static final Pattern YEAR_LEADING_FRAGMENT = Pattern.compile("^\\s*(?:19|20)\\d{2}[.)]\\s+(.+)$");
     private static final Pattern KEY_VALUE_FIELD = Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
     private static final String LIST_BULLETS = "•▪*-·";
 
@@ -197,6 +198,9 @@ final class PdfPageBlockExtractor {
         if (trimmed.isEmpty()) {
             return BlockKind.OTHER;
         }
+        if (isYearLeadingSentenceFragment(trimmed)) {
+            return BlockKind.BODY;
+        }
         if (LIST_BULLETS.indexOf(trimmed.charAt(0)) >= 0
                 || NUMBERED_LIST.matcher(blockText).find()) {
             return BlockKind.LIST;
@@ -246,6 +250,15 @@ final class PdfPageBlockExtractor {
 
     private static boolean looksLikeKeyValueField(String trimmed) {
         return !trimmed.contains("\n") && KEY_VALUE_FIELD.matcher(trimmed).matches();
+    }
+
+    private static boolean isYearLeadingSentenceFragment(String trimmed) {
+        var matcher = YEAR_LEADING_FRAGMENT.matcher(firstLine(trimmed));
+        if (!matcher.matches()) {
+            return false;
+        }
+        String tail = matcher.group(1).strip();
+        return tail.length() > 40 || tail.split("\\s+").length >= 5;
     }
 
     private static String firstLine(String trimmed) {

@@ -186,6 +186,33 @@ class PdfTwoColumnSemanticSectionTest {
                 .contains("Detail-oriented HR"));
     }
 
+    @Test
+    @DisplayName("split Executive Summary title fragments reconstruct as one heading")
+    void splitExecutiveSummaryFragmentsReconstructAsOneHeading() {
+        var blocks = List.of(
+                block("Executive", BlockKind.BODY, 320, 100, 392, 118),
+                block("Summary", BlockKind.HEADING, 320, 122, 390, 140),
+                block("Revenue expanded across all regions.", BlockKind.BODY, 320, 150, 560, 164));
+
+        var coalesced = PdfSemanticSectionCoalescer.coalesce(blocks);
+
+        assertThat(coalesced).hasSize(1);
+        assertThat(coalesced.getFirst().kind()).isEqualTo(BlockKind.HEADING);
+        assertThat(coalesced.getFirst().text()).isEqualTo("Executive Summary\nRevenue expanded across all regions.");
+    }
+
+    @Test
+    @DisplayName("nearby-row two-column Executive and Summary blocks stay separate")
+    void nearbyRowTwoColumnExecutiveAndSummaryBlocksStaySeparate() {
+        var blocks = List.of(
+                block("Executive", BlockKind.BODY, 50, 80, 122, 98),
+                block("Summary", BlockKind.HEADING, 220, 100, 290, 118));
+
+        var texts = PdfSemanticSectionCoalescer.coalesce(blocks).stream().map(PdfTextBlock::text).toList();
+
+        assertThat(texts).containsExactly("Executive", "Summary");
+    }
+
     private List<String> parsedTexts(Path pdfPath) throws ParseException {
         return PdfDocumentParser.parse(pdfPath).sections().stream()
                 .map(section -> ((TextSection) section).text())

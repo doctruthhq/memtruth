@@ -3,12 +3,14 @@ package ai.doctruth;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 import org.apache.pdfbox.text.TextPosition;
 
 final class PdfTextPositionMetrics {
 
     static final float MIN_LINE_HEIGHT = 8f;
+    private static final Pattern CONSECUTIVE_SPACES = Pattern.compile(" {2,}");
 
     private PdfTextPositionMetrics() {
         throw new AssertionError("no instances");
@@ -77,7 +79,7 @@ final class PdfTextPositionMetrics {
             sb.append(unicode);
             previous = p;
         }
-        return sb.toString().stripTrailing();
+        return normalizeRenderedText(sb.toString());
     }
 
     static boolean isBlank(TextPosition text) {
@@ -101,5 +103,10 @@ final class PdfTextPositionMetrics {
         if (!sb.isEmpty() && sb.charAt(sb.length() - 1) != ' ') {
             sb.append(' ');
         }
+    }
+
+    // Mirrors OpenDataLoader text-chunk cleanup at the DocTruth rendering boundary.
+    private static String normalizeRenderedText(String text) {
+        return CONSECUTIVE_SPACES.matcher(text.strip()).replaceAll(" ");
     }
 }

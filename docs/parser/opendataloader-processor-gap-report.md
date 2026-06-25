@@ -19,7 +19,7 @@ Status values are intentionally conservative:
 
 | Processor area | Status | Focused test | Full-bench evidence | Notes |
 | --- | --- | --- | --- | --- |
-| PDF text normalization | partial | `PdfDocumentParserTest` | current-full200 text buckets | Basic text-layer extraction exists, but normalization still contributes to reading-order/text mismatch buckets. |
+| PDF text normalization | partial | `PdfDocumentParserTest`, `PdfTextRenderingNormalizationTest`, `PdfTextPositionFilterTest` | current-full200 text buckets | Generated PDF text-layer output is covered for trimming and repeated-space compression in the live parser path; `PdfTextPositionFilter` also exposes box-level normalization and U+FFFD ratio helpers. Full chunk splitting/merge parity still needs bench evidence. |
 | Hidden/off-page/tiny/background text filtering | partial | `PdfTextPositionFilterTest` | current-full200 text-noise bucket | Text-position filtering now covers tiny, off-page, blank/control-only text, and OpenDataLoader-style background-sized text boxes; low-contrast hidden text still requires graphics/color evidence. |
 | Duplicate text suppression | partial | `PdfTextPositionFilterTest` | current-full200 text-noise bucket | Same-text overlapping duplicates are filtered; full OpenDataLoader chunk-level duplicate parity is still pending. |
 | XY-Cut geometry reading order | partial | `PdfGeometryReadingOrderTest` | current-full200 reading-order bucket | Projection-cut ordering now covers a full-width heading between two-column regions; full XY-Cut++ projection parity is not proven. |

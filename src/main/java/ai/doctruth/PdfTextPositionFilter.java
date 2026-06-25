@@ -3,6 +3,7 @@ package ai.doctruth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 import org.apache.pdfbox.text.TextPosition;
 
@@ -13,6 +14,9 @@ final class PdfTextPositionFilter {
     private static final double BACKGROUND_WIDE_RATIO = 0.5;
     private static final double BACKGROUND_TALL_RATIO = 0.5;
     private static final double BACKGROUND_MINOR_RATIO = 0.1;
+    private static final double HIGH_REPLACEMENT_CHARACTER_RATIO = 0.3;
+    private static final char REPLACEMENT_CHARACTER = '\uFFFD';
+    private static final Pattern CONSECUTIVE_SPACES = Pattern.compile(" {2,}");
 
     private PdfTextPositionFilter() {
         throw new AssertionError("no instances");
@@ -28,9 +32,24 @@ final class PdfTextPositionFilter {
 
     static List<TextBox> filterBoxes(List<TextBox> boxes, double pageWidth, double pageHeight) {
         var usable = boxes.stream()
+                .map(PdfTextPositionFilter::normalizeText)
                 .filter(box -> isUsable(box, pageWidth, pageHeight))
                 .toList();
         return removeDuplicateBoxes(usable);
+    }
+
+    static double replacementCharacterRatio(List<TextBox> boxes) {
+        int total = 0;
+        int replacements = 0;
+        for (var box : boxes.stream().map(PdfTextPositionFilter::normalizeText).toList()) {
+            total += box.text().length();
+            replacements += replacementCharacterCount(box.text());
+        }
+        return total == 0 ? 0.0 : (double) replacements / total;
+    }
+
+    static boolean hasHighReplacementCharacterRatio(List<TextBox> boxes) {
+        return replacementCharacterRatio(boxes) >= HIGH_REPLACEMENT_CHARACTER_RATIO;
     }
 
     static boolean isUsable(TextBox box, double pageWidth, double pageHeight) {
@@ -68,6 +87,26 @@ final class PdfTextPositionFilter {
                 && close(first.width(), second.width())
                 && close(first.height(), second.height())
                 && intersectionPercent(first, second) > MIN_DUPLICATE_INTERSECTION;
+    }
+
+    // Adapted from OpenDataLoader's TextProcessor/ContentFilterProcessor text chunk cleanup order.
+    private static TextBox normalizeText(TextBox box) {
+        var text = box.text() == null ? "" : box.text().strip();
+        return new TextBox(compressConsecutiveSpaces(text), box.x(), box.y(), box.width(), box.height());
+    }
+
+    private static String compressConsecutiveSpaces(String text) {
+        return CONSECUTIVE_SPACES.matcher(text).replaceAll(" ");
+    }
+
+    private static int replacementCharacterCount(String text) {
+        int count = 0;
+        for (int index = 0; index < text.length(); index++) {
+            if (text.charAt(index) == REPLACEMENT_CHARACTER) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static boolean isControlOnly(String unicode) {

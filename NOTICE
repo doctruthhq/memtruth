@@ -56,6 +56,7 @@ Reference implementations adapted in DocTruth-owned code:
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorter.java
     java/opendataloader-pdf-core/src/test/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorterTest.java
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ContentFilterProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ClusterTableProcessor.java
     java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableStructureNormalizer.java

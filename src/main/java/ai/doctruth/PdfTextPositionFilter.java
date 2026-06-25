@@ -11,6 +11,9 @@ final class PdfTextPositionFilter {
 
     private static final double TEXT_MIN_HEIGHT = 1.0;
     private static final double MIN_DUPLICATE_INTERSECTION = 0.5;
+    private static final double MIN_CONTAINED_FRAGMENT_INTERSECTION = 0.8;
+    private static final double BASELINE_BAND_RATIO = 0.6;
+    private static final double HORIZONTAL_CONTAINMENT_TOLERANCE = 1.0;
     private static final double BACKGROUND_WIDE_RATIO = 0.5;
     private static final double BACKGROUND_TALL_RATIO = 0.5;
     private static final double BACKGROUND_MINOR_RATIO = 0.1;
@@ -64,8 +67,10 @@ final class PdfTextPositionFilter {
 
     private static List<PositionCandidate> removeDuplicateOverlaps(List<PositionCandidate> candidates) {
         var out = new ArrayList<PositionCandidate>(candidates.size());
-        for (var candidate : candidates) {
-            if (out.stream().noneMatch(existing -> sameOverlappingText(existing.box(), candidate.box()))) {
+        var boxes = boxes(candidates);
+        for (int i = 0; i < candidates.size(); i++) {
+            var candidate = candidates.get(i);
+            if (shouldKeep(candidate.box(), boxes, i)) {
                 out.add(candidate);
             }
         }
@@ -74,12 +79,33 @@ final class PdfTextPositionFilter {
 
     private static List<TextBox> removeDuplicateBoxes(List<TextBox> boxes) {
         var out = new ArrayList<TextBox>(boxes.size());
-        for (var box : boxes) {
-            if (out.stream().noneMatch(existing -> sameOverlappingText(existing, box))) {
+        for (int i = 0; i < boxes.size(); i++) {
+            var box = boxes.get(i);
+            if (shouldKeep(box, boxes, i)) {
                 out.add(box);
             }
         }
         return List.copyOf(out);
+    }
+
+    private static List<TextBox> boxes(List<PositionCandidate> candidates) {
+        return candidates.stream().map(PositionCandidate::box).toList();
+    }
+
+    private static boolean shouldKeep(TextBox candidate, List<TextBox> boxes, int candidateIndex) {
+        for (int i = 0; i < boxes.size(); i++) {
+            if (i == candidateIndex) {
+                continue;
+            }
+            var other = boxes.get(i);
+            if (sameOverlappingText(other, candidate) && i < candidateIndex) {
+                return false;
+            }
+            if (containsOverlappingFragment(other, candidate)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean sameOverlappingText(TextBox first, TextBox second) {
@@ -87,6 +113,39 @@ final class PdfTextPositionFilter {
                 && close(first.width(), second.width())
                 && close(first.height(), second.height())
                 && intersectionPercent(first, second) > MIN_DUPLICATE_INTERSECTION;
+    }
+
+    private static boolean containsOverlappingFragment(TextBox larger, TextBox fragment) {
+        return larger.text().length() > fragment.text().length()
+                && containsTextToken(larger.text(), fragment.text())
+                && (intersectionPercent(larger, fragment) >= MIN_CONTAINED_FRAGMENT_INTERSECTION
+                        || sameBaselineAndHorizontallyContained(larger, fragment));
+    }
+
+    private static boolean containsTextToken(String larger, String fragment) {
+        int index = larger.indexOf(fragment);
+        while (index >= 0) {
+            int end = index + fragment.length();
+            if (isTokenBoundary(larger, index - 1) && isTokenBoundary(larger, end)) {
+                return true;
+            }
+            index = larger.indexOf(fragment, index + 1);
+        }
+        return false;
+    }
+
+    private static boolean isTokenBoundary(String text, int index) {
+        return index < 0 || index >= text.length() || !Character.isLetterOrDigit(text.charAt(index));
+    }
+
+    private static boolean sameBaselineAndHorizontallyContained(TextBox larger, TextBox fragment) {
+        double band = Math.max(larger.height(), fragment.height()) * BASELINE_BAND_RATIO;
+        return Math.abs(larger.y() - fragment.y()) <= band && horizontallyContains(larger, fragment);
+    }
+
+    private static boolean horizontallyContains(TextBox larger, TextBox fragment) {
+        return fragment.x() + HORIZONTAL_CONTAINMENT_TOLERANCE >= larger.x()
+                && fragment.x() + fragment.width() <= larger.x() + larger.width() + HORIZONTAL_CONTAINMENT_TOLERANCE;
     }
 
     // Adapted from OpenDataLoader's TextProcessor/ContentFilterProcessor text chunk cleanup order.
@@ -158,12 +217,12 @@ final class PdfTextPositionFilter {
         static PositionCandidate from(TextPosition position) {
             return new PositionCandidate(
                     position,
-                    new TextBox(
+                    normalizeText(new TextBox(
                             position.getUnicode(),
                             position.getXDirAdj(),
                             position.getYDirAdj(),
                             position.getWidthDirAdj(),
-                            position.getHeightDir()));
+                            position.getHeightDir())));
         }
     }
 }

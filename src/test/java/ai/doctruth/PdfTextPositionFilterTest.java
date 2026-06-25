@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import org.apache.pdfbox.text.TextPosition;
+import org.apache.pdfbox.util.Matrix;
 import org.junit.jupiter.api.Test;
 
 class PdfTextPositionFilterTest {
@@ -29,6 +31,42 @@ class PdfTextPositionFilterTest {
         var filtered = PdfTextPositionFilter.filterBoxes(List.of(first, duplicate, distinct), 600, 800);
 
         assertThat(filtered).containsExactly(first, distinct);
+    }
+
+    @Test
+    void removesContainedSameBaselineFragmentsWhenLargerPhraseOverlaps() {
+        var phrase = position("Invoice total due", 100, 200, 120, 12);
+        var invoice = position("Invoice", 100, 200, 42, 12);
+        var total = position("total", 148, 200, 28, 12);
+        var due = position("due", 182, 200, 20, 12);
+
+        var filtered = PdfTextPositionFilter.filterBoxes(List.of(phrase, invoice, total, due), 600, 800);
+
+        assertThat(filtered).containsExactly(phrase);
+    }
+
+    @Test
+    void keepsContainedFragmentsInSeparateRowsColumnsOrNonOverlappingBaselines() {
+        var phrase = position("Invoice total due", 100, 200, 120, 12);
+        var nextRow = position("Invoice", 100, 225, 42, 12);
+        var separateColumn = position("total", 340, 200, 28, 12);
+        var nearButSeparateBaseline = position("due", 182, 216, 20, 12);
+
+        var filtered = PdfTextPositionFilter.filterBoxes(
+                List.of(phrase, nextRow, separateColumn, nearButSeparateBaseline), 600, 800);
+
+        assertThat(filtered).containsExactly(phrase, nextRow, separateColumn, nearButSeparateBaseline);
+    }
+
+    @Test
+    void keepsDistinctTextAndSameTextWithClearlyDistinctGeometry() {
+        var phrase = position("Invoice total due", 100, 200, 120, 12);
+        var distinctText = position("Invoice number", 100, 200, 95, 12);
+        var repeatedElsewhere = position("Invoice total due", 100, 250, 120, 12);
+
+        var filtered = PdfTextPositionFilter.filterBoxes(List.of(phrase, distinctText, repeatedElsewhere), 600, 800);
+
+        assertThat(filtered).containsExactly(phrase, distinctText, repeatedElsewhere);
     }
 
     @Test
@@ -58,6 +96,18 @@ class PdfTextPositionFilterTest {
         var filtered = PdfTextPositionFilter.filterBoxes(List.of(box), 600, 800);
 
         assertThat(filtered).containsExactly(position("Invoice total due", 10, 20, 120, 12));
+    }
+
+    @Test
+    void normalizesProductionTextPositionsForDuplicateComparisonOnly() {
+        var phrase = textPosition("  Invoice   total    due  ", 100, 200, 120, 12);
+        var contained = textPosition("total due", 148, 200, 54, 12);
+        var sameText = textPosition("Invoice total due", 101, 201, 120, 12);
+
+        var filtered = PdfTextPositionFilter.filter(List.of(phrase, contained, sameText), 600, 800);
+
+        assertThat(filtered).containsExactly(phrase);
+        assertThat(filtered.getFirst().getUnicode()).isEqualTo("  Invoice   total    due  ");
     }
 
     @Test
@@ -95,5 +145,23 @@ class PdfTextPositionFilterTest {
     private static PdfTextPositionFilter.TextBox position(
             String text, double x, double y, double width, double height) {
         return new PdfTextPositionFilter.TextBox(text, x, y, width, height);
+    }
+
+    private static TextPosition textPosition(String text, double x, double y, double width, double height) {
+        return new TextPosition(
+                0,
+                600,
+                800,
+                new Matrix(1, 0, 0, 1, (float) x, (float) y),
+                (float) (x + width),
+                (float) y,
+                (float) height,
+                (float) width,
+                (float) height,
+                text,
+                new int[] {text.codePointAt(0)},
+                null,
+                10,
+                10);
     }
 }

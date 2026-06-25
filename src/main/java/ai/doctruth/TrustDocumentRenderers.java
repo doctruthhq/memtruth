@@ -129,10 +129,29 @@ final class TrustDocumentRenderers {
                 .filter(unit -> unit.location().page() == page.pageNumber())
                 .forEach(unit -> readingBlocks.add(traceBlock(unit)));
         node.set("readingBlocks", readingBlocks);
-        node.set("discardedBlocks", MAPPER.createArrayNode());
+        node.set("discardedBlocks", discardedBlocks(page, doc));
         node.set("images", MAPPER.createArrayNode());
         node.set("tables", MAPPER.createArrayNode());
         node.set("equations", MAPPER.createArrayNode());
+        return node;
+    }
+
+    private static ArrayNode discardedBlocks(TrustPage page, TrustDocument doc) {
+        ArrayNode blocks = MAPPER.createArrayNode();
+        TrustDocumentDiscardedBlocks.forDocument(doc).stream()
+                .flatMap(List::stream)
+                .filter(block -> block.page() == page.pageNumber())
+                .forEach(block -> blocks.add(discardedBlock(block)));
+        return blocks;
+    }
+
+    private static ObjectNode discardedBlock(DiscardedBlock block) {
+        ObjectNode node = MAPPER.createObjectNode();
+        node.put("type", "discarded");
+        node.put("reason", block.reason());
+        node.put("page", block.page());
+        node.put("text", block.text());
+        block.boundingBox().ifPresent(box -> node.set("bbox", bboxNode(box)));
         return node;
     }
 

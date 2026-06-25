@@ -100,8 +100,10 @@ reading-order recovery.
 
 ## HeaderFooterProcessor
 
-Status: `partial`. Header and footer treatment is not yet a complete upstream
-processor port.
+Status: `partial`. Repeated top/bottom-band page furniture is suppressed from
+body sections and preserved in parse_trace `discardedBlocks`. This is a narrow
+Java/OpenDataLoader-compatible parser-core behavior, not a complete semantic
+header/footer object port.
 
 ## ContentFilterProcessor
 

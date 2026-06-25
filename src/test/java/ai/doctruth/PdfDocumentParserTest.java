@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.io.StringWriter;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import ai.doctruth.spi.OcrEngine;
 import ai.doctruth.spi.OcrPageResult;
 import ai.doctruth.spi.OcrRegion;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -32,6 +34,8 @@ import org.junit.jupiter.api.io.TempDir;
  * non-blank page. Tables and figures are covered by separate parser surfaces.
  */
 class PdfDocumentParserTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @TempDir
     Path tempDir;
@@ -248,6 +252,120 @@ class PdfDocumentParserTest {
 
             assertThat(doc.sections())
                     .allSatisfy(s -> assertThat(((TextSection) s).kind()).isNotNull());
+        }
+
+        @Test
+        @DisplayName("repeated page header and footer are suppressed from parsed body sections")
+        void repeatedHeaderFooterSuppressedFromBodySections() throws Exception {
+            var pdfPath = writeHeaderFooterPdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Unique body page 1")
+                    .contains("Unique body page 2")
+                    .contains("Unique body page 3")
+                    .doesNotContain("ACME Confidential")
+                    .doesNotContain("Page 1 of 3")
+                    .doesNotContain("Page 2 of 3")
+                    .doesNotContain("Page 3 of 3");
+        }
+
+        @Test
+        @DisplayName("suppressed repeated page header and footer are preserved in parse trace")
+        void repeatedHeaderFooterPreservedInParseTraceDiscardedBlocks() throws Exception {
+            var pdfPath = writeHeaderFooterPdf(tempDir);
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var trust = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+
+            var out = new StringWriter();
+            trust.writeParseTrace(out);
+            var tree = MAPPER.readTree(out.toString());
+            var firstPageDiscarded = tree.path("parseTrace").path("pages").get(0).path("discardedBlocks");
+
+            assertThat(firstPageDiscarded).hasSize(2);
+            assertThat(firstPageDiscarded.get(0).path("reason").asText()).isEqualTo("repeated_header");
+            assertThat(firstPageDiscarded.get(0).path("text").asText()).isEqualTo("ACME Confidential");
+            assertThat(firstPageDiscarded.get(0).path("bbox").isObject()).isTrue();
+            assertThat(firstPageDiscarded.get(1).path("reason").asText()).isEqualTo("repeated_footer");
+            assertThat(firstPageDiscarded.get(1).path("text").asText()).isEqualTo("Page 1 of 3");
+            assertThat(firstPageDiscarded.get(1).path("bbox").isObject()).isTrue();
+        }
+
+        @Test
+        @DisplayName("repeated body phrases and first-page-only title are not suppressed as furniture")
+        void repeatedBodyPhraseAndFirstPageTitleAreNotSuppressed() throws Exception {
+            var pdfPath = writeRepeatedBodyPhrasePdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Proposal Title")
+                    .contains("Shared body phrase page 1")
+                    .contains("Shared body phrase page 2");
+        }
+
+        @Test
+        @DisplayName("repeated top-band semantic titles are not suppressed as page furniture")
+        void repeatedTopBandSemanticTitlesAreNotSuppressed() throws Exception {
+            var pdfPath = writeRepeatedTopBandTitlePdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Executive Summary")
+                    .contains("Unique executive body page 1")
+                    .contains("Unique executive body page 2")
+                    .contains("Unique executive body page 3");
+        }
+
+        @Test
+        @DisplayName("top-band section titles with different numbers are not wildcard-suppressed")
+        void digitVariantTopBandSectionTitlesAreNotSuppressed() throws Exception {
+            var pdfPath = writeNumberedTopBandTitlesPdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Section 1. Revenue")
+                    .contains("Section 2. Revenue")
+                    .contains("Section 3. Revenue");
+        }
+
+        @Test
+        @DisplayName("discarded trace artifacts are isolated between equal TrustDocument record instances")
+        void discardedTraceArtifactsAreIdentityScoped() throws Exception {
+            var pdfPath = writeHeaderFooterPdf(tempDir);
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var first = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+            var equalSecond = new TrustDocument(
+                    first.docId(),
+                    first.source(),
+                    first.body(),
+                    first.parserRun(),
+                    first.auditGradeStatus());
+
+            var firstTrace = new StringWriter();
+            var secondTrace = new StringWriter();
+            first.writeParseTrace(firstTrace);
+            equalSecond.writeParseTrace(secondTrace);
+
+            assertThat(MAPPER.readTree(firstTrace.toString()).path("parseTrace").path("pages").get(0).path("discardedBlocks"))
+                    .hasSize(2);
+            assertThat(MAPPER.readTree(secondTrace.toString()).path("parseTrace").path("pages").get(0).path("discardedBlocks"))
+                    .isEmpty();
         }
 
         @Test
@@ -509,6 +627,73 @@ class PdfDocumentParserTest {
                     cs.newLineAtOffset(50, 700);
                     cs.showText(pageText);
                     cs.endText();
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeHeaderFooterPdf(Path dir) throws IOException {
+        var path = dir.resolve("header-footer-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 3; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    writeText(cs, "ACME Confidential", 50, 760);
+                    writeText(cs, "Unique body page " + i, 50, 700);
+                    writeText(cs, "Page " + i + " of 3", 50, 40);
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeRepeatedBodyPhrasePdf(Path dir) throws IOException {
+        var path = dir.resolve("body-repeat-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 2; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    if (i == 1) {
+                        writeText(cs, "Proposal Title", 50, 760);
+                    }
+                    writeText(cs, "Shared body phrase page " + i, 50, 500);
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeRepeatedTopBandTitlePdf(Path dir) throws IOException {
+        var path = dir.resolve("top-title-repeat-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 3; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    writeText(cs, "Executive Summary", 50, 760);
+                    writeText(cs, "Unique executive body page " + i, 50, 690);
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeNumberedTopBandTitlesPdf(Path dir) throws IOException {
+        var path = dir.resolve("numbered-top-title-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 3; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    writeText(cs, "Section " + i + ". Revenue", 50, 760);
+                    writeText(cs, "Unique revenue body page " + i, 50, 690);
                 }
             }
             pdf.save(path.toFile());

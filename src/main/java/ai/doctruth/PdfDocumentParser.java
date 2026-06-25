@@ -8,11 +8,17 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import ai.doctruth.spi.OcrEngine;
 import ai.doctruth.spi.OcrPageResult;
@@ -20,8 +26,6 @@ import ai.doctruth.spi.OcrRegion;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
-import org.apache.pdfbox.text.TextPosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +41,10 @@ public final class PdfDocumentParser {
     private static final Logger LOG = LoggerFactory.getLogger(PdfDocumentParser.class);
     private static final int LOW_TEXT_LAYER_CHARS = 50;
     private static final float OCR_RENDER_DPI = 150f;
+    private static final Pattern PAGE_NUMBER_FURNITURE = Pattern.compile(
+            "(?i)^(?:page\\s+)?\\d+\\s*(?:/|of)\\s*\\d+$|^page\\s+\\d+$");
+    private static final Pattern LEGAL_OR_CONFIDENTIAL_FURNITURE = Pattern.compile(
+            "(?i).*(confidential|proprietary|copyright|all rights reserved|draft|internal use).*");
 
     private PdfDocumentParser() {
         throw new AssertionError("no instances");
@@ -67,9 +75,11 @@ public final class PdfDocumentParser {
             int pageCount = pdf.getNumberOfPages();
             var metadata = new DocumentMetadata(pdfPath.getFileName().toString(), pageCount, Optional.empty());
             String docId = "sha256:" + sha256Hex(pdfPath);
-            var sections = extractSections(pdf, pageCount, ocrEngine);
-            LOG.debug("parsed pdf path={} pages={} sections={}", pdfPath, pageCount, sections.size());
-            return new ParsedDocument(docId, sections, metadata);
+            var extracted = extractSections(pdf, pageCount, ocrEngine);
+            var document = new ParsedDocument(docId, extracted.sections(), metadata);
+            ParsedDocumentArtifacts.attachDiscardedBlocks(document, extracted.discardedBlocks());
+            LOG.debug("parsed pdf path={} pages={} sections={}", pdfPath, pageCount, extracted.sections().size());
+            return document;
         } catch (IOException e) {
             throw new ParseException(
                     "PDF_PARSE_FAILED",
@@ -110,16 +120,31 @@ public final class PdfDocumentParser {
         }
     }
 
-    private static List<ParsedSection> extractSections(PDDocument pdf, int pageCount, OcrEngine ocrEngine) throws IOException {
+    private static ExtractedSections extractSections(PDDocument pdf, int pageCount, OcrEngine ocrEngine) throws IOException {
         var sections = new ArrayList<ParsedSection>(pageCount);
+        var discarded = new ArrayList<DiscardedBlock>();
+        var pages = preflightTextPages(pdf, pageCount, ocrEngine);
+        var furniture = repeatedFurnitureKeys(pages);
         for (int page = 1; page <= pageCount; page++) {
-            if (shouldRouteToOcr(pdf, page, ocrEngine)) {
+            var pageBlocks = pages.get(page);
+            if (pageBlocks.routeToOcr()) {
                 appendOcrPageSections(pdf, page, ocrEngine, sections);
             } else {
-                appendPageSections(pdf, page, sections);
+                appendPageSections(pdf, page, pageBlocks, furniture, sections, discarded);
             }
         }
-        return mergeTableContinuations(sections);
+        return new ExtractedSections(mergeTableContinuations(sections), List.copyOf(discarded));
+    }
+
+    private static Map<Integer, PageBlocks> preflightTextPages(PDDocument pdf, int pageCount, OcrEngine ocrEngine)
+            throws IOException {
+        var out = new HashMap<Integer, PageBlocks>();
+        for (int page = 1; page <= pageCount; page++) {
+            var blocks = PdfPageBlockExtractor.detectBlocksOnPage(pdf, page);
+            boolean routeToOcr = shouldRouteToOcr(blocks, ocrEngine);
+            out.put(page, new PageBlocks(page, routeToOcr, blocks));
+        }
+        return out;
     }
 
     private static List<ParsedSection> mergeTableContinuations(List<ParsedSection> sections) {
@@ -193,24 +218,15 @@ public final class PdfDocumentParser {
                 && Math.abs(left.x1() - right.x1()) <= 20.0;
     }
 
-    private static boolean shouldRouteToOcr(PDDocument pdf, int page, OcrEngine ocrEngine) throws IOException {
-        return ocrEngine != OcrEngine.NOOP && textLayerCharCount(pdf, page) < LOW_TEXT_LAYER_CHARS;
+    private static boolean shouldRouteToOcr(List<PdfTextBlock> blocks, OcrEngine ocrEngine) {
+        return ocrEngine != OcrEngine.NOOP && textLayerCharCount(blocks) < LOW_TEXT_LAYER_CHARS;
     }
 
-    private static int textLayerCharCount(PDDocument pdf, int page) throws IOException {
-        var count = new int[1];
-        var stripper = new PDFTextStripper() {
-            @Override
-            protected void writeString(String text, List<TextPosition> textPositions) {
-                count[0] += text.replaceAll("\\s+", "").length();
-            }
-        };
-        stripper.setSortByPosition(true);
-        stripper.setSuppressDuplicateOverlappingText(true);
-        stripper.setStartPage(page);
-        stripper.setEndPage(page);
-        stripper.getText(pdf);
-        return count[0];
+    private static int textLayerCharCount(List<PdfTextBlock> blocks) {
+        return blocks.stream()
+                .map(PdfTextBlock::text)
+                .mapToInt(text -> text.replaceAll("\\s+", "").length())
+                .sum();
     }
 
     private static void appendOcrPageSections(
@@ -292,8 +308,14 @@ public final class PdfDocumentParser {
         return Math.max(0.0, Math.min(1000.0, value));
     }
 
-    private static void appendPageSections(PDDocument pdf, int page, List<ParsedSection> sections) throws IOException {
-        var blocks = PdfPageBlockExtractor.detectBlocksOnPage(pdf, page);
+    private static void appendPageSections(
+            PDDocument pdf,
+            int page,
+            PageBlocks pageBlocks,
+            Set<FurnitureKey> furniture,
+            List<ParsedSection> sections,
+            List<DiscardedBlock> discarded) throws IOException {
+        var blocks = pageBlocks.blocks();
         if (blocks.isEmpty()) {
             LOG.debug("skipping blank page page={}", page);
             return;
@@ -307,6 +329,15 @@ public final class PdfDocumentParser {
             if (insideAnyTable(block, tables)) {
                 continue;
             }
+            var furnitureKey = furnitureKey(block);
+            if (furnitureKey.isPresent() && furniture.contains(furnitureKey.get())) {
+                discarded.add(new DiscardedBlock(
+                        page,
+                        furnitureKey.get().reason(),
+                        block.text(),
+                        block.boundingBox()));
+                continue;
+            }
             appendTablesBeforeBlock(sections, pendingTables, block);
             var caption = PdfCaptionBinder.bindCaption(block, tables);
             if (caption.isPresent()) {
@@ -318,6 +349,68 @@ public final class PdfDocumentParser {
         }
         pendingTables.stream().map(PdfPageTableExtractor.TableBlock::section).forEach(sections::add);
         LOG.debug("page={} blocks={} tables={} kinds={}", page, blocks.size(), tables.size(), counts);
+    }
+
+    private static Set<FurnitureKey> repeatedFurnitureKeys(Map<Integer, PageBlocks> pages) {
+        if (pages.size() < 2) {
+            return Set.of();
+        }
+        var counts = new HashMap<FurnitureKey, Set<Integer>>();
+        for (var page : pages.values()) {
+            for (var block : page.blocks()) {
+                furnitureKey(block).ifPresent(key -> counts.computeIfAbsent(key, ignored -> new HashSet<>())
+                        .add(page.page()));
+            }
+        }
+        var repeated = new HashSet<FurnitureKey>();
+        counts.forEach((key, pageSet) -> {
+            if (pageSet.size() >= 2) {
+                repeated.add(key);
+            }
+        });
+        return Set.copyOf(repeated);
+    }
+
+    private static Optional<FurnitureKey> furnitureKey(PdfTextBlock block) {
+        if (block.boundingBox().isEmpty()) {
+            return Optional.empty();
+        }
+        var box = block.boundingBox().get();
+        String reason = furnitureReason(box).orElse(null);
+        if (reason == null) {
+            return Optional.empty();
+        }
+        String text = normalizeFurnitureText(block.text());
+        if (text.isBlank() || text.length() > 120) {
+            return Optional.empty();
+        }
+        if (PAGE_NUMBER_FURNITURE.matcher(text).matches()) {
+            return Optional.of(new FurnitureKey(reason, normalizePageNumberFurniture(text)));
+        }
+        if (LEGAL_OR_CONFIDENTIAL_FURNITURE.matcher(text).matches()) {
+            return Optional.of(new FurnitureKey(reason, text));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> furnitureReason(BoundingBox box) {
+        if (box.y0() <= 100.0) {
+            return Optional.of("repeated_header");
+        }
+        if (box.y1() >= 900.0) {
+            return Optional.of("repeated_footer");
+        }
+        return Optional.empty();
+    }
+
+    private static String normalizeFurnitureText(String text) {
+        return text.strip()
+                .replaceAll("\\s+", " ")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizePageNumberFurniture(String text) {
+        return text.replaceAll("\\d+", "#");
     }
 
     private static void appendTablesBeforeBlock(
@@ -354,4 +447,10 @@ public final class PdfDocumentParser {
     static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight) {
         return PdfPageBlockExtractor.classify(blockText, avgCharHeight, pageMedianHeight);
     }
+
+    private record ExtractedSections(List<ParsedSection> sections, List<DiscardedBlock> discardedBlocks) {}
+
+    private record PageBlocks(int page, boolean routeToOcr, List<PdfTextBlock> blocks) {}
+
+    private record FurnitureKey(String reason, String normalizedText) {}
 }

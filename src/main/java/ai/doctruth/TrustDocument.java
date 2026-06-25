@@ -55,7 +55,10 @@ public record TrustDocument(
         Objects.requireNonNull(parserRun, "parserRun");
         var source = new TrustDocumentSource(parsed.metadata().sourceFilename(), sourceHash, parsed.metadata());
         var body = bodyFrom(parsed, parserRun);
-        return new TrustDocument(parsed.docId(), source, body, parserRun, AuditGradeStatus.UNKNOWN);
+        var document = new TrustDocument(parsed.docId(), source, body, parserRun, AuditGradeStatus.UNKNOWN);
+        ParsedDocumentArtifacts.discardedBlocks(parsed)
+                .ifPresent(blocks -> TrustDocumentDiscardedBlocks.attach(document, blocks));
+        return document;
     }
 
     public static TrustDocument fromJsonFull(String json) {

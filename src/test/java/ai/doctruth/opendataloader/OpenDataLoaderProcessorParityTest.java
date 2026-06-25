@@ -21,6 +21,7 @@ class OpenDataLoaderProcessorParityTest {
             "XY-Cut geometry reading order",
             "Paragraph and line merging",
             "Heading promotion and hierarchy",
+            "Header/footer furniture",
             "Table detection",
             "Borderless table clustering",
             "Table cell grid reconstruction",

@@ -10,6 +10,9 @@ final class PdfTextPositionFilter {
 
     private static final double TEXT_MIN_HEIGHT = 1.0;
     private static final double MIN_DUPLICATE_INTERSECTION = 0.5;
+    private static final double BACKGROUND_WIDE_RATIO = 0.5;
+    private static final double BACKGROUND_TALL_RATIO = 0.5;
+    private static final double BACKGROUND_MINOR_RATIO = 0.1;
 
     private PdfTextPositionFilter() {
         throw new AssertionError("no instances");
@@ -36,7 +39,8 @@ final class PdfTextPositionFilter {
         }
         return finitePositive(box.width(), box.height())
                 && box.height() > TEXT_MIN_HEIGHT
-                && overlapsPage(box.x(), box.y(), box.width(), box.height(), pageWidth, pageHeight);
+                && overlapsPage(box.x(), box.y(), box.width(), box.height(), pageWidth, pageHeight)
+                && !isBackgroundSized(box, pageWidth, pageHeight);
     }
 
     private static List<PositionCandidate> removeDuplicateOverlaps(List<PositionCandidate> candidates) {
@@ -82,6 +86,15 @@ final class PdfTextPositionFilter {
                 && y + height > 0.0
                 && x < pageWidth
                 && y < pageHeight;
+    }
+
+    private static boolean isBackgroundSized(TextBox box, double pageWidth, double pageHeight) {
+        return pageWidth > 0.0
+                && pageHeight > 0.0
+                && ((box.width() > BACKGROUND_WIDE_RATIO * pageWidth
+                                && box.height() > BACKGROUND_MINOR_RATIO * pageHeight)
+                        || (box.width() > BACKGROUND_MINOR_RATIO * pageWidth
+                                && box.height() > BACKGROUND_TALL_RATIO * pageHeight));
     }
 
     private static boolean close(double left, double right) {

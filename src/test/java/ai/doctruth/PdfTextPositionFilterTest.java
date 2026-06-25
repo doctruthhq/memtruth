@@ -40,6 +40,17 @@ class PdfTextPositionFilterTest {
         assertThat(filtered).containsExactly(edge);
     }
 
+    @Test
+    void filtersBackgroundSizedTextBoxes() {
+        var keep = position("Visible", 10, 20, 30, 12);
+        var wideBackground = position("CONFIDENTIAL", 20, 200, 400, 120);
+        var tallBackground = position("DRAFT", 200, 20, 90, 500);
+
+        var filtered = PdfTextPositionFilter.filterBoxes(List.of(keep, wideBackground, tallBackground), 600, 800);
+
+        assertThat(filtered).containsExactly(keep);
+    }
+
     private static PdfTextPositionFilter.TextBox position(
             String text, double x, double y, double width, double height) {
         return new PdfTextPositionFilter.TextBox(text, x, y, width, height);

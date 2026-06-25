@@ -7,6 +7,7 @@ import java.util.List;
 final class PdfGeometryReadingOrderSorter {
 
     private static final double MIN_GAP = 5.0;
+    private static final double NARROW_ELEMENT_WIDTH_RATIO = 0.1;
 
     private PdfGeometryReadingOrderSorter() {
         throw new AssertionError("no instances");
@@ -61,6 +62,32 @@ final class PdfGeometryReadingOrderSorter {
     }
 
     private static Cut bestVerticalCut(List<PdfLineSegment> lines) {
+        var edgeCut = bestVerticalCutByEdges(lines);
+        if (edgeCut.gap() >= MIN_GAP || lines.size() < 3) {
+            return edgeCut;
+        }
+
+        double regionWidth = regionWidth(lines);
+        if (regionWidth <= 0.0) {
+            return edgeCut;
+        }
+
+        double narrowThreshold = regionWidth * NARROW_ELEMENT_WIDTH_RATIO;
+        var filtered = lines.stream()
+                .filter(line -> line.width() >= narrowThreshold)
+                .toList();
+        if (filtered.size() < 2 || filtered.size() == lines.size()) {
+            return edgeCut;
+        }
+
+        var filteredCut = bestVerticalCutByEdges(filtered);
+        if (filteredCut.gap() > edgeCut.gap() && filteredCut.gap() >= MIN_GAP) {
+            return filteredCut;
+        }
+        return edgeCut;
+    }
+
+    private static Cut bestVerticalCutByEdges(List<PdfLineSegment> lines) {
         var sorted = new ArrayList<>(lines);
         sorted.sort(Comparator.comparingDouble((PdfLineSegment line) -> line.x0)
                 .thenComparingDouble(line -> line.x1));
@@ -78,6 +105,12 @@ final class PdfGeometryReadingOrderSorter {
             right = right == null ? line.x1 : Math.max(right, line.x1);
         }
         return new Cut(position, largestGap);
+    }
+
+    private static double regionWidth(List<PdfLineSegment> lines) {
+        double left = lines.stream().mapToDouble(line -> line.x0).min().orElse(0.0);
+        double right = lines.stream().mapToDouble(line -> line.x1).max().orElse(left);
+        return Math.max(0.0, right - left);
     }
 
     private static List<List<PdfLineSegment>> splitHorizontal(List<PdfLineSegment> lines, double y) {

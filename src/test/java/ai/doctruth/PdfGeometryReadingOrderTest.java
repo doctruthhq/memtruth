@@ -71,6 +71,26 @@ class PdfGeometryReadingOrderTest {
                 "RIGHT COLUMN SECOND DETAIL");
     }
 
+    @Test
+    @DisplayName("narrow center outlier does not prevent two-column vertical reading order")
+    void narrowCenterOutlierDoesNotPreventTwoColumnVerticalReadingOrder() throws Exception {
+        var pdfPath = writePositionedPdf(List.of(
+                run("Left alpha detail", 50f, 720f, 8f, Standard14Fonts.FontName.HELVETICA),
+                run("Right alpha detail", 124f, 720f, 8f, Standard14Fonts.FontName.HELVETICA),
+                run("||||", 111f, 705f, 8f, Standard14Fonts.FontName.HELVETICA),
+                run("Left beta detail", 50f, 690f, 8f, Standard14Fonts.FontName.HELVETICA),
+                run("Right beta detail", 124f, 690f, 8f, Standard14Fonts.FontName.HELVETICA)));
+
+        var text = renderedText(pdfPath);
+
+        assertThat(text.lines().filter(line -> !line.isBlank()).toList()).containsExactly(
+                "Left alpha detail",
+                "Left beta detail",
+                "||||",
+                "Right alpha detail",
+                "Right beta detail");
+    }
+
     private String renderedText(Path pdfPath) throws IOException {
         try (var pdf = Loader.loadPDF(pdfPath.toFile())) {
             return PdfPageBlockExtractor.detectBlocksOnPage(pdf, 1).stream()

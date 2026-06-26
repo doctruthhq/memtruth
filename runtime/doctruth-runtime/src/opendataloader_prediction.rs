@@ -20,9 +20,11 @@ impl PredictionPackage {
             cases_dir: root.join("cases"),
             failures_dir: root.join("failures"),
         };
-        package.create_dir(&package.markdown_dir)?;
-        package.create_dir(&package.cases_dir)?;
-        package.create_dir(&package.failures_dir)?;
+        package.create_dir(root)?;
+        package.remove_stale_file(&root.join("errors.json"))?;
+        package.reset_dir(&package.markdown_dir)?;
+        package.reset_dir(&package.cases_dir)?;
+        package.reset_dir(&package.failures_dir)?;
         Ok(package)
     }
 
@@ -70,6 +72,22 @@ impl PredictionPackage {
 
     fn create_dir(&self, path: &Path) -> Result<(), String> {
         fs::create_dir_all(path).map_err(write_error)
+    }
+
+    fn reset_dir(&self, path: &Path) -> Result<(), String> {
+        if path.is_dir() {
+            fs::remove_dir_all(path).map_err(write_error)?;
+        } else if path.exists() {
+            fs::remove_file(path).map_err(write_error)?;
+        }
+        self.create_dir(path)
+    }
+
+    fn remove_stale_file(&self, path: &Path) -> Result<(), String> {
+        if path.is_file() {
+            fs::remove_file(path).map_err(write_error)?;
+        }
+        Ok(())
     }
 
     fn write_json(&self, path: &Path, value: &Value) -> Result<(), String> {

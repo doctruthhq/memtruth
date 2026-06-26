@@ -37,17 +37,20 @@ with tempfile.TemporaryDirectory(prefix="doctruth-opendataloader-timeout-") as r
         doc_id="slow",
         limit=None,
         preset="lite",
+        runtime_profile="edge-fast",
         runtime_bin=str(runtime),
+        reference_engine=None,
         skip_eval=True,
         timeout_seconds=0.01,
     )
     output = module.write_predictions(args)
     summary = json.loads((output / "summary.json").read_text())
-    errors = json.loads((output / "errors.json").read_text())
+    failure = json.loads((output / "failures" / "slow.json").read_text())
 
 assert summary["document_count"] == 1, summary
 assert summary["parsed_count"] == 0, summary
 assert summary["failed_count"] == 1, summary
-assert "timed out" in errors["documents"][0]["error"], errors
+assert not (output / "errors.json").exists(), output
+assert "timed out" in failure["error"], failure
 
 print("doctruth opendataloader timeout smoke passed")

@@ -41,7 +41,8 @@ EOF_REQUEST
 
 test -s "$PREDICTION/markdown/01030000000001.md"
 test -s "$PREDICTION/summary.json"
-test -s "$PREDICTION/errors.json"
+test -d "$PREDICTION/failures"
+test ! -e "$PREDICTION/errors.json"
 
 jq -e '.prediction.engine == "doctruth-rust-mnn"' "$REPORT" >/dev/null
 jq -e '.prediction.documentCount == 1 and .prediction.failedCount == 0' "$REPORT" >/dev/null
@@ -53,7 +54,13 @@ jq -e '.parsed_count == 1 and .failed_count == 0' "$PREDICTION/summary.json" >/d
 jq -e '.production_residency.python_torch_docling == false' "$PREDICTION/summary.json" >/dev/null
 jq -e '.documents[0].modelRuntime.runtime == "mnn"' "$PREDICTION/summary.json" >/dev/null
 jq -e '.documents[0].modelRouting.route == "table-model"' "$PREDICTION/summary.json" >/dev/null
-jq -e '.documents == []' "$PREDICTION/errors.json" >/dev/null
+python3 - "$PREDICTION/failures" <<'PY'
+import pathlib
+import sys
+
+failures = pathlib.Path(sys.argv[1])
+assert list(failures.iterdir()) == [], list(failures.iterdir())
+PY
 
 "$BIN" <<EOF_EVALUATE > "$RUST_EVALUATION_STDOUT"
 {"command":"opendataloader_evaluate_prediction","ground_truth_dir":"$BENCH_DIR/ground-truth/markdown","prediction_dir":"$PREDICTION","doc_id":"01030000000001","output_path":"$RUST_EVALUATION"}

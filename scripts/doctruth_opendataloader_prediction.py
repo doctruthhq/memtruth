@@ -1069,6 +1069,24 @@ def parser_run_field(document: dict[str, Any], field: str) -> Any:
     return None
 
 
+def prepare_prediction_output(output_root: Path) -> tuple[Path, Path]:
+    output_root.mkdir(parents=True, exist_ok=True)
+    errors_path = output_root / "errors.json"
+    if errors_path.is_file():
+        errors_path.unlink()
+    elif errors_path.is_dir():
+        shutil.rmtree(errors_path)
+    markdown_dir = output_root / "markdown"
+    failures_dir = output_root / "failures"
+    for directory in (markdown_dir, failures_dir):
+        if directory.is_dir():
+            shutil.rmtree(directory)
+        elif directory.exists():
+            directory.unlink()
+        directory.mkdir(parents=True)
+    return markdown_dir, failures_dir
+
+
 def write_predictions(args: argparse.Namespace) -> Path:
     bench_dir = Path(args.bench_dir).resolve()
     if args.reference_engine:
@@ -1080,11 +1098,9 @@ def write_predictions(args: argparse.Namespace) -> Path:
 
     pdfs = select_pdfs(bench_dir / "pdfs", args.doc_id, args.limit)
     output_root = bench_dir / "prediction" / args.engine
-    markdown_dir = output_root / "markdown"
-    markdown_dir.mkdir(parents=True, exist_ok=True)
+    markdown_dir, failures_dir = prepare_prediction_output(output_root)
 
     start = time.time()
-    errors: list[dict[str, Any]] = []
     per_document: list[dict[str, Any]] = []
 
     for pdf_path in pdfs:
@@ -1109,23 +1125,26 @@ def write_predictions(args: argparse.Namespace) -> Path:
             markdown_path.write_text("", encoding="utf-8")
             status = "failed"
             error = str(exc)
-            errors.append({"document_id": doc_id, "error": error})
             runtime_profile = args.runtime_profile
             model_runtime = None
             model_routing = None
         elapsed = time.time() - doc_start
-        per_document.append(
-            {
-                "document_id": doc_id,
-                "status": status,
-                "elapsed": elapsed,
-                "markdown_path": str(markdown_path),
-                "error": error,
-                "runtimeProfile": runtime_profile,
-                "modelRuntime": model_runtime,
-                "modelRouting": model_routing,
-            }
-        )
+        document_summary = {
+            "document_id": doc_id,
+            "status": status,
+            "elapsed": elapsed,
+            "markdown_path": str(markdown_path),
+            "error": error,
+            "runtimeProfile": runtime_profile,
+            "modelRuntime": model_runtime,
+            "modelRouting": model_routing,
+        }
+        if status == "failed":
+            failures_dir.joinpath(f"{doc_id}.json").write_text(
+                json.dumps(document_summary, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        per_document.append(document_summary)
 
     total_elapsed = time.time() - start
     parsed_count = sum(1 for item in per_document if item["status"] == "parsed")
@@ -1158,10 +1177,6 @@ def write_predictions(args: argparse.Namespace) -> Path:
     output_root.joinpath("summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    output_root.joinpath("errors.json").write_text(
-        json.dumps({"documents": errors}, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
     return output_root
 
 
@@ -1173,11 +1188,9 @@ def write_reference_predictions(args: argparse.Namespace, bench_dir: Path) -> Pa
 
     pdfs = select_pdfs(bench_dir / "pdfs", args.doc_id, args.limit)
     output_root = bench_dir / "prediction" / args.engine
-    markdown_dir = output_root / "markdown"
-    markdown_dir.mkdir(parents=True, exist_ok=True)
+    markdown_dir, failures_dir = prepare_prediction_output(output_root)
 
     start = time.time()
-    errors: list[dict[str, Any]] = []
     per_document: list[dict[str, Any]] = []
 
     for pdf_path in pdfs:
@@ -1193,17 +1206,20 @@ def write_reference_predictions(args: argparse.Namespace, bench_dir: Path) -> Pa
             markdown_path.write_text("", encoding="utf-8")
             status = "failed"
             error = f"reference markdown missing: {source_markdown}"
-            errors.append({"document_id": doc_id, "error": error})
-        per_document.append(
-            {
-                "document_id": doc_id,
-                "status": status,
-                "elapsed": time.time() - doc_start,
-                "markdown_path": str(markdown_path),
-                "reference_markdown_path": str(source_markdown),
-                "error": error,
-            }
-        )
+        document_summary = {
+            "document_id": doc_id,
+            "status": status,
+            "elapsed": time.time() - doc_start,
+            "markdown_path": str(markdown_path),
+            "reference_markdown_path": str(source_markdown),
+            "error": error,
+        }
+        if status == "failed":
+            failures_dir.joinpath(f"{doc_id}.json").write_text(
+                json.dumps(document_summary, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        per_document.append(document_summary)
 
     total_elapsed = time.time() - start
     imported_count = sum(1 for item in per_document if item["status"] == "imported")
@@ -1224,10 +1240,6 @@ def write_reference_predictions(args: argparse.Namespace, bench_dir: Path) -> Pa
     }
     output_root.joinpath("summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    output_root.joinpath("errors.json").write_text(
-        json.dumps({"documents": errors}, indent=2, ensure_ascii=False),
-        encoding="utf-8",
     )
     return output_root
 

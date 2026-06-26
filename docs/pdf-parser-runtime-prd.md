@@ -2290,9 +2290,11 @@ metrics.
 Current OpenDataLoader Bench runner status: `scripts/run-doctruth-opendataloader-bench.sh`
 builds `doctruth-runtime`, runs Rust `opendataloader_prediction` over the
 vendored `third_party/opendataloader-bench/pdfs/` corpus, writes
-`prediction/doctruth-runtime/markdown/*.md`, `summary.json`, `errors.json`, and
+`prediction/doctruth-runtime/markdown/*.md`, per-document `cases/*.json`,
+per-document `failures/*.json`, `summary.json`, `resources.json`, and
 `prediction-report.json`, and then runs Rust `opendataloader_evaluate_prediction`
-by default to produce `evaluation.json`. The official upstream OpenDataLoader
+by default to produce `evaluation.json`. Successful runs leave `failures/`
+empty and never write a root `errors.json`. The official upstream OpenDataLoader
 Python evaluator remains available only through explicit `--evaluator official`
 or oracle/baseline scripts; it is not the default DocTruth prediction/evaluation
 path. `scripts/smoke-doctruth-opendataloader-evaluator-parity.sh` provides a
@@ -2347,8 +2349,9 @@ Python prediction adapter. When this option is present, `opendataloader_predicti
 spawns the current `doctruth-runtime` binary per document, sends a normal
 `parse_pdf` request over stdin, kills the child on timeout, writes an empty
 Markdown artifact, and records `errorCode=PARSE_TIMEOUT` in `summary.json` and
-`errors.json`. Without this option, prediction stays on the faster in-process
-Rust path. Historical context: the legacy Python adapter used the same kind of
+the affected document's `failures/<document_id>.json`. Without this option,
+prediction stays on the faster in-process Rust path. Historical context: the
+legacy Python adapter used the same kind of
 per-document isolation to keep full-corpus iteration from being dominated by a
 single pathological PDF; a 30-second run completed in `239.5388069152832`
 seconds, marked `01030000000141` as timed out, kept the scanned/no-text-layer

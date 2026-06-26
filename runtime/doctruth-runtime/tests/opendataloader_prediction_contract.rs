@@ -74,6 +74,57 @@ fn prediction_command_writes_only_bench_expected_package_shape() {
     );
 }
 
+#[test]
+fn prediction_command_cleans_stale_package_artifacts_when_reusing_output_dir() {
+    let root = temp_dir("doctruth-runtime-opendataloader-package-reuse");
+    let pdf_dir = root.join("pdfs");
+    let prediction = root.join("prediction/doctruth-rust-package");
+    let sibling = root.join("prediction/unrelated-sibling");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::create_dir_all(prediction.join("markdown")).unwrap();
+    fs::create_dir_all(prediction.join("cases")).unwrap();
+    fs::create_dir_all(prediction.join("failures")).unwrap();
+    fs::create_dir_all(&sibling).unwrap();
+    fs::write(
+        pdf_dir.join("fresh-case.pdf"),
+        minimal_pdf("Fresh Rust prediction packaging."),
+    )
+    .unwrap();
+    fs::write(prediction.join("errors.json"), r#"{"documents":["stale"]}"#).unwrap();
+    fs::write(prediction.join("markdown/stale-case.md"), "stale").unwrap();
+    fs::write(prediction.join("cases/stale-case.json"), "{}").unwrap();
+    fs::write(prediction.join("failures/stale-case.json"), "{}").unwrap();
+    fs::write(sibling.join("keep.txt"), "keep").unwrap();
+
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": root,
+            "engine": "doctruth-rust-package",
+            "limit": 1,
+            "preset": "lite",
+            "runtime_profile": "edge-fast",
+            "output_dir": prediction
+        })
+        .to_string(),
+    )
+    .assert()
+    .success();
+
+    assert!(!prediction.join("errors.json").exists());
+    assert!(!prediction.join("markdown/stale-case.md").exists());
+    assert!(!prediction.join("cases/stale-case.json").exists());
+    assert!(!prediction.join("failures/stale-case.json").exists());
+    assert!(prediction.join("markdown/fresh-case.md").is_file());
+    assert!(prediction.join("cases/fresh-case.json").is_file());
+    assert_eq!(
+        fs::read_dir(prediction.join("failures")).unwrap().count(),
+        0
+    );
+    assert!(sibling.join("keep.txt").is_file());
+}
+
 fn root_entries(dir: &PathBuf) -> BTreeSet<String> {
     fs::read_dir(dir)
         .unwrap()

@@ -2098,3 +2098,15 @@
   Table-of-contents pages and ordinary two-column narrative text must remain
   text. Phase19's broader single-column framework-heading table attempt was
   rejected because full200 overall regressed.
+- Phase28 fixes the MNN model-worker lifecycle seam rather than parser quality:
+  `doctruth-runtime` accepts JSONL batches and keeps the configured model worker
+  process alive until the batch is complete, while
+  `doctruth-mnn-model-worker` now accepts JSONL stdin and returns one JSON line
+  per request. Batch-mode requests and normalized reports use
+  `unloadPolicy=after-job-batch`; single-request compatibility remains
+  `idle-after-request`. Verification: `model_worker_contract` passed 27/27,
+  `scripts/smoke-doctruth-runtime-model-worker.sh` passed, and
+  `git diff --check` passed. `benchmark_corpus_contract` still has three
+  unrelated parser-quality failures in the DPO follow-up table and two heading
+  parity cases, so do not use it as evidence that Phase28 changed full200
+  parser quality.

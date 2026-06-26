@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 #[cfg(feature = "mnn-native")]
 use std::ffi::CString;
-use std::io::{self, Read};
+use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
 
@@ -35,15 +35,34 @@ fn main() {
         }
         return;
     }
-    let started = Instant::now();
-    let mut input = String::new();
-    if let Err(error) = io::stdin().read_to_string(&mut input) {
-        fail(
-            "worker_protocol_error",
-            &format!("failed to read stdin: {error}"),
-        );
+    run_stdin_requests();
+}
+
+fn run_stdin_requests() {
+    let stdin = io::stdin();
+    let mut saw_request = false;
+    for line in stdin.lock().lines() {
+        let input = match line {
+            Ok(input) => input,
+            Err(error) => fail(
+                "worker_protocol_error",
+                &format!("failed to read stdin: {error}"),
+            ),
+        };
+        if input.trim().is_empty() {
+            continue;
+        }
+        saw_request = true;
+        handle_parse_request(&input);
     }
-    let request: Value = match serde_json::from_str(&input) {
+    if !saw_request {
+        fail("worker_protocol_error", "empty stdin");
+    }
+}
+
+fn handle_parse_request(input: &str) {
+    let started = Instant::now();
+    let request: Value = match serde_json::from_str(input) {
         Ok(value) => value,
         Err(error) => fail(
             "worker_protocol_error",
@@ -57,7 +76,8 @@ fn main() {
     if !stub_mode_enabled() {
         if let Some(response) = real_inference_response(&request, &model_pack, started) {
             print_json(response);
-            clean_exit();
+            flush_stdout();
+            return;
         }
         fail(
             "mnn_inference_unavailable",
@@ -84,6 +104,7 @@ fn main() {
             }
         }
     }));
+    flush_stdout();
 }
 
 fn real_inference_response(
@@ -2419,19 +2440,8 @@ fn print_json(value: Value) {
     println!("{}", serde_json::to_string(&value).unwrap());
 }
 
-fn clean_exit() -> ! {
-    use std::io::Write;
-
+fn flush_stdout() {
     let _ = std::io::stdout().flush();
-    #[cfg(unix)]
-    unsafe {
-        unsafe extern "C" {
-            fn _exit(status: i32) -> !;
-        }
-        _exit(0);
-    }
-    #[cfg(not(unix))]
-    std::process::exit(0);
 }
 
 fn stub_mode_enabled() -> bool {

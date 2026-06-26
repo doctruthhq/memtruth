@@ -63,6 +63,17 @@ from overall `0.362170` to `0.540128` and moving full200 overall to
 `0.779731`. This is still a focused parser-quality improvement, not OCR/model
 parity.
 
+Phase28 adds the runtime/model-worker lifecycle contract required by the MNN
+path. `doctruth-runtime` now accepts newline-delimited JSON requests in one
+process and keeps the configured model worker alive until the JSONL job batch
+finishes. `doctruth-mnn-model-worker` also accepts JSONL stdin and emits one
+JSON response per request line, so OCR/table model workers can stay warm across
+all jobs in a batch instead of starting and unloading per document. In batch
+mode the model-runtime protocol reports `unloadPolicy=after-job-batch`; single
+request compatibility keeps `unloadPolicy=idle-after-request`. This is a
+runtime/worker lifecycle improvement and does not by itself change full200
+parser-quality metrics.
+
 ## Reference Boundaries
 
 ```text

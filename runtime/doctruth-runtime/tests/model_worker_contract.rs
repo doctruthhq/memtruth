@@ -41,6 +41,55 @@ fn parse_pdf_routes_model_assisted_preset_to_configured_worker() {
 }
 
 #[test]
+fn runtime_jsonl_batch_keeps_model_worker_alive_until_all_jobs_complete() {
+    let first_pdf = write_pdf_fixture("First table job should use the warm worker.");
+    let second_pdf = write_pdf_fixture("Second table job should reuse the warm worker.");
+    let worker_start_log = temp_path("doctruth-runtime-worker-starts", "log");
+    let worker = write_jsonl_persistent_model_worker();
+    let (cache_dir, manifest) = ready_mnn_model_manifest("doctruth-runtime-jsonl-worker-cache");
+    let input = format!(
+        "{}\n{}\n",
+        parse_request(&first_pdf, "table-lite"),
+        parse_request(&second_pdf, "table-lite")
+    );
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .env("DOCTRUTH_TEST_WORKER_START_LOG", &worker_start_log)
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let lines = String::from_utf8(output).unwrap();
+    let documents = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(documents.len(), 2, "{lines}");
+    assert_eq!(fs::read_to_string(&worker_start_log).unwrap(), "started\n");
+    for document in documents {
+        assert_eq!(
+            document["parserRun"]["backend"],
+            "rust-sidecar+model-worker"
+        );
+        assert_eq!(
+            document["parserRun"]["modelRuntime"]["unloadPolicy"],
+            "after-job-batch"
+        );
+        assert_eq!(
+            document["parserRun"]["modelRuntime"]["unload"]["status"],
+            "deferred"
+        );
+    }
+}
+
+#[test]
 fn parse_pdf_edge_fast_profile_does_not_start_configured_worker() {
     let pdf = write_pdf_fixture("Edge fast deterministic evidence.");
     let worker = write_failing_model_worker();
@@ -635,6 +684,58 @@ fn rust_mnn_model_worker_stub_mode_is_explicit() {
         "mnn-model-worker-stub"
     );
     assert_eq!(json["document"]["auditGradeStatus"], "NOT_AUDIT_GRADE");
+}
+
+#[test]
+fn rust_mnn_model_worker_stub_mode_accepts_jsonl_batch_until_stdin_closes() {
+    let first_model = temp_path("doctruth-runtime-worker-mnn-jsonl-first", "mnn");
+    let second_model = temp_path("doctruth-runtime-worker-mnn-jsonl-second", "mnn");
+    fs::write(&first_model, b"first mnn").unwrap();
+    fs::write(&second_model, b"second mnn").unwrap();
+    let request = |path: &Path| {
+        json!({
+            "command": "parse_pdf",
+            "source_path": "document.pdf",
+            "source_hash": "sha256:model-worker",
+            "preset": "table-lite",
+            "models": [{
+                "name": "slanet-plus",
+                "version": "v1",
+                "backend": "mnn",
+                "format": "mnn",
+                "cacheStatus": "READY",
+                "cachePath": path
+            }]
+        })
+        .to_string()
+    };
+    let mut cmd = Command::cargo_bin("doctruth-mnn-model-worker").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_MNN_WORKER_STUB", "1")
+        .write_stdin(format!(
+            "{}\n{}\n",
+            request(&first_model),
+            request(&second_model)
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let lines = String::from_utf8(output).unwrap();
+    let responses = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(responses.len(), 2, "{lines}");
+    assert!(responses.iter().all(|response| response["ok"] == true));
+    assert!(
+        responses
+            .iter()
+            .all(|response| response["metrics"]["runtime"] == "mnn")
+    );
 }
 
 #[test]
@@ -1349,6 +1450,78 @@ import sys
 
 sys.stderr.write("edge-fast must not start this worker\n")
 sys.exit(17)
+"#,
+    )
+}
+
+fn write_jsonl_persistent_model_worker() -> PathBuf {
+    write_worker_script(
+        "doctruth-runtime-jsonl-persistent-model-worker",
+        r#"#!/usr/bin/env python3
+import json
+import os
+import sys
+
+start_log = os.environ["DOCTRUTH_TEST_WORKER_START_LOG"]
+with open(start_log, "a", encoding="utf-8") as handle:
+    handle.write("started\n")
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    assert request["preset"] == "table-lite"
+    assert request["modelRuntime"]["runtime"] == "mnn"
+    assert request["modelRuntime"]["loadPolicy"] == "lazy"
+    assert request["modelRuntime"]["unloadPolicy"] == "after-job-batch"
+    print(json.dumps({
+        "docId": request["source_hash"],
+        "source": {
+            "sourceFilename": request["sourceFilename"],
+            "sourceHash": request["source_hash"],
+            "metadata": {"sourceFilename": request["sourceFilename"], "pageCount": 1}
+        },
+        "body": {
+            "pages": [{
+                "pageNumber": 1,
+                "width": 612.0,
+                "height": 792.0,
+                "textLayerAvailable": True,
+                "imageHash": "sha256:" + "0" * 64
+            }],
+            "units": [{
+                "unitId": "unit-0001",
+                "kind": "TABLE_CELL",
+                "page": 1,
+                "text": "Warm worker model evidence",
+                "evidenceSpanIds": ["span-0001"],
+                "location": {
+                    "page": 1,
+                    "readingOrder": 1,
+                    "boundingBox": {"x0": 0.0, "y0": 0.0, "x1": 1000.0, "y1": 1000.0}
+                },
+                "sourceObjectId": "warm-worker-cell-1",
+                "confidence": {"score": 0.93, "rationale": "fake persistent model worker"},
+                "warnings": []
+            }],
+            "tables": []
+        },
+        "parserRun": {
+            "parserVersion": "test-worker",
+            "preset": request["preset"],
+            "backend": "rust-sidecar+model-worker",
+            "models": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
+            "warnings": []
+        },
+        "auditGradeStatus": "AUDIT_GRADE",
+        "metrics": {
+            "runtime": "mnn",
+            "coldStartMs": 9.0,
+            "inferenceMs": 2.0,
+            "loadedModels": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
+            "unload": {"status": "deferred", "policy": "after-job-batch"}
+        }
+    }), flush=True)
 "#,
     )
 }

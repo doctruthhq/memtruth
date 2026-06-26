@@ -1,10 +1,11 @@
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use opendataloader_java_backend::OpenDataLoaderJavaBackendClient;
@@ -28,6 +29,10 @@ mod opendataloader_probes;
 mod opendataloader_report;
 
 pub use opendataloader_parity::opendataloader_parity_matrix_json;
+
+thread_local! {
+    static MODEL_WORKER_BATCH_MODE: Cell<bool> = const { Cell::new(false) };
+}
 
 const RUNTIME: &str = "doctruth-runtime";
 const PROTOCOL_VERSION: &str = "1";
@@ -93,8 +98,15 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         return Err(error_json("UNKNOWN_ARGUMENT", "unsupported runtime argument").to_string());
     }
 
-    let request: Value = serde_json::from_str(&input)
-        .map_err(|error| error_json("INVALID_REQUEST_JSON", &error.to_string()).to_string())?;
+    let request: Value = match serde_json::from_str(&input) {
+        Ok(request) => request,
+        Err(_error) if input_has_multiple_jsonl_records(input) => {
+            return run_jsonl_batch(input);
+        }
+        Err(error) => {
+            return Err(error_json("INVALID_REQUEST_JSON", &error.to_string()).to_string());
+        }
+    };
     match request.get("command").and_then(Value::as_str) {
         Some("parse_pdf") => parse_pdf_json(&request).map(|json| json.to_string()),
         Some("benchmark_corpus") => benchmark_corpus_json(&request).map(|json| json.to_string()),
@@ -129,6 +141,75 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
         Some(_) => Err(error_json("UNKNOWN_COMMAND", "unsupported runtime command").to_string()),
         None => Err(error_json("MISSING_COMMAND", "request.command is required").to_string()),
     }
+}
+
+fn input_has_multiple_jsonl_records(input: &str) -> bool {
+    input.lines().filter(|line| !line.trim().is_empty()).count() > 1
+}
+
+fn run_jsonl_batch(input: &str) -> Result<String, String> {
+    let result = with_model_worker_batch_mode(|| {
+        let mut output = Vec::new();
+        for (index, line) in input
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .enumerate()
+        {
+            let request: Value = serde_json::from_str(line).map_err(|error| {
+                error_json(
+                    "INVALID_REQUEST_JSON",
+                    &format!("invalid JSONL record {}: {error}", index + 1),
+                )
+                .to_string()
+            })?;
+            let response = run_request_json(&request)?;
+            output.push(response.to_string());
+        }
+        Ok(output.join("\n"))
+    });
+    shutdown_model_worker_sessions();
+    result
+}
+
+fn run_request_json(request: &Value) -> Result<Value, String> {
+    match request.get("command").and_then(Value::as_str) {
+        Some("parse_pdf") => parse_pdf_json(request),
+        Some("benchmark_corpus") => benchmark_corpus_json(request),
+        Some("opendataloader_prediction") => opendataloader_prediction_json(request),
+        Some("opendataloader_evaluate_prediction") => {
+            opendataloader_evaluate_prediction_json(request)
+        }
+        Some("opendataloader_promotion_report") => opendataloader_promotion_report_json(request),
+        Some("opendataloader_compare_reports") => opendataloader_compare_reports_json(request),
+        Some("opendataloader_parity_matrix") => Ok(opendataloader_parity_matrix_json()),
+        Some("opendataloader_text_processor_probe") => {
+            opendataloader_probes::opendataloader_text_processor_probe_json(request)
+        }
+        Some("opendataloader_line_paragraph_probe") => {
+            opendataloader_probes::opendataloader_line_paragraph_probe_json(request)
+        }
+        Some("opendataloader_structure_probe") => {
+            opendataloader_probes::opendataloader_structure_probe_json(request)
+        }
+        Some("verify_benchmark_report") => verify_benchmark_report_json(request),
+        Some(_) => Err(error_json("UNKNOWN_COMMAND", "unsupported runtime command").to_string()),
+        None => Err(error_json("MISSING_COMMAND", "request.command is required").to_string()),
+    }
+}
+
+fn with_model_worker_batch_mode<T>(
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    MODEL_WORKER_BATCH_MODE.with(|flag| {
+        let previous = flag.replace(true);
+        let result = operation();
+        flag.set(previous);
+        result
+    })
+}
+
+fn model_worker_batch_mode_enabled() -> bool {
+    MODEL_WORKER_BATCH_MODE.with(Cell::get)
 }
 
 pub fn doctor_json() -> Value {
@@ -2453,10 +2534,18 @@ fn model_runtime_request_json(profile: &str, preset: &str, model_artifacts: &[Va
     json!({
         "runtime": runtime,
         "loadPolicy": "lazy",
-        "unloadPolicy": "idle-after-request",
+        "unloadPolicy": model_worker_unload_policy(),
         "referenceOnly": profile == "benchmark-oracle" && runtime != "mnn",
         "preprocessing": model_preprocessing_contract_json(preset, model_artifacts)
     })
+}
+
+fn model_worker_unload_policy() -> &'static str {
+    if model_worker_batch_mode_enabled() {
+        "after-job-batch"
+    } else {
+        "idle-after-request"
+    }
 }
 
 fn model_runtime_engine(profile: &str, model_artifacts: &[Value]) -> String {
@@ -2867,7 +2956,7 @@ fn model_runtime_report_json(profile: &str, model_metrics: &Value) -> Value {
     let mut runtime = json!({
         "runtime": if profile == "edge-model" { "mnn" } else { "none" },
         "loadPolicy": "lazy",
-        "unloadPolicy": "idle-after-request"
+        "unloadPolicy": model_worker_unload_policy()
     });
     let Some(target) = runtime.as_object_mut() else {
         return runtime;
@@ -2943,7 +3032,83 @@ fn find_executable_on_path(name: &str) -> Option<String> {
     None
 }
 
+static MODEL_WORKER_SESSIONS: OnceLock<Mutex<HashMap<String, ModelWorkerSession>>> =
+    OnceLock::new();
+
+struct ModelWorkerSession {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl ModelWorkerSession {
+    fn start(command: &str) -> Result<Self, String> {
+        let mut child = Command::new(command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| error_json("MODEL_WORKER_FAILED", &error.to_string()).to_string())?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            error_json("MODEL_WORKER_FAILED", "worker stdin was not available").to_string()
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            error_json("MODEL_WORKER_FAILED", "worker stdout was not available").to_string()
+        })?;
+        Ok(Self {
+            child,
+            stdin: Some(stdin),
+            stdout: BufReader::new(stdout),
+        })
+    }
+
+    fn request(&mut self, request: &Value) -> Result<String, String> {
+        let Some(stdin) = self.stdin.as_mut() else {
+            return Err(error_json("MODEL_WORKER_FAILED", "worker stdin is closed").to_string());
+        };
+        writeln!(stdin, "{request}")
+            .map_err(|error| error_json("MODEL_WORKER_FAILED", &error.to_string()).to_string())?;
+        stdin
+            .flush()
+            .map_err(|error| error_json("MODEL_WORKER_FAILED", &error.to_string()).to_string())?;
+        let mut response = String::new();
+        let bytes = self
+            .stdout
+            .read_line(&mut response)
+            .map_err(|error| error_json("MODEL_WORKER_FAILED", &error.to_string()).to_string())?;
+        if bytes == 0 {
+            return Err(
+                error_json("MODEL_WORKER_FAILED", "worker exited without response").to_string(),
+            );
+        }
+        Ok(response)
+    }
+}
+
+impl Drop for ModelWorkerSession {
+    fn drop(&mut self) {
+        self.stdin.take();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn model_worker_sessions() -> &'static Mutex<HashMap<String, ModelWorkerSession>> {
+    MODEL_WORKER_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn shutdown_model_worker_sessions() {
+    if let Some(sessions) = MODEL_WORKER_SESSIONS.get()
+        && let Ok(mut sessions) = sessions.lock()
+    {
+        sessions.clear();
+    }
+}
+
 fn run_model_worker(command: &str, request: &Value) -> Result<String, String> {
+    if model_worker_batch_mode_enabled() {
+        return run_persistent_model_worker(command, request);
+    }
     let mut child = Command::new(command)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -2968,6 +3133,20 @@ fn run_model_worker(command: &str, request: &Value) -> Result<String, String> {
     }
     String::from_utf8(output.stdout)
         .map_err(|error| error_json("MODEL_WORKER_FAILED", &error.to_string()).to_string())
+}
+
+fn run_persistent_model_worker(command: &str, request: &Value) -> Result<String, String> {
+    let mut sessions = model_worker_sessions().lock().map_err(|_| {
+        error_json("MODEL_WORKER_FAILED", "worker session lock poisoned").to_string()
+    })?;
+    let session = match sessions.get_mut(command) {
+        Some(session) => session,
+        None => {
+            sessions.insert(command.to_string(), ModelWorkerSession::start(command)?);
+            sessions.get_mut(command).expect("inserted worker session")
+        }
+    };
+    session.request(request)
 }
 
 fn validate_worker_document(document: &Value) -> Result<(), String> {
@@ -12664,10 +12843,7 @@ fn key_value_field_line(text: &str) -> bool {
         && !value.is_empty()
         && !trimmed.contains('\n')
         && label.chars().count() <= 40
-        && label
-            .chars()
-            .next()
-            .is_some_and(|ch| ch.is_alphanumeric())
+        && label.chars().next().is_some_and(|ch| ch.is_alphanumeric())
         && label
             .chars()
             .all(|ch| ch.is_alphanumeric() || matches!(ch, ' ' | '/' | '&' | '(' | ')' | '.' | '-'))

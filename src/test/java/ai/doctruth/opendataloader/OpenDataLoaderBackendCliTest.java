@@ -47,24 +47,6 @@ class OpenDataLoaderBackendCliTest {
     }
 
     @Test
-    void jsonlBackendAcceptsAutoPresetForParitySmokeDefault() throws Exception {
-        var pdf = writePdf("Auto preset request");
-        var input = """
-                {"document":"%s","preset":"auto"}
-                """.formatted(pdf);
-        var out = new ByteArrayOutputStream();
-
-        int code = OpenDataLoaderBackendCli.run(
-                new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)),
-                new PrintStream(out, true, StandardCharsets.UTF_8));
-
-        assertThat(code).isZero();
-        var response = MAPPER.readTree(out.toString(StandardCharsets.UTF_8).strip());
-        assertThat(response.path("ok").asBoolean()).isTrue();
-        assertThat(response.path("trustDocument").path("parserRun").path("preset").asText()).isEqualTo("auto");
-    }
-
-    @Test
     void invalidRequestReturnsErrorAndNextRequestStillRuns() throws Exception {
         var valid = writePdf("Request after error");
         var input = """

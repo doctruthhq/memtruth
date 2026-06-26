@@ -36,12 +36,15 @@ The selected smoke set is recorded in `smoke-docs.tsv` beside the smoke output:
 | `01030000000127` | borderless table |
 | `01030000000165` | scanned/OCR fixture, only when local MNN OCR artifacts exist |
 
-The wrapper defaults `DOCTRUTH_OPENDATALOADER_PRESET` to `auto`, so scanned or
-sparse visual pages can route to the OCR model while the same smoke prediction
-keeps one warm Java backend process. If the local MNN OCR manifest/cache are
-absent, the OCR fixture is skipped and `smoke-ocr-skip.txt` records the reason.
-The smoke gate still fails closed for any parsed/failed mismatch or invalid
-evaluation metrics.
+The wrapper includes the scanned/OCR fixture when local MNN OCR artifacts exist,
+and the same smoke prediction still keeps one warm Java backend process. The
+current Java-core backend treats the preset as parser metadata and does not
+route scanned or sparse visual pages to the OCR model yet; OCR routing remains a
+focused model-runtime gate until Java-core OCR worker integration lands. If the
+fixture fails in this smoke, the smoke fails closed. That is intentional
+capability exposure. If the local MNN OCR manifest/cache are absent, the OCR
+fixture is skipped and `smoke-ocr-skip.txt` records the reason. The smoke gate
+still fails closed for any parsed/failed mismatch or invalid evaluation metrics.
 
 ## Full200 Gate
 
@@ -89,8 +92,10 @@ Markdown, then invokes the existing runner once over that selected corpus. This
 preserves the warm Java backend behavior for the actual smoke prediction while
 avoiding a per-document runner loop.
 
-Because one prediction invocation has one preset, the wrapper uses the `auto`
-default for the selected smoke corpus. When local OCR artifacts are installed,
-the scanned/OCR fixture is included in that same prediction run and routed by
-the runtime's auto model decision. Explicit non-auto preset overrides still use
-one preset for the whole smoke corpus.
+Because one prediction invocation has one preset, the wrapper keeps the existing
+`lite` default for the selected smoke corpus. When local OCR artifacts are
+installed, the scanned/OCR fixture is included in that same prediction run based
+only on artifact availability. The current Java-core backend records the preset
+but still parses with the Java parser path and `OcrEngine.NOOP`, so this smoke
+does not claim OCR model routing. Explicit preset overrides still use one preset
+for the whole smoke corpus.

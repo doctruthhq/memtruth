@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BENCH_DIR="${DOCTRUTH_OPENDATALOADER_BENCH_DIR:-$ROOT/third_party/opendataloader-bench}"
 BUILD_PROFILE="${DOCTRUTH_RUNTIME_BUILD_PROFILE:-debug}"
-PRESET="${DOCTRUTH_OPENDATALOADER_PRESET:-auto}"
+PRESET="${DOCTRUTH_OPENDATALOADER_PRESET:-lite}"
 RUNTIME_PROFILE="${DOCTRUTH_RUNTIME_PROFILE:-edge-model}"
 TIMEOUT_SECONDS="${DOCTRUTH_OPENDATALOADER_TIMEOUT_SECONDS:-}"
 TIMESTAMP="${DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -28,7 +28,7 @@ Options:
 
 Environment:
   DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP  Override artifact timestamp.
-  DOCTRUTH_OPENDATALOADER_PRESET          Parser preset, default auto.
+  DOCTRUTH_OPENDATALOADER_PRESET          Parser preset, default lite.
   DOCTRUTH_RUNTIME_PROFILE                Runtime profile, default edge-model.
   DOCTRUTH_OPENDATALOADER_TIMEOUT_SECONDS Per-document timeout passed to the runner.
 EOF

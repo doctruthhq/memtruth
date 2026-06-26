@@ -205,6 +205,42 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| TOTAL (w/o Party- List) | 45 | 51 | 68 |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderTextContinuationPromotionalMaterialsTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000178"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Communication Channel | Medium | Examples |");
+        assertThat(markdown).contains("| Direct communications | Physical or digital | meetings, consultations, listening sessions, email lists |");
+        assertThat(markdown).contains("| Goodies | Primarily physical | pens, notepads, bookmarks, stickers, buttons, etc |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderLongTextServiceFlowTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000200"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Service Stage | Function Name | Explanation | Expected Benefit |");
+        assertThat(markdown).contains("| 1. Project creation | Project creation and management | Select document type to automatically run project creation, Pipeline configuration with recommended Modelset and Endpoint deployment |");
+        assertThat(markdown).contains("|  | Create and manage Labeling | Creating a Labeling Space to manage raw data annotation, managing labeling resources |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderMeasurementMatrixTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000117"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Saccharometer | DI Water | Glucose Solution | Yeast Suspension |");
+        assertThat(markdown).contains("| 2 | 24 ml | 0 ml | 4 ml |");
+        assertThat(markdown).contains("| 4 | 4 ml | 12 ml | 12 ml |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -314,7 +350,10 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000051"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000045"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000053"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000053"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000178"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000200"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000117"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

@@ -26,9 +26,9 @@ Status values are intentionally conservative:
 | Paragraph and line merging | partial | `PdfDocumentParserTest` | current-full200 reading-order bucket | Basic merging exists; OpenDataLoader paragraph heuristics are not fully matched. |
 | Heading promotion and hierarchy | partial | `PdfHeadingClassificationTest`, `OpenDataLoaderJavaBackendContractTest`, `TrustDocumentRenderedOutputTest`, `PdfTwoColumnSemanticSectionTest` | `doctruth-java-core-phase10-title-heading-full200/full200`: MHS `0.472714`, MHS_s `0.619291`, overall `0.746136` | Java/PDFBox heading signals survive into `TrustDocument`, `content_blocks`, OpenDataLoader `blocks[]`, `headings[]`, and clean Markdown heading nodes. Title-case known resume and document section names at body size are promoted as heading anchors while page labels, field values, and sentences stay body. Remaining heading gap is fine-grained hierarchy and missed headings that do not match title/all-caps/known-section rules. |
 | Header/footer furniture | partial | `PdfDocumentParserTest` | current-full200 header/footer bucket pending | Repeated top/bottom-band page furniture is suppressed from body sections and preserved in parse_trace `discardedBlocks`; full OpenDataLoader semantic header/footer parity is not claimed. |
-| Table detection | partial | `PdfPageTableExtractorTest`, `PdfBorderlessTableExtractionTest` | `doctruth-java-core-phase12-column-stream-batch-full200/full200`: overall `0.755331`, TEDS `0.426354`; cases `01030000000045` and `01030000000053` improved from TEDS `0.0` to `1.0` | Regular and borderless table extraction now handles multiple table runs on one page, detects wide long-text comparative tables, preserves dense benchmark matrix tables, rejects sparse grid furniture/whole-page text promoted as fake tables, restores headered column-stream numeric tables, and restores data-only continuation numeric tables when the text layer exposes row/cell positions. Full table parity is still not claimed because many weak-border, OCR/model, and chart-adjacent table cases remain below target. |
-| Borderless table clustering | partial | `PdfBorderlessTableExtractionTest` | `doctruth-java-core-phase12-column-stream-batch-full200/full200` plus earlier phase6 smoke table cases | Borderless clustering segments aligned row runs, assigns text by cell cluster for normal tables, absorbs stacked header bands into table rows, merges first-column continuation rows, has a wide-text comparative-table path with word-zone column assignment, splits dense spanning header cells by word-center column assignment, avoids promoting sparse one-cell grids as borderless tables, and falls back to column-stream numeric table reconstruction only when the normal path emits no table. Remaining gap: broader full-bench cluster parity. |
-| Table cell grid reconstruction | partial | `OpenDataLoaderBackendProtocolTest`, `PdfBorderlessTableExtractionTest`, `opendataloader_table_processor_contract` | `doctruth-java-core-phase12-column-stream-batch-full200/full200` records 200/200 parsed at mean `75.995235` ms/doc with no Python/Torch/Docling residency | TrustTable cells are projected and real OpenDataLoader table smoke cases produce high TEDS for selected cases. Header-only/data-only spacer columns collapse for `Small / Medium / Large` style tables; wide long-text tables merge multi-row headers and blank-first continuation rows; dense matrix tables split spanning header cells; sparse grid false positives are discarded; headered column-stream numeric tables use data-row anchors plus header-zone projection; data-only continuation tables use numeric-row anchors and first-column continuation merging. Remaining gaps are model/OCR table cases and full200 TEDS parity. |
+| Table detection | partial | `PdfPageTableExtractorTest`, `PdfBorderlessTableExtractionTest` | `doctruth-java-core-phase13-cluster-text-table-full200/full200`: overall `0.758242`, TEDS `0.503217`; cases `01030000000178` and `01030000000117` reached TEDS about `1.0` | Regular and borderless table extraction now handles multiple table runs on one page, detects wide long-text comparative tables, preserves dense benchmark matrix tables, rejects sparse grid furniture/whole-page text promoted as fake tables, restores headered column-stream numeric tables, restores data-only continuation numeric tables, and reconstructs selected text-heavy cluster tables when the text layer exposes stable row/cell positions. Full table parity is still not claimed because many weak-border, OCR/model, multi-segment rowspan, and chart-adjacent table cases remain. |
+| Borderless table clustering | partial | `PdfBorderlessTableExtractionTest` | `doctruth-java-core-phase13-cluster-text-table-full200/full200`; cases `01030000000178`, `01030000000200`, and `01030000000117` are covered by focused tests | Borderless clustering segments aligned row runs, assigns text by cell cluster for normal tables, absorbs stacked header bands into table rows, merges first-column continuation rows, has a wide-text comparative-table path with word-zone column assignment, splits dense spanning header cells by word-center column assignment, avoids promoting sparse one-cell grids and resume-style parallel section headings as borderless tables, and now adds a final geometry-driven cluster fallback for text-heavy tables. Remaining gap: broader multi-segment cluster parity. |
+| Table cell grid reconstruction | partial | `OpenDataLoaderBackendProtocolTest`, `PdfBorderlessTableExtractionTest`, `opendataloader_table_processor_contract` | `doctruth-java-core-phase13-cluster-text-table-full200/full200` records 200/200 parsed at mean `82.989391` ms/doc with no Python/Torch/Docling residency | TrustTable cells are projected and real OpenDataLoader table smoke cases produce high TEDS for selected cases. Header-only/data-only spacer columns collapse for `Small / Medium / Large` style tables; wide long-text tables merge multi-row headers and blank-first continuation rows; dense matrix tables split spanning header cells; sparse grid false positives are discarded; headered column-stream numeric tables use data-row anchors plus header-zone projection; data-only continuation tables use numeric-row anchors and first-column continuation merging; text-heavy cluster tables now support stacked headers, single-cell header splitting, and blank-first/lowercase continuation merges. Remaining gaps are model/OCR table cases and multi-segment rowspans. |
 | Caption binding | partial | `PdfDocumentParserTest`, `OpenDataLoaderJavaBackendContractTest`, `TrustDocumentRenderedOutputTest` | current-full200 caption buckets pending | Standalone table/figure-style captions adjacent to detected tables are promoted into `FigureSection`, preserve bbox evidence, and project as `caption` blocks in `content_blocks` and OpenDataLoader-shaped `blocks[]`; broader figure, image, and full-bench caption parity is still pending. |
 | OCR region routing | partial | `PdfDocumentParserTest`, `TrustDocumentAdapterTest` | scanned/OCR corpus pending | Low-text pages route through OCR worker SPI; worker-returned regions now remain separate bbox-backed parser sections and become `OCR_REGION` units under OCR parser runs, but OpenDataLoader strategy parity is not proven. |
 | Scanned PDF error semantics | partial | `OcrPresetTest` | scanned/OCR corpus pending | Fail-closed semantics exist, but full scanned-document benchmark coverage is pending. |
@@ -42,18 +42,18 @@ Status values are intentionally conservative:
 
 ## Latest Full200 Run
 
-`doctruth-java-core-phase12-column-stream-batch-full200/full200` is the latest
-recorded Java-core run. It parsed 200/200 documents in `15199.047083` ms, with
-a mean `75.995235` ms/doc, lazy model startup enabled, and no
+`doctruth-java-core-phase13-cluster-text-table-full200/full200` is the latest
+recorded Java-core run. It parsed 200/200 documents in `16597.878291` ms, with
+a mean `82.989391` ms/doc, lazy model startup enabled, and no
 Python/Torch/Docling production residency.
 
-Quality is still below the plan target:
+Quality now clears the initial plan target:
 
 ```text
-overall: 0.755331
-nid:     0.898216
-teds:    0.426354
-mhs:     0.475145
+overall: 0.758242
+nid:     0.893380
+teds:    0.503217
+mhs:     0.483981
 ```
 
 The phase8 sparse-grid guard fixed a real class of table false positives,
@@ -71,10 +71,16 @@ to `0.998662`, and the full200 TEDS mean rose from `0.341325` to `0.378735`.
 Phase12 broadened that family to three-column observer tables and data-only
 continuation tables. Cases `01030000000045` and `01030000000053` improved from
 TEDS `0.0` to `1.0`, and the full200 TEDS mean rose to `0.426354`.
+Phase13 added a final geometry-driven cluster fallback for text-heavy tables
+after the existing numeric fallback. It restored the promotional-materials table
+in `01030000000178` to TEDS `0.998433`, the lab measurement matrix in
+`01030000000117` to TEDS `1.0`, and partially restored the long service-flow
+table in `01030000000200` to TEDS `0.41318`. Full200 TEDS rose to `0.503217`,
+and MHS rose to `0.483981`.
 
-Overall now beats the historical overall baseline `0.745414`, but acceptance
-is not complete: TEDS remains below target `0.496416`, and MHS remains just
-below target `0.483837`. The next high-impact gaps are additional
-weak-border/column-stream table families, OCR/image-only table content,
-remaining heading hierarchy misses, and broader reading-order/text
+Overall, TEDS, and MHS now beat the historical initial acceptance baseline
+`overall=0.745414`, `TEDS=0.496416`, and `MHS=0.483837`. This is still not a
+claim of full OpenDataLoader hybrid/model parity. The next high-impact gaps are
+multi-segment rowspan tables, OCR/image-only table content, chart/table
+distinction, remaining heading hierarchy misses, and broader reading-order/text
 normalization.

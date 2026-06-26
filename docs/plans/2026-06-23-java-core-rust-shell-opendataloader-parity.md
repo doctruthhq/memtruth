@@ -628,6 +628,44 @@ Current Phase 6 progress:
   - model/OCR table cases
   - full200 parity; latest full200 is still below the historical target
     `overall=0.745414`, `TEDS=0.496416`, `MHS=0.483837`
+- Added geometry-driven cluster fallback for text-heavy tables after the
+  existing numeric/table-specific fallback:
+  - covers stacked text headers and long prose cells such as
+    `01030000000178`
+  - covers single-cell header splitting over stable data anchors such as
+    `01030000000117`
+  - partially covers long service-flow tables such as `01030000000200`
+  - keeps phase12 numeric column-stream tables ahead of the cluster fallback
+  - rejects resume-style parallel section headings to avoid false table
+    promotion
+- Verified with refreshed Java CLI jar:
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest#opendataloaderTextContinuationPromotionalMaterialsTableBecomesStructuredTable+opendataloaderLongTextServiceFlowTableBecomesStructuredTable+opendataloaderMeasurementMatrixTableBecomesStructuredTable test`
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest test`
+  - `mvn -q -Dtest=PdfDocumentParserTest,PdfVisualLayoutParserTest,PdfTwoColumnSemanticSectionTest,TrustDocumentRenderedOutputTest test`
+  - `cd runtime/doctruth-runtime && cargo test --test opendataloader_table_processor_contract`
+  - `mvn -q -DskipTests package`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase13-cluster-text-table-smoke bash scripts/run-opendataloader-java-core-parity.sh --smoke`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase13-cluster-text-table-full200 bash scripts/run-opendataloader-java-core-parity.sh --full200`
+- Latest phase13 full200 evidence:
+  - artifact:
+    `third_party/opendataloader-bench/prediction/doctruth-java-core-phase13-cluster-text-table-full200/full200`
+  - parsed `200/200`
+  - elapsed `16597.878291` ms, mean `82.989391` ms/doc
+  - overall `0.758242`, NID `0.893380`, TEDS `0.503217`, MHS `0.483981`
+  - no Python/Torch/Docling production residency
+  - case `01030000000178`: overall `0.933164`, TEDS `0.998433`, MHS `0.820391`
+  - case `01030000000117`: overall `0.734091`, TEDS `1.0`, MHS `0.270142`
+  - case `01030000000200`: overall `0.551558`, TEDS `0.413180`, MHS `0.559491`
+  - phase12 recoveries `01030000000045` and `01030000000053` remain at TEDS
+    `1.0`
+- Current acceptance status:
+  - initial overall target `> 0.745414`: passed with `0.758242`
+  - initial TEDS target `> 0.496416`: passed with `0.503217`
+  - initial MHS target `> 0.483837`: passed with `0.483981`
+  - full OpenDataLoader hybrid/model parity is still not claimed; remaining
+    gaps are multi-segment rowspan tables, OCR/image-only tables,
+    chart/table distinction, heading hierarchy, and reading-order/text
+    normalization.
 
 ## Phase 7: Run Benchmark Only After Code-Level Parity Gates Pass
 

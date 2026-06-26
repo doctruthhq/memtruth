@@ -35,13 +35,13 @@ final class PdfPageTableExtractor {
         var cells = detectedCells(lines, xs, ys);
         var rows = rowsFromGrid(positions, cells, ys.size() - 1, xs.size() - 1);
         if (!hasNonBlankCell(rows)) {
-            return List.of();
+            return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
         }
         if (looksLikeDegenerateGridTable(rows)) {
             return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
         }
         if (looksLikeNonTabularGrid(rows)) {
-            return List.of();
+            return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
         }
         var box = normalizedBox(xs, ys, page.getWidth(), page.getHeight());
         var section = new TableSection(

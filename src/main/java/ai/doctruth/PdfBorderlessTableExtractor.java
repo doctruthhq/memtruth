@@ -42,7 +42,428 @@ final class PdfBorderlessTableExtractor {
         if (!tables.isEmpty()) {
             return List.copyOf(tables);
         }
-        return columnStreamNumericTable(allRows, pageNumber, pageWidth, pageHeight);
+        var numericTable = columnStreamNumericTable(allRows, pageNumber, pageWidth, pageHeight);
+        if (!numericTable.isEmpty()) {
+            return numericTable;
+        }
+        var clusterTextTable = clusterTextTable(allRows, pageNumber, pageWidth, pageHeight);
+        if (!clusterTextTable.isEmpty()) {
+            return clusterTextTable;
+        }
+        return List.of();
+    }
+
+    private static List<PdfPageTableExtractor.TableBlock> clusterTextTable(
+            List<BorderlessRow> allRows, int pageNumber, double pageWidth, double pageHeight) {
+        for (int start = 0; start < allRows.size(); start++) {
+            if (!clusterStartLooksPromising(allRows, start)) {
+                continue;
+            }
+            var candidate = clusterTextRows(allRows, start);
+            if (candidate.size() < 4) {
+                continue;
+            }
+            if (looksLikeParallelSectionHeadings(candidate)) {
+                continue;
+            }
+            var anchors = clusterAnchors(candidate);
+            if (anchors.size() < 3 || clusterDataRows(candidate, anchors) < 3) {
+                continue;
+            }
+            return clusterTextTableBlock(candidate, anchors, pageNumber, pageWidth, pageHeight)
+                    .map(List::of)
+                    .orElseGet(List::of);
+        }
+        return List.of();
+    }
+
+    private static boolean looksLikeParallelSectionHeadings(List<BorderlessRow> rows) {
+        return rows.stream().limit(4).anyMatch(PdfBorderlessTableExtractor::hasParallelSectionHeadingCells);
+    }
+
+    private static boolean hasParallelSectionHeadingCells(BorderlessRow row) {
+        if (row.cells().size() < 2) {
+            return false;
+        }
+        long headingCells = row.cells().stream()
+                .map(BorderlessCell::text)
+                .filter(PdfBorderlessTableExtractor::looksLikeShortAllCapsLabel)
+                .count();
+        return headingCells >= 2;
+    }
+
+    private static boolean looksLikeShortAllCapsLabel(String text) {
+        var stripped = text.strip();
+        long letters = stripped.chars().filter(Character::isLetter).count();
+        return letters >= 4
+                && stripped.equals(stripped.toUpperCase(java.util.Locale.ROOT))
+                && !stripped.matches(".*\\d.*");
+    }
+
+    private static boolean clusterStartLooksPromising(List<BorderlessRow> rows, int start) {
+        var row = rows.get(start);
+        if (row.cells().size() >= 2) {
+            return true;
+        }
+        if (looksLikeTableCaption(row.text()) || looksLikeSourceLine(row.text()) || looksLikeSentence(row.text())) {
+            return false;
+        }
+        if (start + 1 >= rows.size() || verticalGap(row, rows.get(start + 1)) > MAX_TABLE_ROW_GAP) {
+            return false;
+        }
+        var next = rows.get(start + 1);
+        if (next.cells().size() >= 3
+                && !next.cells().getFirst().text().matches("^[0-9].*")
+                && row.text().length() > 16) {
+            return false;
+        }
+        if (next.cells().size() >= 2) {
+            return true;
+        }
+        return false;
+    }
+
+    private static List<BorderlessRow> clusterTextRows(List<BorderlessRow> allRows, int start) {
+        var preliminary = contiguousRows(allRows, start);
+        var anchors = clusterAnchors(preliminary);
+        if (anchors.size() < 3) {
+            return List.of();
+        }
+        var out = new ArrayList<BorderlessRow>();
+        boolean seenData = false;
+        for (var row : preliminary) {
+            if (!clusterRowFits(row, anchors, seenData)) {
+                if (row.cells().size() == 1 && row.text().matches("^\\d+$")) {
+                    continue;
+                }
+                break;
+            }
+            out.add(row);
+            seenData = seenData || row.cells().size() >= 2;
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<BorderlessRow> contiguousRows(List<BorderlessRow> rows, int start) {
+        var out = new ArrayList<BorderlessRow>();
+        out.add(rows.get(start));
+        for (int index = start + 1; index < rows.size(); index++) {
+            var row = rows.get(index);
+            if (looksLikeHardTableBoundary(row.text()) || looksLikeSourceLine(row.text())) {
+                break;
+            }
+            if (verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP) {
+                break;
+            }
+            out.add(row);
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean looksLikeHardTableBoundary(String text) {
+        var stripped = text.strip();
+        return stripped.matches("(?i)^table\\s+\\d+[:.].*");
+    }
+
+    private static List<Double> clusterAnchors(List<BorderlessRow> rows) {
+        var anchorRows = rows.stream()
+                .filter(row -> row.cells().size() >= 2)
+                .toList();
+        if (anchorRows.isEmpty()) {
+            return List.of();
+        }
+        var anchors = columnAnchors(anchorRows);
+        return anchors.stream()
+                .filter(anchor -> anchorSupport(anchorRows, anchor) >= 2)
+                .toList();
+    }
+
+    private static long anchorSupport(List<BorderlessRow> rows, double anchor) {
+        return rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .filter(cell -> Math.abs(cell.x0() - anchor) <= COLUMN_ALIGNMENT_EPSILON)
+                .count();
+    }
+
+    private static boolean clusterRowFits(BorderlessRow row, List<Double> anchors, boolean seenData) {
+        if (row.cells().size() >= 2) {
+            return row.cells().stream().allMatch(cell -> nearestHeaderColumn(cell, anchors) >= 0);
+        }
+        int column = nearestHeaderColumn(row.cells().getFirst(), anchors);
+        if (column < 0) {
+            return false;
+        }
+        if (!seenData || column > 0) {
+            return true;
+        }
+        return row.text().length() <= 48 && !looksLikeSentence(row.text());
+    }
+
+    private static boolean looksLikeSentence(String text) {
+        var stripped = text.strip();
+        return stripped.length() > 64
+                || stripped.matches(".*[.!?]$")
+                || stripped.split("\\s+").length >= 9;
+    }
+
+    private static long clusterDataRows(List<BorderlessRow> rows, List<Double> anchors) {
+        return mergeClusterRows(clusterRowsWithHeader(rows, anchors)).stream()
+                .skip(1)
+                .filter(row -> row.stream().filter(cell -> !cell.isBlank()).count() >= 2)
+                .count();
+    }
+
+    private static Optional<PdfPageTableExtractor.TableBlock> clusterTextTableBlock(
+            List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
+        var values = normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors)));
+        if (values.size() < 2 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+            return Optional.empty();
+        }
+        var allPositions = rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .flatMap(cell -> cell.positions().stream())
+                .toList();
+        var box = PdfTextPositionBoxes.layoutBox(allPositions, pageWidth, pageHeight);
+        if (box.isEmpty()) {
+            return Optional.empty();
+        }
+        var section = new TableSection(
+                values,
+                new SourceLocation(pageNumber, pageNumber, 1, values.size(), 0),
+                box,
+                cellRegions(rows, anchors, pageWidth, pageHeight));
+        return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
+    }
+
+    private static List<List<String>> clusterRowsWithHeader(List<BorderlessRow> rows, List<Double> anchors) {
+        var raw = rows.stream().map(row -> clusterCellTexts(row, anchors)).toList();
+        if (raw.size() < 2) {
+            return raw;
+        }
+        var header = new ArrayList<String>();
+        for (int column = 0; column < anchors.size(); column++) {
+            header.add("");
+        }
+        int consumed = 0;
+        for (var row : raw) {
+            consumed++;
+            for (int column = 0; column < header.size(); column++) {
+                if (column < row.size()) {
+                    header.set(column, appendText(header.get(column), row.get(column)));
+                }
+            }
+            if (header.stream().allMatch(cell -> !cell.isBlank())) {
+                consumed = consumeHeaderContinuation(raw, header, consumed);
+                break;
+            }
+            if (consumed >= 4) {
+                break;
+            }
+        }
+        if (consumed <= 1 || header.stream().anyMatch(String::isBlank)) {
+            return dropDocumentHeadingBeforeFullHeader(raw);
+        }
+        var out = new ArrayList<List<String>>();
+        out.add(List.copyOf(header));
+        out.addAll(raw.subList(consumed, raw.size()));
+        return List.copyOf(out);
+    }
+
+    private static List<String> clusterCellTexts(BorderlessRow row, List<Double> anchors) {
+        if (row.cells().size() == 1 && row.text().split("\\s+").length >= anchors.size()) {
+            var splitHeader = splitSingleCellHeaderByWords(row.text(), anchors.size());
+            if (!splitHeader.isEmpty()) {
+                return splitHeader;
+            }
+        }
+        if (row.cells().size() == 1 && row.text().split("\\s+").length <= 3) {
+            var values = blankRow(anchors.size());
+            int column = nearestHeaderColumn(row.cells().getFirst(), anchors);
+            if (column >= 0) {
+                values.set(column, row.text().strip());
+            }
+            return List.copyOf(values);
+        }
+        return zonedCellTexts(row, anchors);
+    }
+
+    private static List<String> splitSingleCellHeaderByWords(String text, int columns) {
+        var words = List.of(text.strip().split("\\s+"));
+        if (columns < 2 || words.size() < columns || !looksLikeHeaderCaseWords(words)) {
+            return List.of();
+        }
+        var out = new ArrayList<String>();
+        out.add(words.getFirst());
+        int remainingWords = words.size() - 1;
+        int remainingColumns = columns - 1;
+        int index = 1;
+        for (int column = 1; column < columns; column++) {
+            int take = (int) Math.ceil((double) remainingWords / remainingColumns);
+            out.add(String.join(" ", words.subList(index, index + take)));
+            index += take;
+            remainingWords -= take;
+            remainingColumns--;
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean looksLikeHeaderCaseWords(List<String> words) {
+        long headerCase = words.stream().filter(PdfBorderlessTableExtractor::startsUppercase).count();
+        return headerCase == words.size();
+    }
+
+    private static int consumeHeaderContinuation(List<List<String>> rows, List<String> header, int consumed) {
+        if (consumed >= rows.size()) {
+            return consumed;
+        }
+        var next = rows.get(consumed);
+        if (!isShortFirstColumnHeaderContinuation(next)) {
+            return consumed;
+        }
+        header.set(0, appendText(header.getFirst(), next.getFirst()));
+        return consumed + 1;
+    }
+
+    private static boolean isShortFirstColumnHeaderContinuation(List<String> row) {
+        if (row.isEmpty() || row.getFirst().isBlank()) {
+            return false;
+        }
+        long nonBlank = row.stream().filter(cell -> !cell.isBlank()).count();
+        var first = row.getFirst().strip();
+        return nonBlank == 1
+                && first.length() <= 32
+                && Character.isUpperCase(first.codePointAt(0))
+                && !first.matches("^[0-9].*");
+    }
+
+    private static List<List<String>> dropDocumentHeadingBeforeFullHeader(List<List<String>> rows) {
+        if (rows.size() < 2 || rows.getFirst().stream().filter(cell -> !cell.isBlank()).count() != 1) {
+            return rows;
+        }
+        var second = rows.get(1);
+        var firstText = rows.getFirst().stream().filter(cell -> !cell.isBlank()).findFirst().orElse("");
+        if (second.stream().allMatch(cell -> !cell.isBlank())
+                && !second.getFirst().matches("^[0-9].*")
+                && firstText.length() > 16) {
+            return rows.subList(1, rows.size());
+        }
+        return rows;
+    }
+
+    private static List<List<String>> mergeClusterRows(List<List<String>> rows) {
+        var out = new ArrayList<List<String>>();
+        var pending = blankRow(rows.isEmpty() ? 0 : rows.getFirst().size());
+        for (int index = 0; index < rows.size(); index++) {
+            var rawRow = rows.get(index);
+            var row = applyPending(rawRow, pending);
+            pending = blankRow(row.size());
+            if (mergeBlankFirstLowercaseContinuation(out, row)) {
+                continue;
+            }
+            if (mergeIntoPreviousClusterRow(out, row)) {
+                continue;
+            }
+            if (shouldDeferSingleContinuation(out, row, nextRow(rows, index))) {
+                pending = appendContinuationCells(pending, row);
+                continue;
+            }
+            out.add(row);
+        }
+        if (!out.isEmpty() && pending.stream().anyMatch(cell -> !cell.isBlank())) {
+            out.set(out.size() - 1, appendContinuationCells(out.getLast(), pending));
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean mergeBlankFirstLowercaseContinuation(List<List<String>> out, List<String> row) {
+        if (out.isEmpty() || row.isEmpty() || !row.getFirst().isBlank()) {
+            return false;
+        }
+        var nonBlank = row.stream().filter(cell -> !cell.isBlank()).toList();
+        if (nonBlank.isEmpty() || !nonBlank.stream().allMatch(PdfBorderlessTableExtractor::startsLowercase)) {
+            return false;
+        }
+        out.set(out.size() - 1, appendContinuationCells(out.getLast(), row));
+        return true;
+    }
+
+    private static boolean startsLowercase(String text) {
+        var stripped = text.strip();
+        return !stripped.isBlank() && Character.isLowerCase(stripped.codePointAt(0));
+    }
+
+    private static List<String> nextRow(List<List<String>> rows, int index) {
+        return index + 1 < rows.size() ? rows.get(index + 1) : List.of();
+    }
+
+    private static List<String> blankRow(int columns) {
+        var out = new ArrayList<String>();
+        for (int column = 0; column < columns; column++) {
+            out.add("");
+        }
+        return out;
+    }
+
+    private static List<String> applyPending(List<String> row, List<String> pending) {
+        if (pending.stream().allMatch(String::isBlank)) {
+            return row;
+        }
+        return appendContinuationCells(row, pending);
+    }
+
+    private static boolean mergeIntoPreviousClusterRow(List<List<String>> out, List<String> row) {
+        if (out.isEmpty() || row.stream().allMatch(String::isBlank)) {
+            return false;
+        }
+        if (isLowercaseFirstColumnContinuation(row)
+                || singleContinuationCompletesPrevious(out.getLast(), row)
+                || isLowercaseSingleContinuation(row)) {
+            out.set(out.size() - 1, appendContinuationCells(out.getLast(), row));
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isLowercaseFirstColumnContinuation(List<String> row) {
+        if (row.isEmpty() || row.getFirst().isBlank()) {
+            return false;
+        }
+        var first = row.getFirst().strip();
+        return Character.isLowerCase(first.codePointAt(0));
+    }
+
+    private static boolean singleContinuationCompletesPrevious(List<String> previous, List<String> row) {
+        int column = nonBlankColumn(row);
+        return column > 0
+                && row.stream().filter(cell -> !cell.isBlank()).count() == 1
+                && column < previous.size()
+                && previous.get(column).isBlank();
+    }
+
+    private static boolean isLowercaseSingleContinuation(List<String> row) {
+        int column = nonBlankColumn(row);
+        if (column <= 0 || row.stream().filter(cell -> !cell.isBlank()).count() != 1) {
+            return false;
+        }
+        var text = row.get(column).strip();
+        return !text.isBlank() && Character.isLowerCase(text.codePointAt(0));
+    }
+
+    private static boolean shouldDeferSingleContinuation(List<List<String>> out, List<String> row, List<String> next) {
+        int column = nonBlankColumn(row);
+        return column > 0
+                && row.stream().filter(cell -> !cell.isBlank()).count() == 1
+                && !out.isEmpty()
+                && column < out.getLast().size()
+                && !out.getLast().get(column).isBlank()
+                && startsUppercase(row.get(column))
+                && !next.isEmpty()
+                && !next.getFirst().isBlank();
+    }
+
+    private static boolean startsUppercase(String text) {
+        var stripped = text.strip();
+        return !stripped.isBlank() && Character.isUpperCase(stripped.codePointAt(0));
     }
 
     private static List<PdfPageTableExtractor.TableBlock> wideTextTable(

@@ -21,14 +21,14 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase16-species-list-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase17-excel-fragment-full200/full200
 parsed:   200/200
-overall:  0.760897
-nid:      0.890198
-teds:     0.556938
+overall:  0.763680
+nid:      0.890764
+teds:     0.580748
 mhs:      0.485718
-latency:  83.974967 ms/doc mean
-rss:      21MB peak process RSS
+latency:  77.294369 ms/doc mean
+rss:      20MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -36,8 +36,10 @@ Phase15 is accepted because it keeps the phase14 target gains for explicit
 two-column lists and horizontal matrix tables while reverting the phase14 false
 positives that promoted table-of-contents pages and ordinary two-column
 narrative text into Markdown tables. Phase16 adds a narrow Latin-species
-two-column list detector without reopening those false positives. It is still
-not OpenDataLoader hybrid parity.
+two-column list detector without reopening those false positives. Phase17 adds
+same-page spreadsheet-fragment merge for Excel-style projection tables and
+raises case `01030000000128` to TEDS `1.0`. It is still not OpenDataLoader
+hybrid parity.
 
 ## Reference Boundaries
 

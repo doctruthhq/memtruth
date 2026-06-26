@@ -36,16 +36,16 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 - Report:
   `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-java-core-phase16-species-list-full200/full200/`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-phase17-excel-fragment-full200/full200/`
 - DocTruth revision used for run: worktree benchmark run, pending commit
 - Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
 - Prediction: 200 parsed, 0 failed
-- Overall mean: `0.760897`
-- NID mean: `0.890198`
-- TEDS mean: `0.556938`
+- Overall mean: `0.763680`
+- NID mean: `0.890764`
+- TEDS mean: `0.580748`
 - MHS mean: `0.485718`
-- Resource: mean `83.974967` ms/doc, process RSS peak `21MB`, no
+- Resource: mean `77.294369` ms/doc, process RSS peak `20MB`, no
   Python/Torch/Docling production residency
 - Interpretation: current Java/OpenDataLoader-compatible quality core clears
   the initial local acceptance baseline, but it is still not OpenDataLoader

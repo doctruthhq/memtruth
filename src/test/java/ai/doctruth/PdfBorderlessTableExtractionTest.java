@@ -302,6 +302,20 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| Golden Skiffia | Skiffia francesae |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderExcelProjectionTableStaysOneStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000128"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("|  | A | B | C | D | E |");
+        assertThat(markdown).contains("| 1 | time | observed | Forecast(observed) | Lower Confidence Bound(observed) | Upper Confidence Bound(observed) |");
+        assertThat(markdown).contains("| 15 | 13 |  | 24.75424515 | 22.75 | 26.75 |");
+        assertThat(markdown).doesNotContain("| 1 | A time observed | B Forecast(observed) |");
+        assertThat(markdown).doesNotContain("\n| A | B | C | D | E |\n");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -417,7 +431,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000117"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000121"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000182"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000132"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000132"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000128"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

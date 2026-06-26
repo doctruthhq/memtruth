@@ -157,6 +157,10 @@ public final class PdfDocumentParser {
         var merged = new ArrayList<ParsedSection>(sections.size());
         for (var section : sections) {
             if (section instanceof TableSection current
+                    && tryMergeSpreadsheetFragment(merged, current)) {
+                continue;
+            }
+            if (section instanceof TableSection current
                     && !merged.isEmpty()
                     && merged.getLast() instanceof TableSection previous
                     && isTableContinuation(previous, current)) {
@@ -166,6 +170,236 @@ public final class PdfDocumentParser {
             }
         }
         return List.copyOf(merged);
+    }
+
+    private static boolean tryMergeSpreadsheetFragment(List<ParsedSection> merged, TableSection current) {
+        if (merged.isEmpty() || !(merged.getLast() instanceof TableSection previous)) {
+            return false;
+        }
+        var candidate = mergeSpreadsheetFragments(previous, current);
+        if (candidate.isEmpty()) {
+            return false;
+        }
+        merged.set(merged.size() - 1, candidate.orElseThrow());
+        return true;
+    }
+
+    private static Optional<TableSection> mergeSpreadsheetFragments(TableSection previous, TableSection current) {
+        if (!samePage(previous, current) || previous.rows().isEmpty() || current.rows().isEmpty()) {
+            return Optional.empty();
+        }
+        var previousRows = previous.rows();
+        var currentRows = current.rows();
+        if (isSpreadsheetLetterHeader(currentRows.getFirst())) {
+            return Optional.of(spreadsheetHeaderTable(previous, current));
+        }
+        if (isSpreadsheetLabelContinuation(previousRows, currentRows)) {
+            return Optional.of(mergeSpreadsheetLabelRows(previous, current));
+        }
+        if (isSpreadsheetDataContinuation(previousRows, currentRows)) {
+            return Optional.of(appendSpreadsheetDataRows(previous, current));
+        }
+        return Optional.empty();
+    }
+
+    private static boolean samePage(TableSection previous, TableSection current) {
+        return previous.location().pageStart() == current.location().pageStart()
+                && previous.location().pageEnd() == current.location().pageEnd();
+    }
+
+    private static boolean isSpreadsheetLetterHeader(List<String> row) {
+        if (row.size() < 3) {
+            return false;
+        }
+        for (int column = 0; column < row.size(); column++) {
+            var expected = String.valueOf((char) ('A' + column));
+            if (!expected.equals(row.get(column).strip())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static TableSection spreadsheetHeaderTable(TableSection previous, TableSection current) {
+        var rows = new ArrayList<List<String>>();
+        var header = new ArrayList<String>();
+        header.add("");
+        header.addAll(current.rows().getFirst());
+        rows.add(List.copyOf(header));
+        rows.addAll(spreadsheetRowsBeforeHeader(previous.rows(), header.size()));
+        applySpreadsheetHeaderPrefixes(rows, current.rows(), header.size());
+        return new TableSection(rows, mergedLocation(previous, current), mergedBox(previous, current));
+    }
+
+    private static void applySpreadsheetHeaderPrefixes(
+            List<List<String>> rows, List<List<String>> headerRows, int columns) {
+        if (rows.size() < 2 || headerRows.size() < 2 || columns < 6) {
+            return;
+        }
+        var prefix = headerRows.get(1);
+        var label = new ArrayList<>(rows.get(1));
+        if (prefix.size() > 2 && !prefix.get(2).isBlank()) {
+            label.set(4, prefix.get(2).strip());
+        }
+        if (prefix.size() > 3 && !prefix.get(3).isBlank()) {
+            label.set(5, prefix.get(3).strip());
+        }
+        rows.set(1, List.copyOf(label));
+    }
+
+    private static List<List<String>> spreadsheetRowsBeforeHeader(List<List<String>> rows, int columns) {
+        var out = new ArrayList<List<String>>();
+        for (var row : rows) {
+            out.add(padRow(splitSpreadsheetRowNumber(row), columns));
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean isSpreadsheetLabelContinuation(List<List<String>> previousRows, List<List<String>> currentRows) {
+        return previousRows.size() >= 2
+                && previousRows.getFirst().size() >= 5
+                && isSpreadsheetRowNumber(currentRows.getFirst().getFirst())
+                && currentRows.getFirst().stream().anyMatch(cell -> cell.contains("Forecast"));
+    }
+
+    private static TableSection mergeSpreadsheetLabelRows(TableSection previous, TableSection current) {
+        var rows = mutableRows(previous.rows());
+        var existing = rows.size() > 1 ? rows.get(1) : blankRow(rows.getFirst().size());
+        var label = spreadsheetLabelRow(current.rows(), existing, rows.getFirst().size());
+        if (rows.size() == 1) {
+            rows.add(label);
+        } else {
+            rows.set(1, label);
+        }
+        return new TableSection(rows, mergedLocation(previous, current), mergedBox(previous, current));
+    }
+
+    private static List<String> spreadsheetLabelRow(List<List<String>> rows, List<String> existing, int columns) {
+        var out = new ArrayList<>(padRow(existing, columns));
+        var first = rows.getFirst();
+        out.set(0, first.getFirst().strip());
+        var labels = splitSpreadsheetLabels(first.size() > 1 ? first.get(1) : "");
+        if (labels.size() >= 2) {
+            out.set(1, labels.get(0));
+            out.set(2, labels.get(1));
+        }
+        if (first.size() > 2) {
+            out.set(3, first.get(2).strip());
+        }
+        if (rows.size() > 1) {
+            var continuation = rows.get(1);
+            if (continuation.size() > 2 && !continuation.get(2).isBlank()) {
+                out.set(4, appendText(out.get(4), continuation.get(2)));
+            }
+            if (continuation.size() > 3 && !continuation.get(3).isBlank()) {
+                out.set(5, appendText(out.get(5), continuation.get(3)));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<String> splitSpreadsheetLabels(String text) {
+        var parts = List.of(text.strip().split("\\s+"));
+        if (parts.size() < 2) {
+            return List.of(text.strip());
+        }
+        return List.of(parts.get(0), String.join(" ", parts.subList(1, parts.size())));
+    }
+
+    private static String appendText(String left, String right) {
+        if (left == null || left.isBlank()) {
+            return right == null ? "" : right.strip();
+        }
+        if (right == null || right.isBlank()) {
+            return left.strip();
+        }
+        return left.strip() + " " + right.strip();
+    }
+
+    private static boolean isSpreadsheetDataContinuation(List<List<String>> previousRows, List<List<String>> currentRows) {
+        return previousRows.size() >= 2
+                && previousRows.getFirst().size() >= 6
+                && currentRows.getFirst().size() >= 6
+                && isSpreadsheetRowNumber(currentRows.getFirst().getFirst());
+    }
+
+    private static TableSection appendSpreadsheetDataRows(TableSection previous, TableSection current) {
+        var rows = mutableRows(previous.rows());
+        int columns = rows.getFirst().size();
+        for (var row : current.rows()) {
+            rows.add(padRow(splitSpreadsheetRowNumber(row), columns));
+        }
+        return new TableSection(rows, mergedLocation(previous, current), mergedBox(previous, current));
+    }
+
+    private static List<String> splitSpreadsheetRowNumber(List<String> row) {
+        if (row.isEmpty()) {
+            return row;
+        }
+        var first = row.getFirst().strip();
+        if (!first.matches("^\\d+\\s+\\d+$")) {
+            return row;
+        }
+        var parts = first.split("\\s+");
+        var out = new ArrayList<String>();
+        out.add(parts[0]);
+        out.add(parts[1]);
+        int restStart = row.size() > 1 && row.get(1).isBlank() ? 2 : 1;
+        out.addAll(row.subList(restStart, row.size()));
+        return List.copyOf(out);
+    }
+
+    private static boolean isSpreadsheetRowNumber(String text) {
+        return text.strip().matches("^\\d+(?:\\s+\\d+)?$");
+    }
+
+    private static List<List<String>> mutableRows(List<List<String>> rows) {
+        var out = new ArrayList<List<String>>();
+        for (var row : rows) {
+            out.add(new ArrayList<>(row));
+        }
+        return out;
+    }
+
+    private static List<String> blankRow(int columns) {
+        var out = new ArrayList<String>();
+        for (int i = 0; i < columns; i++) {
+            out.add("");
+        }
+        return out;
+    }
+
+    private static List<String> padRow(List<String> row, int columns) {
+        var out = new ArrayList<>(row);
+        while (out.size() < columns) {
+            out.add("");
+        }
+        return List.copyOf(out.subList(0, Math.min(out.size(), columns)));
+    }
+
+    private static SourceLocation mergedLocation(TableSection previous, TableSection current) {
+        return new SourceLocation(
+                previous.location().pageStart(),
+                current.location().pageEnd(),
+                previous.location().lineStart(),
+                current.location().lineEnd(),
+                previous.location().charOffset());
+    }
+
+    private static Optional<BoundingBox> mergedBox(TableSection previous, TableSection current) {
+        if (previous.boundingBox().isEmpty()) {
+            return current.boundingBox();
+        }
+        if (current.boundingBox().isEmpty()) {
+            return previous.boundingBox();
+        }
+        var a = previous.boundingBox().orElseThrow();
+        var b = current.boundingBox().orElseThrow();
+        return Optional.of(new BoundingBox(
+                Math.min(a.x0(), b.x0()),
+                Math.min(a.y0(), b.y0()),
+                Math.max(a.x1(), b.x1()),
+                Math.max(a.y1(), b.y1())));
     }
 
     private static boolean isTableContinuation(TableSection previous, TableSection current) {

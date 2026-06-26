@@ -21,14 +21,14 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase18-area-competence-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase20-cation-inline-full200/full200
 parsed:   200/200
-overall:  0.764969
-nid:      0.891060
-teds:     0.597754
-mhs:      0.485718
-latency:  74.627939 ms/doc mean
-rss:      20MB peak process RSS
+overall:  0.766717
+nid:      0.891291
+teds:     0.621564
+mhs:      0.485740
+latency:  75.322363 ms/doc mean
+rss:      21MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -40,7 +40,10 @@ two-column list detector without reopening those false positives. Phase17 adds
 same-page spreadsheet-fragment merge for Excel-style projection tables and
 raises case `01030000000128` to TEDS `1.0`. Phase18 promotes narrow
 Area/Competence two-column list blocks and raises case `01030000000146` from
-TEDS `0.0` to `0.714286`. It is still not OpenDataLoader hybrid parity.
+TEDS `0.0` to `0.714286`. Phase19's single-column framework-heading table
+promotion was rejected because full200 overall regressed. Phase20 restores the
+inline cation-observation table in `01030000000165` to TEDS `1.0`. It is still
+not OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 

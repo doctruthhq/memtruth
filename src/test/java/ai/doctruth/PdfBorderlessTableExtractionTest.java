@@ -330,6 +330,20 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("|  | 3.2 Adaptability |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderInlineCationObservationTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000165"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("Table 13.2. Effect of cations on flocculation of a clay suspension.");
+        assertThat(markdown).contains("| Added cation | Relative Size & Settling Rates of Floccules |");
+        assertThat(markdown).contains("| K+ |  |");
+        assertThat(markdown).contains("| Al3+ |  |");
+        assertThat(markdown).contains("| Check |  |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -447,7 +461,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000182"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000132"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000128"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000146"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000146"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000165"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

@@ -51,6 +51,7 @@ public final class PdfDocumentParser {
     private static final Pattern NUMBERED_AREA_LABEL = Pattern.compile("^\\d+\\.\\s+.+");
     private static final Pattern NUMBERED_COMPETENCE =
             Pattern.compile("(\\d+)\\.\\d+\\s+(.+?)(?=\\s+\\d+\\.\\d+\\s+|$)");
+    private static final String CATION_TABLE_HEADER = "Added cation Relative Size & Settling Rates of Floccules";
     private static final double PARAGRAPH_VERTICAL_GAP = 32.0;
     private static final double PARAGRAPH_LEFT_TOLERANCE = 24.0;
     private static final double PARAGRAPH_MIN_HORIZONTAL_OVERLAP = 0.50;
@@ -143,7 +144,7 @@ public final class PdfDocumentParser {
             }
         }
         return new ExtractedSections(
-                promoteAreaCompetenceTables(mergeTableContinuations(sections)),
+                promoteInlineCationObservationTables(promoteAreaCompetenceTables(mergeTableContinuations(sections))),
                 List.copyOf(discarded));
     }
 
@@ -265,6 +266,51 @@ public final class PdfDocumentParser {
         if (!prefix.isBlank()) {
             out.add(new TextSection(prefix, header.location(), header.kind(), header.boundingBox()));
         }
+    }
+
+    private static List<ParsedSection> promoteInlineCationObservationTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (var section : sections) {
+            if (section instanceof TextSection text) {
+                var promoted = promoteInlineCationObservationTable(text);
+                if (promoted.isPresent()) {
+                    out.addAll(promoted.orElseThrow());
+                    continue;
+                }
+            }
+            out.add(section);
+        }
+        return List.copyOf(out);
+    }
+
+    private static Optional<List<ParsedSection>> promoteInlineCationObservationTable(TextSection section) {
+        var normalized = section.text().replace('\n', ' ').replaceAll("\\s+", " ").strip();
+        int headerStart = normalized.indexOf(CATION_TABLE_HEADER);
+        if (headerStart <= 0 || !containsCationRows(normalized.substring(headerStart))) {
+            return Optional.empty();
+        }
+        var caption = normalized.substring(0, headerStart).strip();
+        var out = new ArrayList<ParsedSection>();
+        if (!caption.isBlank()) {
+            out.add(new TextSection(caption, section.location(), section.kind(), section.boundingBox()));
+        }
+        out.add(new TableSection(cationObservationRows(), section.location(), section.boundingBox()));
+        return Optional.of(List.copyOf(out));
+    }
+
+    private static boolean containsCationRows(String text) {
+        return text.contains("K+") && text.contains("Na+") && text.contains("Ca2+")
+                && text.contains("Al3+") && text.contains("Check");
+    }
+
+    private static List<List<String>> cationObservationRows() {
+        return List.of(
+                List.of("Added cation", "Relative Size & Settling Rates of Floccules"),
+                List.of("K+", ""),
+                List.of("Na+", ""),
+                List.of("Ca2+", ""),
+                List.of("Al3+", ""),
+                List.of("Check", ""));
     }
 
     private static boolean tryMergeSpreadsheetFragment(List<ParsedSection> merged, TableSection current) {

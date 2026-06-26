@@ -553,6 +553,27 @@ Current Phase 6 progress:
   - no Python/Torch/Docling production residency
   - MHS improved from `0.006794` to `0.315461`; overall improved from
     `0.626221` to `0.706434`
+- Added standalone title-case document heading classification:
+  - promotes short section labels such as `Narratives in Chuj`,
+    `Introduction to the Texts`, and `7 Variants of SJ Observer Models`
+  - keeps page labels such as `Chapter 2`, key-value fields, lists, and
+    sentence-like text as body
+  - this improves heading hierarchy without adding benchmark-specific PDF
+    patches
+- Verified with refreshed Java CLI jar:
+  - `mvn -q -Dtest=PdfHeadingClassificationTest test`
+  - `mvn -q -Dtest=PdfDocumentParserTest,PdfVisualLayoutParserTest,PdfTwoColumnSemanticSectionTest,PdfBorderlessTableExtractionTest,TrustDocumentRenderedOutputTest test`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase10-title-heading-smoke bash scripts/run-opendataloader-java-core-parity.sh --smoke`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase10-title-heading-full200 bash scripts/run-opendataloader-java-core-parity.sh --full200`
+- Latest phase10 full200 evidence:
+  - artifact:
+    `third_party/opendataloader-bench/prediction/doctruth-java-core-phase10-title-heading-full200/full200`
+  - parsed `200/200`
+  - elapsed `15111.002791` ms, mean `75.555014` ms/doc
+  - overall `0.746136`, NID `0.894655`, TEDS `0.341325`, MHS `0.472714`
+  - no Python/Torch/Docling production residency
+  - overall now slightly beats the historical baseline `0.745414`, but TEDS
+    and MHS still miss acceptance
 - Remaining table work before claiming parity:
   - broader table-cell grid normalization beyond the current smoke and
     wide-text cases

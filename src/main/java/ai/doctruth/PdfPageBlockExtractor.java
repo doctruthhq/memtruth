@@ -23,6 +23,7 @@ final class PdfPageBlockExtractor {
     private static final Pattern NUMBERED_LIST = Pattern.compile("^\\s*\\d+[.)]\\s+");
     private static final Pattern YEAR_LEADING_FRAGMENT = Pattern.compile("^\\s*(?:19|20)\\d{2}[.)]\\s+(.+)$");
     private static final Pattern KEY_VALUE_FIELD = Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
+    private static final Pattern PAGE_LABEL = Pattern.compile("(?i)^(?:chapter|page)\\s+\\d+[\\p{L}\\p{N}.-]*$");
     private static final String LIST_BULLETS = "•▪*-·";
 
     private PdfPageBlockExtractor() {
@@ -217,6 +218,9 @@ final class PdfPageBlockExtractor {
         if (bold && PdfResumeSectionNames.isKnown(firstLine(trimmed))) {
             return BlockKind.HEADING;
         }
+        if (looksLikeStandaloneTitleHeading(trimmed)) {
+            return BlockKind.HEADING;
+        }
         return looksLikeAllCapsHeading(trimmed) ? BlockKind.HEADING : BlockKind.BODY;
     }
 
@@ -264,6 +268,57 @@ final class PdfPageBlockExtractor {
             return false;
         }
         return PdfResumeSectionNames.isKnown(head);
+    }
+
+    private static boolean looksLikeStandaloneTitleHeading(String trimmed) {
+        if (trimmed.contains("\n")) {
+            return false;
+        }
+        String head = firstLine(trimmed);
+        if (head.length() < 8 || head.length() > 80 || PAGE_LABEL.matcher(head).matches()) {
+            return false;
+        }
+        if (head.endsWith(".") || head.endsWith(",") || head.endsWith(":") || head.contains(";")) {
+            return false;
+        }
+        String[] words = head.split("\\s+");
+        if (words.length < 2 || words.length > 10) {
+            return false;
+        }
+        int titleWords = 0;
+        int letterWords = 0;
+        for (String word : words) {
+            String normalized = normalizeHeadingWord(word);
+            if (normalized.isBlank() || normalized.chars().allMatch(Character::isDigit)) {
+                continue;
+            }
+            if (normalized.length() <= 3 && normalized.equals(normalized.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            letterWords++;
+            if (isTitleWord(normalized)) {
+                titleWords++;
+            }
+        }
+        return letterWords >= 2 && titleWords == letterWords;
+    }
+
+    private static String normalizeHeadingWord(String word) {
+        return word.replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
+    }
+
+    private static boolean isTitleWord(String word) {
+        if (word.equals(word.toUpperCase(Locale.ROOT))) {
+            return true;
+        }
+        int firstLetter = -1;
+        for (int i = 0; i < word.length(); i++) {
+            if (Character.isLetter(word.charAt(i))) {
+                firstLetter = i;
+                break;
+            }
+        }
+        return firstLetter >= 0 && Character.isUpperCase(word.charAt(firstLetter));
     }
 
     private static boolean isYearLeadingSentenceFragment(String trimmed) {

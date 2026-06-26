@@ -180,6 +180,31 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| City/Municipal Vice Mayor | 1,578 | 6.5 | 14.9 |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderColumnStreamObserverTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000045"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| No. | Name of organization | Number of accredited observers |");
+        assertThat(markdown).contains("| 1 | Union of Youth Federations of Cambodia (UYFC) | 17,266 |");
+        assertThat(markdown).contains("| 7 | Traditional and Modern Mental Health Organization | 15 |");
+        assertThat(markdown).contains("|  | Total | 27,926 |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderDataOnlyContinuationTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000053"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| IX - Zamboanga Peninsula | 4 | 2 | 4 |");
+        assertThat(markdown).contains("| XII - SOCCSKSARGEN | 2 | 2 | 1 |");
+        assertThat(markdown).contains("| TOTAL (w/o Party- List) | 45 | 51 | 68 |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -287,7 +312,9 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000189"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000141"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000051"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000051"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000045"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000053"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

@@ -598,6 +598,30 @@ Current Phase 6 progress:
   - overall `0.749896`, NID `0.896324`, TEDS `0.378735`, MHS `0.472728`
   - no Python/Torch/Docling production residency
   - case `01030000000051` improved from TEDS `0.0` to `0.998662`
+- Broadened column-stream numeric table reconstruction:
+  - supports three-column observer/count tables such as
+    `01030000000045`
+  - supports data-only continuation tables without a header row such as
+    `01030000000053`
+  - treats comma-formatted values like `17,266` and `9,835` as numeric cells
+  - preserves the phase11 `01030000000051` recovery and existing
+    `01030000000083` comparative table recovery
+- Verified with refreshed Java CLI jar:
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest#opendataloaderColumnStreamObserverTableBecomesStructuredTable+opendataloaderDataOnlyContinuationTableBecomesStructuredTable test`
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest test`
+  - `mvn -q -Dtest=PdfDocumentParserTest,PdfVisualLayoutParserTest,PdfTwoColumnSemanticSectionTest,TrustDocumentRenderedOutputTest test`
+  - `cd runtime/doctruth-runtime && cargo test --test opendataloader_table_processor_contract`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase12-column-stream-batch-smoke bash scripts/run-opendataloader-java-core-parity.sh --smoke`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase12-column-stream-batch-full200 bash scripts/run-opendataloader-java-core-parity.sh --full200`
+- Latest phase12 full200 evidence:
+  - artifact:
+    `third_party/opendataloader-bench/prediction/doctruth-java-core-phase12-column-stream-batch-full200/full200`
+  - parsed `200/200`
+  - elapsed `15199.047083` ms, mean `75.995235` ms/doc
+  - overall `0.755331`, NID `0.898216`, TEDS `0.426354`, MHS `0.475145`
+  - no Python/Torch/Docling production residency
+  - cases `01030000000045` and `01030000000053` improved from TEDS `0.0`
+    to `1.0`
 - Remaining table work before claiming parity:
   - broader table-cell grid normalization beyond the current smoke and
     wide-text cases

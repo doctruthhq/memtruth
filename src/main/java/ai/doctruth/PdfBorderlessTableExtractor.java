@@ -18,7 +18,7 @@ final class PdfBorderlessTableExtractor {
     private static final int MAX_HEADER_ROWS = 8;
     private static final int MAX_CELL_CHARS = 32;
     private static final Pattern NUMERIC_CELL = Pattern.compile(
-            "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
+            "^[+-]?(?:(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
 
     private PdfBorderlessTableExtractor() {
         throw new AssertionError("no instances");
@@ -68,10 +68,23 @@ final class PdfBorderlessTableExtractor {
                 continue;
             }
             var anchors = columnStreamAnchors(candidate);
-            if (anchors.size() < 4 || columnStreamDataRows(candidate, anchors) < 3) {
+            if (anchors.size() < 3 || columnStreamDataRows(candidate, anchors) < 3) {
                 continue;
             }
             return columnStreamNumericTableBlock(candidate, anchors, pageNumber, pageWidth, pageHeight)
+                    .map(List::of)
+                    .orElseGet(List::of);
+        }
+        for (int start = 0; start < allRows.size(); start++) {
+            var candidate = dataOnlyNumericRows(allRows, start);
+            if (candidate.size() < 4) {
+                continue;
+            }
+            var anchors = columnStreamAnchors(candidate);
+            if (anchors.size() < 3 || columnStreamDataRows(candidate, anchors) < 4) {
+                continue;
+            }
+            return dataOnlyNumericTableBlock(candidate, anchors, pageNumber, pageWidth, pageHeight)
                     .map(List::of)
                     .orElseGet(List::of);
         }
@@ -113,6 +126,29 @@ final class PdfBorderlessTableExtractor {
         return seenData ? List.copyOf(out) : List.of();
     }
 
+    private static List<BorderlessRow> dataOnlyNumericRows(List<BorderlessRow> allRows, int start) {
+        if (!isNumericHeavyRow(allRows.get(start))) {
+            return List.of();
+        }
+        var out = new ArrayList<BorderlessRow>();
+        out.add(allRows.get(start));
+        for (int index = start + 1; index < allRows.size(); index++) {
+            var row = allRows.get(index);
+            if (looksLikeTableCaption(row.text()) || looksLikeSourceLine(row.text())) {
+                break;
+            }
+            if (verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP) {
+                break;
+            }
+            if (isNumericHeavyRow(row) || looksLikeFirstColumnContinuation(row)) {
+                out.add(row);
+            } else {
+                break;
+            }
+        }
+        return List.copyOf(out);
+    }
+
     private static boolean looksLikeColumnStreamHeaderStart(BorderlessRow row) {
         if (row.cells().size() < 3 || isNumericHeavyRow(row)) {
             return false;
@@ -152,6 +188,28 @@ final class PdfBorderlessTableExtractor {
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
         var values = columnStreamNumericValues(rows, anchors);
         if (values.size() < 3 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+            return Optional.empty();
+        }
+        var allPositions = rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .flatMap(cell -> cell.positions().stream())
+                .toList();
+        var box = PdfTextPositionBoxes.layoutBox(allPositions, pageWidth, pageHeight);
+        if (box.isEmpty()) {
+            return Optional.empty();
+        }
+        var section = new TableSection(
+                values,
+                new SourceLocation(pageNumber, pageNumber, 1, values.size(), 0),
+                box,
+                cellRegions(rows, anchors, pageWidth, pageHeight));
+        return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
+    }
+
+    private static Optional<PdfPageTableExtractor.TableBlock> dataOnlyNumericTableBlock(
+            List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
+        var values = mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList());
+        if (values.size() < 4) {
             return Optional.empty();
         }
         var allPositions = rows.stream()

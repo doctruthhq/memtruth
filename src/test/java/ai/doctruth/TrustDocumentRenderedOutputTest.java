@@ -60,7 +60,7 @@ class TrustDocumentRenderedOutputTest {
 
         String markdown = doc.toMarkdownClean();
 
-        assertThat(markdown).contains("Work Experience");
+        assertThat(markdown).startsWith("# Work Experience\n\n");
         assertThat(markdown).contains("| Company | Role |\n| --- | --- |\n| Acme | Engineer |");
         assertThat(markdown).doesNotContain("span-0001");
         assertThat(markdown).doesNotContain("bbox");

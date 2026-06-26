@@ -203,13 +203,13 @@ final class TrustDocumentRenderers {
 
     static String toMarkdownClean(TrustDocument doc) {
         var out = new StringBuilder();
-        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tableMarkdown, unit -> unit.content().text());
+        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tableMarkdown, TrustDocumentRenderers::markdownUnit);
         return out.toString().stripTrailing() + "\n";
     }
 
     static void writeMarkdownClean(TrustDocument doc, Writer writer) throws IOException {
         boolean[] wrote = new boolean[] {false};
-        writeCleanBlocksInReadingOrder(doc, writer, wrote, TrustDocumentRenderers::tableMarkdown, unit -> unit.content().text());
+        writeCleanBlocksInReadingOrder(doc, writer, wrote, TrustDocumentRenderers::tableMarkdown, TrustDocumentRenderers::markdownUnit);
         writeChunked(writer, "\n");
     }
 
@@ -752,6 +752,29 @@ final class TrustDocumentRenderers {
                 .replace("]", "\\]")
                 .replace("|", "\\|")
                 .replace('\n', ' ')
+                .strip();
+    }
+
+    private static String markdownUnit(TrustUnit unit) {
+        var text = unit.content().text().strip();
+        if (text.isBlank()) {
+            return "";
+        }
+        if (unit.kind() == TrustUnitKind.HEADING && shouldRenderHeading(text)) {
+            return "# " + escapeMarkdownHeading(text);
+        }
+        return text;
+    }
+
+    private static boolean shouldRenderHeading(String text) {
+        return text.length() <= 120 && !text.contains("\n");
+    }
+
+    private static String escapeMarkdownHeading(String text) {
+        return text.replace("\\", "\\\\")
+                .replace("[", "\\[")
+                .replace("]", "\\]")
+                .replace("#", "\\#")
                 .strip();
     }
 

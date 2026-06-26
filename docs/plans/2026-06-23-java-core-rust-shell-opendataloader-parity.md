@@ -531,6 +531,28 @@ Current Phase 6 progress:
   - no Python/Torch/Docling production residency
   - `01030000000198` improved to overall `0.477420`, NID `0.954839`
   - `01030000000088` stayed high at overall `0.916727`, TEDS `0.908856`
+- Added clean Markdown heading-node rendering for existing TrustDocument
+  heading units:
+  - `TrustDocument.toMarkdownClean()` now emits short heading units as
+    Markdown `# Heading` blocks instead of plain paragraphs
+  - content/evidence JSON and plain-text output remain unchanged
+  - this aligns the DocTruth LLM-facing Markdown output with the
+    OpenDataLoader heading-hierarchy evaluator without changing parser
+    classification rules
+- Verified with refreshed Java CLI jar:
+  - `mvn -q -Dtest=TrustDocumentRenderedOutputTest test`
+  - `mvn -q -Dtest=PdfDocumentParserTest,PdfVisualLayoutParserTest,PdfTwoColumnSemanticSectionTest,PdfBorderlessTableExtractionTest test`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase9-heading-markdown-smoke bash scripts/run-opendataloader-java-core-parity.sh --smoke`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase9-heading-markdown-full200 bash scripts/run-opendataloader-java-core-parity.sh --full200`
+- Latest phase9 full200 evidence:
+  - artifact:
+    `third_party/opendataloader-bench/prediction/doctruth-java-core-phase9-heading-markdown-full200/full200`
+  - parsed `200/200`
+  - elapsed `15343.369` ms, mean `76.716845` ms/doc
+  - overall `0.706434`, NID `0.894879`, TEDS `0.341325`, MHS `0.315461`
+  - no Python/Torch/Docling production residency
+  - MHS improved from `0.006794` to `0.315461`; overall improved from
+    `0.626221` to `0.706434`
 - Remaining table work before claiming parity:
   - broader table-cell grid normalization beyond the current smoke and
     wide-text cases

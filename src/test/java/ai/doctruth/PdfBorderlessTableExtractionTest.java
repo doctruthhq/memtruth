@@ -136,6 +136,17 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("| Restrictions on Land Ownership by Foreigners in Selected Jurisdictions Comparative Summary Table Jurisdiction");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderDenseMatrixTableSplitsSpanningHeaderCells() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000189"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("| Model | Alpaca-GPT4 | OpenOrca | Synth. Math-Instruct | H6 (Avg.) | ARC |");
+        assertThat(markdown).contains("| SFT v1 | O | ✗ | ✗ | 69.15 | 67.66 | 86.03 |");
+        assertThat(markdown).doesNotContain("| Model | Alpaca-GPT4 OpenOrca Synth. Math-Instruct H6 (Avg.)");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -239,7 +250,8 @@ class PdfBorderlessTableExtractionTest {
     private static boolean hasOpenDataLoaderBench() {
         return Files.isRegularFile(opendataloaderBenchPdf("01030000000127"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000083"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000088"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000088"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000189"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

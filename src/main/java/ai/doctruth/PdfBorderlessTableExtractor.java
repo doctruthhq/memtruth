@@ -657,6 +657,9 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static List<String> cellTexts(BorderlessRow row, List<Double> anchors) {
+        if (hasSpanningHeaderCell(row, anchors)) {
+            return zonedCellTexts(row, anchors);
+        }
         var columns = new ArrayList<StringBuilder>();
         for (int i = 0; i < anchors.size(); i++) {
             columns.add(new StringBuilder());
@@ -670,6 +673,25 @@ final class PdfBorderlessTableExtractor {
         return columns.stream().map(StringBuilder::toString).toList();
     }
 
+    private static boolean hasSpanningHeaderCell(BorderlessRow row, List<Double> anchors) {
+        if (anchors.size() < 4 || row.cells().size() + 2 >= anchors.size()) {
+            return false;
+        }
+        return row.cells().stream().anyMatch(cell -> spanningAnchorCount(cell, anchors) >= 3);
+    }
+
+    private static long spanningAnchorCount(BorderlessCell cell, List<Double> anchors) {
+        if (cell.positions().isEmpty()) {
+            return 0;
+        }
+        double left = cell.positions().stream().mapToDouble(TextPosition::getXDirAdj).min().orElse(cell.x0());
+        double right = cell.positions().stream()
+                .mapToDouble(position -> position.getXDirAdj() + position.getWidthDirAdj())
+                .max()
+                .orElse(cell.x0());
+        return anchors.stream().filter(anchor -> anchor >= left && anchor <= right).count();
+    }
+
     private static List<String> zonedCellTexts(BorderlessRow row, List<Double> anchors) {
         var columns = new ArrayList<List<TextPosition>>();
         for (int i = 0; i < anchors.size(); i++) {
@@ -677,9 +699,11 @@ final class PdfBorderlessTableExtractor {
         }
         for (var cell : row.cells()) {
             for (var word : wordGroups(cell.positions())) {
-                int column = zoneColumn(word.getFirst(), anchors);
-                if (column >= 0) {
-                    columns.get(column).addAll(word);
+                for (var segment : splitByZoneGap(word, anchors)) {
+                    int column = zoneColumn(segment, anchors);
+                    if (column >= 0) {
+                        columns.get(column).addAll(segment);
+                    }
                 }
             }
         }
@@ -700,6 +724,14 @@ final class PdfBorderlessTableExtractor {
         TextPosition previous = null;
         double wordGap = Math.max(1.5, PdfTextPositionMetrics.medianWidth(sorted) * 0.75);
         for (var position : sorted) {
+            if (position.getUnicode().isBlank()) {
+                if (!current.isEmpty()) {
+                    out.add(List.copyOf(current));
+                    current = new ArrayList<>();
+                }
+                previous = null;
+                continue;
+            }
             if (previous != null && PdfTextPositionMetrics.horizontalGap(previous, position) > wordGap) {
                 out.add(List.copyOf(current));
                 current = new ArrayList<>();
@@ -713,8 +745,48 @@ final class PdfBorderlessTableExtractor {
         return List.copyOf(out);
     }
 
+    private static List<List<TextPosition>> splitByZoneGap(List<TextPosition> positions, List<Double> anchors) {
+        var sorted = PdfTextPositionMetrics.sortByX(positions);
+        if (sorted.isEmpty()) {
+            return List.of();
+        }
+        var out = new ArrayList<List<TextPosition>>();
+        var current = new ArrayList<TextPosition>();
+        TextPosition previous = null;
+        int currentZone = -1;
+        for (var position : sorted) {
+            int zone = zoneColumn(position, anchors);
+            if (previous != null
+                    && zone != currentZone
+                    && currentZone >= 0
+                    && PdfTextPositionMetrics.horizontalGap(previous, position) > 0.5) {
+                out.add(List.copyOf(current));
+                current = new ArrayList<>();
+            }
+            current.add(position);
+            previous = position;
+            currentZone = zone;
+        }
+        if (!current.isEmpty()) {
+            out.add(List.copyOf(current));
+        }
+        return List.copyOf(out);
+    }
+
     private static int zoneColumn(TextPosition position, List<Double> anchors) {
-        double x = position.getXDirAdj();
+        return zoneColumn(position.getXDirAdj(), anchors);
+    }
+
+    private static int zoneColumn(List<TextPosition> positions, List<Double> anchors) {
+        double left = positions.stream().mapToDouble(TextPosition::getXDirAdj).min().orElse(0.0);
+        double right = positions.stream()
+                .mapToDouble(position -> position.getXDirAdj() + position.getWidthDirAdj())
+                .max()
+                .orElse(left);
+        return zoneColumn(midpoint(left, right), anchors);
+    }
+
+    private static int zoneColumn(double x, List<Double> anchors) {
         for (int column = 0; column < anchors.size(); column++) {
             double left = column == 0 ? Double.NEGATIVE_INFINITY : midpoint(anchors.get(column - 1), anchors.get(column));
             double right = column + 1 >= anchors.size()

@@ -176,6 +176,7 @@ prepare_smoke_bench() {
 01030000000160	sidebar resume/sidebar layout
 01030000000083	bordered table
 01030000000127	borderless table
+01030000000189	dense matrix table
 EOF
 
   if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then

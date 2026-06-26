@@ -492,6 +492,21 @@ Current Phase 6 progress:
   - `doctruth-java-core-phase6-wide-text-table` smoke parsed 5/5 documents,
     TEDS mean `0.9979`, no Python/Torch/Docling production residency
   - smoke cases: `01030000000083` TEDS `0.9958`, `01030000000127` TEDS `1.0`
+- Added dense benchmark matrix table recovery for OpenDataLoader case
+  `01030000000189`:
+  - detects table rows where body rows expose many anchors but header rows
+    contain one long spanning cell
+  - splits spanning header cells with word-center column assignment while
+    keeping normal table rows on existing cell-cluster assignment
+  - adds `01030000000189` to the Java-core smoke gate as a dense matrix table
+- Verified with refreshed Java CLI jar:
+  - `01030000000189` single-doc bench improved from TEDS `0.783577`,
+    overall `0.56443` to TEDS `0.947368`, overall `0.626801`
+  - `doctruth-java-core-phase6-dense-matrix-table` smoke parsed 6/6
+    documents, TEDS mean `0.981056`, no Python/Torch/Docling production
+    residency
+  - `cargo test --test opendataloader_table_processor_contract` passed 5/5,
+    including the matrix-table case `01030000000189`
 - Remaining table work before claiming parity:
   - broader table-cell grid normalization beyond the current smoke and
     wide-text cases

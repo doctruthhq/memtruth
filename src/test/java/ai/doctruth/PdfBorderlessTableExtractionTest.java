@@ -290,6 +290,18 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| Highlight | Achieved 1 place in the OCR World Competition");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderSpeciesListBecomesStructuredTwoColumnTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000132"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Potosi Pupfish | Fish species on IUCN Red List Cyprinodon alvarezi |");
+        assertThat(markdown).contains("| La Palma Pupfish | Cyprinodon longidorsalis |");
+        assertThat(markdown).contains("| Golden Skiffia | Skiffia francesae |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -404,7 +416,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000200"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000117"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000121"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000182"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000182"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000132"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

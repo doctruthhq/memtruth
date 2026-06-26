@@ -21,22 +21,23 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase15-cluster-gated-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase16-species-list-full200/full200
 parsed:   200/200
-overall:  0.758789
-nid:      0.890112
-teds:     0.537275
+overall:  0.760897
+nid:      0.890198
+teds:     0.556938
 mhs:      0.485718
-latency:  81.109628 ms/doc mean
-rss:      20MB peak process RSS
+latency:  83.974967 ms/doc mean
+rss:      21MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
 Phase15 is accepted because it keeps the phase14 target gains for explicit
 two-column lists and horizontal matrix tables while reverting the phase14 false
 positives that promoted table-of-contents pages and ordinary two-column
-narrative text into Markdown tables. It is still not OpenDataLoader hybrid
-parity.
+narrative text into Markdown tables. Phase16 adds a narrow Latin-species
+two-column list detector without reopening those false positives. It is still
+not OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 

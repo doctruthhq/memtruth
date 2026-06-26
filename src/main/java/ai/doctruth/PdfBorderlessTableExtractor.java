@@ -20,6 +20,9 @@ final class PdfBorderlessTableExtractor {
     private static final int MAX_CELL_CHARS = 32;
     private static final Pattern NUMERIC_CELL = Pattern.compile(
             "^[+-]?(?:(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
+    private static final Pattern LATIN_BINOMIAL = Pattern.compile(".*\\b[A-Z][a-z]+\\s+[a-z]{3,}\\b.*");
+    private static final Pattern LEADING_LATIN_PREFIX =
+            Pattern.compile("^(.+?)\\s+([A-Z][a-z]+\\s+[a-z]{3,}.*)$");
 
     private PdfBorderlessTableExtractor() {
         throw new AssertionError("no instances");
@@ -259,7 +262,8 @@ final class PdfBorderlessTableExtractor {
 
     private static Optional<PdfPageTableExtractor.TableBlock> clusterTextTableBlock(
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
-        var values = collapseTwoColumnListTable(normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors))));
+        var values = normalizeLatinSpeciesRows(
+                collapseTwoColumnListTable(normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors)))));
         if (!clusterValuesLookTableLike(values)) {
             return Optional.empty();
         }
@@ -287,7 +291,7 @@ final class PdfBorderlessTableExtractor {
             return false;
         }
         if (rows.getFirst().size() == 2) {
-            return looksLikeTwoColumnListHeader(rows.getFirst());
+            return looksLikeTwoColumnListHeader(rows.getFirst()) || looksLikeLatinSpeciesList(rows);
         }
         if (looksLikeHorizontalMatrixHeader(rows.getFirst())) {
             return true;
@@ -306,6 +310,55 @@ final class PdfBorderlessTableExtractor {
                 .filter(cell -> cell.length() <= 48 && cell.split("\\s+").length <= 7)
                 .count();
         return nonBlank > 0 && compact * 2 >= nonBlank;
+    }
+
+    private static boolean looksLikeLatinSpeciesList(List<List<String>> rows) {
+        if (rows.size() < 4) {
+            return false;
+        }
+        long latinRows = rows.stream()
+                .filter(row -> row.size() == 2)
+                .filter(row -> looksLikeCompactTitleLabel(row.getFirst()))
+                .filter(row -> LATIN_BINOMIAL.matcher(row.get(1)).matches())
+                .count();
+        return latinRows >= 3;
+    }
+
+    private static boolean looksLikeCompactTitleLabel(String text) {
+        var words = List.of(text.strip().split("\\s+"));
+        return !words.isEmpty()
+                && words.size() <= 4
+                && text.length() <= 40
+                && words.stream().allMatch(word -> !word.isBlank() && Character.isUpperCase(word.codePointAt(0)));
+    }
+
+    private static List<List<String>> normalizeLatinSpeciesRows(List<List<String>> rows) {
+        if (rows.size() < 4 || rows.getFirst().size() != 2) {
+            return rows;
+        }
+        var out = new ArrayList<List<String>>();
+        for (var row : rows) {
+            out.add(normalizeLatinSpeciesRow(row));
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<String> normalizeLatinSpeciesRow(List<String> row) {
+        if (row.size() != 2 || !looksLikeCompactTitleLabel(row.getFirst())) {
+            return row;
+        }
+        var matcher = LEADING_LATIN_PREFIX.matcher(row.get(1).strip());
+        if (!matcher.matches()) {
+            return row;
+        }
+        var prefix = matcher.group(1).strip();
+        if (prefix.isBlank()
+                || prefix.length() > 24
+                || prefix.matches("(?i).*(species|iucn|red|list).*")
+                || !looksLikeCompactTitleLabel(prefix)) {
+            return row;
+        }
+        return List.of(appendText(row.getFirst(), prefix), matcher.group(2).strip());
     }
 
     private static List<List<String>> collapseTwoColumnListTable(List<List<String>> rows) {

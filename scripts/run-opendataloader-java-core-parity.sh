@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BENCH_DIR="${DOCTRUTH_OPENDATALOADER_BENCH_DIR:-$ROOT/third_party/opendataloader-bench}"
 BUILD_PROFILE="${DOCTRUTH_RUNTIME_BUILD_PROFILE:-debug}"
-PRESET="${DOCTRUTH_OPENDATALOADER_PRESET:-lite}"
+PRESET="${DOCTRUTH_OPENDATALOADER_PRESET:-auto}"
 RUNTIME_PROFILE="${DOCTRUTH_RUNTIME_PROFILE:-edge-model}"
 TIMEOUT_SECONDS="${DOCTRUTH_OPENDATALOADER_TIMEOUT_SECONDS:-}"
 TIMESTAMP="${DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -28,7 +28,7 @@ Options:
 
 Environment:
   DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP  Override artifact timestamp.
-  DOCTRUTH_OPENDATALOADER_PRESET          Parser preset, default lite.
+  DOCTRUTH_OPENDATALOADER_PRESET          Parser preset, default auto.
   DOCTRUTH_RUNTIME_PROFILE                Runtime profile, default edge-model.
   DOCTRUTH_OPENDATALOADER_TIMEOUT_SECONDS Per-document timeout passed to the runner.
 EOF
@@ -123,13 +123,8 @@ prepare_smoke_bench() {
 01030000000127	borderless table
 EOF
 
-  if [ "$USE_LOCAL_MNN_OCR" = "1" ] && [ "$PRESET" = "ocr" ]; then
+  if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
     printf '%s\t%s\n' "01030000000165" "scanned/OCR fixture" >>"$ARTIFACT_ROOT/smoke-docs.tsv"
-  elif [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
-    {
-      printf '%s\n' "scanned/OCR fixture skipped: current runtime gate uses one preset per prediction invocation"
-      printf '%s\n' "set DOCTRUTH_OPENDATALOADER_PRESET=ocr to include the OCR fixture intentionally"
-    } >"$ARTIFACT_ROOT/smoke-ocr-skip.txt"
   else
     printf '%s\n' "scanned/OCR fixture skipped: local MNN OCR manifest/cache not found" >"$ARTIFACT_ROOT/smoke-ocr-skip.txt"
   fi

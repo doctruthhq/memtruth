@@ -8,6 +8,7 @@ import java.util.List;
  * @since 1.0.0
  */
 public enum ParserPreset {
+    AUTO("auto", ModelRuntimePolicy.liteOffline()),
     LITE("lite", ModelRuntimePolicy.liteOffline()),
     STANDARD(
             "standard",
@@ -45,6 +46,7 @@ public enum ParserPreset {
 
     public static ParserPreset fromId(String value) {
         return switch (value) {
+            case "auto" -> AUTO;
             case "lite" -> LITE;
             case "standard" -> STANDARD;
             case "table-lite" -> TABLE_LITE;

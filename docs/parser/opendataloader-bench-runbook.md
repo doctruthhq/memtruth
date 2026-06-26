@@ -34,10 +34,12 @@ The selected smoke set is recorded in `smoke-docs.tsv` beside the smoke output:
 | `01030000000160` | sidebar/sidebar-like layout |
 | `01030000000083` | bordered table |
 | `01030000000127` | borderless table |
-| `01030000000165` | scanned/OCR fixture, only when local MNN OCR artifacts exist and the gate is intentionally run with `DOCTRUTH_OPENDATALOADER_PRESET=ocr` |
+| `01030000000165` | scanned/OCR fixture, only when local MNN OCR artifacts exist |
 
-If the local MNN OCR manifest/cache are absent, or if the default `lite` preset
-is used, the OCR fixture is skipped and `smoke-ocr-skip.txt` records the reason.
+The wrapper defaults `DOCTRUTH_OPENDATALOADER_PRESET` to `auto`, so scanned or
+sparse visual pages can route to the OCR model while the same smoke prediction
+keeps one warm Java backend process. If the local MNN OCR manifest/cache are
+absent, the OCR fixture is skipped and `smoke-ocr-skip.txt` records the reason.
 The smoke gate still fails closed for any parsed/failed mismatch or invalid
 evaluation metrics.
 
@@ -87,9 +89,8 @@ Markdown, then invokes the existing runner once over that selected corpus. This
 preserves the warm Java backend behavior for the actual smoke prediction while
 avoiding a per-document runner loop.
 
-Because one prediction invocation has one preset, the default `lite` smoke gate
-does not mix in the scanned/OCR fixture even when OCR model artifacts are
-installed. Run with `DOCTRUTH_OPENDATALOADER_PRESET=ocr` only when intentionally
-checking the OCR route; otherwise keep OCR validation in the focused OCR/model
-smokes until the runtime supports selected doc manifests with per-doc preset
-metadata.
+Because one prediction invocation has one preset, the wrapper uses the `auto`
+default for the selected smoke corpus. When local OCR artifacts are installed,
+the scanned/OCR fixture is included in that same prediction run and routed by
+the runtime's auto model decision. Explicit non-auto preset overrides still use
+one preset for the whole smoke corpus.

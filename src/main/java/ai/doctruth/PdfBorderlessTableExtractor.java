@@ -15,6 +15,7 @@ final class PdfBorderlessTableExtractor {
     private static final double HEADER_ALIGNMENT_EPSILON = 72.0;
     private static final double MAX_HEADER_BAND_GAP = 120.0;
     private static final double MAX_TABLE_ROW_GAP = 42.0;
+    private static final double MAX_CLUSTER_ROW_GAP = 72.0;
     private static final int MAX_HEADER_ROWS = 8;
     private static final int MAX_CELL_CHARS = 32;
     private static final Pattern NUMERIC_CELL = Pattern.compile(
@@ -67,7 +68,7 @@ final class PdfBorderlessTableExtractor {
                 continue;
             }
             var anchors = clusterAnchors(candidate);
-            if (anchors.size() < 3 || clusterDataRows(candidate, anchors) < 3) {
+            if (anchors.size() < 2 || clusterDataRows(candidate, anchors) < 2) {
                 continue;
             }
             return clusterTextTableBlock(candidate, anchors, pageNumber, pageWidth, pageHeight)
@@ -78,7 +79,12 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean looksLikeParallelSectionHeadings(List<BorderlessRow> rows) {
-        return rows.stream().limit(4).anyMatch(PdfBorderlessTableExtractor::hasParallelSectionHeadingCells);
+        return rows.stream().limit(4).anyMatch(PdfBorderlessTableExtractor::hasParallelSectionHeadingCells)
+                || rows.stream().limit(6).filter(PdfBorderlessTableExtractor::isSingleSectionHeadingRow).count() >= 2;
+    }
+
+    private static boolean isSingleSectionHeadingRow(BorderlessRow row) {
+        return row.cells().size() == 1 && looksLikeShortAllCapsLabel(row.text());
     }
 
     private static boolean hasParallelSectionHeadingCells(BorderlessRow row) {
@@ -126,7 +132,7 @@ final class PdfBorderlessTableExtractor {
     private static List<BorderlessRow> clusterTextRows(List<BorderlessRow> allRows, int start) {
         var preliminary = contiguousRows(allRows, start);
         var anchors = clusterAnchors(preliminary);
-        if (anchors.size() < 3) {
+        if (anchors.size() < 2) {
             return List.of();
         }
         var out = new ArrayList<BorderlessRow>();
@@ -152,7 +158,7 @@ final class PdfBorderlessTableExtractor {
             if (looksLikeHardTableBoundary(row.text()) || looksLikeSourceLine(row.text())) {
                 break;
             }
-            if (verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP) {
+            if (verticalGap(out.getLast(), row) > MAX_CLUSTER_ROW_GAP) {
                 break;
             }
             out.add(row);
@@ -173,9 +179,37 @@ final class PdfBorderlessTableExtractor {
             return List.of();
         }
         var anchors = columnAnchors(anchorRows);
-        return anchors.stream()
+        var supported = anchors.stream()
                 .filter(anchor -> anchorSupport(anchorRows, anchor) >= 2)
                 .toList();
+        return withLeftLabelAnchor(rows, supported);
+    }
+
+    private static List<Double> withLeftLabelAnchor(List<BorderlessRow> rows, List<Double> anchors) {
+        if (anchors.isEmpty()) {
+            return anchors;
+        }
+        var labels = rows.stream()
+                .filter(row -> row.cells().size() == 1)
+                .map(row -> row.cells().getFirst())
+                .filter(cell -> cell.x0() + HEADER_ALIGNMENT_EPSILON < anchors.getFirst())
+                .filter(cell -> looksLikeMatrixRowLabel(cell.text()))
+                .toList();
+        if (labels.size() < 2) {
+            return anchors;
+        }
+        var out = new ArrayList<Double>();
+        out.add(labels.stream().mapToDouble(BorderlessCell::x0).average().orElse(anchors.getFirst()));
+        out.addAll(anchors);
+        return List.copyOf(out);
+    }
+
+    private static boolean looksLikeMatrixRowLabel(String text) {
+        var stripped = text.strip();
+        return stripped.length() >= 3
+                && stripped.length() <= 32
+                && !stripped.matches("^[0-9].*")
+                && !looksLikeSentence(stripped);
     }
 
     private static long anchorSupport(List<BorderlessRow> rows, double anchor) {
@@ -186,8 +220,11 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean clusterRowFits(BorderlessRow row, List<Double> anchors, boolean seenData) {
+        if (seenData && row.text().strip().startsWith("*")) {
+            return false;
+        }
         if (row.cells().size() >= 2) {
-            return row.cells().stream().allMatch(cell -> nearestHeaderColumn(cell, anchors) >= 0);
+            return row.cells().stream().allMatch(cell -> clusterCellFits(cell, anchors));
         }
         int column = nearestHeaderColumn(row.cells().getFirst(), anchors);
         if (column < 0) {
@@ -196,7 +233,14 @@ final class PdfBorderlessTableExtractor {
         if (!seenData || column > 0) {
             return true;
         }
+        if (anchors.size() == 2 && column == 0) {
+            return row.text().length() <= 96 && !row.text().matches(".*[.!?]$");
+        }
         return row.text().length() <= 48 && !looksLikeSentence(row.text());
+    }
+
+    private static boolean clusterCellFits(BorderlessCell cell, List<Double> anchors) {
+        return nearestHeaderColumn(cell, anchors) >= 0 || zoneColumn(cell.x0(), anchors) >= 0;
     }
 
     private static boolean looksLikeSentence(String text) {
@@ -215,7 +259,10 @@ final class PdfBorderlessTableExtractor {
 
     private static Optional<PdfPageTableExtractor.TableBlock> clusterTextTableBlock(
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
-        var values = normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors)));
+        var values = collapseTwoColumnListTable(normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors))));
+        if (!clusterValuesLookTableLike(values)) {
+            return Optional.empty();
+        }
         if (values.size() < 2 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
             return Optional.empty();
         }
@@ -235,9 +282,57 @@ final class PdfBorderlessTableExtractor {
         return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
     }
 
+    private static boolean clusterValuesLookTableLike(List<List<String>> rows) {
+        if (rows.isEmpty() || rows.getFirst().isEmpty()) {
+            return false;
+        }
+        if (rows.getFirst().size() == 2) {
+            return looksLikeTwoColumnListHeader(rows.getFirst());
+        }
+        if (looksLikeHorizontalMatrixHeader(rows.getFirst())) {
+            return true;
+        }
+        long compactRows = rows.stream()
+                .filter(row -> row.stream().filter(cell -> !cell.isBlank()).count() >= 2)
+                .filter(PdfBorderlessTableExtractor::cellsAreMostlyCompact)
+                .count();
+        return compactRows >= 3;
+    }
+
+    private static boolean cellsAreMostlyCompact(List<String> row) {
+        long nonBlank = row.stream().filter(cell -> !cell.isBlank()).count();
+        long compact = row.stream()
+                .filter(cell -> !cell.isBlank())
+                .filter(cell -> cell.length() <= 48 && cell.split("\\s+").length <= 7)
+                .count();
+        return nonBlank > 0 && compact * 2 >= nonBlank;
+    }
+
+    private static List<List<String>> collapseTwoColumnListTable(List<List<String>> rows) {
+        if (rows.size() < 4 || rows.getFirst().size() != 2 || !looksLikeTwoColumnListHeader(rows.getFirst())) {
+            return rows;
+        }
+        var left = new StringBuilder();
+        var right = new StringBuilder();
+        for (var row : rows.subList(1, rows.size())) {
+            appendCell(left, row.getFirst());
+            appendCell(right, row.get(1));
+        }
+        return List.of(rows.getFirst(), List.of(left.toString(), right.toString()));
+    }
+
+    private static boolean looksLikeTwoColumnListHeader(List<String> row) {
+        var left = row.getFirst().toLowerCase(java.util.Locale.ROOT);
+        var right = row.get(1).toLowerCase(java.util.Locale.ROOT);
+        return left.contains("reagents") && right.contains("supplies");
+    }
+
     private static List<List<String>> clusterRowsWithHeader(List<BorderlessRow> rows, List<Double> anchors) {
         var raw = rows.stream().map(row -> clusterCellTexts(row, anchors)).toList();
         if (raw.size() < 2) {
+            return raw;
+        }
+        if (looksLikeHorizontalMatrixHeader(raw.getFirst())) {
             return raw;
         }
         var header = new ArrayList<String>();
@@ -269,7 +364,16 @@ final class PdfBorderlessTableExtractor {
         return List.copyOf(out);
     }
 
+    private static boolean looksLikeHorizontalMatrixHeader(List<String> row) {
+        return row.size() >= 4
+                && row.getFirst().isBlank()
+                && row.stream().skip(1).filter(cell -> !cell.isBlank()).count() >= 2;
+    }
+
     private static List<String> clusterCellTexts(BorderlessRow row, List<Double> anchors) {
+        if (looksLikeHorizontalMatrixRow(row, anchors)) {
+            return horizontalMatrixCellTexts(row, anchors.size());
+        }
         if (row.cells().size() == 1 && row.text().split("\\s+").length >= anchors.size()) {
             var splitHeader = splitSingleCellHeaderByWords(row.text(), anchors.size());
             if (!splitHeader.isEmpty()) {
@@ -285,6 +389,20 @@ final class PdfBorderlessTableExtractor {
             return List.copyOf(values);
         }
         return zonedCellTexts(row, anchors);
+    }
+
+    private static boolean looksLikeHorizontalMatrixRow(BorderlessRow row, List<Double> anchors) {
+        return anchors.size() >= 4
+                && row.cells().size() == anchors.size() - 1
+                && row.cells().stream().allMatch(cell -> cell.x0() > anchors.getFirst() + COLUMN_ALIGNMENT_EPSILON);
+    }
+
+    private static List<String> horizontalMatrixCellTexts(BorderlessRow row, int columns) {
+        var out = blankRow(columns);
+        for (int index = 0; index < row.cells().size(); index++) {
+            out.set(index + 1, row.cells().get(index).text().strip());
+        }
+        return List.copyOf(out);
     }
 
     private static List<String> splitSingleCellHeaderByWords(String text, int columns) {
@@ -360,6 +478,9 @@ final class PdfBorderlessTableExtractor {
             if (mergeBlankFirstLowercaseContinuation(out, row)) {
                 continue;
             }
+            if (mergeFirstColumnLabelIntoPrevious(out, row)) {
+                continue;
+            }
             if (mergeIntoPreviousClusterRow(out, row)) {
                 continue;
             }
@@ -373,6 +494,32 @@ final class PdfBorderlessTableExtractor {
             out.set(out.size() - 1, appendContinuationCells(out.getLast(), pending));
         }
         return List.copyOf(out);
+    }
+
+    private static boolean mergeFirstColumnLabelIntoPrevious(List<List<String>> out, List<String> row) {
+        if (out.isEmpty() || row.isEmpty() || row.getFirst().isBlank()) {
+            return false;
+        }
+        if (row.stream().skip(1).anyMatch(cell -> !cell.isBlank())) {
+            return false;
+        }
+        var previous = out.getLast();
+        if (!previous.getFirst().isBlank() || !rowHasData(previous)) {
+            return false;
+        }
+        int target = firstTrailingBlankLabelRow(out);
+        var merged = new ArrayList<>(out.get(target));
+        merged.set(0, row.getFirst());
+        out.set(target, List.copyOf(merged));
+        return true;
+    }
+
+    private static int firstTrailingBlankLabelRow(List<List<String>> rows) {
+        int index = rows.size() - 1;
+        while (index > 1 && rows.get(index - 1).getFirst().isBlank() && rowHasData(rows.get(index - 1))) {
+            index--;
+        }
+        return index;
     }
 
     private static boolean mergeBlankFirstLowercaseContinuation(List<List<String>> out, List<String> row) {

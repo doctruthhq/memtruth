@@ -34,22 +34,24 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 ## Latest Full200 Snapshot
 
 - Report:
-  `docs/parser/reports/opendataloader-full200-2026-06-23.md`
+  `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-rust-opendataloader-full200-2026-06-23/`
-- DocTruth revision used for run: `c65f0e0`
-- Runtime profile: `edge-fast`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-phase15-cluster-gated-full200/full200/`
+- DocTruth revision used for run: worktree benchmark run, pending commit
+- Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
-- Prediction: 199 parsed, 1 failed
-- Overall mean: `0.738756`
-- NID mean: `0.859061`
-- TEDS mean: `0.475822`
-- MHS mean: `0.469231`
-- Interpretation: current Rust edge-fast quality is measurable but not yet
-  OpenDataLoader parity. The main gaps are OCR/text-layer fallback, table
-  structure, and heading hierarchy. The corrected parity path promotes the
-  Java/OpenDataLoader-compatible backend as the quality core and keeps Rust as
-  the benchmark/model/process shell.
+- Prediction: 200 parsed, 0 failed
+- Overall mean: `0.758789`
+- NID mean: `0.890112`
+- TEDS mean: `0.537275`
+- MHS mean: `0.485718`
+- Resource: mean `81.109628` ms/doc, process RSS peak `20MB`, no
+  Python/Torch/Docling production residency
+- Interpretation: current Java/OpenDataLoader-compatible quality core clears
+  the initial local acceptance baseline, but it is still not OpenDataLoader
+  hybrid parity. The next gaps are OCR/model-backed tables, multi-segment
+  rowspans, remaining heading hierarchy misses, and broader paragraph/list
+  parity.
 
 ## DocumentProcessor
 

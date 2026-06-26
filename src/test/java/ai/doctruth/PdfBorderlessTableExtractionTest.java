@@ -170,6 +170,29 @@ class PdfBorderlessTableExtractionTest {
 
     @Test
     @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderTableOfContentsDoesNotPromoteToTwoColumnTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000044"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isEmpty();
+        assertThat(markdown).contains("Table of Contents");
+        assertThat(markdown).contains("Executive Summary");
+        assertThat(markdown).doesNotContain("| Table of Contents Executive Summary | 4 |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderTwoColumnNarrativeDoesNotPromoteToTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000196"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("# B.3 Prompt Engineering");
+        assertThat(markdown).contains("# B.4 Instruction Tuning");
+        assertThat(markdown).doesNotContain("| plexity when compared");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
     void opendataloaderColumnStreamGovernmentPositionsTableBecomesStructuredTable() throws Exception {
         var document = parsePdfBox(opendataloaderBenchPdf("01030000000051"));
         var markdown = document.toMarkdownClean();
@@ -239,6 +262,32 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| Saccharometer | DI Water | Glucose Solution | Yeast Suspension |");
         assertThat(markdown).contains("| 2 | 24 ml | 0 ml | 4 ml |");
         assertThat(markdown).contains("| 4 | 4 ml | 12 ml | 12 ml |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderTwoColumnSuppliesTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000121"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Reagents | Supplies and Equipment |");
+        assertThat(markdown).contains("| At each student station: Resuspended DNA or ethanol precipitates from Part 1*");
+        assertThat(markdown).contains("Microcentrifuge tube rack 3 1.5-mL microcentrifuge tubes Micropipet, 1- 20 μL Micropipet tips");
+        assertThat(markdown).contains("Sterile distilled or deionized water |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderAiPackComparisonTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000182"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("|  | OCR | Recommendation | Product semantic search |");
+        assertThat(markdown).contains("| Pack | A solution that recognizes characters in an image and extracts necessary information |");
+        assertThat(markdown).contains("| Application | Applicable to all fields that require text extraction from standardized documents");
+        assertThat(markdown).contains("| Highlight | Achieved 1 place in the OCR World Competition");
     }
 
     private Path writeBorderlessTablePdf() throws IOException {
@@ -353,7 +402,9 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000053"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000178"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000200"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000117"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000117"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000121"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000182"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

@@ -4,7 +4,7 @@
 
 **Goal:** Make DocTruth's Rust runtime converge on OpenDataLoader-quality PDF parsing by tracking every upstream behavior gap, porting deterministic processors with tests, wiring model-backed paths through MNN, and proving progress through OpenDataLoader Bench full200 reports.
 
-**Architecture:** `TrustDocument` remains the canonical output. OpenDataLoader PDF and OpenDataLoader Bench are reference inputs, source-attributed behavior oracles, and quality gates; they are not production fallbacks and do not replace DocTruth schemas. Implementation must move behavior into `runtime/doctruth-runtime` behind Rust-owned contracts, with Java kept as wrapper/oracle only.
+**Architecture:** `TrustDocument` remains the canonical output. OpenDataLoader PDF and OpenDataLoader Bench are reference inputs, source-attributed behavior oracles, and quality gates; they are not production fallbacks and do not replace DocTruth schemas. The current parser-quality core is the Java/PDFBox/OpenDataLoader-compatible path behind the Rust runtime shell. New parser-quality behavior should land in that quality core first, with Rust owning packaging, process/model orchestration, benchmark execution, and eventual replacement only after benchmark evidence proves parity.
 
 **Tech Stack:** Rust `doctruth-runtime`, `pdf_oxide`, MNN worker contracts, OpenDataLoader PDF Apache-2.0 source under `third_party/opendataloader-pdf`, OpenDataLoader Bench under `third_party/opendataloader-bench`, Cargo tests, benchmark JSON reports.
 
@@ -12,21 +12,42 @@
 
 ## Current Truth
 
-This is not a greenfield parser project. The repository already has partial OpenDataLoader-inspired behavior in `runtime/doctruth-runtime/src/lib.rs`, including XY-Cut++, text filtering, some table reconstruction, markdown repair, hybrid schema mapping, MNN worker contracts, and OpenDataLoader Bench adapter commands.
+This is not a greenfield parser project. The repository already has partial OpenDataLoader-inspired behavior in the Java quality core and Rust runtime shell, including XY-Cut++, text filtering, table reconstruction, markdown repair, hybrid schema mapping, MNN worker contracts, and OpenDataLoader Bench adapter commands.
 
 The work is not done. The upstream vendored OpenDataLoader PDF tree has about 174 Java source/test files, including processors and hybrid paths that are not fully ported. Recent commits fixed individual benchmark cases such as `00141`, `00127`, `00144`, `00145`, and `00198`, but this is still partial parity work, not full OpenDataLoader hybrid reproduction.
 
 Do not run full200 after every tiny change. Run focused red/green tests while porting a module. Run full200 only at the planned gates below.
+
+Latest accepted Java-core gate:
+
+```text
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase15-cluster-gated-full200/full200
+parsed:   200/200
+overall:  0.758789
+nid:      0.890112
+teds:     0.537275
+mhs:      0.485718
+latency:  81.109628 ms/doc mean
+rss:      20MB peak process RSS
+runtime:  no Python/Torch/Docling production residency
+```
+
+Phase15 is accepted because it keeps the phase14 target gains for explicit
+two-column lists and horizontal matrix tables while reverting the phase14 false
+positives that promoted table-of-contents pages and ordinary two-column
+narrative text into Markdown tables. It is still not OpenDataLoader hybrid
+parity.
 
 ## Reference Boundaries
 
 ```text
 OpenDataLoader PDF source   = behavior reference and Apache-2.0 port source
 OpenDataLoader Bench        = objective external parser-quality benchmark
-DocTruth Rust runtime       = production parser core
+Java/PDFBox parser core     = current parser-quality core
+DocTruth Rust runtime       = production shell, model/process/runtime core
 TrustDocument               = canonical output
 MNN worker                  = local model execution path
-Java/PDFBox                 = wrapper, compatibility, differential oracle only
+Rust parser replacement     = future only after full-bench parity evidence
 ```
 
 No implementation task may introduce OpenDataLoader Java or Python as a production fallback. It is allowed as a benchmark oracle or fixture generator only.

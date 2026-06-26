@@ -39,7 +39,10 @@ final class PdfBorderlessTableExtractor {
             var rowsWithHeader = prependStackedHeaderRow(allRows, rowsWithContinuations, anchors);
             tableBlock(rowsWithHeader, anchors, pageNumber, pageWidth, pageHeight).ifPresent(tables::add);
         }
-        return List.copyOf(tables);
+        if (!tables.isEmpty()) {
+            return List.copyOf(tables);
+        }
+        return columnStreamNumericTable(allRows, pageNumber, pageWidth, pageHeight);
     }
 
     private static List<PdfPageTableExtractor.TableBlock> wideTextTable(
@@ -55,6 +58,154 @@ final class PdfBorderlessTableExtractor {
         return wideTextTableBlock(rows, anchors, pageNumber, pageWidth, pageHeight)
                 .map(List::of)
                 .orElseGet(List::of);
+    }
+
+    private static List<PdfPageTableExtractor.TableBlock> columnStreamNumericTable(
+            List<BorderlessRow> allRows, int pageNumber, double pageWidth, double pageHeight) {
+        for (int start = 0; start < allRows.size(); start++) {
+            var candidate = columnStreamNumericRows(allRows, start);
+            if (candidate.size() < 4) {
+                continue;
+            }
+            var anchors = columnStreamAnchors(candidate);
+            if (anchors.size() < 4 || columnStreamDataRows(candidate, anchors) < 3) {
+                continue;
+            }
+            return columnStreamNumericTableBlock(candidate, anchors, pageNumber, pageWidth, pageHeight)
+                    .map(List::of)
+                    .orElseGet(List::of);
+        }
+        return List.of();
+    }
+
+    private static List<Double> columnStreamAnchors(List<BorderlessRow> rows) {
+        var dataRows = rows.stream()
+                .filter(row -> row.cells().size() >= 3)
+                .filter(PdfBorderlessTableExtractor::isNumericHeavyRow)
+                .toList();
+        return dataRows.isEmpty() ? List.of() : columnAnchors(dataRows);
+    }
+
+    private static List<BorderlessRow> columnStreamNumericRows(List<BorderlessRow> allRows, int start) {
+        if (!looksLikeColumnStreamHeaderStart(allRows.get(start))) {
+            return List.of();
+        }
+        var out = new ArrayList<BorderlessRow>();
+        out.add(allRows.get(start));
+        boolean seenData = false;
+        for (int index = start + 1; index < allRows.size(); index++) {
+            var row = allRows.get(index);
+            if (looksLikeTableCaption(row.text()) || looksLikeSourceLine(row.text())) {
+                break;
+            }
+            if (!out.isEmpty() && verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP) {
+                break;
+            }
+            if (row.cells().size() >= 2 || looksLikeFirstColumnContinuation(row)) {
+                out.add(row);
+                seenData = seenData || isNumericHeavyRow(row);
+                continue;
+            }
+            if (seenData) {
+                break;
+            }
+        }
+        return seenData ? List.copyOf(out) : List.of();
+    }
+
+    private static boolean looksLikeColumnStreamHeaderStart(BorderlessRow row) {
+        if (row.cells().size() < 3 || isNumericHeavyRow(row)) {
+            return false;
+        }
+        long textCells = row.cells().stream()
+                .map(BorderlessCell::text)
+                .filter(text -> !text.isBlank())
+                .filter(text -> !isNumericCell(text))
+                .count();
+        return textCells >= 2;
+    }
+
+    private static boolean looksLikeFirstColumnContinuation(BorderlessRow row) {
+        return row.cells().size() == 1
+                && !row.text().isBlank()
+                && !looksLikeAllCapsHeading(row.text())
+                && !looksLikeSourceLine(row.text());
+    }
+
+    private static boolean looksLikeSourceLine(String text) {
+        return text.strip().matches("(?i)^(source|note|notes)\\b.*");
+    }
+
+    private static long columnStreamDataRows(List<BorderlessRow> rows, List<Double> anchors) {
+        return rows.stream()
+                .map(row -> cellTexts(row, anchors))
+                .filter(PdfBorderlessTableExtractor::isNumericHeavyValues)
+                .count();
+    }
+
+    private static boolean isNumericHeavyValues(List<String> row) {
+        long numeric = row.stream().filter(PdfBorderlessTableExtractor::isNumericCell).count();
+        return numeric >= 2 && numeric * 2 >= row.size();
+    }
+
+    private static Optional<PdfPageTableExtractor.TableBlock> columnStreamNumericTableBlock(
+            List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
+        var values = columnStreamNumericValues(rows, anchors);
+        if (values.size() < 3 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+            return Optional.empty();
+        }
+        var allPositions = rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .flatMap(cell -> cell.positions().stream())
+                .toList();
+        var box = PdfTextPositionBoxes.layoutBox(allPositions, pageWidth, pageHeight);
+        if (box.isEmpty()) {
+            return Optional.empty();
+        }
+        var section = new TableSection(
+                values,
+                new SourceLocation(pageNumber, pageNumber, 1, values.size(), 0),
+                box,
+                cellRegions(rows, anchors, pageWidth, pageHeight));
+        return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
+    }
+
+    private static List<List<String>> columnStreamNumericValues(List<BorderlessRow> rows, List<Double> anchors) {
+        var nearest = rows.stream().map(row -> cellTexts(row, anchors)).toList();
+        int firstData = firstNumericDataRow(nearest);
+        if (firstData <= 0) {
+            return nearest;
+        }
+        var out = new ArrayList<List<String>>();
+        var headerRows = rows.subList(0, firstData).stream()
+                .map(row -> zonedCellTexts(row, anchors))
+                .toList();
+        out.add(mergedHeader(headerRows, anchors.size()));
+        out.addAll(mergeContinuationRows(nearest.subList(firstData, nearest.size())));
+        return normalizeSpacerColumns(out);
+    }
+
+    private static int firstNumericDataRow(List<List<String>> rows) {
+        for (int index = 0; index < rows.size(); index++) {
+            if (isNumericHeavyValues(rows.get(index))) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static List<String> mergedHeader(List<List<String>> rows, int columns) {
+        var out = new ArrayList<String>();
+        for (int column = 0; column < columns; column++) {
+            var text = new StringBuilder();
+            for (var row : rows) {
+                if (column < row.size()) {
+                    appendCell(text, row.get(column));
+                }
+            }
+            out.add(text.toString());
+        }
+        return List.copyOf(out);
     }
 
     private static List<BorderlessRow> wideTextTableRows(List<BorderlessRow> allRows) {
@@ -484,6 +635,9 @@ final class PdfBorderlessTableExtractor {
             if (headerOnlyColumnBeforeDataOnlyColumn(normalized, column)) {
                 normalized.getFirst().set(column + 1, normalized.getFirst().get(column));
                 normalized.getFirst().set(column, "");
+            } else if (dataOnlyColumnBeforeHeaderOnlyColumn(normalized, column)) {
+                normalized.getFirst().set(column, normalized.getFirst().get(column + 1));
+                normalized.getFirst().set(column + 1, "");
             }
         }
         return removeBlankColumns(normalized);
@@ -502,6 +656,13 @@ final class PdfBorderlessTableExtractor {
                 && bodyColumnBlank(rows, column)
                 && rows.getFirst().get(column + 1).isBlank()
                 && !bodyColumnBlank(rows, column + 1);
+    }
+
+    private static boolean dataOnlyColumnBeforeHeaderOnlyColumn(List<List<String>> rows, int column) {
+        return rows.getFirst().get(column).isBlank()
+                && !bodyColumnBlank(rows, column)
+                && !rows.getFirst().get(column + 1).isBlank()
+                && bodyColumnBlank(rows, column + 1);
     }
 
     private static boolean bodyColumnBlank(List<List<String>> rows, int column) {

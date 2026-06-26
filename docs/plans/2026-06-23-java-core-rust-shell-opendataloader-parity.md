@@ -574,6 +574,30 @@ Current Phase 6 progress:
   - no Python/Torch/Docling production residency
   - overall now slightly beats the historical baseline `0.745414`, but TEDS
     and MHS still miss acceptance
+- Added column-stream numeric table reconstruction for text-layer tables such
+  as OpenDataLoader case `01030000000051`:
+  - detects tables where numeric data rows expose stable anchors but header
+    rows and first-column labels are split across multiple visual rows
+  - uses numeric data rows to derive anchors, zone-based projection for header
+    rows, nearest-anchor projection for data rows, and first-column
+    continuation merging for labels such as `House of Representatives`
+  - runs only after the existing normal/wide/dense borderless paths fail, so it
+    does not steal already recovered cases such as `01030000000083`
+- Verified with refreshed Java CLI jar:
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest#opendataloaderColumnStreamGovernmentPositionsTableBecomesStructuredTable test`
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest test`
+  - `mvn -q -Dtest=PdfDocumentParserTest,PdfVisualLayoutParserTest,PdfTwoColumnSemanticSectionTest,TrustDocumentRenderedOutputTest test`
+  - `cd runtime/doctruth-runtime && cargo test --test opendataloader_table_processor_contract`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase11-column-stream-table-smoke bash scripts/run-opendataloader-java-core-parity.sh --smoke`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase11-column-stream-table-full200 bash scripts/run-opendataloader-java-core-parity.sh --full200`
+- Latest phase11 full200 evidence:
+  - artifact:
+    `third_party/opendataloader-bench/prediction/doctruth-java-core-phase11-column-stream-table-full200/full200`
+  - parsed `200/200`
+  - elapsed `15896.198792` ms, mean `79.480994` ms/doc
+  - overall `0.749896`, NID `0.896324`, TEDS `0.378735`, MHS `0.472728`
+  - no Python/Torch/Docling production residency
+  - case `01030000000051` improved from TEDS `0.0` to `0.998662`
 - Remaining table work before claiming parity:
   - broader table-cell grid normalization beyond the current smoke and
     wide-text cases

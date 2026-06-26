@@ -168,6 +168,18 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("| Contents 1. Overview of OCR Pack");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderColumnStreamGovernmentPositionsTableBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000051"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Government Position | No. of Seats |");
+        assertThat(markdown).contains("| Senate | 24 | 8.3 | 16.7 |");
+        assertThat(markdown).contains("| City/Municipal Vice Mayor | 1,578 | 6.5 | 14.9 |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -274,7 +286,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000088"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000189"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000141"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000051"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

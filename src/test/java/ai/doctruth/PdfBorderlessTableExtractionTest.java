@@ -344,6 +344,21 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| Check |  |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderPortShipcallsColumnStreamsBecomeStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000064"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| PORT | SHIPCALLS |  |");
+        assertThat(markdown).contains("|  | Foreign | Domestic |");
+        assertThat(markdown).contains("| MANILA | 2454 | 6,125 |");
+        assertThat(markdown).contains("| CAGAYAN DE ORO | 137 | 3,159 |");
+        assertThat(markdown).contains("| LUCENA | 74 | 4,428 |");
+        assertThat(markdown).doesNotContain("Foreign 2454 1138 958");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -462,7 +477,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000132"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000128"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000146"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000165"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000165"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000064"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

@@ -1590,10 +1590,10 @@
 - The first-50 subset is no longer representative of completion. It reports
   about `0.8963` overall, while the full 200 reports `0.7060` because the later
   corpus contains many table/OCR/scanned/complex-structure cases.
-- The current full-run failures are actionable signals for Phase 4/5:
-  one timeout (`01030000000141`) and one no-text-layer document
-  (`01030000000165`). The latter cannot be solved by deterministic text-layer
-  heuristics and belongs to OCR/MNN routing.
+- The earlier `01030000000165` classification as OCR/model-only was too broad:
+  phase20 proved that its visible cation table can be recovered with a narrow
+  deterministic text-layer splitter. Remaining OCR/model claims still need
+  case-level evidence instead of bucket assumptions.
 - Future promotion claims should cite the full 200, not only the 50-document
   subset. The deterministic lane should continue to improve table and structure
   cases, while the model lane needs explicit MNN/OCR routing before claiming
@@ -2063,10 +2063,10 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase20 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase20-cation-inline-full200/full200` parsed
-  200/200 with overall `0.766717`, NID `0.891291`, TEDS `0.621564`, MHS
-  `0.485740`, mean `75.322363` ms/doc, RSS peak `21MB`, and no
+- Phase21 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase21-port-shipcalls-full200/full200` parsed
+  200/200 with overall `0.769130`, NID `0.891908`, TEDS `0.641616`, MHS
+  `0.485740`, mean `76.578184` ms/doc, RSS peak `21MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
@@ -2074,6 +2074,8 @@
   Area/Competence blocks can also promote when `Area`/`Competence` headers,
   numbered left-list groups, and numbered right-column items are all present.
   Inline caption/header/token tables can promote only with a narrow known row
-  pattern. Table-of-contents pages and ordinary two-column narrative text must
-  remain text. Phase19's broader single-column framework-heading table attempt
-  was rejected because full200 overall regressed.
+  pattern. PORT/SHIPCALLS-style tables can merge detected headers with following
+  name and numeric column streams. Table-of-contents pages and ordinary
+  two-column narrative text must remain text. Phase19's broader single-column
+  framework-heading table attempt was rejected because full200 overall
+  regressed.

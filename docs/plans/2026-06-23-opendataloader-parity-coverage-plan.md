@@ -21,13 +21,13 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase20-cation-inline-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase21-port-shipcalls-full200/full200
 parsed:   200/200
-overall:  0.766717
-nid:      0.891291
-teds:     0.621564
+overall:  0.769130
+nid:      0.891908
+teds:     0.641616
 mhs:      0.485740
-latency:  75.322363 ms/doc mean
+latency:  76.578184 ms/doc mean
 rss:      21MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
@@ -42,8 +42,10 @@ raises case `01030000000128` to TEDS `1.0`. Phase18 promotes narrow
 Area/Competence two-column list blocks and raises case `01030000000146` from
 TEDS `0.0` to `0.714286`. Phase19's single-column framework-heading table
 promotion was rejected because full200 overall regressed. Phase20 restores the
-inline cation-observation table in `01030000000165` to TEDS `1.0`. It is still
-not OpenDataLoader hybrid parity.
+inline cation-observation table in `01030000000165` to TEDS `1.0`. Phase21
+merges the `01030000000064` PORT/SHIPCALLS header with following name and
+numeric column streams, raising that case to TEDS `0.918367`. It is still not
+OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 
@@ -1162,7 +1164,7 @@ Create `docs/parser/reports/opendataloader-full200-2026-06-23.md`:
 
 | Case | Overall | Primary bucket | Next action |
 | --- | ---: | --- | --- |
-| 01030000000165 | <score> | OCR/model | implement MNN OCR decoder |
+| 01030000000165 | phase20 TEDS `1.0` | inline text-layer table | accepted by narrow caption/header/token splitter |
 
 ## Interpretation
 

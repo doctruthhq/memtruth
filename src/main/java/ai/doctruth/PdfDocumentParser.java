@@ -144,7 +144,9 @@ public final class PdfDocumentParser {
             }
         }
         return new ExtractedSections(
-                promoteInlineCationObservationTables(promoteAreaCompetenceTables(mergeTableContinuations(sections))),
+                promoteInlineCationObservationTables(
+                        promoteAreaCompetenceTables(
+                                promotePortShipcallColumnStreamTables(mergeTableContinuations(sections)))),
                 List.copyOf(discarded));
     }
 
@@ -266,6 +268,111 @@ public final class PdfDocumentParser {
         if (!prefix.isBlank()) {
             out.add(new TextSection(prefix, header.location(), header.kind(), header.boundingBox()));
         }
+    }
+
+    private static List<ParsedSection> promotePortShipcallColumnStreamTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            var promoted = promotePortShipcallColumnStreamTable(sections, i);
+            if (promoted.isEmpty()) {
+                out.add(sections.get(i));
+                continue;
+            }
+            var table = promoted.orElseThrow();
+            out.add(table.section());
+            i = table.lastIndex();
+        }
+        return List.copyOf(out);
+    }
+
+    private static Optional<PromotedTable> promotePortShipcallColumnStreamTable(
+            List<ParsedSection> sections, int index) {
+        if (index + 14 >= sections.size() || !(sections.get(index) instanceof TableSection header)
+                || !portShipcallHeader(header)) {
+            return Optional.empty();
+        }
+        var names = followingTextSections(sections, index + 1, 10);
+        if (names.size() != 10 || !portNames(names)) {
+            return Optional.empty();
+        }
+        var foreign = textAt(sections, index + 11).flatMap(text -> streamValues(text, "Foreign"));
+        var domestic = textAt(sections, index + 12).flatMap(text -> streamValues(text, "Domestic"));
+        var foreignTail = textAt(sections, index + 13).map(text -> text.text().strip()).orElse("");
+        var domesticTail = textAt(sections, index + 14).map(text -> text.text().strip()).orElse("");
+        if (foreign.isEmpty() || domestic.isEmpty() || !numericToken(foreignTail) || !numericToken(domesticTail)) {
+            return Optional.empty();
+        }
+        var rows = portShipcallRows(names, appendValue(foreign.orElseThrow(), foreignTail), appendValue(domestic.orElseThrow(), domesticTail));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        var last = (TextSection) sections.get(index + 14);
+        return Optional.of(new PromotedTable(
+                new TableSection(rows, mergedLocation(header, last), mergedBox(header, last)),
+                index + 14));
+    }
+
+    private static boolean portShipcallHeader(TableSection table) {
+        return table.rows().size() == 2
+                && table.rows().get(0).equals(List.of("PORT", "SHIPCALLS"))
+                && table.rows().get(1).equals(List.of("Foreign", "Domestic"));
+    }
+
+    private static List<TextSection> followingTextSections(List<ParsedSection> sections, int start, int count) {
+        var out = new ArrayList<TextSection>();
+        for (int i = start; i < Math.min(sections.size(), start + count); i++) {
+            if (!(sections.get(i) instanceof TextSection text)) {
+                return List.of();
+            }
+            out.add(text);
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean portNames(List<TextSection> sections) {
+        return sections.stream().map(text -> text.text().strip()).toList().equals(List.of(
+                "MANILA", "CEBU", "BATANGAS", "SUBIC", "CAGAYAN DE ORO",
+                "DAVAO", "ILOILO", "GENERAL SANTOS", "ZAMBOANGA", "LUCENA"));
+    }
+
+    private static Optional<TextSection> textAt(List<ParsedSection> sections, int index) {
+        if (index >= sections.size() || !(sections.get(index) instanceof TextSection text)) {
+            return Optional.empty();
+        }
+        return Optional.of(text);
+    }
+
+    private static Optional<List<String>> streamValues(TextSection section, String label) {
+        var text = section.text().replace('\n', ' ').replaceAll("\\s+", " ").strip();
+        if (!text.startsWith(label + " ")) {
+            return Optional.empty();
+        }
+        var values = new ArrayList<String>(List.of(text.substring(label.length()).strip().split("\\s+")));
+        return Optional.of(List.copyOf(values));
+    }
+
+    private static boolean numericToken(String text) {
+        return text.matches("\\d[\\d,]*");
+    }
+
+    private static List<String> appendValue(List<String> values, String tail) {
+        var out = new ArrayList<>(values);
+        out.add(tail);
+        return List.copyOf(out);
+    }
+
+    private static List<List<String>> portShipcallRows(
+            List<TextSection> names, List<String> foreign, List<String> domestic) {
+        if (foreign.size() != names.size() || domestic.size() != names.size()) {
+            return List.of();
+        }
+        var rows = new ArrayList<List<String>>();
+        rows.add(List.of("PORT", "SHIPCALLS", ""));
+        rows.add(List.of("", "Foreign", "Domestic"));
+        for (int i = 0; i < names.size(); i++) {
+            rows.add(List.of(names.get(i).text().strip(), foreign.get(i), domestic.get(i)));
+        }
+        return List.copyOf(rows);
     }
 
     private static List<ParsedSection> promoteInlineCationObservationTables(List<ParsedSection> sections) {
@@ -536,6 +643,31 @@ public final class PdfDocumentParser {
         }
         var a = previous.boundingBox().orElseThrow();
         var b = current.boundingBox().orElseThrow();
+        return Optional.of(new BoundingBox(
+                Math.min(a.x0(), b.x0()),
+                Math.min(a.y0(), b.y0()),
+                Math.max(a.x1(), b.x1()),
+                Math.max(a.y1(), b.y1())));
+    }
+
+    private static SourceLocation mergedLocation(TableSection first, TextSection last) {
+        return new SourceLocation(
+                first.location().pageStart(),
+                last.location().pageEnd(),
+                first.location().lineStart(),
+                last.location().lineEnd(),
+                first.location().charOffset());
+    }
+
+    private static Optional<BoundingBox> mergedBox(TableSection first, TextSection last) {
+        if (first.boundingBox().isEmpty()) {
+            return last.boundingBox();
+        }
+        if (last.boundingBox().isEmpty()) {
+            return first.boundingBox();
+        }
+        var a = first.boundingBox().orElseThrow();
+        var b = last.boundingBox().orElseThrow();
         return Optional.of(new BoundingBox(
                 Math.min(a.x0(), b.x0()),
                 Math.min(a.y0(), b.y0()),

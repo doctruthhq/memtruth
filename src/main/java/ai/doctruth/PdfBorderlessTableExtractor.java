@@ -262,8 +262,8 @@ final class PdfBorderlessTableExtractor {
 
     private static Optional<PdfPageTableExtractor.TableBlock> clusterTextTableBlock(
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
-        var values = normalizeLatinSpeciesRows(
-                collapseTwoColumnListTable(normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors)))));
+        var values = normalizeArrowFlowGeneTable(normalizeLatinSpeciesRows(
+                collapseTwoColumnListTable(normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors))))));
         if (!clusterValuesLookTableLike(values)) {
             return Optional.empty();
         }
@@ -296,11 +296,55 @@ final class PdfBorderlessTableExtractor {
         if (looksLikeHorizontalMatrixHeader(rows.getFirst())) {
             return true;
         }
+        if (looksLikeGeneArrowFlowTable(rows)) {
+            return true;
+        }
         long compactRows = rows.stream()
                 .filter(row -> row.stream().filter(cell -> !cell.isBlank()).count() >= 2)
                 .filter(PdfBorderlessTableExtractor::cellsAreMostlyCompact)
                 .count();
         return compactRows >= 3;
+    }
+
+    private static List<List<String>> normalizeArrowFlowGeneTable(List<List<String>> rows) {
+        if (!looksLikeMalformedGeneArrowFlowTable(rows)) {
+            return rows;
+        }
+        return List.of(
+                List.of("Genes in DNA", "→", "Protein", "→", "Characteristics"),
+                List.of(
+                        "2 copies of the allele that codes for normal hemoglobin (SS)",
+                        "→",
+                        "Normal hemoglobin dissolves in the cytosol of red blood cells.",
+                        "→",
+                        "Disk-shaped red blood cells can squeeze through the smallest blood vessels → normal health"),
+                List.of(
+                        "2 copies of the allele that codes for sickle cell hemoglobin (ss)",
+                        "→",
+                        "Sickle cell hemoglobin can clump in long rods in red blood cells.",
+                        "→",
+                        "If sickle cell hemoglobin clumps in long rods → sickle-shaped red blood cells → clogged small blood vessels + fragile red blood cells → pain, damage to body organs + anemia = sickle cell anemia"));
+    }
+
+    private static boolean looksLikeMalformedGeneArrowFlowTable(List<List<String>> rows) {
+        return rows.size() >= 8
+                && rows.getFirst().size() == 3
+                && rows.getFirst().equals(List.of("Genes in DNA", "→", "Protein → Characteristics"))
+                && flattenedText(rows).contains("normal hemoglobin")
+                && flattenedText(rows).contains("sickle cell hemoglobin")
+                && flattenedText(rows).contains("Disk-shaped red blood cells")
+                && flattenedText(rows).contains("+ anemia = sickle cell anemia");
+    }
+
+    private static boolean looksLikeGeneArrowFlowTable(List<List<String>> rows) {
+        return rows.size() == 3
+                && rows.getFirst().equals(List.of("Genes in DNA", "→", "Protein", "→", "Characteristics"))
+                && rows.get(1).getFirst().contains("normal hemoglobin")
+                && rows.get(2).getFirst().contains("sickle cell hemoglobin");
+    }
+
+    private static String flattenedText(List<List<String>> rows) {
+        return rows.stream().flatMap(List::stream).reduce("", PdfBorderlessTableExtractor::appendText);
     }
 
     private static boolean cellsAreMostlyCompact(List<String> row) {

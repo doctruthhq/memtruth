@@ -373,6 +373,19 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| Open Source | O | O | ✗ | O | O | ✗ |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderArrowFlowChartTableKeepsFiveColumns() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000120"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Genes in DNA | → | Protein | → | Characteristics |");
+        assertThat(markdown).contains("| 2 copies of the allele that codes for normal hemoglobin (SS) | → | Normal hemoglobin dissolves in the cytosol of red blood cells. | → | Disk-shaped red blood cells can squeeze through the smallest blood vessels → normal health |");
+        assertThat(markdown).contains("| 2 copies of the allele that codes for sickle cell hemoglobin (ss) | → | Sickle cell hemoglobin can clump in long rods in red blood cells. | → | If sickle cell hemoglobin clumps in long rods");
+        assertThat(markdown).doesNotContain("| Genes in DNA | → | Protein → Characteristics |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {

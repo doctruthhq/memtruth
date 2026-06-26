@@ -21,13 +21,13 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase22-training-datasets-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase23-arrow-flow-full200/full200
 parsed:   200/200
-overall:  0.770253
-nid:      0.891972
-teds:     0.657165
+overall:  0.773042
+nid:      0.892878
+teds:     0.679411
 mhs:      0.485812
-latency:  76.829377 ms/doc mean
+latency:  76.201875 ms/doc mean
 rss:      20MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
@@ -47,7 +47,9 @@ merges the `01030000000064` PORT/SHIPCALLS header with following name and
 numeric column streams, raising that case to TEDS `0.918367`. Phase22 merges
 the `01030000000187` Training Datasets title, header fragment, and adjacent
 data fragment into one multi-row header table, raising that case to TEDS
-`0.653061`. It is still not OpenDataLoader hybrid parity.
+`0.653061`. Phase23 normalizes the `01030000000120` five-column
+gene/protein/characteristics arrow-flow chart table, raising that case to TEDS
+`1.0`. It is still not OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 

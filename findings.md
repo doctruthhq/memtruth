@@ -2063,10 +2063,10 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase22 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase22-training-datasets-full200/full200` parsed
-  200/200 with overall `0.770253`, NID `0.891972`, TEDS `0.657165`, MHS
-  `0.485812`, mean `76.829377` ms/doc, RSS peak `20MB`, and no
+- Phase23 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase23-arrow-flow-full200/full200` parsed 200/200
+  with overall `0.773042`, NID `0.892878`, TEDS `0.679411`, MHS `0.485812`,
+  mean `76.201875` ms/doc, RSS peak `20MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
@@ -2077,7 +2077,10 @@
   pattern. PORT/SHIPCALLS-style tables can merge detected headers with following
   name and numeric column streams. Training Datasets-style fragments can merge a
   title, header fragment, and adjacent data fragment only when the expected
-  training/alignment labels and sample-count rows are all present.
+  training/alignment labels and sample-count rows are all present. Gene/protein
+  arrow-flow chart tables can normalize to five columns only when the malformed
+  table has the exact `Genes in DNA` / `Protein -> Characteristics` header and
+  both normal/sickle hemoglobin row families are present.
   Table-of-contents pages and ordinary two-column narrative text must remain
   text. Phase19's broader single-column framework-heading table attempt was
   rejected because full200 overall regressed.

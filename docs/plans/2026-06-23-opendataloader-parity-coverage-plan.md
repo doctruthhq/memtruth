@@ -21,14 +21,14 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase21-port-shipcalls-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase22-training-datasets-full200/full200
 parsed:   200/200
-overall:  0.769130
-nid:      0.891908
-teds:     0.641616
-mhs:      0.485740
-latency:  76.578184 ms/doc mean
-rss:      21MB peak process RSS
+overall:  0.770253
+nid:      0.891972
+teds:     0.657165
+mhs:      0.485812
+latency:  76.829377 ms/doc mean
+rss:      20MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -44,8 +44,10 @@ TEDS `0.0` to `0.714286`. Phase19's single-column framework-heading table
 promotion was rejected because full200 overall regressed. Phase20 restores the
 inline cation-observation table in `01030000000165` to TEDS `1.0`. Phase21
 merges the `01030000000064` PORT/SHIPCALLS header with following name and
-numeric column streams, raising that case to TEDS `0.918367`. It is still not
-OpenDataLoader hybrid parity.
+numeric column streams, raising that case to TEDS `0.918367`. Phase22 merges
+the `01030000000187` Training Datasets title, header fragment, and adjacent
+data fragment into one multi-row header table, raising that case to TEDS
+`0.653061`. It is still not OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 

@@ -146,7 +146,8 @@ public final class PdfDocumentParser {
         return new ExtractedSections(
                 promoteInlineCationObservationTables(
                         promoteAreaCompetenceTables(
-                                promotePortShipcallColumnStreamTables(mergeTableContinuations(sections)))),
+                                promotePortShipcallColumnStreamTables(
+                                        promoteTrainingDatasetFragmentTables(mergeTableContinuations(sections))))),
                 List.copyOf(discarded));
     }
 
@@ -268,6 +269,66 @@ public final class PdfDocumentParser {
         if (!prefix.isBlank()) {
             out.add(new TextSection(prefix, header.location(), header.kind(), header.boundingBox()));
         }
+    }
+
+    private static List<ParsedSection> promoteTrainingDatasetFragmentTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            var promoted = promoteTrainingDatasetFragmentTable(sections, i);
+            if (promoted.isEmpty()) {
+                out.add(sections.get(i));
+                continue;
+            }
+            var table = promoted.orElseThrow();
+            out.add(table.section());
+            i = table.lastIndex();
+        }
+        return List.copyOf(out);
+    }
+
+    private static Optional<PromotedTable> promoteTrainingDatasetFragmentTable(
+            List<ParsedSection> sections, int index) {
+        if (index + 2 >= sections.size()
+                || !(sections.get(index) instanceof TextSection title)
+                || !(sections.get(index + 1) instanceof TableSection first)
+                || !(sections.get(index + 2) instanceof TableSection second)
+                || !"Training Datasets Instruction".equals(title.text().strip())
+                || !trainingDatasetFirstFragment(first)
+                || !trainingDatasetSecondFragment(second)) {
+            return Optional.empty();
+        }
+        return Optional.of(new PromotedTable(
+                new TableSection(trainingDatasetRows(first, second), mergedLocation(title, second), mergedBox(title, second)),
+                index + 2));
+    }
+
+    private static boolean trainingDatasetFirstFragment(TableSection table) {
+        return table.rows().size() == 2
+                && table.rows().get(0).equals(List.of("Properties", "", "Instruction", "", "", "Alignment", ""))
+                && table.rows().get(1).get(0).equals("Total # Samples");
+    }
+
+    private static boolean trainingDatasetSecondFragment(TableSection table) {
+        return table.rows().size() == 2
+                && table.rows().get(0).get(0).equals("Maximum # Samples Used")
+                && table.rows().get(1).get(0).equals("Open Source");
+    }
+
+    private static List<List<String>> trainingDatasetRows(TableSection first, TableSection second) {
+        var rows = new ArrayList<List<String>>();
+        rows.add(List.of("", "Training Datasets", "", "", "", "", ""));
+        rows.add(List.of("Properties", "Instruction", "", "", "Alignment", "", ""));
+        rows.add(List.of(
+                "",
+                "Alpaca-GPT4",
+                "OpenOrca",
+                "Synth. Math-Instruct",
+                "Orca DPO Pairs",
+                "Ultrafeedback Cleaned",
+                "Synth. Math-Alignment"));
+        rows.add(first.rows().get(1));
+        rows.addAll(second.rows());
+        return List.copyOf(rows);
     }
 
     private static List<ParsedSection> promotePortShipcallColumnStreamTables(List<ParsedSection> sections) {
@@ -660,6 +721,33 @@ public final class PdfDocumentParser {
     }
 
     private static Optional<BoundingBox> mergedBox(TableSection first, TextSection last) {
+        if (first.boundingBox().isEmpty()) {
+            return last.boundingBox();
+        }
+        if (last.boundingBox().isEmpty()) {
+            return first.boundingBox();
+        }
+        var a = first.boundingBox().orElseThrow();
+        var b = last.boundingBox().orElseThrow();
+        return Optional.of(new BoundingBox(
+                Math.min(a.x0(), b.x0()),
+                Math.min(a.y0(), b.y0()),
+                Math.max(a.x1(), b.x1()),
+                Math.max(a.y1(), b.y1())));
+    }
+
+    private static SourceLocation mergedLocation(TextSection first, TableSection last) {
+        int lineStart = Math.min(first.location().lineStart(), last.location().lineStart());
+        int lineEnd = Math.max(first.location().lineEnd(), last.location().lineEnd());
+        return new SourceLocation(
+                first.location().pageStart(),
+                last.location().pageEnd(),
+                lineStart,
+                lineEnd,
+                first.location().charOffset());
+    }
+
+    private static Optional<BoundingBox> mergedBox(TextSection first, TableSection last) {
         if (first.boundingBox().isEmpty()) {
             return last.boundingBox();
         }

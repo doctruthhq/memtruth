@@ -359,6 +359,20 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("Foreign 2454 1138 958");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderTrainingDatasetFragmentsBecomeOneStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000187"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("|  | Training Datasets |  |  |  |  |  |");
+        assertThat(markdown).contains("| Properties | Instruction |  |  | Alignment |  |  |");
+        assertThat(markdown).contains("|  | Alpaca-GPT4 | OpenOrca | Synth. Math-Instruct | Orca DPO Pairs | Ultrafeedback Cleaned | Synth. Math-Alignment |");
+        assertThat(markdown).contains("| Total # Samples | 52K | 2.91M | 126K | 12.9K | 60.8K | 126K |");
+        assertThat(markdown).contains("| Open Source | O | O | ✗ | O | O | ✗ |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -478,7 +492,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000128"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000146"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000165"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000064"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000064"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000187"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

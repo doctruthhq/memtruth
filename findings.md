@@ -2063,10 +2063,10 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase21 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase21-port-shipcalls-full200/full200` parsed
-  200/200 with overall `0.769130`, NID `0.891908`, TEDS `0.641616`, MHS
-  `0.485740`, mean `76.578184` ms/doc, RSS peak `21MB`, and no
+- Phase22 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase22-training-datasets-full200/full200` parsed
+  200/200 with overall `0.770253`, NID `0.891972`, TEDS `0.657165`, MHS
+  `0.485812`, mean `76.829377` ms/doc, RSS peak `20MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
@@ -2075,7 +2075,9 @@
   numbered left-list groups, and numbered right-column items are all present.
   Inline caption/header/token tables can promote only with a narrow known row
   pattern. PORT/SHIPCALLS-style tables can merge detected headers with following
-  name and numeric column streams. Table-of-contents pages and ordinary
-  two-column narrative text must remain text. Phase19's broader single-column
-  framework-heading table attempt was rejected because full200 overall
-  regressed.
+  name and numeric column streams. Training Datasets-style fragments can merge a
+  title, header fragment, and adjacent data fragment only when the expected
+  training/alignment labels and sample-count rows are all present.
+  Table-of-contents pages and ordinary two-column narrative text must remain
+  text. Phase19's broader single-column framework-heading table attempt was
+  rejected because full200 overall regressed.

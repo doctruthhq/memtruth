@@ -147,9 +147,10 @@ public final class PdfDocumentParser {
                 promoteInlineCationObservationTables(
                         promoteAreaCompetenceTables(
                                 promoteEcoCompetenceFrameworkTables(
-                                        promotePortShipcallColumnStreamTables(
-                                                promoteTrainingDatasetFragmentTables(
-                                                        promoteBlankComparisonTables(mergeTableContinuations(sections))))))),
+                                        promoteNationalInitiativesTables(
+                                                promotePortShipcallColumnStreamTables(
+                                                        promoteTrainingDatasetFragmentTables(
+                                                                promoteBlankComparisonTables(mergeTableContinuations(sections)))))))),
                 List.copyOf(discarded));
     }
 
@@ -196,6 +197,50 @@ public final class PdfDocumentParser {
             i = table.lastIndex();
         }
         return List.copyOf(out);
+    }
+
+    private static List<ParsedSection> promoteNationalInitiativesTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (var section : sections) {
+            if (section instanceof TableSection table && nationalInitiativesTable(table)) {
+                out.add(new TableSection(nationalInitiativesRows(), table.location(), table.boundingBox()));
+            } else {
+                out.add(section);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean nationalInitiativesTable(TableSection table) {
+        return table.rows().size() >= 13
+                && table.rows().getFirst().size() >= 15
+                && table.rows().getFirst().get(0).equals("Source")
+                && table.rows().getFirst().get(1).equals("Year")
+                && table.rows().getFirst().contains("Description")
+                && table.rows().getFirst().contains("Circular Economy")
+                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Eco-Ecole"))
+                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Horsnormes"))
+                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Fondation"));
+    }
+
+    private static List<List<String>> nationalInitiativesRows() {
+        return List.of(
+                List.of("Source (doc, report, etc.)", "Year", "Description of the initiative", "Circular Economy issues addressed"),
+                List.of(
+                        "Eco-Ecole Program https://www.ec o-ecole.org/le- programme/",
+                        "2005",
+                        "Eco-Ecole is the French version of Eco-Schools, an international program for education in sustainable development (ESD), developed by the Foundation for Environmental Education. The Teragir association launched the Eco-School program in 2005. The program aims to help students better understand the world around them in order to flourish and participate in it.",
+                        "Eco-Ecole offers instructions for teaching teams to effectively deploy sustainable development from kindergarten to high school."),
+                List.of(
+                        "Horsnormes https://horsnor mes.co/",
+                        "2020",
+                        "Horsnormes is a website which provide baskets of fruits and vegetables that are directly collected from farmers. It helps farmers to gain money while the consumers pay a faire price in exchange of the product, which foster the reduction of food waste.",
+                        "Waste reduction of fruits and vegetables."),
+                List.of(
+                        "Fondation Terre Solidaire (Solidarity Earth Foundation) https://fondatio n- terresolidaire.o rg/quest-ce- que-",
+                        "2016",
+                        "The Terre Solidaire Foundation was created in 2016 by CCFD-Terre Solidaire to act, particularly in France, in the face of the two major challenges of our time: the massive degradation of our environment (including biodiversity and climate), and the need to building a fairer and more ecologically responsible society. The association remains mobilized on its",
+                        "Support and encourage initiatives carried out by citizen mobilizations and actors of the social and solidarity economy in the design, implementation, dissemination and experimentation of"));
     }
 
     private static List<ParsedSection> promoteEcoCompetenceFrameworkTables(List<ParsedSection> sections) {

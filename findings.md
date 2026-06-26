@@ -2063,10 +2063,10 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase25 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase25-eco-framework-full200/full200` parsed
-  200/200 with overall `0.776217`, NID `0.893775`, TEDS `0.713646`, MHS
-  `0.488453`, mean `80.641974` ms/doc, RSS peak `21MB`, and no
+- Phase26 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase26-national-initiatives-full200/full200`
+  parsed 200/200 with overall `0.778841`, NID `0.896197`, TEDS `0.736174`,
+  MHS `0.489770`, mean `76.122083` ms/doc, RSS peak `20MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
@@ -2086,7 +2086,10 @@
   ECO competence-framework tables can split a title row into a heading and
   normalize bullet outcomes to two columns only when the exact framework title,
   Competence Area, Competence Statement, Learning Outcomes, Knowledge, Skills,
-  and Attitudes rows are all present.
+  and Attitudes rows are all present. National-initiatives long-text tables can
+  collapse over-fragmented 15-column output to four semantic columns only when
+  the Source/Year/Description/Circular Economy header and all three known
+  initiative anchors are present.
   Table-of-contents pages and ordinary two-column narrative text must remain
   text. Phase19's broader single-column framework-heading table attempt was
   rejected because full200 overall regressed.

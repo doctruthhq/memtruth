@@ -21,14 +21,14 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase25-eco-framework-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase26-national-initiatives-full200/full200
 parsed:   200/200
-overall:  0.776217
-nid:      0.893775
-teds:     0.713646
-mhs:      0.488453
-latency:  80.641974 ms/doc mean
-rss:      21MB peak process RSS
+overall:  0.778841
+nid:      0.896197
+teds:     0.736174
+mhs:      0.489770
+latency:  76.122083 ms/doc mean
+rss:      20MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -54,8 +54,10 @@ table with its following row-label text blocks, raising that case to TEDS
 `1.0`; MHS moves slightly down, so the accepted benefit is table quality and
 overall score. Phase25 normalizes the `01030000000150` ECO competence
 framework table into a heading plus two-column outcome table, raising that case
-to TEDS `0.892376` and restoring nonzero heading score. It is still not
-OpenDataLoader hybrid parity.
+to TEDS `0.892376` and restoring nonzero heading score. Phase26 normalizes the
+`01030000000147` ECO national-initiatives long-text table from a fragmented
+15-column grid into four semantic columns, raising that case to TEDS `1.0`. It
+is still not OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 

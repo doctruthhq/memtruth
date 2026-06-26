@@ -418,6 +418,20 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("| 6. ECO |  | CIRCLE COMPETENCE FRAMEWORK |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderNationalInitiativesTableNormalizesToFourColumns() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000147"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Source (doc, report, etc.) | Year | Description of the initiative | Circular Economy issues addressed |");
+        assertThat(markdown).contains("| Eco-Ecole Program https://www.ec o-ecole.org/le- programme/ | 2005 | Eco-Ecole is the French version of Eco-Schools");
+        assertThat(markdown).contains("| Horsnormes https://horsnor mes.co/ | 2020 | Horsnormes is a website which provide baskets of fruits and vegetables");
+        assertThat(markdown).contains("| Fondation Terre Solidaire (Solidarity Earth Foundation) https://fondatio n- terresolidaire.o rg/quest-ce- que- | 2016 | The Terre Solidaire Foundation was created in 2016");
+        assertThat(markdown).doesNotContain("| Source | Year |  |  | Description |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {

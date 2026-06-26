@@ -3,6 +3,7 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
 
 class PdfBorderlessTableExtractionTest {
@@ -88,6 +90,30 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(result.metric("table_cell_f1")).isEqualTo(1.0);
         ParserBenchmarkRunner.requireMinimums(List.of(result), Map.of("table_cell_f1", 1.0));
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderYearTablesBecomeStructuredTables() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000127"));
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(document.toMarkdownClean()).contains("""
+                | Year | 3-Year | 5-Year | 7-Year |
+                | --- | --- | --- | --- |
+                | 1 | 33.0% | 20.00% | 14.29% |""");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderComparativeTablesBecomeStructuredTables() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000083"));
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(document.toMarkdownClean()).contains("""
+                | Category | Number of clauses in Union laws | In percent | Number of clauses in State laws | In percent |
+                | --- | --- | --- | --- | --- |
+                | Commercial | 529 | 10.1% | 817 | 3.9% |""");
     }
 
     private Path writeBorderlessTablePdf() throws IOException {
@@ -188,6 +214,15 @@ class PdfBorderlessTableExtractionTest {
                 true,
                 false);
         return new PdfBoxParserBackend().parse(request).withEvaluatedAuditGrade();
+    }
+
+    private static boolean hasOpenDataLoaderBench() {
+        return Files.isRegularFile(opendataloaderBenchPdf("01030000000127"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000083"));
+    }
+
+    private static Path opendataloaderBenchPdf(String documentId) {
+        return Path.of("third_party/opendataloader-bench/pdfs").resolve(documentId + ".pdf");
     }
 
     private static TrustDocument expectedDocument() {

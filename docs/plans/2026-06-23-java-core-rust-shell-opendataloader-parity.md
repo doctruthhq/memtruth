@@ -472,12 +472,13 @@ Current Phase 6 progress:
 - First-column continuation merge is implemented for OpenDataLoader-style
   multi-line cells such as `Environment, Health and Safety`, `Compliances with
   imprisonment`, and `Percentage of imprisonment clauses`.
-- Verified with `doctruth-java-core-phase6-table-continuation2` smoke:
-  - `01030000000083` TEDS `0.906088`
+- Spacer-column collapse is implemented for header-only/data-only split columns
+  such as `Small | Medium |  | Large`.
+- Verified with `doctruth-java-core-phase6-table-spacer-collapse` smoke:
+  - `01030000000083` TEDS `0.9958`
   - `01030000000127` TEDS `0.888889`
 - Remaining table work before claiming parity:
-  - spacer-column collapse, for example `Small | Medium |  | Large`
-  - broader table-cell grid normalization
+  - broader table-cell grid normalization beyond the current smoke cases
   - model/OCR table cases
   - full200 evidence
 

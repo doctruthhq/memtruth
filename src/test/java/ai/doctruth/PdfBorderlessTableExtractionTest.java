@@ -118,6 +118,10 @@ class PdfBorderlessTableExtractionTest {
         assertThat(document.toMarkdownClean()).contains("| Total Applicable Compliances | 669 |");
         assertThat(document.toMarkdownClean()).contains("| Compliances with imprisonment | 461 |");
         assertThat(document.toMarkdownClean()).contains("| Percentage of imprisonment clauses | 69% |");
+        assertThat(document.toMarkdownClean()).contains("""
+                |  | Small | Medium | Large |
+                | --- | --- | --- | --- |
+                | Total Applicable Compliances | 669 | 3,109 | 5,796 |""");
     }
 
     private Path writeBorderlessTablePdf() throws IOException {

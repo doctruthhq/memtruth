@@ -240,7 +240,7 @@ final class PdfBorderlessTableExtractor {
         if (!looksLikeAlignedTable(rows, anchors)) {
             return Optional.empty();
         }
-        var values = mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList());
+        var values = normalizeSpacerColumns(mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList()));
         var allPositions = rows.stream()
                 .flatMap(row -> row.cells().stream())
                 .flatMap(cell -> cell.positions().stream())
@@ -283,6 +283,62 @@ final class PdfBorderlessTableExtractor {
         }
         if (!pendingFirstColumn.isBlank()) {
             out.add(firstColumnOnlyRow(pendingFirstColumn, rows));
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<List<String>> normalizeSpacerColumns(List<List<String>> rows) {
+        if (rows.size() < 2 || rows.getFirst().size() < 2) {
+            return rows;
+        }
+        var normalized = mutableRows(rows);
+        for (int column = 0; column + 1 < normalized.getFirst().size(); column++) {
+            if (headerOnlyColumnBeforeDataOnlyColumn(normalized, column)) {
+                normalized.getFirst().set(column + 1, normalized.getFirst().get(column));
+                normalized.getFirst().set(column, "");
+            }
+        }
+        return removeBlankColumns(normalized);
+    }
+
+    private static List<List<String>> mutableRows(List<List<String>> rows) {
+        var out = new ArrayList<List<String>>();
+        for (var row : rows) {
+            out.add(new ArrayList<>(row));
+        }
+        return out;
+    }
+
+    private static boolean headerOnlyColumnBeforeDataOnlyColumn(List<List<String>> rows, int column) {
+        return !rows.getFirst().get(column).isBlank()
+                && bodyColumnBlank(rows, column)
+                && rows.getFirst().get(column + 1).isBlank()
+                && !bodyColumnBlank(rows, column + 1);
+    }
+
+    private static boolean bodyColumnBlank(List<List<String>> rows, int column) {
+        return rows.stream().skip(1).allMatch(row -> column >= row.size() || row.get(column).isBlank());
+    }
+
+    private static List<List<String>> removeBlankColumns(List<List<String>> rows) {
+        var keep = new ArrayList<Integer>();
+        int columns = rows.getFirst().size();
+        for (int column = 0; column < columns; column++) {
+            if (!wholeColumnBlank(rows, column)) {
+                keep.add(column);
+            }
+        }
+        return rows.stream().map(row -> keptColumns(row, keep)).toList();
+    }
+
+    private static boolean wholeColumnBlank(List<List<String>> rows, int column) {
+        return rows.stream().allMatch(row -> column >= row.size() || row.get(column).isBlank());
+    }
+
+    private static List<String> keptColumns(List<String> row, List<Integer> keep) {
+        var out = new ArrayList<String>();
+        for (int column : keep) {
+            out.add(column < row.size() ? row.get(column) : "");
         }
         return List.copyOf(out);
     }

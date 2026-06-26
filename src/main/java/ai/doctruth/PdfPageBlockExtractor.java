@@ -208,6 +208,9 @@ final class PdfPageBlockExtractor {
         if (looksLikeKeyValueField(trimmed)) {
             return BlockKind.BODY;
         }
+        if (looksLikeStandaloneKnownSection(trimmed)) {
+            return BlockKind.HEADING;
+        }
         if (pageMedianHeight > 0 && avgCharHeight > pageMedianHeight * HEADING_HEIGHT_FACTOR) {
             return BlockKind.HEADING;
         }
@@ -250,6 +253,17 @@ final class PdfPageBlockExtractor {
 
     private static boolean looksLikeKeyValueField(String trimmed) {
         return !trimmed.contains("\n") && KEY_VALUE_FIELD.matcher(trimmed).matches();
+    }
+
+    private static boolean looksLikeStandaloneKnownSection(String trimmed) {
+        if (trimmed.contains("\n")) {
+            return false;
+        }
+        String head = firstLine(trimmed);
+        if (head.length() > ALLCAPS_MAX_LEN || head.endsWith(".") || head.endsWith(",")) {
+            return false;
+        }
+        return PdfResumeSectionNames.isKnown(head);
     }
 
     private static boolean isYearLeadingSentenceFragment(String trimmed) {

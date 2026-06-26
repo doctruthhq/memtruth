@@ -21,14 +21,14 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase23-arrow-flow-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase24-blank-comparison-full200/full200
 parsed:   200/200
-overall:  0.773042
-nid:      0.892878
-teds:     0.679411
-mhs:      0.485812
-latency:  76.201875 ms/doc mean
-rss:      20MB peak process RSS
+overall:  0.774497
+nid:      0.893263
+teds:     0.699752
+mhs:      0.485275
+latency:  79.225799 ms/doc mean
+rss:      21MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -49,7 +49,10 @@ the `01030000000187` Training Datasets title, header fragment, and adjacent
 data fragment into one multi-row header table, raising that case to TEDS
 `0.653061`. Phase23 normalizes the `01030000000120` five-column
 gene/protein/characteristics arrow-flow chart table, raising that case to TEDS
-`1.0`. It is still not OpenDataLoader hybrid parity.
+`1.0`. Phase24 merges the `01030000000119` Mitosis/Meiosis blank comparison
+table with its following row-label text blocks, raising that case to TEDS
+`1.0`; MHS moves slightly down, so the accepted benefit is table quality and
+overall score. It is still not OpenDataLoader hybrid parity.
 
 ## Reference Boundaries
 

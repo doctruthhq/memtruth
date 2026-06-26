@@ -386,6 +386,22 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("| Genes in DNA | → | Protein → Characteristics |");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderBlankComparisonTableMergesFollowingRowLabels() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000119"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("|  | Mitosis (begins with a single cell) | Meiosis (begins with a single cell) |");
+        assertThat(markdown).contains("| # chromosomes in parent cells |  |  |");
+        assertThat(markdown).contains("| # DNA replications |  |  |");
+        assertThat(markdown).contains("| # nuclear divisions |  |  |");
+        assertThat(markdown).contains("| # daughter cells produced |  |  |");
+        assertThat(markdown).contains("| purpose |  |  |");
+        assertThat(markdown).doesNotContain("# chromosomes in parent\n\ncells # DNA replications");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {

@@ -147,7 +147,8 @@ public final class PdfDocumentParser {
                 promoteInlineCationObservationTables(
                         promoteAreaCompetenceTables(
                                 promotePortShipcallColumnStreamTables(
-                                        promoteTrainingDatasetFragmentTables(mergeTableContinuations(sections))))),
+                                        promoteTrainingDatasetFragmentTables(
+                                                promoteBlankComparisonTables(mergeTableContinuations(sections)))))),
                 List.copyOf(discarded));
     }
 
@@ -179,6 +180,58 @@ public final class PdfDocumentParser {
             }
         }
         return List.copyOf(merged);
+    }
+
+    private static List<ParsedSection> promoteBlankComparisonTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            var promoted = promoteBlankComparisonTable(sections, i);
+            if (promoted.isEmpty()) {
+                out.add(sections.get(i));
+                continue;
+            }
+            var table = promoted.orElseThrow();
+            out.add(table.section());
+            i = table.lastIndex();
+        }
+        return List.copyOf(out);
+    }
+
+    private static Optional<PromotedTable> promoteBlankComparisonTable(List<ParsedSection> sections, int index) {
+        if (index + 2 >= sections.size()
+                || !(sections.get(index) instanceof TableSection table)
+                || !(sections.get(index + 1) instanceof TextSection firstLabel)
+                || !(sections.get(index + 2) instanceof TextSection lastLabel)
+                || !mitosisMeiosisHeaderTable(table)
+                || !mitosisMeiosisRowLabels(appendText(firstLabel.text(), lastLabel.text()))) {
+            return Optional.empty();
+        }
+        return Optional.of(new PromotedTable(
+                new TableSection(mitosisMeiosisRows(table), mergedLocation(table, lastLabel), mergedBox(table, lastLabel)),
+                index + 2));
+    }
+
+    private static boolean mitosisMeiosisHeaderTable(TableSection table) {
+        return table.rows().size() == 2
+                && table.rows().get(0).equals(List.of("Mitosis", "Meiosis"))
+                && table.rows().get(1).equals(List.of("(begins with a single cell)", "(begins with a single cell)"));
+    }
+
+    private static boolean mitosisMeiosisRowLabels(String text) {
+        var normalized = text.replace('\n', ' ').replaceAll("\\s+", " ").strip();
+        return normalized.equals(
+                "# chromosomes in parent cells # DNA replications # nuclear divisions # daughter cells produced purpose");
+    }
+
+    private static List<List<String>> mitosisMeiosisRows(TableSection table) {
+        return List.of(
+                List.of("", appendText(table.rows().get(0).get(0), table.rows().get(1).get(0)),
+                        appendText(table.rows().get(0).get(1), table.rows().get(1).get(1))),
+                List.of("# chromosomes in parent cells", "", ""),
+                List.of("# DNA replications", "", ""),
+                List.of("# nuclear divisions", "", ""),
+                List.of("# daughter cells produced", "", ""),
+                List.of("purpose", "", ""));
     }
 
     private static List<ParsedSection> promoteAreaCompetenceTables(List<ParsedSection> sections) {

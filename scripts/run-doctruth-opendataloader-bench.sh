@@ -16,6 +16,7 @@ JAVA_BACKEND_COMMAND="${DOCTRUTH_OPENDATALOADER_JAVA_BACKEND_COMMAND:-}"
 OUTPUT_DIR=""
 EVALUATOR="rust"
 TIMEOUT_SECONDS=""
+SKIP_BUILDS="${DOCTRUTH_OPENDATALOADER_SKIP_BUILDS:-0}"
 LOCAL_OCR_MANIFEST="$ROOT/model-packs/ppocr-v5-mobile-mnn.json"
 LOCAL_OCR_CACHE="$ROOT/target/ppocr-v5-mobile-mnn-cache"
 
@@ -41,6 +42,10 @@ Options:
   --skip-eval                  Do not run evaluator.
   --evaluator rust|official    Rust evaluator by default; official is oracle-only.
   --official-eval              Alias for --evaluator official.
+
+Environment:
+  DOCTRUTH_OPENDATALOADER_SKIP_BUILDS=1
+                              Reuse an already-built Java jar/runtime binary.
 EOF
 }
 
@@ -174,6 +179,10 @@ if [ "$BACKEND" = "opendataloader-java-core" ] && [ -z "$JAVA_BACKEND_COMMAND" ]
     CLI_JAR="$(find "$ROOT/target" -maxdepth 1 -name 'doctruth-java-*-all.jar' 2>/dev/null | sort | tail -1 || true)"
   fi
   if [ -z "$CLI_JAR" ] || [ ! -f "$CLI_JAR" ]; then
+    if [ "$SKIP_BUILDS" = "1" ]; then
+      echo "Java CLI jar is missing and DOCTRUTH_OPENDATALOADER_SKIP_BUILDS=1 was set" >&2
+      exit 2
+    fi
     mvn -q -DskipTests package >/dev/null
     CLI_JAR="$(find "$ROOT/target" -maxdepth 1 -name 'doctruth-java-*-all.jar' | sort | tail -1)"
   fi
@@ -194,17 +203,28 @@ if [ "$RUNTIME_PROFILE" = "edge-model" ] \
   export DOCTRUTH_RUNTIME_MODEL_COMMAND="$ROOT/runtime/doctruth-runtime/target/$BUILD_PROFILE/doctruth-mnn-model-worker"
 fi
 
-if [ "$BUILD_PROFILE" = "release" ]; then
-  if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
-    cargo build --release --manifest-path "$MANIFEST" --features mnn-ocr --bin doctruth-runtime --bin doctruth-mnn-model-worker >/dev/null
-  else
-    cargo build --release --manifest-path "$MANIFEST" >/dev/null
+if [ "$SKIP_BUILDS" = "1" ]; then
+  if [ ! -x "$BIN" ]; then
+    echo "doctruth-runtime binary is missing or not executable: $BIN" >&2
+    exit 2
+  fi
+  if [ "$USE_LOCAL_MNN_OCR" = "1" ] && [ ! -x "$DOCTRUTH_RUNTIME_MODEL_COMMAND" ]; then
+    echo "MNN model worker binary is missing or not executable: $DOCTRUTH_RUNTIME_MODEL_COMMAND" >&2
+    exit 2
   fi
 else
-  if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
-    cargo build --manifest-path "$MANIFEST" --features mnn-ocr --bin doctruth-runtime --bin doctruth-mnn-model-worker >/dev/null
+  if [ "$BUILD_PROFILE" = "release" ]; then
+    if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
+      cargo build --release --manifest-path "$MANIFEST" --features mnn-ocr --bin doctruth-runtime --bin doctruth-mnn-model-worker >/dev/null
+    else
+      cargo build --release --manifest-path "$MANIFEST" >/dev/null
+    fi
   else
-    cargo build --manifest-path "$MANIFEST" >/dev/null
+    if [ "$USE_LOCAL_MNN_OCR" = "1" ]; then
+      cargo build --manifest-path "$MANIFEST" --features mnn-ocr --bin doctruth-runtime --bin doctruth-mnn-model-worker >/dev/null
+    else
+      cargo build --manifest-path "$MANIFEST" >/dev/null
+    fi
   fi
 fi
 REPORT_TMP="$(mktemp "${TMPDIR:-/tmp}/doctruth-opendataloader-prediction-report.XXXXXX")"

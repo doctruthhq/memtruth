@@ -54,7 +54,7 @@ fn opendataloader_prediction_timeout_path_does_not_spawn_per_document_child() {
 
     assert_eq!(report["prediction"]["documentCount"], 1);
     assert_eq!(report["prediction"]["failedCount"], 1);
-    let errors = fs::read_to_string(output_dir.join("errors.json")).unwrap();
+    let errors = fs::read_to_string(output_dir.join("failures/01030000000165.json")).unwrap();
     assert!(
         !errors.contains("parse child exited"),
         "prediction runner should call parse_pdf in-process instead of spawning one child per PDF:\n{errors}"
@@ -1011,9 +1011,11 @@ fn benchmark_corpus_exports_opendataloader_prediction_artifacts() {
         "deterministic-only"
     );
     assert!(summary["documents"][0]["modelRuntime"].is_null());
-    let errors: Value =
-        serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
-    assert_eq!(errors["documents"], json!([]));
+    assert_eq!(
+        fs::read_dir(prediction.join("failures")).unwrap().count(),
+        0
+    );
+    assert!(!prediction.join("errors.json").exists());
     assert_eq!(
         report["externalArtifacts"]["opendataloaderPrediction"]["engine"],
         "doctruth"
@@ -1084,9 +1086,11 @@ fn opendataloader_prediction_command_writes_artifacts_from_bench_pdf_dir() {
     assert_eq!(summary["documents"][0]["document_id"], "doc-a");
     assert_eq!(summary["documents"][0]["runtimeProfile"], "edge-fast");
 
-    let errors: Value =
-        serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
-    assert_eq!(errors["documents"], json!([]));
+    assert_eq!(
+        fs::read_dir(prediction.join("failures")).unwrap().count(),
+        0
+    );
+    assert!(!prediction.join("errors.json").exists());
 
     let case: Value =
         serde_json::from_str(&fs::read_to_string(prediction.join("cases/doc-a.json")).unwrap())
@@ -1410,10 +1414,13 @@ fn opendataloader_prediction_command_records_per_document_timeout() {
     assert_eq!(summary["documents"][0]["errorCode"], "PARSE_TIMEOUT");
     assert_eq!(summary["documents"][0]["runtimeProfile"], "edge-model");
 
-    let errors: Value =
-        serde_json::from_str(&fs::read_to_string(prediction.join("errors.json")).unwrap()).unwrap();
-    assert_eq!(errors["documents"][0]["document_id"], "slow-doc");
-    assert_eq!(errors["documents"][0]["errorCode"], "PARSE_TIMEOUT");
+    let failure: Value = serde_json::from_str(
+        &fs::read_to_string(prediction.join("failures/slow-doc.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(failure["document_id"], "slow-doc");
+    assert_eq!(failure["errorCode"], "PARSE_TIMEOUT");
+    assert!(!prediction.join("errors.json").exists());
 }
 
 #[test]

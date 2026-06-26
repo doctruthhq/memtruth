@@ -316,6 +316,20 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("\n| A | B | C | D | E |\n");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderAreaCompetenceListBecomesStructuredTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000146"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("| Area | Competence |");
+        assertThat(markdown).contains("| 1. Embodying sustainability values | 1.1 Valuing sustainability |");
+        assertThat(markdown).contains("|  | 1.2 Supporting fairness |");
+        assertThat(markdown).contains("| 2. Embracing complexity in sustainability | 2.1 Systems thinking |");
+        assertThat(markdown).contains("|  | 3.2 Adaptability |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -432,7 +446,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000121"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000182"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000132"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000128"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000128"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000146"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

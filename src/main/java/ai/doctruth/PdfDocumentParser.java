@@ -48,6 +48,9 @@ public final class PdfDocumentParser {
             "(?i).*(confidential|proprietary|copyright|all rights reserved|draft|internal use).*");
     private static final Pattern STANDALONE_BODY_FIELD =
             Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
+    private static final Pattern NUMBERED_AREA_LABEL = Pattern.compile("^\\d+\\.\\s+.+");
+    private static final Pattern NUMBERED_COMPETENCE =
+            Pattern.compile("(\\d+)\\.\\d+\\s+(.+?)(?=\\s+\\d+\\.\\d+\\s+|$)");
     private static final double PARAGRAPH_VERTICAL_GAP = 32.0;
     private static final double PARAGRAPH_LEFT_TOLERANCE = 24.0;
     private static final double PARAGRAPH_MIN_HORIZONTAL_OVERLAP = 0.50;
@@ -139,7 +142,9 @@ public final class PdfDocumentParser {
                 appendPageSections(pdf, page, pageBlocks, furniture, sections, discarded);
             }
         }
-        return new ExtractedSections(mergeTableContinuations(sections), List.copyOf(discarded));
+        return new ExtractedSections(
+                promoteAreaCompetenceTables(mergeTableContinuations(sections)),
+                List.copyOf(discarded));
     }
 
     private static Map<Integer, PageBlocks> preflightTextPages(PDDocument pdf, int pageCount, OcrEngine ocrEngine)
@@ -170,6 +175,96 @@ public final class PdfDocumentParser {
             }
         }
         return List.copyOf(merged);
+    }
+
+    private static List<ParsedSection> promoteAreaCompetenceTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            var promoted = promoteAreaCompetenceTable(sections, i);
+            if (promoted.isEmpty()) {
+                out.add(sections.get(i));
+                continue;
+            }
+            var table = promoted.orElseThrow();
+            appendTextBeforeAreaHeader(out, (TextSection) sections.get(i));
+            out.add(table.section());
+            i = table.lastIndex();
+        }
+        return List.copyOf(out);
+    }
+
+    private static Optional<PromotedTable> promoteAreaCompetenceTable(List<ParsedSection> sections, int index) {
+        if (index + 3 >= sections.size()
+                || !(sections.get(index) instanceof TextSection areaHeader)
+                || !(sections.get(index + 1) instanceof TextSection competenceHeader)
+                || !areaHeader.text().strip().endsWith("Area")
+                || !"Competence".equals(competenceHeader.text().strip())) {
+            return Optional.empty();
+        }
+        int cursor = index + 2;
+        var areas = new ArrayList<TextSection>();
+        while (cursor < sections.size() && numberedListSection(sections.get(cursor))) {
+            areas.add((TextSection) sections.get(cursor));
+            cursor++;
+        }
+        if (areas.isEmpty() || cursor >= sections.size() || !(sections.get(cursor) instanceof TextSection competencies)) {
+            return Optional.empty();
+        }
+        var rows = areaCompetenceRows(areas, competencies.text());
+        if (rows.size() <= 1) {
+            return Optional.empty();
+        }
+        var table = new TableSection(
+                rows,
+                mergedLocation(areaHeader, competencies),
+                mergedBox(areaHeader, competencies));
+        return Optional.of(new PromotedTable(table, cursor));
+    }
+
+    private static boolean numberedListSection(ParsedSection section) {
+        return section instanceof TextSection text
+                && text.kind() == BlockKind.LIST
+                && NUMBERED_AREA_LABEL.matcher(text.text().replace('\n', ' ').strip()).matches();
+    }
+
+    private static List<List<String>> areaCompetenceRows(List<TextSection> areas, String competenceText) {
+        var competencies = competenceItems(competenceText);
+        var rows = new ArrayList<List<String>>();
+        rows.add(List.of("Area", "Competence"));
+        for (var area : areas) {
+            appendAreaRows(rows, area.text().replace('\n', ' ').strip(), competencies);
+        }
+        return List.copyOf(rows);
+    }
+
+    private static void appendAreaRows(
+            List<List<String>> rows, String area, Map<String, List<String>> competencies) {
+        var key = area.substring(0, area.indexOf('.')).strip();
+        var values = competencies.getOrDefault(key, List.of());
+        for (int i = 0; i < values.size(); i++) {
+            rows.add(List.of(i == 0 ? area : "", values.get(i)));
+        }
+    }
+
+    private static Map<String, List<String>> competenceItems(String text) {
+        var out = new java.util.LinkedHashMap<String, List<String>>();
+        var matcher = NUMBERED_COMPETENCE.matcher(text.replace('\n', ' ').strip());
+        while (matcher.find()) {
+            out.computeIfAbsent(matcher.group(1), ignored -> new ArrayList<>())
+                    .add(matcher.group().strip());
+        }
+        return out;
+    }
+
+    private static void appendTextBeforeAreaHeader(List<ParsedSection> out, TextSection header) {
+        var text = header.text().stripTrailing();
+        if (!text.endsWith("Area")) {
+            return;
+        }
+        var prefix = text.substring(0, text.length() - "Area".length()).stripTrailing();
+        if (!prefix.isBlank()) {
+            out.add(new TextSection(prefix, header.location(), header.kind(), header.boundingBox()));
+        }
     }
 
     private static boolean tryMergeSpreadsheetFragment(List<ParsedSection> merged, TableSection current) {
@@ -395,6 +490,31 @@ public final class PdfDocumentParser {
         }
         var a = previous.boundingBox().orElseThrow();
         var b = current.boundingBox().orElseThrow();
+        return Optional.of(new BoundingBox(
+                Math.min(a.x0(), b.x0()),
+                Math.min(a.y0(), b.y0()),
+                Math.max(a.x1(), b.x1()),
+                Math.max(a.y1(), b.y1())));
+    }
+
+    private static SourceLocation mergedLocation(TextSection first, TextSection last) {
+        return new SourceLocation(
+                first.location().pageStart(),
+                last.location().pageEnd(),
+                first.location().lineStart(),
+                last.location().lineEnd(),
+                first.location().charOffset());
+    }
+
+    private static Optional<BoundingBox> mergedBox(TextSection first, TextSection last) {
+        if (first.boundingBox().isEmpty()) {
+            return last.boundingBox();
+        }
+        if (last.boundingBox().isEmpty()) {
+            return first.boundingBox();
+        }
+        var a = first.boundingBox().orElseThrow();
+        var b = last.boundingBox().orElseThrow();
         return Optional.of(new BoundingBox(
                 Math.min(a.x0(), b.x0()),
                 Math.min(a.y0(), b.y0()),
@@ -804,6 +924,8 @@ public final class PdfDocumentParser {
     private record ExtractedSections(List<ParsedSection> sections, List<DiscardedBlock> discardedBlocks) {}
 
     private record PageBlocks(int page, boolean routeToOcr, List<PdfTextBlock> blocks) {}
+
+    private record PromotedTable(TableSection section, int lastIndex) {}
 
     private record FurnitureKey(String reason, String normalizedText) {}
 }

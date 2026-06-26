@@ -2063,13 +2063,15 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase17 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase17-excel-fragment-full200/full200` parsed
-  200/200 with overall `0.763680`, NID `0.890764`, TEDS `0.580748`, MHS
-  `0.485718`, mean `77.294369` ms/doc, RSS peak `20MB`, and no
+- Phase18 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase18-area-competence-full200/full200` parsed
+  200/200 with overall `0.764969`, NID `0.891060`, TEDS `0.597754`, MHS
+  `0.485718`, mean `74.627939` ms/doc, RSS peak `20MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
-  Excel-style same-page spreadsheet fragments can be accepted, but
-  table-of-contents pages and ordinary two-column narrative text must remain
+  Excel-style same-page spreadsheet fragments can be accepted; narrow
+  Area/Competence blocks can also promote when `Area`/`Competence` headers,
+  numbered left-list groups, and numbered right-column items are all present.
+  Table-of-contents pages and ordinary two-column narrative text must remain
   text.

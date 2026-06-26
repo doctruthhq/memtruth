@@ -124,6 +124,18 @@ class PdfBorderlessTableExtractionTest {
                 | Total Applicable Compliances | 669 | 3,109 | 5,796 |""");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderLongTextComparativeTableDoesNotCollapseToSingleRow() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000088"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("| Jurisdiction | GATS XVII Reservation (1994) | Foreign Ownership Permitted |");
+        assertThat(markdown).contains("| Argentina | Y | Y | Prohibition on ownership of property");
+        assertThat(markdown).contains("| Australia | N | Y | Approval is needed from the Treasurer");
+        assertThat(markdown).doesNotContain("| Restrictions on Land Ownership by Foreigners in Selected Jurisdictions Comparative Summary Table Jurisdiction");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -226,7 +238,8 @@ class PdfBorderlessTableExtractionTest {
 
     private static boolean hasOpenDataLoaderBench() {
         return Files.isRegularFile(opendataloaderBenchPdf("01030000000127"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000083"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000083"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000088"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

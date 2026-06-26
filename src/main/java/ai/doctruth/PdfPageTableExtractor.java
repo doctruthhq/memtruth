@@ -37,6 +37,9 @@ final class PdfPageTableExtractor {
         if (!hasNonBlankCell(rows)) {
             return List.of();
         }
+        if (looksLikeDegenerateGridTable(rows)) {
+            return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
+        }
         var box = normalizedBox(xs, ys, page.getWidth(), page.getHeight());
         var section = new TableSection(
                 rows,
@@ -182,6 +185,25 @@ final class PdfPageTableExtractor {
 
     private static boolean hasNonBlankCell(List<List<String>> rows) {
         return rows.stream().flatMap(List::stream).anyMatch(cell -> !cell.isBlank());
+    }
+
+    private static boolean looksLikeDegenerateGridTable(List<List<String>> rows) {
+        if (rows.size() < 2) {
+            return true;
+        }
+        int columns = rows.getFirst().size();
+        if (columns < 2) {
+            return true;
+        }
+        long giantCells = rows.stream()
+                .flatMap(List::stream)
+                .filter(cell -> cell.length() > 500)
+                .count();
+        return giantCells > 0 && nonBlankCellCount(rows) <= rows.size() + columns;
+    }
+
+    private static long nonBlankCellCount(List<List<String>> rows) {
+        return rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).count();
     }
 
     private static BoundingBox normalizedBox(List<Double> xs, List<Double> ys, double pageWidth, double pageHeight) {

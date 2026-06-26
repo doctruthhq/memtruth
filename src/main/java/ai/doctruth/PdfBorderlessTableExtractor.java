@@ -27,6 +27,10 @@ final class PdfBorderlessTableExtractor {
     static List<PdfPageTableExtractor.TableBlock> detect(
             List<TextPosition> positions, int pageNumber, double pageWidth, double pageHeight) {
         var allRows = allRows(positions);
+        var wideTextTable = wideTextTable(allRows, pageNumber, pageWidth, pageHeight);
+        if (!wideTextTable.isEmpty()) {
+            return wideTextTable;
+        }
         var rows = allRows.stream().filter(row -> row.cells().size() >= 2).toList();
         var tables = new ArrayList<PdfPageTableExtractor.TableBlock>();
         for (var run : tableRuns(rows)) {
@@ -36,6 +40,156 @@ final class PdfBorderlessTableExtractor {
             tableBlock(rowsWithHeader, anchors, pageNumber, pageWidth, pageHeight).ifPresent(tables::add);
         }
         return List.copyOf(tables);
+    }
+
+    private static List<PdfPageTableExtractor.TableBlock> wideTextTable(
+            List<BorderlessRow> allRows, int pageNumber, double pageWidth, double pageHeight) {
+        var rows = wideTextTableRows(allRows);
+        if (rows.size() < 3) {
+            return List.of();
+        }
+        var anchors = columnAnchors(rows.stream().filter(row -> row.cells().size() >= 3).toList());
+        if (anchors.size() < 4 || !looksLikeWideTextTable(rows, anchors)) {
+            return List.of();
+        }
+        return wideTextTableBlock(rows, anchors, pageNumber, pageWidth, pageHeight)
+                .map(List::of)
+                .orElseGet(List::of);
+    }
+
+    private static List<BorderlessRow> wideTextTableRows(List<BorderlessRow> allRows) {
+        int start = -1;
+        int end = -1;
+        for (int index = 0; index < allRows.size(); index++) {
+            var row = allRows.get(index);
+            if (start < 0 && row.cells().size() >= 4 && row.text().matches("(?i).*\\b(jurisdiction|country|category)\\b.*")) {
+                start = index;
+            } else if (start >= 0 && looksLikePageFooter(row.text())) {
+                end = index;
+                break;
+            }
+        }
+        if (start < 0) {
+            return List.of();
+        }
+        int tableEnd = end < 0 ? allRows.size() : end;
+        return List.copyOf(allRows.subList(start, tableEnd));
+    }
+
+    private static boolean looksLikePageFooter(String text) {
+        return text.matches("(?i).*\\b(page|library|copyright)\\b.*\\d+\\s*$");
+    }
+
+    private static boolean looksLikeWideTextTable(List<BorderlessRow> rows, List<Double> anchors) {
+        long multiColumnRows = rows.stream().filter(row -> row.cells().size() >= 3).count();
+        long dataStarts = rows.stream()
+                .filter(row -> row.cells().size() >= 4)
+                .filter(PdfBorderlessTableExtractor::looksLikeWideTextDataStart)
+                .count();
+        return multiColumnRows >= 3 && dataStarts >= 2 && rows.stream().allMatch(row -> wideRowFits(row, anchors));
+    }
+
+    private static boolean looksLikeWideTextDataStart(BorderlessRow row) {
+        var first = row.cells().getFirst().text().strip();
+        return !first.isBlank()
+                && !first.matches("(?i).*(jurisdiction|country|category|year|gats|foreign|ownership|reservation).*")
+                && row.cells().stream().skip(1).filter(cell -> !cell.text().isBlank()).count() >= 2;
+    }
+
+    private static boolean wideRowFits(BorderlessRow row, List<Double> anchors) {
+        return row.cells().stream().allMatch(cell -> nearestHeaderColumn(cell, anchors) >= 0);
+    }
+
+    private static Optional<PdfPageTableExtractor.TableBlock> wideTextTableBlock(
+            List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
+        var values = normalizeSpacerColumns(mergeWideContinuationRows(mergeLeadingHeaderRows(
+                rows.stream().map(row -> zonedCellTexts(row, anchors)).toList())));
+        if (values.size() < 2 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+            return Optional.empty();
+        }
+        var allPositions = rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .flatMap(cell -> cell.positions().stream())
+                .toList();
+        var box = PdfTextPositionBoxes.layoutBox(allPositions, pageWidth, pageHeight);
+        if (box.isEmpty()) {
+            return Optional.empty();
+        }
+        var section = new TableSection(
+                values,
+                new SourceLocation(pageNumber, pageNumber, 1, values.size(), 0),
+                box,
+                cellRegions(rows, anchors, pageWidth, pageHeight));
+        return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
+    }
+
+    private static List<List<String>> mergeLeadingHeaderRows(List<List<String>> rows) {
+        int firstData = firstWideTextDataRow(rows);
+        if (firstData <= 1) {
+            return rows;
+        }
+        var header = new ArrayList<String>();
+        for (int column = 0; column < rows.getFirst().size(); column++) {
+            var text = new StringBuilder();
+            for (int row = 0; row < firstData; row++) {
+                appendCell(text, rows.get(row).get(column));
+            }
+            header.add(cleanHeaderText(text.toString()));
+        }
+        var out = new ArrayList<List<String>>();
+        out.add(List.copyOf(header));
+        out.addAll(rows.subList(firstData, rows.size()));
+        return List.copyOf(out);
+    }
+
+    private static int firstWideTextDataRow(List<List<String>> rows) {
+        for (int row = 0; row < rows.size(); row++) {
+            if (looksLikeWideTextDataRow(rows.get(row))) {
+                return row;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean looksLikeWideTextDataRow(List<String> row) {
+        var first = row.getFirst().strip();
+        return row.size() >= 4
+                && !first.isBlank()
+                && !first.matches("(?i).*(jurisdiction|country|category|year|gats|foreign|ownership|reservation).*")
+                && row.stream().skip(1).filter(cell -> !cell.isBlank()).count() >= 2;
+    }
+
+    private static List<List<String>> mergeWideContinuationRows(List<List<String>> rows) {
+        var out = new ArrayList<List<String>>();
+        for (var row : rows) {
+            if (isBlankFirstContinuation(row) && !out.isEmpty()) {
+                out.set(out.size() - 1, appendContinuationCells(out.getLast(), row));
+            } else {
+                out.add(row);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean isBlankFirstContinuation(List<String> row) {
+        return !row.isEmpty() && row.getFirst().isBlank() && row.stream().skip(1).anyMatch(cell -> !cell.isBlank());
+    }
+
+    private static List<String> appendContinuationCells(List<String> previous, List<String> continuation) {
+        var out = new ArrayList<String>();
+        int columns = Math.max(previous.size(), continuation.size());
+        for (int column = 0; column < columns; column++) {
+            var left = column < previous.size() ? previous.get(column) : "";
+            var right = column < continuation.size() ? continuation.get(column) : "";
+            out.add(appendText(left, right));
+        }
+        return List.copyOf(out);
+    }
+
+    private static String cleanHeaderText(String text) {
+        return text.strip()
+                .replace("Foreign Ownership Ownership", "Foreign Ownership")
+                .replace("GATS XVII Reservation Ownership (1994)", "GATS XVII Reservation (1994)");
     }
 
     private static List<BorderlessRow> allRows(List<TextPosition> positions) {
@@ -50,7 +204,7 @@ final class PdfBorderlessTableExtractor {
         var cells = new ArrayList<BorderlessCell>();
         var current = new ArrayList<TextPosition>();
         TextPosition previous = null;
-        double splitGap = Math.max(24.0, PdfTextPositionMetrics.medianWidth(sorted) * 6.0);
+        double splitGap = Math.max(8.0, PdfTextPositionMetrics.medianWidth(sorted) * 2.0);
         for (var position : sorted) {
             if (previous != null
                     && PdfTextPositionMetrics.horizontalGap(previous, position) > splitGap
@@ -122,13 +276,13 @@ final class PdfBorderlessTableExtractor {
         var out = new ArrayList<BorderlessRow>();
         for (int index = first; index <= last; index++) {
             var row = allRows.get(index);
-            if (run.contains(row) || looksLikeFirstColumnContinuation(row, anchors)) {
+            if (run.contains(row) || looksLikeColumnContinuation(row, anchors)) {
                 out.add(row);
             }
         }
         for (int index = last + 1; index < allRows.size(); index++) {
             var row = allRows.get(index);
-            if (verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP || !looksLikeFirstColumnContinuation(row, anchors)) {
+            if (verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP || !looksLikeColumnContinuation(row, anchors)) {
                 break;
             }
             out.add(row);
@@ -136,11 +290,11 @@ final class PdfBorderlessTableExtractor {
         return out.size() >= run.size() ? List.copyOf(out) : run;
     }
 
-    private static boolean looksLikeFirstColumnContinuation(BorderlessRow row, List<Double> anchors) {
+    private static boolean looksLikeColumnContinuation(BorderlessRow row, List<Double> anchors) {
         if (row.cells().size() != 1 || looksLikeAllCapsHeading(row.text()) || looksLikeTableCaption(row.text())) {
             return false;
         }
-        return nearestHeaderColumn(row.cells().getFirst(), anchors) == 0;
+        return nearestHeaderColumn(row.cells().getFirst(), anchors) >= 0;
     }
 
     private static List<BorderlessRow> prependStackedHeaderRow(
@@ -274,6 +428,10 @@ final class PdfBorderlessTableExtractor {
                 }
                 continue;
             }
+            if (isSingleColumnContinuation(row)) {
+                mergeSingleColumnContinuation(out, row);
+                continue;
+            }
             var merged = new ArrayList<>(row);
             if (!pendingFirstColumn.isBlank() && merged.getFirst().isBlank()) {
                 merged.set(0, pendingFirstColumn);
@@ -285,6 +443,36 @@ final class PdfBorderlessTableExtractor {
             out.add(firstColumnOnlyRow(pendingFirstColumn, rows));
         }
         return List.copyOf(out);
+    }
+
+    private static boolean isSingleColumnContinuation(List<String> row) {
+        return nonBlankColumn(row) > 0 && row.stream().filter(cell -> !cell.isBlank()).count() == 1;
+    }
+
+    private static int nonBlankColumn(List<String> row) {
+        for (int column = 0; column < row.size(); column++) {
+            if (!row.get(column).isBlank()) {
+                return column;
+            }
+        }
+        return -1;
+    }
+
+    private static void mergeSingleColumnContinuation(List<List<String>> out, List<String> row) {
+        if (out.isEmpty()) {
+            out.add(row);
+            return;
+        }
+        int column = nonBlankColumn(row);
+        if (column < 0) {
+            return;
+        }
+        var previous = new ArrayList<>(out.getLast());
+        while (previous.size() <= column) {
+            previous.add("");
+        }
+        previous.set(column, appendText(previous.get(column), row.get(column)));
+        out.set(out.size() - 1, List.copyOf(previous));
     }
 
     private static List<List<String>> normalizeSpacerColumns(List<List<String>> rows) {
@@ -480,6 +668,67 @@ final class PdfBorderlessTableExtractor {
             }
         }
         return columns.stream().map(StringBuilder::toString).toList();
+    }
+
+    private static List<String> zonedCellTexts(BorderlessRow row, List<Double> anchors) {
+        var columns = new ArrayList<List<TextPosition>>();
+        for (int i = 0; i < anchors.size(); i++) {
+            columns.add(new ArrayList<>());
+        }
+        for (var cell : row.cells()) {
+            for (var word : wordGroups(cell.positions())) {
+                int column = zoneColumn(word.getFirst(), anchors);
+                if (column >= 0) {
+                    columns.get(column).addAll(word);
+                }
+            }
+        }
+        return columns.stream()
+                .map(PdfTextPositionMetrics::sortByX)
+                .map(PdfTextPositionMetrics::renderWithInferredSpaces)
+                .map(String::strip)
+                .toList();
+    }
+
+    private static List<List<TextPosition>> wordGroups(List<TextPosition> positions) {
+        var sorted = PdfTextPositionMetrics.sortByX(positions);
+        if (sorted.isEmpty()) {
+            return List.of();
+        }
+        var out = new ArrayList<List<TextPosition>>();
+        var current = new ArrayList<TextPosition>();
+        TextPosition previous = null;
+        double wordGap = Math.max(1.5, PdfTextPositionMetrics.medianWidth(sorted) * 0.75);
+        for (var position : sorted) {
+            if (previous != null && PdfTextPositionMetrics.horizontalGap(previous, position) > wordGap) {
+                out.add(List.copyOf(current));
+                current = new ArrayList<>();
+            }
+            current.add(position);
+            previous = position;
+        }
+        if (!current.isEmpty()) {
+            out.add(List.copyOf(current));
+        }
+        return List.copyOf(out);
+    }
+
+    private static int zoneColumn(TextPosition position, List<Double> anchors) {
+        double x = position.getXDirAdj();
+        for (int column = 0; column < anchors.size(); column++) {
+            double left = column == 0 ? Double.NEGATIVE_INFINITY : midpoint(anchors.get(column - 1), anchors.get(column));
+            double right = column + 1 >= anchors.size()
+                    ? Double.POSITIVE_INFINITY
+                    : midpoint(anchors.get(column), anchors.get(column + 1));
+            if (x >= left && x < right) {
+                return column;
+            }
+        }
+        return -1;
+    }
+
+    private static double midpoint(double left, double right) {
+        return left + (right - left) / 2.0;
     }
 
     private static void appendCell(StringBuilder column, String text) {

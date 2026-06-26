@@ -477,8 +477,24 @@ Current Phase 6 progress:
 - Verified with `doctruth-java-core-phase6-table-spacer-collapse` smoke:
   - `01030000000083` TEDS `0.9958`
   - `01030000000127` TEDS `0.888889`
+- Added wide long-text comparative table recovery for OpenDataLoader case
+  `01030000000088`:
+  - detects 4+ column long-text comparative tables without collapsing the
+    page into one giant table row
+  - uses word-zone column assignment only for the wide-text path, while keeping
+    normal borderless tables on the existing cell-cluster assignment
+  - merges multi-row headers into one Markdown/TrustDocument table header
+  - merges blank-first continuation rows into the prior data row across
+    long-text evidence columns
+- Verified with refreshed Java CLI jar:
+  - `01030000000088` single-doc bench TEDS `0.999827`, TEDS_s `1.0`,
+    overall `0.983936`
+  - `doctruth-java-core-phase6-wide-text-table` smoke parsed 5/5 documents,
+    TEDS mean `0.9979`, no Python/Torch/Docling production residency
+  - smoke cases: `01030000000083` TEDS `0.9958`, `01030000000127` TEDS `1.0`
 - Remaining table work before claiming parity:
-  - broader table-cell grid normalization beyond the current smoke cases
+  - broader table-cell grid normalization beyond the current smoke and
+    wide-text cases
   - model/OCR table cases
   - full200 evidence
 

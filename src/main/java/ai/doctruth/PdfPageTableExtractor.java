@@ -43,6 +43,9 @@ final class PdfPageTableExtractor {
         if (looksLikeNonTabularGrid(rows)) {
             return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
         }
+        if (looksLikeNarrativeShardGrid(rows)) {
+            return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
+        }
         var box = normalizedBox(xs, ys, page.getWidth(), page.getHeight());
         var section = new TableSection(
                 rows,
@@ -202,6 +205,26 @@ final class PdfPageTableExtractor {
             return true;
         }
         return false;
+    }
+
+    private static boolean looksLikeNarrativeShardGrid(List<List<String>> rows) {
+        int columns = rows.getFirst().size();
+        if (columns < 7) {
+            return false;
+        }
+        long nonBlank = rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).count();
+        long numeric = rows.stream().flatMap(List::stream).filter(PdfPageTableExtractor::isNumericCell).count();
+        long prose = rows.stream().flatMap(List::stream).filter(PdfPageTableExtractor::looksLikeProseShard).count();
+        return nonBlank >= 18 && numeric <= 2 && prose * 3 >= nonBlank;
+    }
+
+    private static boolean isNumericCell(String text) {
+        return text.strip().matches("^[+-]?(?:(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
+    }
+
+    private static boolean looksLikeProseShard(String text) {
+        return text.strip().toLowerCase(java.util.Locale.ROOT)
+                .matches(".*\\b(the|and|of|to|in|as|by|for|with|from|that|this)\\b.*");
     }
 
     private static boolean looksLikeDegenerateGridTable(List<List<String>> rows) {

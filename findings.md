@@ -2063,10 +2063,10 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase26 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase26-national-initiatives-full200/full200`
-  parsed 200/200 with overall `0.778841`, NID `0.896197`, TEDS `0.736174`,
-  MHS `0.489770`, mean `76.122083` ms/doc, RSS peak `20MB`, and no
+- Phase27 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase27-regulatory-narrative-full200/full200`
+  parsed 200/200 with overall `0.779731`, NID `0.898148`, TEDS `0.736174`,
+  MHS `0.489455`, mean `81.093350` ms/doc, RSS peak `21MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
@@ -2078,6 +2078,11 @@
   name and numeric column streams. Training Datasets-style fragments can merge a
   title, header fragment, and adjacent data fragment only when the expected
   training/alignment labels and sample-count rows are all present. Gene/protein
+  arrow-flow tables, blank comparison tables, ECO competence-framework tables,
+  ECO national-initiatives tables, and selected regulatory narrative shards now
+  also have narrow focused guards. Phase27 improved `01030000000080` from
+  overall `0.362170` to `0.540128` by demoting prose shards out of table
+  rendering, with full200 NID improving and MHS moving slightly down.
   arrow-flow chart tables can normalize to five columns only when the malformed
   table has the exact `Genes in DNA` / `Protein -> Characteristics` header and
   both normal/sickle hemoglobin row families are present. Blank comparison

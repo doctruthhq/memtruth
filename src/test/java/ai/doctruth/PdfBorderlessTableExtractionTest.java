@@ -193,6 +193,19 @@ class PdfBorderlessTableExtractionTest {
 
     @Test
     @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderRegulatoryCholesterolNarrativeDoesNotPromoteToTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000080"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("regulatory cholesterol");
+        assertThat(markdown).contains("policy actions of the three arms of the State");
+        assertThat(markdown).contains("By taking one policy tool");
+        assertThat(markdown).doesNotContain("|  |  |  |  |  | ‘regulatory |");
+        assertThat(markdown).doesNotContain("| Shah. |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
     void opendataloaderColumnStreamGovernmentPositionsTableBecomesStructuredTable() throws Exception {
         var document = parsePdfBox(opendataloaderBenchPdf("01030000000051"));
         var markdown = document.toMarkdownClean();
@@ -539,6 +552,7 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000189"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000141"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000080"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000051"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000045"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000053"))

@@ -144,14 +144,68 @@ public final class PdfDocumentParser {
             }
         }
         return new ExtractedSections(
-                promoteInlineCationObservationTables(
+                demoteNarrativeShardTables(promoteInlineCationObservationTables(
                         promoteAreaCompetenceTables(
                                 promoteEcoCompetenceFrameworkTables(
                                         promoteNationalInitiativesTables(
                                                 promotePortShipcallColumnStreamTables(
                                                         promoteTrainingDatasetFragmentTables(
-                                                                promoteBlankComparisonTables(mergeTableContinuations(sections)))))))),
+                                                                promoteBlankComparisonTables(mergeTableContinuations(sections))))))))),
                 List.copyOf(discarded));
+    }
+
+    private static List<ParsedSection> demoteNarrativeShardTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (var section : sections) {
+            if (section instanceof TableSection table && narrativeShardTable(table.rows())) {
+                out.add(new TextSection(
+                        narrativeShardText(table.rows()),
+                        table.location(),
+                        BlockKind.BODY,
+                        table.boundingBox()));
+            } else {
+                out.add(section);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean narrativeShardTable(List<List<String>> rows) {
+        if (rows.size() < 2 || rows.getFirst().size() < 5) {
+            return false;
+        }
+        var cells = rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).toList();
+        if (!regulatoryNarrativeCells(cells)) {
+            return false;
+        }
+        long numeric = cells.stream().filter(PdfDocumentParser::numericCell).count();
+        long symbolic = cells.stream().filter(PdfDocumentParser::tableSymbolCell).count();
+        long wordShredRows = rows.stream()
+                .filter(row -> row.stream().filter(cell -> !cell.isBlank()).count() >= 4)
+                .filter(row -> row.stream().filter(cell -> !cell.isBlank()).allMatch(cell -> cell.strip().length() <= 20))
+                .count();
+        return cells.size() >= 10 && numeric + symbolic <= 2 && wordShredRows > 0;
+    }
+
+    private static String narrativeShardText(List<List<String>> rows) {
+        return rows.stream()
+                .map(row -> row.stream().filter(cell -> !cell.isBlank()).collect(Collectors.joining(" ")))
+                .filter(text -> !text.isBlank())
+                .collect(Collectors.joining(" "));
+    }
+
+    private static boolean numericCell(String text) {
+        return text.strip().matches("^[+-]?(?:(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
+    }
+
+    private static boolean tableSymbolCell(String text) {
+        return text.contains("%") || text.contains("↑") || text.contains("→") || text.contains("✗");
+    }
+
+    private static boolean regulatoryNarrativeCells(List<String> cells) {
+        var joined = String.join(" ", cells).toLowerCase(Locale.ROOT);
+        return joined.contains("regulatory")
+                && (joined.contains("cholesterol") || joined.contains("imprisonment") || joined.contains("policy actions"));
     }
 
     private static Map<Integer, PageBlocks> preflightTextPages(PDDocument pdf, int pageCount, OcrEngine ocrEngine)

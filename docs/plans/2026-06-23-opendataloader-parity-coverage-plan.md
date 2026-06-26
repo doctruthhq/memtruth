@@ -21,14 +21,14 @@ Do not run full200 after every tiny change. Run focused red/green tests while po
 Latest accepted Java-core gate:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase26-national-initiatives-full200/full200
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase27-regulatory-narrative-full200/full200
 parsed:   200/200
-overall:  0.778841
-nid:      0.896197
+overall:  0.779731
+nid:      0.898148
 teds:     0.736174
-mhs:      0.489770
-latency:  76.122083 ms/doc mean
-rss:      20MB peak process RSS
+mhs:      0.489455
+latency:  81.093350 ms/doc mean
+rss:      21MB peak process RSS
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -57,7 +57,11 @@ framework table into a heading plus two-column outcome table, raising that case
 to TEDS `0.892376` and restoring nonzero heading score. Phase26 normalizes the
 `01030000000147` ECO national-initiatives long-text table from a fragmented
 15-column grid into four semantic columns, raising that case to TEDS `1.0`. It
-is still not OpenDataLoader hybrid parity.
+is still not OpenDataLoader hybrid parity. Phase27 demotes a selected
+regulatory-narrative shard false table in `01030000000080`, raising that case
+from overall `0.362170` to `0.540128` and moving full200 overall to
+`0.779731`. This is still a focused parser-quality improvement, not OCR/model
+parity.
 
 ## Reference Boundaries
 

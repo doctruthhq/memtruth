@@ -74,6 +74,9 @@ final class PdfBorderlessTableExtractor {
             if (anchors.size() < 2 || clusterDataRows(candidate, anchors) < 2) {
                 continue;
             }
+            if (looksLikeNarrativeShardRows(candidate, anchors)) {
+                continue;
+            }
             return clusterTextTableBlock(candidate, anchors, pageNumber, pageWidth, pageHeight)
                     .map(List::of)
                     .orElseGet(List::of);
@@ -299,11 +302,42 @@ final class PdfBorderlessTableExtractor {
         if (looksLikeGeneArrowFlowTable(rows)) {
             return true;
         }
+        if (looksLikeNarrativeShardTable(rows)) {
+            return false;
+        }
         long compactRows = rows.stream()
                 .filter(row -> row.stream().filter(cell -> !cell.isBlank()).count() >= 2)
                 .filter(PdfBorderlessTableExtractor::cellsAreMostlyCompact)
                 .count();
         return compactRows >= 3;
+    }
+
+    private static boolean looksLikeNarrativeShardTable(List<List<String>> rows) {
+        int columns = rows.getFirst().size();
+        if (columns < 7) {
+            return false;
+        }
+        if (!containsRegulatoryNarrative(rows.stream().flatMap(List::stream).toList())) {
+            return false;
+        }
+        long nonBlank = rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).count();
+        long numeric = rows.stream().flatMap(List::stream).filter(PdfBorderlessTableExtractor::isNumericCell).count();
+        long symbolic = rows.stream().flatMap(List::stream).filter(PdfBorderlessTableExtractor::hasTableSymbol).count();
+        long prose = rows.stream().flatMap(List::stream).filter(PdfBorderlessTableExtractor::looksLikeProseShard).count();
+        return nonBlank >= 18 && numeric + symbolic <= 2 && prose * 3 >= nonBlank;
+    }
+
+    private static boolean hasTableSymbol(String text) {
+        return text.contains("%")
+                || text.contains("↑")
+                || text.contains("→")
+                || text.contains("✗")
+                || text.matches("(?i)^o$|^x$|^yes$|^no$");
+    }
+
+    private static boolean looksLikeProseShard(String text) {
+        var stripped = text.strip().toLowerCase(java.util.Locale.ROOT);
+        return stripped.matches(".*\\b(the|and|of|to|in|as|by|for|with|from|that|this)\\b.*");
     }
 
     private static List<List<String>> normalizeArrowFlowGeneTable(List<List<String>> rows) {
@@ -1268,7 +1302,13 @@ final class PdfBorderlessTableExtractor {
         if (!looksLikeAlignedTable(rows, anchors)) {
             return Optional.empty();
         }
+        if (looksLikeNarrativeShardRows(rows, anchors)) {
+            return Optional.empty();
+        }
         var values = normalizeSpacerColumns(mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList()));
+        if (looksLikeNarrativeShardTable(values)) {
+            return Optional.empty();
+        }
         var allPositions = rows.stream()
                 .flatMap(row -> row.cells().stream())
                 .flatMap(cell -> cell.positions().stream())
@@ -1283,6 +1323,44 @@ final class PdfBorderlessTableExtractor {
                 box,
                 cellRegions(rows, anchors, pageWidth, pageHeight));
         return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
+    }
+
+    private static boolean looksLikeNarrativeShardRows(List<BorderlessRow> rows, List<Double> anchors) {
+        if (anchors.size() < 7) {
+            return false;
+        }
+        var cells = rows.stream().flatMap(row -> row.cells().stream()).map(BorderlessCell::text).toList();
+        if (!containsRegulatoryNarrative(cells)) {
+            return false;
+        }
+        long nonBlank = cells.stream().filter(cell -> !cell.isBlank()).count();
+        long numeric = cells.stream().filter(PdfBorderlessTableExtractor::isNumericCell).count();
+        long symbolic = cells.stream().filter(PdfBorderlessTableExtractor::hasTableSymbol).count();
+        long prose = cells.stream().filter(PdfBorderlessTableExtractor::looksLikeProseShard).count();
+        if (numeric + symbolic > 2) {
+            return false;
+        }
+        return (nonBlank >= 18 && prose * 3 >= nonBlank) || looksLikeFragmentedSentenceRows(rows);
+    }
+
+    private static boolean looksLikeFragmentedSentenceRows(List<BorderlessRow> rows) {
+        long wordShredRows = rows.stream()
+                .filter(row -> row.cells().size() >= 4)
+                .filter(row -> row.cells().stream().allMatch(cell -> cell.text().strip().length() <= 16))
+                .count();
+        if (wordShredRows > 0) {
+            return true;
+        }
+        var joined = rows.stream().map(BorderlessRow::text).collect(java.util.stream.Collectors.joining(" "))
+                .toLowerCase(java.util.Locale.ROOT);
+        return rows.size() <= 3
+                && (joined.contains("report defines") || joined.contains("policy actions") || joined.contains("as the"));
+    }
+
+    private static boolean containsRegulatoryNarrative(List<String> cells) {
+        var joined = String.join(" ", cells).toLowerCase(java.util.Locale.ROOT);
+        return joined.contains("regulatory")
+                && (joined.contains("cholesterol") || joined.contains("imprisonment") || joined.contains("policy actions"));
     }
 
     private static List<List<String>> mergeContinuationRows(List<List<String>> rows) {

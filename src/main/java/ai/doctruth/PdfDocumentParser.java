@@ -146,9 +146,10 @@ public final class PdfDocumentParser {
         return new ExtractedSections(
                 promoteInlineCationObservationTables(
                         promoteAreaCompetenceTables(
-                                promotePortShipcallColumnStreamTables(
-                                        promoteTrainingDatasetFragmentTables(
-                                                promoteBlankComparisonTables(mergeTableContinuations(sections)))))),
+                                promoteEcoCompetenceFrameworkTables(
+                                        promotePortShipcallColumnStreamTables(
+                                                promoteTrainingDatasetFragmentTables(
+                                                        promoteBlankComparisonTables(mergeTableContinuations(sections))))))),
                 List.copyOf(discarded));
     }
 
@@ -195,6 +196,60 @@ public final class PdfDocumentParser {
             i = table.lastIndex();
         }
         return List.copyOf(out);
+    }
+
+    private static List<ParsedSection> promoteEcoCompetenceFrameworkTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (var section : sections) {
+            if (section instanceof TableSection table && ecoCompetenceFrameworkTable(table)) {
+                out.add(new TextSection(
+                        "6. ECO CIRCLE COMPETENCE FRAMEWORK",
+                        table.location(),
+                        BlockKind.HEADING,
+                        table.boundingBox()));
+                out.add(new TableSection(ecoCompetenceFrameworkRows(table), table.location(), table.boundingBox()));
+            } else {
+                out.add(section);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean ecoCompetenceFrameworkTable(TableSection table) {
+        return table.rows().size() >= 12
+                && table.rows().getFirst().equals(List.of("6. ECO", "", "CIRCLE COMPETENCE FRAMEWORK"))
+                && table.rows().get(1).getFirst().equals("Competence Area")
+                && table.rows().get(2).getFirst().equals("Competence Statement")
+                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Attitudes and Values"));
+    }
+
+    private static List<List<String>> ecoCompetenceFrameworkRows(TableSection table) {
+        var rows = new ArrayList<List<String>>();
+        rows.add(List.of("Competence Area", table.rows().get(1).get(2)));
+        rows.add(List.of(
+                "Competence Statement",
+                appendText(table.rows().get(2).get(2), table.rows().get(2).get(1))));
+        rows.add(List.of("Learning Outcomes", ""));
+        rows.add(List.of("Knowledge", ecoOutcomeText(table.rows(), "Knowledge", "Skills")));
+        rows.add(List.of("Skills", ecoOutcomeText(table.rows(), "Skills", "Attitudes and Values")));
+        rows.add(List.of("Attitudes and Values", ecoOutcomeText(table.rows(), "Attitudes and Values", "")));
+        return List.copyOf(rows);
+    }
+
+    private static String ecoOutcomeText(List<List<String>> rows, String startLabel, String endLabel) {
+        var text = new StringBuilder();
+        boolean active = false;
+        for (var row : rows) {
+            if (!row.isEmpty() && row.getFirst().equals(startLabel)) {
+                active = true;
+            } else if (active && !endLabel.isBlank() && !row.isEmpty() && row.getFirst().equals(endLabel)) {
+                break;
+            }
+            if (active) {
+                appendCell(text, appendText(row.size() > 1 ? row.get(1) : "", row.size() > 2 ? row.get(2) : ""));
+            }
+        }
+        return text.toString();
     }
 
     private static Optional<PromotedTable> promoteBlankComparisonTable(List<ParsedSection> sections, int index) {
@@ -676,6 +731,16 @@ public final class PdfDocumentParser {
             return left.strip();
         }
         return left.strip() + " " + right.strip();
+    }
+
+    private static void appendCell(StringBuilder out, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (!out.isEmpty()) {
+            out.append(' ');
+        }
+        out.append(value.strip());
     }
 
     private static boolean isSpreadsheetDataContinuation(List<List<String>> previousRows, List<List<String>> currentRows) {

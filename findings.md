@@ -2063,10 +2063,10 @@
   models. The TATR reference path now carries 800x800 resize, RGB/NCHW,
   ImageNet mean/std, and python-onnxruntime -> rust-mnn parity metadata into
   both worker request and normalized `parserRun.modelRuntime`.
-- Phase24 Java-core OpenDataLoader full200 is the latest accepted local quality
-  gate: `doctruth-java-core-phase24-blank-comparison-full200/full200` parsed
-  200/200 with overall `0.774497`, NID `0.893263`, TEDS `0.699752`, MHS
-  `0.485275`, mean `79.225799` ms/doc, RSS peak `21MB`, and no
+- Phase25 Java-core OpenDataLoader full200 is the latest accepted local quality
+  gate: `doctruth-java-core-phase25-eco-framework-full200/full200` parsed
+  200/200 with overall `0.776217`, NID `0.893775`, TEDS `0.713646`, MHS
+  `0.488453`, mean `80.641974` ms/doc, RSS peak `21MB`, and no
   Python/Torch/Docling production residency. The important parser lesson is
   that broad two-column cluster promotion is unsafe: explicit two-column list
   headers, horizontal matrix headers, compact Latin-species lists, and
@@ -2083,8 +2083,10 @@
   both normal/sickle hemoglobin row families are present. Blank comparison
   tables can merge following row-label blocks only when a detected
   Mitosis/Meiosis header table is followed by the exact five worksheet labels.
-  Phase24 is a TEDS/overall gain with a small MHS decrease, not an all-metric
-  improvement.
+  ECO competence-framework tables can split a title row into a heading and
+  normalize bullet outcomes to two columns only when the exact framework title,
+  Competence Area, Competence Statement, Learning Outcomes, Knowledge, Skills,
+  and Attitudes rows are all present.
   Table-of-contents pages and ordinary two-column narrative text must remain
   text. Phase19's broader single-column framework-heading table attempt was
   rejected because full200 overall regressed.

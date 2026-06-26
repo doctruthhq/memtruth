@@ -402,6 +402,22 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("# chromosomes in parent\n\ncells # DNA replications");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderEcoCompetenceFrameworkNormalizesToTwoColumnTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000150"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("# 6. ECO CIRCLE COMPETENCE FRAMEWORK");
+        assertThat(markdown).contains("| Competence Area | #1 THE 3 RS: RECYCLE-REUSE-REDUCE |");
+        assertThat(markdown).contains("| Competence Statement | To know the basics of the 3 Rs and their importance and implementation into daily life in relation to green entrepreneurship and circular economy. |");
+        assertThat(markdown).contains("| Learning Outcomes |  |");
+        assertThat(markdown).contains("| Knowledge | ● To understand the meaning of reducing, reusing and recycling and how they connect ● To understand the importance of the 3 Rs as waste management ● To be familiar with the expansion of the 3 Rs - the 7 Rs |");
+        assertThat(markdown).contains("| Skills | ● To implement different ways of waste management into daily life ● To properly implement recycling in day-to-day activities ● To promote reducing and reusing before recycling |");
+        assertThat(markdown).contains("| Attitudes and Values | ● To acquire a proactive approach to implementing the 3 Rs into daily personal life ● To educate others on the importance of sustainable waste management |");
+        assertThat(markdown).doesNotContain("| 6. ECO |  | CIRCLE COMPETENCE FRAMEWORK |");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {

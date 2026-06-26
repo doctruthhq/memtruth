@@ -56,6 +56,7 @@ docs/strategy/
 **/test-output/
 **/recordings/*.tmp.json
 third_party/opendataloader-bench/prediction/doctruth-runtime*/
+third_party/opendataloader-bench/prediction/doctruth-java-core-*/
 
 # Real-world fixture corpus — never check in (may contain customer/PII data)
 fixtures/

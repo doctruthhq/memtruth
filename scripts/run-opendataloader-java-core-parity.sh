@@ -24,6 +24,8 @@ Runs the Java-core OpenDataLoader parity gate through the Rust benchmark runner.
 Options:
   --smoke      Build once and run the selected smoke corpus only.
   --full200    Run the selected smoke corpus first, then full200 only if smoke passes.
+  --check-output SMOKE_DOCS OUTPUT_DIR
+               Validate an already-produced smoke output directory.
   -h, --help   Show this help.
 
 Environment:
@@ -34,8 +36,61 @@ Environment:
 EOF
 }
 
+selected_doc_count() {
+  awk 'NF > 0 { count += 1 } END { print count + 0 }' "$1"
+}
+
+check_gate_output() {
+  local smoke_docs="$1"
+  local output_dir="$2"
+  local expected_count
+  expected_count="$(selected_doc_count "$smoke_docs")"
+
+  check_output_summary_and_metrics "$output_dir" "$expected_count"
+  check_markdown_for_selected_docs "$smoke_docs" "$output_dir"
+}
+
+check_output_summary_and_metrics() {
+  local output_dir="$1"
+  local expected_count="${2:-}"
+
+  jq -e --argjson expected "$expected_count" '
+    ($expected == null or .document_count == $expected)
+    and (.documents | type == "array")
+    and ((.documents | length) == .document_count)
+    and .parsed_count == .document_count
+    and .failed_count == 0
+  ' "$output_dir/summary.json" >/dev/null
+
+  jq -e '
+    def numeric_metric($key):
+      (.metrics.score[$key] | type == "number");
+    numeric_metric("overall_mean")
+    and numeric_metric("nid_mean")
+    and numeric_metric("teds_mean")
+    and numeric_metric("mhs_mean")
+  ' "$output_dir/evaluation.json" >/dev/null
+}
+
+check_markdown_for_selected_docs() {
+  local smoke_docs="$1"
+  local output_dir="$2"
+
+  while IFS="$(printf '\t')" read -r doc_id _label; do
+    [ -n "$doc_id" ] || continue
+    if [ ! -s "$output_dir/markdown/$doc_id.md" ]; then
+      echo "missing or empty markdown output: $output_dir/markdown/$doc_id.md" >&2
+      exit 1
+    fi
+  done <"$smoke_docs"
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --check-output)
+      check_gate_output "$2" "$3"
+      exit 0
+      ;;
     --smoke)
       RUN_SMOKE=1
       shift
@@ -164,8 +219,11 @@ run_gate() {
     DOCTRUTH_OPENDATALOADER_SKIP_BUILDS=1 \
     bash "${args[@]}" >"$output_dir/runner-output.txt"
 
-  jq -e '.parsed_count == .document_count and .failed_count == 0' "$output_dir/summary.json" >/dev/null
-  jq -e '.metrics.score.overall_mean >= 0 and .metrics.score.nid_mean >= 0' "$output_dir/evaluation.json" >/dev/null
+  if [ "$label" = "smoke" ]; then
+    check_gate_output "$ARTIFACT_ROOT/smoke-docs.tsv" "$output_dir"
+  else
+    check_output_summary_and_metrics "$output_dir" null
+  fi
 }
 
 SMOKE_BENCH="$(mktemp -d "${TMPDIR:-/tmp}/doctruth-opendataloader-java-core-smoke.XXXXXX")"

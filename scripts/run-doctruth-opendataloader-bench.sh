@@ -13,6 +13,7 @@ PRESET="auto"
 RUNTIME_PROFILE="${DOCTRUTH_RUNTIME_PROFILE:-edge-model}"
 BACKEND="${DOCTRUTH_OPENDATALOADER_BACKEND:-opendataloader-java-core}"
 JAVA_BACKEND_COMMAND="${DOCTRUTH_OPENDATALOADER_JAVA_BACKEND_COMMAND:-}"
+JAVA_BACKEND_COMMAND_JSON="null"
 OUTPUT_DIR=""
 EVALUATOR="rust"
 TIMEOUT_SECONDS=""
@@ -186,7 +187,10 @@ if [ "$BACKEND" = "opendataloader-java-core" ] && [ -z "$JAVA_BACKEND_COMMAND" ]
     mvn -q -DskipTests package >/dev/null
     CLI_JAR="$(find "$ROOT/target" -maxdepth 1 -name 'doctruth-java-*-all.jar' | sort | tail -1)"
   fi
-  JAVA_BACKEND_COMMAND="$JAVA_BIN -jar $CLI_JAR opendataloader-backend --stdio-jsonl"
+  JAVA_BACKEND_COMMAND_JSON="$(jq -cn \
+    --arg java_bin "$JAVA_BIN" \
+    --arg cli_jar "$CLI_JAR" \
+    '[$java_bin, "-jar", $cli_jar, "opendataloader-backend", "--stdio-jsonl"]')"
 fi
 
 USE_LOCAL_MNN_OCR=0
@@ -238,6 +242,7 @@ REQUEST="$(jq -n \
   --arg runtime_profile "$RUNTIME_PROFILE" \
   --arg backend "$BACKEND" \
   --arg java_backend_command "$JAVA_BACKEND_COMMAND" \
+  --argjson java_backend_command_array "$JAVA_BACKEND_COMMAND_JSON" \
   --arg output_dir "$OUTPUT_DIR" \
   --arg timeout_seconds "$TIMEOUT_SECONDS" \
   '{
@@ -252,7 +257,7 @@ REQUEST="$(jq -n \
   + (if $doc_id == "" then {} else {doc_id: $doc_id} end)
   + (if $limit == "" then {} else {limit: ($limit | tonumber)} end)
   + (if $doc_id == "" and $limit == "" then {allow_full200: true} else {} end)
-  + (if $java_backend_command == "" then {} else {java_backend_command: $java_backend_command} end)
+  + (if $java_backend_command_array != null then {java_backend_command: $java_backend_command_array} elif $java_backend_command == "" then {} else {java_backend_command: $java_backend_command} end)
   + (if $timeout_seconds == "" then {} else {timeout_seconds: ($timeout_seconds | tonumber)} end)')"
 
 printf '%s' "$REQUEST" | "$BIN" > "$REPORT_TMP"

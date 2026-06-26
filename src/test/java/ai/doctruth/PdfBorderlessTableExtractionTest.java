@@ -147,6 +147,27 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).doesNotContain("| Model | Alpaca-GPT4 OpenOrca Synth. Math-Instruct H6 (Avg.)");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderCopyrightPosterDoesNotPromoteFooterFurnitureAsTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000141"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isEmpty();
+        assertThat(markdown).doesNotContain("| and .org | and .org | and .org |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderContentsPageDoesNotPromoteRepeatedPageTextAsTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000198"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("Contents");
+        assertThat(markdown).contains("Overview of OCR Pack");
+        assertThat(markdown).doesNotContain("| Contents 1. Overview of OCR Pack");
+    }
+
     private Path writeBorderlessTablePdf() throws IOException {
         var path = tempDir.resolve("borderless-table.pdf");
         try (var pdf = new PDDocument()) {
@@ -251,7 +272,9 @@ class PdfBorderlessTableExtractionTest {
         return Files.isRegularFile(opendataloaderBenchPdf("01030000000127"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000083"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000088"))
-                && Files.isRegularFile(opendataloaderBenchPdf("01030000000189"));
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000189"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000141"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"));
     }
 
     private static Path opendataloaderBenchPdf(String documentId) {

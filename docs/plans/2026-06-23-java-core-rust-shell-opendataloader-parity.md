@@ -507,11 +507,36 @@ Current Phase 6 progress:
     residency
   - `cargo test --test opendataloader_table_processor_contract` passed 5/5,
     including the matrix-table case `01030000000189`
+- Added sparse grid furniture rejection for OpenDataLoader cases
+  `01030000000141` and `01030000000198`:
+  - rejects whole-page sparse grids with only one non-blank cell instead of
+    promoting repeated footer or contents-page text into fake Markdown tables
+  - preserves the degenerate-grid fallback before sparse-grid rejection so
+    wide comparative table case `01030000000088` remains recovered
+  - focused tests guard that `01030000000141` does not emit repeated
+    `and .org` table furniture and `01030000000198` keeps `Contents` /
+    `Overview of OCR Pack` as text instead of a giant table row
+- Verified with refreshed Java CLI jar and Rust contract tests:
+  - `mvn -q -Dtest=PdfBorderlessTableExtractionTest test`
+  - `mvn -q -Dtest=PdfDocumentParserTest,PdfVisualLayoutParserTest,PdfTwoColumnSemanticSectionTest test`
+  - `cd runtime/doctruth-runtime && cargo test --test opendataloader_table_processor_contract`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase8-sparse-grid-guard-smoke bash scripts/run-opendataloader-java-core-parity.sh --smoke`
+  - `DOCTRUTH_OPENDATALOADER_GATE_TIMESTAMP=phase8-sparse-grid-guard-full200 bash scripts/run-opendataloader-java-core-parity.sh --full200`
+- Latest full200 evidence:
+  - artifact:
+    `third_party/opendataloader-bench/prediction/doctruth-java-core-phase8-sparse-grid-guard-full200/full200`
+  - parsed `200/200`
+  - elapsed `15235.8335` ms, mean `76.179168` ms/doc
+  - overall `0.626221`, NID `0.894930`, TEDS `0.341325`, MHS `0.006794`
+  - no Python/Torch/Docling production residency
+  - `01030000000198` improved to overall `0.477420`, NID `0.954839`
+  - `01030000000088` stayed high at overall `0.916727`, TEDS `0.908856`
 - Remaining table work before claiming parity:
   - broader table-cell grid normalization beyond the current smoke and
     wide-text cases
   - model/OCR table cases
-  - full200 evidence
+  - full200 parity; latest full200 is still below the historical target
+    `overall=0.745414`, `TEDS=0.496416`, `MHS=0.483837`
 
 ## Phase 7: Run Benchmark Only After Code-Level Parity Gates Pass
 

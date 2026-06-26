@@ -40,6 +40,9 @@ final class PdfPageTableExtractor {
         if (looksLikeDegenerateGridTable(rows)) {
             return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
         }
+        if (looksLikeNonTabularGrid(rows)) {
+            return List.of();
+        }
         var box = normalizedBox(xs, ys, page.getWidth(), page.getHeight());
         var section = new TableSection(
                 rows,
@@ -187,7 +190,7 @@ final class PdfPageTableExtractor {
         return rows.stream().flatMap(List::stream).anyMatch(cell -> !cell.isBlank());
     }
 
-    private static boolean looksLikeDegenerateGridTable(List<List<String>> rows) {
+    private static boolean looksLikeNonTabularGrid(List<List<String>> rows) {
         if (rows.size() < 2) {
             return true;
         }
@@ -195,6 +198,14 @@ final class PdfPageTableExtractor {
         if (columns < 2) {
             return true;
         }
+        if (rows.size() >= 3 && columns >= 3 && nonBlankCellCount(rows) <= 1) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean looksLikeDegenerateGridTable(List<List<String>> rows) {
+        int columns = rows.getFirst().size();
         long giantCells = rows.stream()
                 .flatMap(List::stream)
                 .filter(cell -> cell.length() > 500)

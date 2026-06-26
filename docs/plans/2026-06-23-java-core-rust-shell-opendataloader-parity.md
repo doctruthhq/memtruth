@@ -465,6 +465,22 @@ git add src/main/java/ai/doctruth/opendataloader src/test/java/ai/doctruth/opend
 git commit -m "feat: align opendataloader <processor-name> behavior"
 ```
 
+Current Phase 6 progress:
+
+- Table run segmentation and stacked header-band absorption are implemented in
+  `PdfBorderlessTableExtractor`.
+- First-column continuation merge is implemented for OpenDataLoader-style
+  multi-line cells such as `Environment, Health and Safety`, `Compliances with
+  imprisonment`, and `Percentage of imprisonment clauses`.
+- Verified with `doctruth-java-core-phase6-table-continuation2` smoke:
+  - `01030000000083` TEDS `0.906088`
+  - `01030000000127` TEDS `0.888889`
+- Remaining table work before claiming parity:
+  - spacer-column collapse, for example `Small | Medium |  | Large`
+  - broader table-cell grid normalization
+  - model/OCR table cases
+  - full200 evidence
+
 ## Phase 7: Run Benchmark Only After Code-Level Parity Gates Pass
 
 ### Task 7.1: Add local benchmark gate script
@@ -582,4 +598,3 @@ bash scripts/run-opendataloader-java-core-parity.sh --smoke
 bash scripts/run-opendataloader-java-core-parity.sh --full200
 git diff --check
 ```
-

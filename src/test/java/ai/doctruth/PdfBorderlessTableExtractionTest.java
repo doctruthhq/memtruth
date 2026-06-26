@@ -114,6 +114,10 @@ class PdfBorderlessTableExtractionTest {
                 | Category | Number of clauses in Union laws | In percent | Number of clauses in State laws | In percent |
                 | --- | --- | --- | --- | --- |
                 | Commercial | 529 | 10.1% | 817 | 3.9% |""");
+        assertThat(document.toMarkdownClean()).contains("| Environment, Health and Safety | 834 | 15.9% | 345 | 1.7% |");
+        assertThat(document.toMarkdownClean()).contains("| Total Applicable Compliances | 669 |");
+        assertThat(document.toMarkdownClean()).contains("| Compliances with imprisonment | 461 |");
+        assertThat(document.toMarkdownClean()).contains("| Percentage of imprisonment clauses | 69% |");
     }
 
     private Path writeBorderlessTablePdf() throws IOException {

@@ -31,7 +31,8 @@ final class PdfBorderlessTableExtractor {
         var tables = new ArrayList<PdfPageTableExtractor.TableBlock>();
         for (var run : tableRuns(rows)) {
             var anchors = columnAnchors(run);
-            var rowsWithHeader = prependStackedHeaderRow(allRows, run, anchors);
+            var rowsWithContinuations = addContinuationRows(allRows, run, anchors);
+            var rowsWithHeader = prependStackedHeaderRow(allRows, rowsWithContinuations, anchors);
             tableBlock(rowsWithHeader, anchors, pageNumber, pageWidth, pageHeight).ifPresent(tables::add);
         }
         return List.copyOf(tables);
@@ -109,6 +110,37 @@ final class PdfBorderlessTableExtractor {
 
     private static double verticalGap(BorderlessRow previous, BorderlessRow next) {
         return Math.max(0.0, next.y0() - previous.y1());
+    }
+
+    private static List<BorderlessRow> addContinuationRows(
+            List<BorderlessRow> allRows, List<BorderlessRow> run, List<Double> anchors) {
+        int first = allRows.indexOf(run.getFirst());
+        int last = allRows.indexOf(run.getLast());
+        if (first < 0 || last < first) {
+            return run;
+        }
+        var out = new ArrayList<BorderlessRow>();
+        for (int index = first; index <= last; index++) {
+            var row = allRows.get(index);
+            if (run.contains(row) || looksLikeFirstColumnContinuation(row, anchors)) {
+                out.add(row);
+            }
+        }
+        for (int index = last + 1; index < allRows.size(); index++) {
+            var row = allRows.get(index);
+            if (verticalGap(out.getLast(), row) > MAX_TABLE_ROW_GAP || !looksLikeFirstColumnContinuation(row, anchors)) {
+                break;
+            }
+            out.add(row);
+        }
+        return out.size() >= run.size() ? List.copyOf(out) : run;
+    }
+
+    private static boolean looksLikeFirstColumnContinuation(BorderlessRow row, List<Double> anchors) {
+        if (row.cells().size() != 1 || looksLikeAllCapsHeading(row.text()) || looksLikeTableCaption(row.text())) {
+            return false;
+        }
+        return nearestHeaderColumn(row.cells().getFirst(), anchors) == 0;
     }
 
     private static List<BorderlessRow> prependStackedHeaderRow(
@@ -208,7 +240,7 @@ final class PdfBorderlessTableExtractor {
         if (!looksLikeAlignedTable(rows, anchors)) {
             return Optional.empty();
         }
-        var values = rows.stream().map(row -> cellTexts(row, anchors)).toList();
+        var values = mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList());
         var allPositions = rows.stream()
                 .flatMap(row -> row.cells().stream())
                 .flatMap(cell -> cell.positions().stream())
@@ -223,6 +255,94 @@ final class PdfBorderlessTableExtractor {
                 box,
                 cellRegions(rows, anchors, pageWidth, pageHeight));
         return Optional.of(new PdfPageTableExtractor.TableBlock(section, box.orElseThrow()));
+    }
+
+    private static List<List<String>> mergeContinuationRows(List<List<String>> rows) {
+        var out = new ArrayList<List<String>>();
+        String pendingFirstColumn = "";
+        for (int index = 0; index < rows.size(); index++) {
+            var row = rows.get(index);
+            if (isFirstColumnContinuation(row)) {
+                if (previousRowNeedsContinuation(out)) {
+                    out.set(out.size() - 1, appendFirstColumn(out.getLast(), row.getFirst()));
+                } else if (nextRowNeedsFirstColumn(rows, index)) {
+                    pendingFirstColumn = appendText(pendingFirstColumn, row.getFirst());
+                } else if (!out.isEmpty() && rowHasData(out.getLast())) {
+                    out.set(out.size() - 1, appendFirstColumn(out.getLast(), row.getFirst()));
+                } else {
+                    pendingFirstColumn = appendText(pendingFirstColumn, row.getFirst());
+                }
+                continue;
+            }
+            var merged = new ArrayList<>(row);
+            if (!pendingFirstColumn.isBlank() && merged.getFirst().isBlank()) {
+                merged.set(0, pendingFirstColumn);
+                pendingFirstColumn = "";
+            }
+            out.add(List.copyOf(merged));
+        }
+        if (!pendingFirstColumn.isBlank()) {
+            out.add(firstColumnOnlyRow(pendingFirstColumn, rows));
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean previousRowNeedsContinuation(List<List<String>> out) {
+        if (out.isEmpty() || !rowHasData(out.getLast())) {
+            return false;
+        }
+        var firstColumn = out.getLast().getFirst().strip().toLowerCase(java.util.Locale.ROOT);
+        return firstColumn.endsWith(" with")
+                || firstColumn.endsWith(" of")
+                || firstColumn.endsWith(" and")
+                || firstColumn.endsWith(" than")
+                || firstColumn.endsWith(" to");
+    }
+
+    private static boolean nextRowNeedsFirstColumn(List<List<String>> rows, int index) {
+        if (index + 1 >= rows.size()) {
+            return false;
+        }
+        var next = rows.get(index + 1);
+        return !next.isEmpty() && next.getFirst().isBlank() && rowHasData(next);
+    }
+
+    private static boolean isFirstColumnContinuation(List<String> row) {
+        if (row.isEmpty() || row.getFirst().isBlank()) {
+            return false;
+        }
+        long nonBlank = row.stream().filter(cell -> !cell.isBlank()).count();
+        return nonBlank == 1 && !isNumericCell(row.getFirst());
+    }
+
+    private static boolean rowHasData(List<String> row) {
+        return row.stream().skip(1).anyMatch(cell -> !cell.isBlank());
+    }
+
+    private static List<String> appendFirstColumn(List<String> row, String continuation) {
+        var out = new ArrayList<>(row);
+        out.set(0, appendText(out.getFirst(), continuation));
+        return List.copyOf(out);
+    }
+
+    private static String appendText(String left, String right) {
+        if (left.isBlank()) {
+            return right.strip();
+        }
+        if (right.isBlank()) {
+            return left.strip();
+        }
+        return left.strip() + " " + right.strip();
+    }
+
+    private static List<String> firstColumnOnlyRow(String text, List<List<String>> rows) {
+        int columns = rows.isEmpty() ? 1 : rows.getFirst().size();
+        var out = new ArrayList<String>();
+        out.add(text.strip());
+        while (out.size() < columns) {
+            out.add("");
+        }
+        return List.copyOf(out);
     }
 
     private static List<Double> columnAnchors(List<BorderlessRow> rows) {

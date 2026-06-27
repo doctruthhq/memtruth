@@ -2160,3 +2160,9 @@
   such as `1..2` as paragraph text. This closes a focused hierarchy contract
   gap, not full MHS parity. Verification: `opendataloader_structure_contract`
   passed 10/10.
+- Phase35 broadens the ListProcessor slice in the structure probe. Sequential
+  lower/upper letter lists, numeric lists, and bullet lists now produce list
+  blocks; non-sequential letter/numeric markers stay paragraph text. The probe
+  also preserves heading/caption priority before list grouping, so numbered
+  headings do not become single-item lists. Nested and wrapped-list parity is
+  still pending. Verification: `opendataloader_structure_contract` passed 13/13.

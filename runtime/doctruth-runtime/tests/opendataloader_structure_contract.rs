@@ -190,6 +190,82 @@ fn structure_probe_recognizes_sequential_uppercase_letter_list_items() {
 }
 
 #[test]
+fn structure_probe_recognizes_sequential_numeric_list_items() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "1) First item", "fontSize": 10.0},
+                    {"text": "2) Second item", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "list");
+    assert_eq!(value["blocks"][0]["items"].as_array().unwrap().len(), 2);
+    assert_eq!(value["blocks"][0]["source"], "OpenDataLoader ListProcessor");
+}
+
+#[test]
+fn structure_probe_rejects_non_sequential_numeric_list_items() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "1) First", "fontSize": 10.0},
+                    {"text": "3) Third", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "paragraph");
+    assert_eq!(value["blocks"][0]["text"], "1) First");
+    assert_eq!(value["blocks"][1]["type"], "paragraph");
+    assert_eq!(value["blocks"][1]["text"], "3) Third");
+}
+
+#[test]
+fn structure_probe_recognizes_bullet_list_items() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "- First item", "fontSize": 10.0},
+                    {"text": "- Second item", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "list");
+    assert_eq!(value["blocks"][0]["items"][0], "First item");
+    assert_eq!(value["blocks"][0]["items"][1], "Second item");
+}
+
+#[test]
 fn structure_probe_reports_remaining_unvendored_caption_reference() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd

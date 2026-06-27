@@ -788,8 +788,15 @@ fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>
     let mut blocks = Vec::new();
     let mut pending_list = Vec::new();
     for line in lines {
-        if let Some(item) = opendataloader_probe_letter_list_item(&line.text) {
-            if !opendataloader_probe_next_letter_list_item(&pending_list, &item) {
+        if opendataloader_probe_caption(&line.text)
+            || opendataloader_probe_heading_level(&line).is_some()
+        {
+            opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
+            blocks.push(opendataloader_probe_structure_block(line));
+            continue;
+        }
+        if let Some(item) = opendataloader_probe_list_item(&line.text) {
+            if !opendataloader_probe_next_list_item(&pending_list, &item) {
                 opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
             }
             pending_list.push(item);
@@ -802,19 +809,19 @@ fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>
     blocks
 }
 
-fn opendataloader_probe_next_letter_list_item(
-    pending_list: &[OpendataloaderLetterListItem],
-    item: &OpendataloaderLetterListItem,
+fn opendataloader_probe_next_list_item(
+    pending_list: &[OpendataloaderListItem],
+    item: &OpendataloaderListItem,
 ) -> bool {
     let Some(previous) = pending_list.last() else {
-        return item.ordinal == 0;
+        return item.starts_sequence();
     };
-    previous.case == item.case && previous.ordinal + 1 == item.ordinal
+    previous.kind == item.kind && previous.next_ordinal() == item.ordinal
 }
 
 fn opendataloader_probe_flush_list_block(
     blocks: &mut Vec<Value>,
-    pending_list: &mut Vec<OpendataloaderLetterListItem>,
+    pending_list: &mut Vec<OpendataloaderListItem>,
 ) {
     if pending_list.is_empty() {
         return;
@@ -892,35 +899,94 @@ fn opendataloader_probe_caption_number_marker(marker: &str) -> bool {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-enum OpendataloaderLetterCase {
-    Lower,
-    Upper,
+enum OpendataloaderListKind {
+    LowerLetter,
+    UpperLetter,
+    Numeric,
+    Bullet,
 }
 
-struct OpendataloaderLetterListItem {
+struct OpendataloaderListItem {
     original_text: String,
     item_text: String,
-    ordinal: u8,
-    case: OpendataloaderLetterCase,
+    ordinal: Option<u32>,
+    kind: OpendataloaderListKind,
 }
 
-fn opendataloader_probe_letter_list_item(text: &str) -> Option<OpendataloaderLetterListItem> {
+impl OpendataloaderListItem {
+    fn starts_sequence(&self) -> bool {
+        match self.kind {
+            OpendataloaderListKind::LowerLetter | OpendataloaderListKind::UpperLetter => {
+                self.ordinal == Some(0)
+            }
+            OpendataloaderListKind::Numeric => self.ordinal == Some(1),
+            OpendataloaderListKind::Bullet => true,
+        }
+    }
+
+    fn next_ordinal(&self) -> Option<u32> {
+        match self.kind {
+            OpendataloaderListKind::Bullet => None,
+            _ => self.ordinal.map(|ordinal| ordinal + 1),
+        }
+    }
+}
+
+fn opendataloader_probe_list_item(text: &str) -> Option<OpendataloaderListItem> {
+    opendataloader_probe_bullet_list_item(text)
+        .or_else(|| opendataloader_probe_numeric_list_item(text))
+        .or_else(|| opendataloader_probe_letter_list_item(text))
+}
+
+fn opendataloader_probe_bullet_list_item(text: &str) -> Option<OpendataloaderListItem> {
+    let trimmed = text.trim_start();
+    let rest = trimmed
+        .strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
+        .or_else(|| trimmed.strip_prefix("• "))?;
+    let item_text = rest.trim();
+    (!item_text.is_empty()).then(|| OpendataloaderListItem {
+        original_text: trimmed.to_string(),
+        item_text: item_text.to_string(),
+        ordinal: None,
+        kind: OpendataloaderListKind::Bullet,
+    })
+}
+
+fn opendataloader_probe_numeric_list_item(text: &str) -> Option<OpendataloaderListItem> {
+    let trimmed = text.trim_start();
+    let marker_end = trimmed.find(|ch: char| !ch.is_ascii_digit())?;
+    let marker = &trimmed[..marker_end];
+    let delimiter = trimmed[marker_end..].chars().next()?;
+    let rest = trimmed[marker_end + delimiter.len_utf8()..].trim_start();
+    if marker.is_empty() || !matches!(delimiter, ')' | '.') || rest.is_empty() {
+        return None;
+    }
+    Some(OpendataloaderListItem {
+        original_text: trimmed.to_string(),
+        item_text: rest.to_string(),
+        ordinal: marker.parse::<u32>().ok(),
+        kind: OpendataloaderListKind::Numeric,
+    })
+}
+
+fn opendataloader_probe_letter_list_item(text: &str) -> Option<OpendataloaderListItem> {
     let trimmed = text.trim_start();
     let mut chars = trimmed.chars();
     let letter = chars.next()?;
     let marker = chars.next()?;
     let rest = chars.as_str().trim_start();
     if letter.is_ascii_alphabetic() && matches!(marker, ')' | '.') && !rest.is_empty() {
-        let case = if letter.is_ascii_lowercase() {
-            OpendataloaderLetterCase::Lower
+        let kind = if letter.is_ascii_lowercase() {
+            OpendataloaderListKind::LowerLetter
         } else {
-            OpendataloaderLetterCase::Upper
+            OpendataloaderListKind::UpperLetter
         };
-        Some(OpendataloaderLetterListItem {
+        Some(OpendataloaderListItem {
             original_text: trimmed.to_string(),
             item_text: rest.to_string(),
-            ordinal: letter.to_ascii_lowercase() as u8 - b'a',
-            case,
+            ordinal: Some(u32::from(letter.to_ascii_lowercase() as u8 - b'a')),
+            kind,
         })
     } else {
         None

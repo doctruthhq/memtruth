@@ -122,6 +122,13 @@ while malformed markers such as `1..2` still stay paragraph text. This improves
 the structure probe contract for heading hierarchy, but full MHS/full-bench
 parity remains pending.
 
+Phase35 broadens the `ListProcessor` slice in `opendataloader_structure_probe`.
+Sequential lower/upper letter lists, numeric lists, and bullet lists now produce
+list blocks, while non-sequential letter/numeric markers remain paragraph text.
+Heading/caption classification stays higher priority than list grouping so
+numbered headings such as `1. Overview` do not get swallowed as single-item
+lists. Nested and wrapped-list continuation parity remains pending.
+
 ## Reference Boundaries
 
 ```text

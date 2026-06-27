@@ -74,6 +74,16 @@ request compatibility keeps `unloadPolicy=idle-after-request`. This is a
 runtime/worker lifecycle improvement and does not by itself change full200
 parser-quality metrics.
 
+Phase29 fixes the remaining focused `benchmark_corpus_contract` failures found
+after Phase28 verification. Prediction markdown now applies a narrow
+OpenDataLoader post-process pass for split section headings, stacked heading
+continuations, and DPO ablation table reconstruction without rerunning the
+full table repair pipeline over already-normalized prediction markdown. It also
+forwards request-level `model_manifest`, `model_cache`, and `model_worker`
+settings from `benchmark_corpus` into each case parse request, so benchmark
+corpus smoke tests can actually exercise configured local MNN workers instead
+of silently falling back to deterministic text-layer output.
+
 ## Reference Boundaries
 
 ```text

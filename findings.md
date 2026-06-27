@@ -2110,3 +2110,16 @@
   unrelated parser-quality failures in the DPO follow-up table and two heading
   parity cases, so do not use it as evidence that Phase28 changed full200
   parser quality.
+- Phase29 clears those focused benchmark-corpus parity failures without running
+  another full200 gate. Prediction markdown now runs only a narrow post-process
+  for split numbered headings, stacked heading continuations, and DPO ablation
+  tables; it deliberately does not rerun the full table repair pipeline over
+  already-normalized prediction markdown because that regressed blank matrix
+  tables. `benchmark_corpus` also forwards top-level `model_manifest`,
+  `model_cache`, and `model_worker` into each case parse request, which fixes
+  the local benchmark smoke's configured-worker lane. Verification:
+  `benchmark_corpus_contract` passed 77/77,
+  `model_worker_contract` passed 27/27,
+  `scripts/smoke-doctruth-runtime-model-worker.sh` passed,
+  `scripts/smoke-doctruth-runtime-benchmark-corpus.sh` passed, and
+  `cargo fmt --check && git diff --check` passed.

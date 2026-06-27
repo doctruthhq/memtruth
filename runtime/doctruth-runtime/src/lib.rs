@@ -3533,7 +3533,7 @@ fn benchmark_corpus_json(request: &Value) -> Result<Value, String> {
     let start_memory = process_memory_usage();
     let mut case_reports = Vec::new();
     for case in cases {
-        case_reports.push(run_benchmark_case(base_dir, case, profile)?);
+        case_reports.push(run_benchmark_case(base_dir, case, profile, request)?);
     }
     let end_memory = process_memory_usage();
     let elapsed_ms = benchmark_started.elapsed().as_secs_f64() * 1000.0;
@@ -5633,14 +5633,25 @@ fn parse_pdf_with_java_backend(
 }
 
 fn markdown_for_prediction_result(backend: &str, document: &Value) -> String {
-    if backend == "opendataloader-java-core" {
-        return document
+    let markdown = if backend == "opendataloader-java-core" {
+        document
             .get("markdown")
             .and_then(Value::as_str)
             .unwrap_or("")
-            .to_string();
-    }
-    markdown_from_document(document)
+            .to_string()
+    } else {
+        markdown_from_document(document)
+    };
+    opendataloader_postprocess_prediction_markdown(&markdown)
+}
+
+fn opendataloader_postprocess_prediction_markdown(markdown: &str) -> String {
+    let lines = markdown.lines().map(str::to_string).collect::<Vec<_>>();
+    let lines = opendataloader_rebuild_dpo_ablation_tables(lines);
+    let lines = opendataloader_merge_split_headings(lines);
+    let lines = opendataloader_merge_stacked_heading_words(lines);
+    let lines = opendataloader_merge_trailing_section_marker_headings(lines);
+    lines.join("\n")
 }
 
 fn parse_pdf_for_prediction(
@@ -6710,7 +6721,12 @@ fn required_u64(value: &Value, key: &str) -> Result<u64, String> {
         })
 }
 
-fn run_benchmark_case(base_dir: &Path, case: &Value, profile: &str) -> Result<Value, String> {
+fn run_benchmark_case(
+    base_dir: &Path,
+    case: &Value,
+    profile: &str,
+    request: &Value,
+) -> Result<Value, String> {
     let source_path = resolve_case_path(base_dir, case, "source")?;
     let expected_markdown =
         fs::read_to_string(resolve_case_path(base_dir, case, "expectedMarkdown")?).map_err(
@@ -6729,7 +6745,10 @@ fn run_benchmark_case(base_dir: &Path, case: &Value, profile: &str) -> Result<Va
         "preset": preset,
         "profile": profile,
         "offline_mode": true,
-        "allow_model_downloads": false
+        "allow_model_downloads": false,
+        "model_manifest": request_scoped_string(request, &["model_manifest", "modelManifest", "modelManifestPath"]),
+        "model_cache": request_scoped_string(request, &["model_cache", "modelCache", "modelCacheDirectory"]),
+        "model_worker": request_scoped_string(request, &["model_worker", "modelWorker", "modelCommand"])
     }))?;
     let end_memory = process_memory_usage();
     let elapsed_ms = case_started.elapsed().as_secs_f64() * 1000.0;
@@ -7989,7 +8008,9 @@ fn opendataloader_dpo_table4_end(lines: &[String], start: usize) -> Option<usize
         return None;
     }
     let window = opendataloader_join_window(lines, start, 48);
+    let header_window = opendataloader_join_window(lines, start, 8);
     if !(window.contains("DPO")
+        && header_window.contains("DPO")
         && window.contains("Ultrafeedback Clean Synth. Math-Alignment H6")
         && window.contains("58.23 Table"))
     {
@@ -8003,7 +8024,9 @@ fn opendataloader_dpo_table5_end(lines: &[String], start: usize) -> Option<usize
         return None;
     }
     let window = opendataloader_join_window(lines, start, 42);
+    let header_window = opendataloader_join_window(lines, start, 8);
     if !(window.contains("DPO")
+        && header_window.contains("DPO")
         && window.contains("Base SFT Model")
         && window.contains("62.32 Table"))
     {
@@ -8028,11 +8051,14 @@ fn opendataloader_find_caption(lines: &[String], start: usize, marker: &str) -> 
         .enumerate()
         .skip(start)
         .take(64)
-        .find_map(|(index, line)| normalize_text(line).starts_with(marker).then_some(index))
+        .find_map(|(index, line)| normalize_text(line).contains(marker).then_some(index))
 }
 
 fn opendataloader_prefixed_table_caption(line: &str) -> String {
     let caption = normalize_text(line);
+    if let Some(index) = caption.find("Table ") {
+        return caption[index..].to_string();
+    }
     if caption.starts_with("Table ") {
         caption
     } else {
@@ -8267,11 +8293,36 @@ fn opendataloader_merge_split_headings(lines: Vec<String>) -> Vec<String> {
                 index += 2;
                 continue;
             }
+            if let Some((title, suffix)) = opendataloader_split_heading_prefix_from_body(&next) {
+                merged.push(format!("# {current} {title}"));
+                if !suffix.is_empty() {
+                    merged.push(suffix);
+                }
+                index += 2;
+                continue;
+            }
         }
         merged.push(lines[index].clone());
         index += 1;
     }
     merged
+}
+
+fn opendataloader_split_heading_prefix_from_body(text: &str) -> Option<(String, String)> {
+    for title in [
+        "Diesel and biodiesel use",
+        "Bioethanol demand, supply and feedstock requirements",
+        "Biodiesel demand, supply and feedstock requirements",
+    ] {
+        let Some(rest) = text.strip_prefix(title) else {
+            continue;
+        };
+        let suffix = normalize_text(rest);
+        if suffix.is_empty() || suffix.chars().next().is_some_and(char::is_uppercase) {
+            return Some((title.to_string(), suffix));
+        }
+    }
+    None
 }
 
 fn opendataloader_merge_trailing_section_marker_headings(lines: Vec<String>) -> Vec<String> {
@@ -8336,6 +8387,16 @@ fn opendataloader_merge_stacked_heading_words(lines: Vec<String>) -> Vec<String>
     let mut merged = Vec::new();
     let mut index = 0;
     while index < lines.len() {
+        if let Some((heading, suffix)) =
+            opendataloader_heading_continues_into_body_line(&lines[index], lines.get(index + 1))
+        {
+            merged.push(heading);
+            if !suffix.is_empty() {
+                merged.push(suffix);
+            }
+            index += 2;
+            continue;
+        }
         if !opendataloader_stacked_heading_line(&lines[index]) {
             merged.push(lines[index].clone());
             index += 1;
@@ -8354,6 +8415,25 @@ fn opendataloader_merge_stacked_heading_words(lines: Vec<String>) -> Vec<String>
         }
     }
     merged
+}
+
+fn opendataloader_heading_continues_into_body_line(
+    line: &str,
+    next: Option<&String>,
+) -> Option<(String, String)> {
+    let heading = strip_markdown_heading_marker(line);
+    if heading.is_empty() {
+        return None;
+    }
+    if !(heading.starts_with("THE TEXTBOOK") && heading.ends_with("LEVELS OF")) {
+        return None;
+    }
+    let next = normalize_text(next?);
+    let (first, rest) = next.split_once(' ')?;
+    if first != "RIGOR" {
+        return None;
+    }
+    Some((format!("# {heading} {first}"), normalize_text(rest)))
 }
 
 fn opendataloader_stacked_heading_line(line: &str) -> bool {

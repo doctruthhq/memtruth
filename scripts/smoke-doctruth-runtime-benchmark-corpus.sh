@@ -46,6 +46,41 @@ cat > "$WORK_DIR/expected.json" <<'EOF_EXPECTED_JSON'
 {"docId":"expected","body":{"units":[]}}
 EOF_EXPECTED_JSON
 
+mkdir -p "$WORK_DIR/model-cache"
+printf 'ready slanet artifact' > "$WORK_DIR/model-cache/slanet-plus-v1.mnn"
+MODEL_SHA="$(python3 - "$WORK_DIR/model-cache/slanet-plus-v1.mnn" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+print("sha256:" + hashlib.sha256(path.read_bytes()).hexdigest())
+PY
+)"
+MODEL_SIZE="$(wc -c < "$WORK_DIR/model-cache/slanet-plus-v1.mnn" | tr -d ' ')"
+cat > "$WORK_DIR/model-manifest.json" <<EOF_MODEL_MANIFEST
+{
+  "presets": {
+    "table-lite": [
+      {
+        "name": "slanet-plus",
+        "version": "v1",
+        "sha256": "$MODEL_SHA",
+        "sizeBytes": $MODEL_SIZE,
+        "cacheFilename": "slanet-plus-v1.mnn",
+        "required": true,
+        "task": "table-structure-recognition",
+        "role": "table-structure-decoder",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "test"
+      }
+    ]
+  }
+}
+EOF_MODEL_MANIFEST
+
 cat > "$WORK_DIR/model-worker.py" <<'PY'
 #!/usr/bin/env python3
 import json
@@ -137,7 +172,7 @@ cat > "$WORK_DIR/corpus.json" <<'EOF_MANIFEST'
 EOF_MANIFEST
 
 REPORT="$(DOCTRUTH_RUNTIME_MODEL_COMMAND="$WORK_DIR/model-worker.py" "$BIN" <<EOF_REQUEST
-{"command":"benchmark_corpus","manifest_path":"$WORK_DIR/corpus.json","offline":true,"report_path":"$WORK_DIR/recorded-report.json"}
+{"command":"benchmark_corpus","manifest_path":"$WORK_DIR/corpus.json","offline":true,"report_path":"$WORK_DIR/recorded-report.json","model_manifest":"$WORK_DIR/model-manifest.json","model_cache":"$WORK_DIR/model-cache"}
 EOF_REQUEST
 )"
 printf '%s\n' "$REPORT" > "$WORK_DIR/report.json"
@@ -249,7 +284,7 @@ data = json.loads(path.read_text())
 data["maximums"] = {"reading_order_f1": 0.0}
 path.write_text(json.dumps(data))
 PY
-if printf '{"command":"benchmark_corpus","manifest_path":"%s","offline":true}' "$WORK_DIR/corpus-maximum-fail.json" \
+if printf '{"command":"benchmark_corpus","manifest_path":"%s","offline":true,"model_manifest":"%s","model_cache":"%s"}' "$WORK_DIR/corpus-maximum-fail.json" "$WORK_DIR/model-manifest.json" "$WORK_DIR/model-cache" \
   | DOCTRUTH_RUNTIME_MODEL_COMMAND="$WORK_DIR/model-worker.py" "$BIN" >/dev/null 2>"$WORK_DIR/maximum-fail.err"; then
     echo "expected runtime benchmark maximum threshold failure" >&2
     exit 1

@@ -97,7 +97,9 @@ pending.
 Status: `partial`. Standalone table/figure-style captions adjacent to detected
 tables are promoted into bbox-backed caption blocks in the Java/OpenDataLoader-
 compatible parser core. Broader image/figure caption behavior and full-bench
-caption evidence remain pending.
+caption evidence remain pending. `opendataloader_structure_probe` recognizes
+`Figure`, `Table`, `Fig.`, and `Tab.` numeric caption markers while keeping
+ordinary phrases such as `Figure skating` or `table stakes` as paragraph text.
 
 ## LevelProcessor
 

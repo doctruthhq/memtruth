@@ -129,6 +129,12 @@ Heading/caption classification stays higher priority than list grouping so
 numbered headings such as `1. Overview` do not get swallowed as single-item
 lists. Nested and wrapped-list continuation parity remains pending.
 
+Phase36 broadens the caption slice in `opendataloader_structure_probe`.
+Caption detection now accepts `Figure`, `Table`, `Fig.`, and `Tab.` labels with
+numeric markers that may end in `.` or `:`, while ordinary phrases such as
+`fig tree` and `table stakes` remain paragraph text. Full image/figure caption
+binding and full-bench caption evidence remain pending.
+
 ## Reference Boundaries
 
 ```text

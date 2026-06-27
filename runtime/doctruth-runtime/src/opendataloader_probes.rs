@@ -885,7 +885,7 @@ fn opendataloader_probe_caption(text: &str) -> bool {
     let Some(label) = words.next() else {
         return false;
     };
-    if !matches!(label, "Figure" | "Table") {
+    if !matches!(label, "Figure" | "Table" | "Fig." | "Tab.") {
         return false;
     }
     words
@@ -894,7 +894,7 @@ fn opendataloader_probe_caption(text: &str) -> bool {
 }
 
 fn opendataloader_probe_caption_number_marker(marker: &str) -> bool {
-    let marker = marker.trim_end_matches('.');
+    let marker = marker.trim_end_matches(['.', ':']);
     !marker.is_empty() && marker.chars().all(|ch| ch.is_ascii_digit())
 }
 

@@ -115,6 +115,34 @@ fn structure_probe_requires_numeric_caption_marker() {
 }
 
 #[test]
+fn structure_probe_recognizes_abbreviated_caption_markers() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "Fig. 7: Pipeline overview", "fontSize": 10.0},
+                    {"text": "Tab. 2 Results", "fontSize": 10.0},
+                    {"text": "fig tree growth", "fontSize": 10.0},
+                    {"text": "table stakes remain high", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "caption");
+    assert_eq!(value["blocks"][1]["type"], "caption");
+    assert_eq!(value["blocks"][2]["type"], "paragraph");
+    assert_eq!(value["blocks"][3]["type"], "paragraph");
+}
+
+#[test]
 fn structure_probe_recognizes_localized_letter_list_items() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd

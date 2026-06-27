@@ -2166,3 +2166,9 @@
   also preserves heading/caption priority before list grouping, so numbered
   headings do not become single-item lists. Nested and wrapped-list parity is
   still pending. Verification: `opendataloader_structure_contract` passed 13/13.
+- Phase36 broadens the caption marker slice in the structure probe. Caption
+  detection now accepts `Figure`, `Table`, `Fig.`, and `Tab.` labels with
+  numeric markers ending in `.` or `:`, while ordinary phrases such as
+  `fig tree` and `table stakes` remain paragraph text. Full caption binding and
+  full-bench caption evidence remain pending. Verification:
+  `opendataloader_structure_contract` passed 14/14.

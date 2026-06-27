@@ -2123,3 +2123,11 @@
   `scripts/smoke-doctruth-runtime-model-worker.sh` passed,
   `scripts/smoke-doctruth-runtime-benchmark-corpus.sh` passed, and
   `cargo fmt --check && git diff --check` passed.
+- Phase30 promotes ParagraphProcessor right-alignment precedence from an
+  internal Rust unit check into the black-box runtime probe contract.
+  `opendataloader_line_paragraph_probe` now emits `paragraphAlignments` and
+  reports a flush-right adjacent pair as `alignment=right` before the generic
+  two-line heuristic. This keeps the focused OpenDataLoader processor behavior
+  visible at the runtime boundary without enabling broad production paragraph
+  rewrites or changing the phase27 full200 quality gate. Verification:
+  `opendataloader_line_paragraph_contract` passed 7/7.

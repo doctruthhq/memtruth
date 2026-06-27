@@ -91,6 +91,34 @@ fn paragraph_processor_joins_wrapped_prose_lines() {
 }
 
 #[test]
+fn paragraph_processor_reports_right_alignment_before_two_line_heuristic() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_line_paragraph_probe",
+                "lines": [
+                    {"text": "short", "x0": 150, "y0": 100, "x1": 220, "y1": 112},
+                    {"text": "longer line", "x0": 90, "y0": 114, "x1": 220, "y1": 126}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["paragraphAlignments"][0]["alignment"], "right");
+    assert_eq!(
+        value["paragraphAlignments"][0]["reason"],
+        "OpenDataLoader ParagraphProcessor right-alignment precedence"
+    );
+    assert_eq!(value["joinedParagraphs"][0], "short longer line");
+}
+
+#[test]
 fn line_paragraph_probe_requires_lines() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd

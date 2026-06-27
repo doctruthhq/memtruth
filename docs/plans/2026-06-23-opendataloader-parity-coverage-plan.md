@@ -84,6 +84,14 @@ settings from `benchmark_corpus` into each case parse request, so benchmark
 corpus smoke tests can actually exercise configured local MNN workers instead
 of silently falling back to deterministic text-layer output.
 
+Phase30 promotes a previously internal ParagraphProcessor parity check to the
+runtime probe boundary. `opendataloader_line_paragraph_probe` now reports
+paragraph pair alignment metadata and preserves OpenDataLoader's
+right-alignment precedence when a flush-right adjacent line pair also matches
+the generic two-line paragraph heuristic. This is focused processor coverage;
+it does not update the phase27 full200 quality gate or claim full paragraph
+parity.
+
 ## Reference Boundaries
 
 ```text

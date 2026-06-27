@@ -196,10 +196,10 @@ DocTruth Java/OpenDataLoader-compatible parser output
 ```
 
 OpenDataLoader parity is measured, not asserted. A behavior is considered
-ported only when it has a Java parser-core contract test, a Rust shell contract
-test when runtime packaging is affected, an upstream source reference, and
-either a focused OpenDataLoader Bench case or a full200 report showing the
-effect. Until full200 reaches the accepted baseline, DocTruth should be
+ported only when it has a Java parser-core contract test, a Rust contract test
+at the shell boundary when runtime packaging is affected, an upstream source
+reference, and either a focused OpenDataLoader Bench case or a full200 report
+showing the effect. Until full200 reaches the accepted baseline, DocTruth should be
 described as OpenDataLoader-inspired and progressively porting parity, not
 OpenDataLoader-equivalent.
 
@@ -248,7 +248,7 @@ mvn verify -P recorded
 git diff --check
 ```
 
-Do not claim OpenDataLoader parity complete while parser-quality,
+Do not claim complete OpenDataLoader parity while parser-quality,
 model/cache, layout/table/OCR, corpus, audit-grade, or evidence-reconciliation
 behavior lacks benchmark evidence. If a Rust parser path exists, it must be
 documented and tested as experimental or secondary until it matches the Java

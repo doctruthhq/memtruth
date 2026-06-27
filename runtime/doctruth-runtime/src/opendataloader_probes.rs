@@ -78,6 +78,7 @@ pub(crate) fn opendataloader_line_paragraph_probe_json(request: &Value) -> Resul
         "source": "OpenDataLoader TextLineProcessor/ParagraphProcessor",
         "paragraphs": paragraph_output.paragraphs,
         "joinedParagraphs": paragraph_output.joined_paragraphs,
+        "paragraphAlignments": paragraph_output.paragraph_alignments,
         "tableLikeRows": table_like_rows,
         "references": [
             OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE,
@@ -202,6 +203,7 @@ fn opendataloader_probe_prose_lines(rows: Vec<Vec<PositionedLine>>) -> Vec<Posit
 struct OpendataloaderProbeParagraphOutput {
     paragraphs: Vec<String>,
     joined_paragraphs: Vec<String>,
+    paragraph_alignments: Vec<Value>,
 }
 
 fn opendataloader_probe_paragraph_output(
@@ -210,6 +212,7 @@ fn opendataloader_probe_paragraph_output(
     let mut output = OpendataloaderProbeParagraphOutput {
         paragraphs: Vec::new(),
         joined_paragraphs: Vec::new(),
+        paragraph_alignments: Vec::new(),
     };
     let mut current: Vec<PositionedLine> = Vec::new();
     for line in lines {
@@ -238,15 +241,82 @@ fn opendataloader_probe_push_paragraph_output(
     output.paragraphs.push(paragraph.clone());
     if lines.len() >= 2 {
         output.joined_paragraphs.push(paragraph);
+        for pair in lines.windows(2) {
+            output
+                .paragraph_alignments
+                .push(opendataloader_probe_paragraph_alignment(&pair[0], &pair[1]));
+        }
     }
 }
 
 fn opendataloader_probe_wrapped_pair(previous: &PositionedLine, next: &PositionedLine) -> bool {
+    if !opendataloader_probe_terminal_line(&previous.text)
+        && opendataloader_probe_right_aligned_paragraph_pair(previous, next)
+    {
+        return true;
+    }
     let vertical_gap = next.bbox.y0 - previous.bbox.y1;
     let same_left_edge = (previous.bbox.x0 - next.bbox.x0).abs() <= 8.0;
     same_left_edge
         && (-2.0..=previous.font_size.max(next.font_size) * 0.7).contains(&vertical_gap)
         && !opendataloader_probe_terminal_line(&previous.text)
+}
+
+fn opendataloader_probe_paragraph_alignment(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> Value {
+    if opendataloader_probe_right_aligned_paragraph_pair(previous, next) {
+        return json!({
+            "alignment": "right",
+            "reason": "OpenDataLoader ParagraphProcessor right-alignment precedence"
+        });
+    }
+    if opendataloader_probe_two_line_paragraph_pair(previous, next) {
+        return json!({
+            "alignment": "left",
+            "reason": "OpenDataLoader ParagraphProcessor two-line heuristic"
+        });
+    }
+    json!({
+        "alignment": "none",
+        "reason": "no OpenDataLoader ParagraphProcessor pair rule matched"
+    })
+}
+
+fn opendataloader_probe_right_aligned_paragraph_pair(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> bool {
+    (previous.bbox.x1 - next.bbox.x1).abs() <= 1.0
+        && opendataloader_probe_adjacent_paragraph_lines(previous, next)
+        && opendataloader_probe_close_ratio(previous.font_size, next.font_size, 0.05)
+}
+
+fn opendataloader_probe_two_line_paragraph_pair(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> bool {
+    previous.bbox.x0 >= next.bbox.x0
+        && previous.bbox.x1 >= next.bbox.x1
+        && opendataloader_probe_adjacent_paragraph_lines(previous, next)
+        && opendataloader_probe_close_ratio(previous.font_size, next.font_size, 0.05)
+}
+
+fn opendataloader_probe_adjacent_paragraph_lines(
+    previous: &PositionedLine,
+    next: &PositionedLine,
+) -> bool {
+    let vertical_gap = next.bbox.y0 - previous.bbox.y1;
+    (-2.0..=previous.font_size.max(next.font_size) * 0.35).contains(&vertical_gap)
+}
+
+fn opendataloader_probe_close_ratio(left: f64, right: f64, epsilon: f64) -> bool {
+    let max_value = left.abs().max(right.abs());
+    if max_value <= f64::EPSILON {
+        return true;
+    }
+    (left - right).abs() / max_value <= epsilon
 }
 
 fn opendataloader_probe_terminal_line(text: &str) -> bool {

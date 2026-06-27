@@ -4393,7 +4393,7 @@ fn aggregate_opendataloader_scores(documents: &[Value]) -> Value {
 }
 
 fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
-    let bucket_specs = [
+    let metric_specs = [
         (
             "missing_prediction",
             "availability",
@@ -4405,26 +4405,41 @@ fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
         ("table_structure", "teds", "teds", 0.5),
         ("heading_hierarchy", "mhs", "mhs", 0.5),
     ];
-    let mut buckets = BTreeMap::<String, Vec<Value>>::new();
+    let behavior_specs = [
+        (
+            "ocr_sparse_page_rescue",
+            "availability",
+            "missing_prediction",
+        ),
+        ("text_noise_filtering", "overall", "overall_quality"),
+        ("two_column_reading_order", "nid", "reading_order"),
+        ("sidebar_reading_order", "nid", "reading_order"),
+        ("heading_hierarchy", "mhs", "heading_hierarchy"),
+        ("bordered_tables", "teds", "table_structure"),
+        ("borderless_tables", "teds", "table_structure"),
+    ];
+    let mut metric_buckets = BTreeMap::<String, Vec<Value>>::new();
+    let mut behavior_buckets = BTreeMap::<String, Vec<Value>>::new();
     let mut cases = Vec::<Value>::new();
+    let mut behavior_case_count = 0_usize;
 
     for document in documents {
-        let mut case_buckets = Vec::<String>::new();
+        let mut metric_case_buckets = Vec::<String>::new();
         let prediction_available = document
             .get("prediction_available")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if !prediction_available {
-            case_buckets.push("missing_prediction".to_string());
+            metric_case_buckets.push("missing_prediction".to_string());
         }
-        for (bucket, _metric, score_key, threshold) in bucket_specs.iter().skip(1) {
+        for (bucket, _metric, score_key, threshold) in metric_specs.iter().skip(1) {
             if let Some(score) = opendataloader_document_score(document, score_key) {
                 if score < *threshold {
-                    case_buckets.push((*bucket).to_string());
+                    metric_case_buckets.push((*bucket).to_string());
                 }
             }
         }
-        if case_buckets.is_empty() {
+        if metric_case_buckets.is_empty() {
             continue;
         }
 
@@ -4432,20 +4447,40 @@ fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
             .get("document_id")
             .and_then(Value::as_str)
             .unwrap_or("unknown");
-        let primary_bucket = case_buckets
+        let behavior_case_buckets =
+            opendataloader_behavior_buckets_for_metrics(&metric_case_buckets, &behavior_specs);
+        if !behavior_case_buckets.is_empty() {
+            behavior_case_count += 1;
+        }
+        let primary_metric_bucket = metric_case_buckets
             .first()
             .cloned()
             .unwrap_or_else(|| "overall_quality".to_string());
+        let primary_behavior_bucket = behavior_case_buckets
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "text_noise_filtering".to_string());
         let case = json!({
             "document_id": document_id,
-            "primary_bucket": primary_bucket,
-            "buckets": case_buckets,
+            "primary_metric_bucket": primary_metric_bucket,
+            "primary_behavior_bucket": primary_behavior_bucket,
+            "metric_buckets": metric_case_buckets,
+            "behavior_buckets": behavior_case_buckets,
+            "classification_basis": "metric_proxy",
             "prediction_available": prediction_available,
             "scores": document.get("scores").cloned().unwrap_or_else(|| json!({}))
         });
-        for bucket in case["buckets"].as_array().into_iter().flatten() {
+        for bucket in case["metric_buckets"].as_array().into_iter().flatten() {
             if let Some(bucket_name) = bucket.as_str() {
-                buckets
+                metric_buckets
+                    .entry(bucket_name.to_string())
+                    .or_default()
+                    .push(case.clone());
+            }
+        }
+        for bucket in case["behavior_buckets"].as_array().into_iter().flatten() {
+            if let Some(bucket_name) = bucket.as_str() {
+                behavior_buckets
                     .entry(bucket_name.to_string())
                     .or_default()
                     .push(case.clone());
@@ -4454,14 +4489,28 @@ fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
         cases.push(case);
     }
 
-    let mut bucket_json = serde_json::Map::new();
-    for (bucket, metric, _score_key, threshold) in bucket_specs {
-        let bucket_cases = buckets.remove(bucket).unwrap_or_default();
-        bucket_json.insert(
+    let mut metric_bucket_json = serde_json::Map::new();
+    for (bucket, metric, _score_key, threshold) in metric_specs {
+        let bucket_cases = metric_buckets.remove(bucket).unwrap_or_default();
+        metric_bucket_json.insert(
             bucket.to_string(),
             json!({
                 "metric": metric,
                 "threshold": threshold,
+                "case_count": bucket_cases.len(),
+                "cases": bucket_cases
+            }),
+        );
+    }
+    let mut behavior_bucket_json = serde_json::Map::new();
+    for (bucket, metric, metric_bucket) in behavior_specs {
+        let bucket_cases = behavior_buckets.remove(bucket).unwrap_or_default();
+        behavior_bucket_json.insert(
+            bucket.to_string(),
+            json!({
+                "metric": metric,
+                "source_metric_bucket": metric_bucket,
+                "classification_basis": "metric_proxy",
                 "case_count": bucket_cases.len(),
                 "cases": bucket_cases
             }),
@@ -4472,7 +4521,8 @@ fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
         "schema": "doctruth.opendataloader.low_score_buckets.v1",
         "summary": {
             "document_count": documents.len(),
-            "case_count": cases.len()
+            "case_count": cases.len(),
+            "behavior_case_count": behavior_case_count
         },
         "thresholds": {
             "overall": 0.5,
@@ -4480,9 +4530,26 @@ fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
             "teds": 0.5,
             "mhs": 0.5
         },
-        "buckets": bucket_json,
+        "metric_buckets": metric_bucket_json,
+        "behavior_buckets": behavior_bucket_json,
+        "buckets": behavior_bucket_json,
         "cases": cases
     })
+}
+
+fn opendataloader_behavior_buckets_for_metrics(
+    metric_buckets: &[String],
+    behavior_specs: &[(&str, &str, &str)],
+) -> Vec<String> {
+    behavior_specs
+        .iter()
+        .filter_map(|(behavior_bucket, _metric, metric_bucket)| {
+            metric_buckets
+                .iter()
+                .any(|candidate| candidate == metric_bucket)
+                .then(|| (*behavior_bucket).to_string())
+        })
+        .collect()
 }
 
 fn opendataloader_document_score(document: &Value, key: &str) -> Option<f64> {

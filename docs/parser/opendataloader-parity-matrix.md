@@ -174,6 +174,11 @@ metric presence before accepting smoke or full200 output. Future script changes
 must preserve these fields and must not move latency/resource evidence into a
 screenshot-only or free-form report.
 
+`low-score-buckets.json` separates raw metric buckets from behavior-family
+buckets. The behavior-family bucket names must match this matrix, but until the
+evaluator consumes richer layout tags they are metric-proxy classifications, not
+proof that a specific processor family caused the failure.
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

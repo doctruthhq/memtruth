@@ -1987,12 +1987,42 @@ fn opendataloader_evaluate_prediction_writes_rust_evaluation_without_python() {
         "doctruth.opendataloader.low_score_buckets.v1"
     );
     assert_eq!(buckets["summary"]["case_count"], 1);
-    assert_eq!(buckets["buckets"]["missing_prediction"]["case_count"], 1);
-    assert_eq!(buckets["buckets"]["reading_order"]["metric"], "nid");
-    assert_eq!(buckets["buckets"]["table_structure"]["metric"], "teds");
+    assert_eq!(buckets["summary"]["behavior_case_count"], 1);
+    assert_eq!(
+        buckets["metric_buckets"]["missing_prediction"]["case_count"],
+        1
+    );
+    assert_eq!(buckets["metric_buckets"]["reading_order"]["metric"], "nid");
+    assert_eq!(
+        buckets["metric_buckets"]["table_structure"]["metric"],
+        "teds"
+    );
+    assert_eq!(
+        buckets["metric_buckets"]["heading_hierarchy"]["metric"],
+        "mhs"
+    );
+    assert_eq!(
+        buckets["buckets"]["ocr_sparse_page_rescue"]["case_count"],
+        1
+    );
+    assert_eq!(
+        buckets["buckets"]["two_column_reading_order"]["metric"],
+        "nid"
+    );
+    assert_eq!(buckets["buckets"]["sidebar_reading_order"]["metric"], "nid");
+    assert_eq!(buckets["buckets"]["bordered_tables"]["metric"], "teds");
+    assert_eq!(buckets["buckets"]["borderless_tables"]["metric"], "teds");
     assert_eq!(buckets["buckets"]["heading_hierarchy"]["metric"], "mhs");
     assert_eq!(buckets["cases"][0]["document_id"], "doc-b");
-    assert_eq!(buckets["cases"][0]["primary_bucket"], "missing_prediction");
+    assert_eq!(
+        buckets["cases"][0]["primary_metric_bucket"],
+        "missing_prediction"
+    );
+    assert_eq!(
+        buckets["cases"][0]["primary_behavior_bucket"],
+        "ocr_sparse_page_rescue"
+    );
+    assert_eq!(buckets["cases"][0]["classification_basis"], "metric_proxy");
 }
 
 #[test]

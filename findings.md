@@ -2214,3 +2214,15 @@
   the chart/table false-positive bucket before the next full200 run.
   Verification: `opendataloader_table_processor_contract table_classifier_probe`
   passed.
+- Phase43 connects Java-core OpenDataLoader prediction with Rust MNN auto OCR
+  rescue. `backend=opendataloader-java-core` plus `preset=auto` now probes the
+  warm Java `lite` output first; readable Java/PDFBox Markdown remains
+  canonical, while sparse Java output can be rescued by Rust auto OCR/table
+  routing. This fixed the earlier over-broad OCR route where `01030000000165`
+  dropped from overall `0.653629` to `0.284770`; it now stays Java-core. The
+  true sparse infographic case `01030000000141` routes to PP-OCRv5 MNN and
+  improves from overall `0.003407` to `0.432270`. Release full200
+  `doctruth-java-core-auto-mnn-full200-v2/full200` parsed 200/200 with overall
+  `0.781875`, NID `0.900985`, TEDS `0.736174`, MHS `0.492119`, and one OCR
+  route. Verification: `benchmark_corpus_contract opendataloader_prediction_`,
+  `model_worker_contract`, and release full200 passed.

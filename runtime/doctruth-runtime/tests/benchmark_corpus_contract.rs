@@ -3,7 +3,7 @@ use predicates::prelude::*;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -99,6 +99,169 @@ fn opendataloader_prediction_ocr_routes_scanned_pdf_through_model_worker() {
         markdown.contains("Auto OCR evidence"),
         "prediction markdown should come from the OCR model worker:\n{markdown}"
     );
+}
+
+#[test]
+fn opendataloader_java_core_auto_routes_visual_pdf_through_rust_ocr_worker() {
+    let root = temp_dir("doctruth-runtime-opendataloader-java-auto-ocr");
+    let output_dir = root.join("prediction/doctruth-java-auto-ocr");
+    let java_start_log = root.join("java-starts.log");
+    let java_backend = write_poor_fake_java_backend_worker(&root);
+    let worker = write_auto_ocr_model_worker();
+    let (model_cache, model_manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-opendataloader-java-auto-ocr-cache");
+    let bench_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../third_party/opendataloader-bench");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": bench_dir,
+            "output_dir": output_dir,
+            "engine": "doctruth-opendataloader-java-auto-ocr-contract",
+            "backend": "opendataloader-java-core",
+            "java_backend_command": [java_backend, java_start_log],
+            "doc_id": "01030000000141",
+            "preset": "auto",
+            "profile": "edge-model",
+            "runtime_profile": "edge-model",
+            "timeout_seconds": 30,
+            "limit": 2,
+            "model_manifest": model_manifest,
+            "model_cache": model_cache,
+            "model_worker": worker
+        })
+        .to_string(),
+    )
+    .assert()
+    .success();
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["parsed_count"], 1);
+    assert_eq!(summary["failed_count"], 0);
+    assert_eq!(
+        summary["documents"][0]["backend"],
+        "rust-sidecar+model-worker"
+    );
+    assert_eq!(summary["documents"][0]["preset"], "ocr");
+    assert_eq!(
+        summary["documents"][0]["modelRouting"]["route"],
+        "ocr-model"
+    );
+
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000141.md")).unwrap();
+    assert!(
+        markdown.contains("Auto OCR evidence"),
+        "auto visual route should use Rust OCR worker output, not Java preset auto failure:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_java_core_auto_keeps_readable_java_output_before_ocr_rescue() {
+    let root = temp_dir("doctruth-runtime-opendataloader-java-auto-readable");
+    let output_dir = root.join("prediction/doctruth-java-auto-readable");
+    let java_start_log = root.join("java-starts.log");
+    let java_backend = write_fake_java_backend_worker(&root);
+    let worker = write_auto_ocr_model_worker();
+    let (model_cache, model_manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-opendataloader-readable-java-cache");
+    let bench_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../third_party/opendataloader-bench");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": bench_dir,
+            "output_dir": output_dir,
+            "engine": "doctruth-opendataloader-java-auto-readable-contract",
+            "backend": "opendataloader-java-core",
+            "java_backend_command": [java_backend, java_start_log],
+            "doc_id": "01030000000165",
+            "preset": "auto",
+            "profile": "edge-model",
+            "runtime_profile": "edge-model",
+            "timeout_seconds": 30,
+            "model_manifest": model_manifest,
+            "model_cache": model_cache,
+            "model_worker": worker
+        })
+        .to_string(),
+    )
+    .assert()
+    .success();
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["parsed_count"], 1);
+    assert_eq!(
+        summary["documents"][0]["backend"],
+        "opendataloader-java-core"
+    );
+    assert_eq!(summary["documents"][0]["modelRouting"], Value::Null);
+    assert_eq!(summary["model_routing_coverage"]["startedModelRuntime"], 0);
+
+    let markdown = fs::read_to_string(output_dir.join("markdown/01030000000165.md")).unwrap();
+    assert!(
+        markdown.contains("Java backend markdown"),
+        "readable Java output should win over OCR rescue:\n{markdown}"
+    );
+}
+
+#[test]
+fn opendataloader_prediction_reuses_model_worker_across_internal_pdf_loop() {
+    let root = temp_dir("doctruth-runtime-opendataloader-batch-model-loop");
+    let pdf_dir = root.join("pdfs");
+    let output_dir = root.join("prediction/doctruth-batch-model-loop");
+    fs::create_dir_all(&pdf_dir).unwrap();
+    fs::write(
+        pdf_dir.join("table-a.pdf"),
+        minimal_pdf("Item Qty Price\nA 2 10\nB 4 20\nTotal 6 30"),
+    )
+    .unwrap();
+    fs::write(
+        pdf_dir.join("table-b.pdf"),
+        minimal_pdf("Item Qty Price\nC 1 11\nD 3 33\nTotal 4 44"),
+    )
+    .unwrap();
+    let start_log = root.join("model-worker-starts.log");
+    let worker = write_persistent_table_model_worker(&start_log);
+    let (model_cache, model_manifest) = ready_mnn_model_manifest();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    cmd.write_stdin(
+        json!({
+            "command": "opendataloader_prediction",
+            "bench_dir": root,
+            "output_dir": output_dir,
+            "engine": "doctruth-opendataloader-batch-model-loop-contract",
+            "preset": "table-lite",
+            "runtime_profile": "edge-model",
+            "timeout_seconds": 30,
+            "limit": 2,
+            "model_manifest": model_manifest,
+            "model_cache": model_cache,
+            "model_worker": worker
+        })
+        .to_string(),
+    )
+    .assert()
+    .success();
+
+    let summary: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(summary["parsed_count"], 2);
+    assert_eq!(summary["model_routing_coverage"]["startedModelRuntime"], 2);
+    assert_eq!(fs::read_to_string(start_log).unwrap(), "started\n");
+    for document in summary["documents"].as_array().unwrap() {
+        assert_eq!(document["modelRuntime"]["unloadPolicy"], "after-job-batch");
+        assert_eq!(document["modelRuntime"]["unload"]["status"], "deferred");
+    }
 }
 
 #[test]
@@ -3435,61 +3598,146 @@ fn write_fake_model_worker() -> PathBuf {
 import json
 import sys
 
-request = json.load(sys.stdin)
-assert request["preset"] == "table-lite"
-assert request["models"][0]["backend"] == "mnn"
-assert request["models"][0]["format"] == "mnn"
-assert request["models"][0]["cacheStatus"] == "READY"
-print(json.dumps({
-    "docId": request["source_hash"],
-    "source": {
-        "sourceFilename": "worker.pdf",
-        "sourceHash": request["source_hash"],
-        "metadata": {"sourceFilename": "worker.pdf", "pageCount": 1}
-    },
-    "body": {
-        "pages": [{
-            "pageNumber": 1,
-            "width": 612.0,
-            "height": 792.0,
-            "textLayerAvailable": True,
-            "imageHash": "sha256:" + "0" * 64
-        }],
-        "units": [{
-            "unitId": "unit-0001",
-            "kind": "TABLE_CELL",
-            "page": 1,
-            "text": "Worker corpus evidence.",
-            "evidenceSpanIds": ["span-0001"],
-            "location": {
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    assert request["preset"] == "table-lite"
+    assert request["models"][0]["backend"] == "mnn"
+    assert request["models"][0]["format"] == "mnn"
+    assert request["models"][0]["cacheStatus"] == "READY"
+    print(json.dumps({
+        "docId": request["source_hash"],
+        "source": {
+            "sourceFilename": "worker.pdf",
+            "sourceHash": request["source_hash"],
+            "metadata": {"sourceFilename": "worker.pdf", "pageCount": 1}
+        },
+        "body": {
+            "pages": [{
+                "pageNumber": 1,
+                "width": 612.0,
+                "height": 792.0,
+                "textLayerAvailable": True,
+                "imageHash": "sha256:" + "0" * 64
+            }],
+            "units": [{
+                "unitId": "unit-0001",
+                "kind": "TABLE_CELL",
                 "page": 1,
-                "readingOrder": 1,
-                "boundingBox": {"x0": 0.0, "y0": 0.0, "x1": 1000.0, "y1": 1000.0}
-            },
-            "sourceObjectId": "worker-cell-1",
-            "confidence": {"score": 0.93, "rationale": "fake model worker"},
+                "text": "Worker corpus evidence.",
+                "evidenceSpanIds": ["span-0001"],
+                "location": {
+                    "page": 1,
+                    "readingOrder": 1,
+                    "boundingBox": {"x0": 0.0, "y0": 0.0, "x1": 1000.0, "y1": 1000.0}
+                },
+                "sourceObjectId": "worker-cell-1",
+                "confidence": {"score": 0.93, "rationale": "fake model worker"},
+                "warnings": []
+            }],
+            "tables": []
+        },
+        "parserRun": {
+            "parserVersion": "test-worker",
+            "preset": request["preset"],
+            "backend": "rust-sidecar+model-worker",
+            "models": ["slanet-plus:v1"],
             "warnings": []
-        }],
-        "tables": []
-    },
-    "parserRun": {
-        "parserVersion": "test-worker",
-        "preset": request["preset"],
-        "backend": "rust-sidecar+model-worker",
-        "models": ["slanet-plus:v1"],
-        "warnings": []
-    },
-    "auditGradeStatus": "AUDIT_GRADE",
-    "metrics": {
-        "runtime": "mnn",
-        "coldStartMs": 11.0,
-        "inferenceMs": 4.0,
-        "peakMemoryMb": 202,
-        "loadedModels": ["slanet-plus:v1"],
-        "unload": {"status": "scheduled", "policy": "idle-after-request"}
-    }
-}))
+        },
+        "auditGradeStatus": "AUDIT_GRADE",
+        "metrics": {
+            "runtime": "mnn",
+            "coldStartMs": 11.0,
+            "inferenceMs": 4.0,
+            "peakMemoryMb": 202,
+            "loadedModels": ["slanet-plus:v1"],
+            "unload": {"status": "deferred", "policy": "after-job-batch"}
+        }
+    }), flush=True)
 "#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+    path
+}
+
+fn write_persistent_table_model_worker(start_log: &Path) -> PathBuf {
+    let path = temp_dir("doctruth-runtime-persistent-table-worker").with_extension("py");
+    fs::write(
+        &path,
+        format!(
+            r#"#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+
+Path({start_log:?}).write_text("started\n", encoding="utf-8")
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    assert request["preset"] == "table-lite"
+    assert request["modelRuntime"]["unloadPolicy"] == "after-job-batch"
+    response = {{
+        "docId": request["source_hash"],
+        "source": {{
+            "sourceFilename": "persistent-worker.pdf",
+            "sourceHash": request["source_hash"],
+            "metadata": {{"sourceFilename": "persistent-worker.pdf", "pageCount": 1}}
+        }},
+        "body": {{
+            "pages": [{{
+                "pageNumber": 1,
+                "width": 612.0,
+                "height": 792.0,
+                "textLayerAvailable": True,
+                "imageHash": "sha256:" + "0" * 64
+            }}],
+            "units": [{{
+                "unitId": "unit-0001",
+                "kind": "TABLE_CELL",
+                "page": 1,
+                "text": "Persistent worker evidence",
+                "evidenceSpanIds": ["span-0001"],
+                "location": {{
+                    "page": 1,
+                    "readingOrder": 1,
+                    "boundingBox": {{"x0": 0.0, "y0": 0.0, "x1": 1000.0, "y1": 1000.0}}
+                }},
+                "sourceObjectId": "persistent-worker-cell-1",
+                "confidence": {{"score": 0.93, "rationale": "persistent model worker"}},
+                "warnings": []
+            }}],
+            "tables": []
+        }},
+        "parserRun": {{
+            "parserVersion": "test-worker",
+            "preset": request["preset"],
+            "backend": "rust-sidecar+model-worker",
+            "models": ["slanet-plus:v1"],
+            "warnings": []
+        }},
+        "auditGradeStatus": "AUDIT_GRADE",
+        "metrics": {{
+            "runtime": "mnn",
+            "coldStartMs": 2.0,
+            "inferenceMs": 1.0,
+            "peakMemoryMb": 202,
+            "loadedModels": ["slanet-plus:v1"],
+            "unload": {{"status": "deferred", "policy": "after-job-batch"}}
+        }}
+    }}
+    print(json.dumps(response), flush=True)
+"#,
+            start_log = start_log.to_string_lossy()
+        ),
     )
     .unwrap();
     let mut permissions = fs::metadata(&path).unwrap().permissions();
@@ -3510,67 +3758,70 @@ fn write_auto_ocr_model_worker() -> PathBuf {
 import json
 import sys
 
-request = json.load(sys.stdin)
-assert request["preset"] == "ocr"
-assert request["modelRouting"]["mode"] == "auto"
-assert request["modelRouting"]["decision"] == "model-runtime"
-assert request["modelRouting"]["route"] == "ocr-model"
-assert request["modelRuntime"]["preprocessing"]["decoder"] == "ocr"
-assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
-models = request["models"]
-auxiliary = request["auxiliaryArtifacts"]
-assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
-assert all(model["backend"] == "mnn" and model["format"] == "mnn" for model in models), models
-assert len(auxiliary) == 1, auxiliary
-assert auxiliary[0]["role"] == "recognition-charset", auxiliary
-print(json.dumps({
-    "docId": request["source_hash"],
-    "source": {
-        "sourceFilename": "auto-ocr-worker.pdf",
-        "sourceHash": request["source_hash"],
-        "metadata": {"sourceFilename": "auto-ocr-worker.pdf", "pageCount": 1}
-    },
-    "body": {
-        "pages": [{
-            "pageNumber": 1,
-            "width": 612.0,
-            "height": 792.0,
-            "textLayerAvailable": False,
-            "imageHash": "sha256:" + "0" * 64
-        }],
-        "units": [{
-            "unitId": "unit-0001",
-            "kind": "OCR_REGION",
-            "page": 1,
-            "text": "Auto OCR evidence",
-            "evidenceSpanIds": ["span-0001"],
-            "location": {
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    assert request["preset"] == "ocr"
+    assert request["modelRouting"]["mode"] == "auto"
+    assert request["modelRouting"]["decision"] == "model-runtime"
+    assert request["modelRouting"]["route"] == "ocr-model"
+    assert request["modelRuntime"]["preprocessing"]["decoder"] == "ocr"
+    assert request["modelRuntime"]["preprocessing"]["imageSource"] == "pdf_oxide_rendered_page"
+    models = request["models"]
+    auxiliary = request["auxiliaryArtifacts"]
+    assert [model["role"] for model in models] == ["text-detection", "text-recognition"], models
+    assert all(model["backend"] == "mnn" and model["format"] == "mnn" for model in models), models
+    assert len(auxiliary) == 1, auxiliary
+    assert auxiliary[0]["role"] == "recognition-charset", auxiliary
+    print(json.dumps({
+        "docId": request["source_hash"],
+        "source": {
+            "sourceFilename": "auto-ocr-worker.pdf",
+            "sourceHash": request["source_hash"],
+            "metadata": {"sourceFilename": "auto-ocr-worker.pdf", "pageCount": 1}
+        },
+        "body": {
+            "pages": [{
+                "pageNumber": 1,
+                "width": 612.0,
+                "height": 792.0,
+                "textLayerAvailable": False,
+                "imageHash": "sha256:" + "0" * 64
+            }],
+            "units": [{
+                "unitId": "unit-0001",
+                "kind": "OCR_REGION",
                 "page": 1,
-                "readingOrder": 1,
-                "boundingBox": {"x0": 20.0, "y0": 20.0, "x1": 200.0, "y1": 80.0}
-            },
-            "sourceObjectId": "auto-ocr-worker-region-1",
-            "confidence": {"score": 0.91, "rationale": "fake auto ocr worker"},
+                "text": "Auto OCR evidence",
+                "evidenceSpanIds": ["span-0001"],
+                "location": {
+                    "page": 1,
+                    "readingOrder": 1,
+                    "boundingBox": {"x0": 20.0, "y0": 20.0, "x1": 200.0, "y1": 80.0}
+                },
+                "sourceObjectId": "auto-ocr-worker-region-1",
+                "confidence": {"score": 0.91, "rationale": "fake auto ocr worker"},
+                "warnings": []
+            }],
+            "tables": []
+        },
+        "parserRun": {
+            "parserVersion": "test-worker",
+            "preset": request["preset"],
+            "backend": "rapidocr-worker",
+            "models": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
             "warnings": []
-        }],
-        "tables": []
-    },
-    "parserRun": {
-        "parserVersion": "test-worker",
-        "preset": request["preset"],
-        "backend": "rapidocr-worker",
-        "models": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
-        "warnings": []
-    },
-    "auditGradeStatus": "AUDIT_GRADE",
-    "metrics": {
-        "runtime": "mnn",
-        "coldStartMs": 10.0,
-        "inferenceMs": 5.0,
-        "loadedModels": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
-        "unload": {"status": "scheduled", "policy": "idle-after-request"}
-    }
-}))
+        },
+        "auditGradeStatus": "AUDIT_GRADE",
+        "metrics": {
+            "runtime": "mnn",
+            "coldStartMs": 10.0,
+            "inferenceMs": 5.0,
+            "loadedModels": ["ppocr-v5-mobile-det:v0.1.3", "ppocr-v5-mobile-rec:v0.1.3"],
+            "unload": {"status": "deferred", "policy": "after-job-batch"}
+        }
+    }), flush=True)
 "#,
     )
     .unwrap();
@@ -3717,11 +3968,40 @@ fn write_fake_java_backend_worker(root: &PathBuf) -> PathBuf {
         &worker,
 r##"echo start >> "$1"
 while IFS= read -r line; do
-  printf '%s\n' '{"ok":true,"backend":"opendataloader-java-core","schemaVersion":"doctruth.opendataloader.backend.v1","markdown":"# Java backend markdown\n\nfrom fake warm worker\n","metrics":{"elapsedMs":3},"trustDocument":{"parserRun":{"backend":"opendataloader-java-core","preset":"lite"}}}'
+  printf '%s\n' '{"ok":true,"backend":"opendataloader-java-core","schemaVersion":"doctruth.opendataloader.backend.v1","markdown":"# Java backend markdown\n\nThis readable Java core output contains enough extracted document text to stay on the Java quality path before OCR rescue. It preserves table prose, numbered steps, and surrounding paragraph context for the benchmark case.\n","metrics":{"elapsedMs":3},"trustDocument":{"parserRun":{"backend":"opendataloader-java-core","preset":"lite"}}}'
 done
 "##,
     )
     .unwrap();
+    let mut permissions = fs::metadata(&worker).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(&worker, permissions).unwrap();
+    }
+    worker
+}
+
+fn write_poor_fake_java_backend_worker(root: &PathBuf) -> PathBuf {
+    fs::create_dir_all(root).unwrap();
+    let worker = root.join("poor-fake-java-backend.sh");
+    fs::write(
+        &worker,
+        r##"echo start >> "$1"
+while IFS= read -r line; do
+  printf '%s\n' '{"ok":true,"backend":"opendataloader-java-core","schemaVersion":"doctruth.opendataloader.backend.v1","markdown":"and\n\n.org\n","metrics":{"elapsedMs":3},"trustDocument":{"parserRun":{"backend":"opendataloader-java-core","preset":"lite"}}}'
+done
+"##,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&worker).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(&worker, permissions).unwrap();
+    }
     worker
 }
 

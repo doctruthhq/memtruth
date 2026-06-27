@@ -5354,80 +5354,85 @@ fn write_opendataloader_prediction_artifacts(
     let start_memory = process_memory_usage();
     let (mut java_backend, java_backend_startup_ms, java_backend_command) =
         maybe_start_java_backend(backend, request)?;
-    let mut documents = Vec::new();
-    for pdf in pdfs {
-        let doc_start = Instant::now();
-        let document_id = pdf
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .map(safe_document_id)
-            .unwrap_or_else(|| "document".to_string());
-        let source_hash = sha256_file(pdf)?;
-        let parse_request = json!({
-            "command": "parse_pdf",
-            "source_path": pdf.to_string_lossy(),
-            "source_hash": source_hash,
-            "preset": preset,
-            "profile": profile,
-            "runtime_profile": profile,
-            "runtimeProfile": profile,
-            "offline_mode": true,
-            "allow_model_downloads": false,
-            "model_manifest": request_scoped_string(request, &["model_manifest", "modelManifest", "modelManifestPath"]),
-            "model_cache": request_scoped_string(request, &["model_cache", "modelCache", "modelCacheDirectory"]),
-            "model_worker": request_scoped_string(request, &["model_worker", "modelWorker", "modelCommand"])
-        });
-        let mut result = parse_for_opendataloader_prediction(
-            backend,
-            java_backend.as_mut(),
-            &parse_request,
-            timeout_seconds,
-        );
-        let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);
-        if timeout_seconds.is_some_and(|timeout| elapsed / 1000.0 > timeout) {
-            result = Err(error_json(
-                "PARSE_TIMEOUT",
-                "OpenDataLoader prediction parse exceeded timeout_seconds",
-            )
-            .to_string());
-        }
-        match result {
-            Ok(document) => {
-                let markdown = markdown_for_prediction_result(backend, &document);
-                let markdown_path = package.write_markdown(&document_id, &markdown)?;
-                documents.push(opendataloader_prediction_document_summary_from_document(
-                    backend,
-                    &document,
-                    &document_id,
-                    &source_hash,
-                    &markdown_path,
-                    elapsed,
-                ));
-                if let Some(document_summary) = documents.last() {
-                    package.write_case(&document_id, document_summary)?;
+    let documents = with_model_worker_batch_mode(|| {
+        let mut documents = Vec::new();
+        for pdf in pdfs {
+            let doc_start = Instant::now();
+            let document_id = pdf
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .map(safe_document_id)
+                .unwrap_or_else(|| "document".to_string());
+            let source_hash = sha256_file(pdf)?;
+            let parse_request = json!({
+                "command": "parse_pdf",
+                "source_path": pdf.to_string_lossy(),
+                "source_hash": source_hash,
+                "preset": preset,
+                "profile": profile,
+                "runtime_profile": profile,
+                "runtimeProfile": profile,
+                "offline_mode": true,
+                "allow_model_downloads": false,
+                "model_manifest": request_scoped_string(request, &["model_manifest", "modelManifest", "modelManifestPath"]),
+                "model_cache": request_scoped_string(request, &["model_cache", "modelCache", "modelCacheDirectory"]),
+                "model_worker": request_scoped_string(request, &["model_worker", "modelWorker", "modelCommand"])
+            });
+            let mut result = parse_for_opendataloader_prediction(
+                backend,
+                java_backend.as_mut(),
+                &parse_request,
+                timeout_seconds,
+            );
+            let elapsed = round_metric(doc_start.elapsed().as_secs_f64() * 1000.0);
+            if timeout_seconds.is_some_and(|timeout| elapsed / 1000.0 > timeout) {
+                result = Err(error_json(
+                    "PARSE_TIMEOUT",
+                    "OpenDataLoader prediction parse exceeded timeout_seconds",
+                )
+                .to_string());
+            }
+            match result {
+                Ok(document) => {
+                    let markdown = markdown_for_prediction_result(backend, &document);
+                    let markdown_path = package.write_markdown(&document_id, &markdown)?;
+                    documents.push(opendataloader_prediction_document_summary_from_document(
+                        backend,
+                        &document,
+                        &document_id,
+                        &source_hash,
+                        &markdown_path,
+                        elapsed,
+                    ));
+                    if let Some(document_summary) = documents.last() {
+                        package.write_case(&document_id, document_summary)?;
+                    }
+                }
+                Err(error) => {
+                    let error_code = error_code_from_json(&error);
+                    let markdown_path = package.write_markdown(&document_id, "")?;
+                    let failure = json!({
+                        "document_id": document_id,
+                        "status": "failed",
+                        "elapsed": elapsed,
+                        "markdown_path": markdown_path.to_string_lossy(),
+                        "sourceSha256": source_hash,
+                        "errorCode": error_code,
+                        "error": error,
+                        "runtimeProfile": profile,
+                        "backend": backend,
+                        "modelRuntime": Value::Null,
+                        "modelRouting": Value::Null
+                    });
+                    package.write_failure(&document_id, &failure)?;
+                    documents.push(failure);
                 }
             }
-            Err(error) => {
-                let error_code = error_code_from_json(&error);
-                let markdown_path = package.write_markdown(&document_id, "")?;
-                let failure = json!({
-                    "document_id": document_id,
-                    "status": "failed",
-                    "elapsed": elapsed,
-                    "markdown_path": markdown_path.to_string_lossy(),
-                    "sourceSha256": source_hash,
-                    "errorCode": error_code,
-                    "error": error,
-                    "runtimeProfile": profile,
-                    "backend": backend,
-                    "modelRuntime": Value::Null,
-                    "modelRouting": Value::Null
-                });
-                package.write_failure(&document_id, &failure)?;
-                documents.push(failure);
-            }
         }
-    }
+        Ok(documents)
+    });
+    shutdown_model_worker_sessions();
+    let documents = documents?;
     let end_memory = process_memory_usage();
     let parsed_count = documents
         .iter()
@@ -5622,6 +5627,18 @@ fn parse_for_opendataloader_prediction(
     timeout_seconds: Option<f64>,
 ) -> Result<Value, String> {
     if backend == "opendataloader-java-core" {
+        if request.get("preset").and_then(Value::as_str) == Some("auto") {
+            let java_document =
+                parse_pdf_with_java_backend(java_backend, request, timeout_seconds)?;
+            if java_core_auto_output_is_readable(&java_document) {
+                return Ok(java_document);
+            }
+            let routed_document = parse_pdf_for_prediction(request, timeout_seconds)?;
+            if prediction_document_started_model_runtime(&routed_document) {
+                return Ok(routed_document);
+            }
+            return Ok(java_document);
+        }
         return parse_pdf_with_java_backend(java_backend, request, timeout_seconds);
     }
     if backend == "rust-edge-fast" {
@@ -5647,9 +5664,14 @@ fn parse_pdf_with_java_backend(
         )
         .to_string()
     })?;
+    let backend_preset = match request.get("preset").and_then(Value::as_str) {
+        Some("auto") => "lite",
+        Some(preset) => preset,
+        None => "lite",
+    };
     let response = backend.send(&json!({
         "document": request.get("source_path").and_then(Value::as_str).unwrap_or(""),
-        "preset": request.get("preset").and_then(Value::as_str).unwrap_or("lite")
+        "preset": backend_preset
     }))?;
     if timeout_seconds.is_some_and(|timeout| started.elapsed().as_secs_f64() > timeout) {
         return Err(error_json(
@@ -5674,15 +5696,35 @@ fn parse_pdf_with_java_backend(
 
 fn markdown_for_prediction_result(backend: &str, document: &Value) -> String {
     let markdown = if backend == "opendataloader-java-core" {
-        document
-            .get("markdown")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string()
+        if let Some(markdown) = document.get("markdown").and_then(Value::as_str) {
+            markdown.to_string()
+        } else {
+            markdown_from_document(document)
+        }
     } else {
         markdown_from_document(document)
     };
     opendataloader_postprocess_prediction_markdown(&markdown)
+}
+
+fn prediction_document_started_model_runtime(document: &Value) -> bool {
+    document
+        .pointer("/parserRun/modelRouting/startedModelRuntime")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn java_core_auto_output_is_readable(document: &Value) -> bool {
+    let markdown = document
+        .get("markdown")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let alpha_numeric = markdown.chars().filter(|ch| ch.is_alphanumeric()).count();
+    let table_count = document
+        .get("tables")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    alpha_numeric >= 128 || table_count > 0
 }
 
 fn opendataloader_postprocess_prediction_markdown(markdown: &str) -> String {
@@ -5736,10 +5778,14 @@ fn opendataloader_prediction_document_summary_from_document(
     } else {
         document
     };
+    let actual_backend = parser_document
+        .pointer("/parserRun/backend")
+        .and_then(Value::as_str)
+        .unwrap_or(backend);
     json!({
         "document_id": document_id,
         "status": "parsed",
-        "backend": backend,
+        "backend": actual_backend,
         "elapsed": elapsed,
         "markdown_path": markdown_path.to_string_lossy(),
         "sourceSha256": source_hash,

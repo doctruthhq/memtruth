@@ -200,6 +200,19 @@ if [ "$RUNTIME_PROFILE" = "edge-model" ] \
   && [ -z "${DOCTRUTH_RUNTIME_MODEL_COMMAND:-}" ] \
   && [ -z "${DOCTRUTH_MODEL_COMMAND:-}" ] \
   && [ -f "$LOCAL_OCR_MANIFEST" ] \
+  && [ ! -d "$LOCAL_OCR_CACHE" ]; then
+  echo "Preparing local PP-OCRv5 MNN model cache..."
+  python3 "$ROOT/scripts/fetch-doctruth-model-pack.py" \
+    --manifest "$LOCAL_OCR_MANIFEST" \
+    --cache "$LOCAL_OCR_CACHE" >/dev/null
+fi
+
+if [ "$RUNTIME_PROFILE" = "edge-model" ] \
+  && [ -z "${DOCTRUTH_MODEL_MANIFEST:-}" ] \
+  && [ -z "${DOCTRUTH_MODEL_CACHE:-}" ] \
+  && [ -z "${DOCTRUTH_RUNTIME_MODEL_COMMAND:-}" ] \
+  && [ -z "${DOCTRUTH_MODEL_COMMAND:-}" ] \
+  && [ -f "$LOCAL_OCR_MANIFEST" ] \
   && [ -d "$LOCAL_OCR_CACHE" ]; then
   USE_LOCAL_MNN_OCR=1
   export DOCTRUTH_MODEL_MANIFEST="$LOCAL_OCR_MANIFEST"

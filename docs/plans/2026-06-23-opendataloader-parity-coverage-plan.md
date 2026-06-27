@@ -173,6 +173,13 @@ text. This closes a black-box contract gap for text-noise filtering, but
 low-contrast graphics/color-derived hidden text and full-bench text-noise
 evidence remain pending.
 
+Phase42 adds a focused chart/table false-positive boundary. The new
+`opendataloader_table_classifier_probe` distinguishes survey-style
+figure/chart layouts from data tables using Figure context, survey/chart labels,
+visual rows, and numeric-row signals. It keeps numeric grids promotable while
+blocking chart captions and survey labels from table promotion. This directly
+targets the chart/table distinction gap before the next full200 gate.
+
 ## Reference Boundaries
 
 ```text

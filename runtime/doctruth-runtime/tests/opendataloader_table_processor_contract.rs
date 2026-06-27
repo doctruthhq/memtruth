@@ -161,6 +161,62 @@ fn table_border_probe_covers_split_neighbor_and_depth_contracts() {
     );
 }
 
+#[test]
+fn table_classifier_probe_rejects_survey_chart_as_data_table() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_table_classifier_probe",
+                "lines": [
+                    {"text": "Figure 2", "x0": 30.0, "y0": 20.0, "x1": 90.0, "y1": 34.0},
+                    {"text": "July 2020 survey phase", "x0": 30.0, "y0": 60.0, "x1": 180.0, "y1": 74.0},
+                    {"text": "October 2020 lockdown period", "x0": 220.0, "y0": 60.0, "x1": 430.0, "y1": 74.0},
+                    {"text": "January 2021 survey phase", "x0": 460.0, "y0": 60.0, "x1": 610.0, "y1": 74.0},
+                    {"text": "Estimated cumulative damage for impeller blades.", "x0": 30.0, "y0": 700.0, "x1": 500.0, "y1": 714.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["classification"], "chart-or-figure");
+    assert_eq!(value["promoteToTable"], false);
+    assert_eq!(value["signals"]["surveyChartLabelCount"], 3);
+}
+
+#[test]
+fn table_classifier_probe_keeps_numeric_grid_as_data_table() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_table_classifier_probe",
+                "lines": [
+                    {"text": "Year", "x0": 30.0, "y0": 20.0, "x1": 70.0, "y1": 34.0},
+                    {"text": "Value", "x0": 160.0, "y0": 20.0, "x1": 210.0, "y1": 34.0},
+                    {"text": "2024", "x0": 30.0, "y0": 50.0, "x1": 70.0, "y1": 64.0},
+                    {"text": "17", "x0": 160.0, "y0": 50.0, "x1": 190.0, "y1": 64.0},
+                    {"text": "2025", "x0": 30.0, "y0": 80.0, "x1": 70.0, "y1": 94.0},
+                    {"text": "42", "x0": 160.0, "y0": 80.0, "x1": 190.0, "y1": 94.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["classification"], "data-table");
+    assert_eq!(value["promoteToTable"], true);
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

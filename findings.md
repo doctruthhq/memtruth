@@ -2207,3 +2207,10 @@
   hidden-text evidence or full-bench text-noise buckets yet. Verification:
   `content_filter_probe_reports_hidden_off_page_tiny_and_duplicate_lines`
   passed.
+- Phase42 adds a focused chart/table classifier probe. The runtime now exposes
+  `opendataloader_table_classifier_probe`, which classifies Figure plus
+  survey/chart-label layouts as `chart-or-figure` and prevents table promotion,
+  while keeping numeric visual grids promotable as `data-table`. This targets
+  the chart/table false-positive bucket before the next full200 run.
+  Verification: `opendataloader_table_processor_contract table_classifier_probe`
+  passed.

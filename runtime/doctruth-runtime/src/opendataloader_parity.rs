@@ -15,7 +15,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("ParagraphProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#paragraphprocessor"),
             processor("HeadingProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#headingprocessor"),
             processor("ListProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#listprocessor"),
-            processor("CaptionProcessor", "not_ported", "docs/parser/opendataloader-parity-matrix.md#captionprocessor"),
+            processor("CaptionProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#captionprocessor"),
             processor("LevelProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#levelprocessor"),
             processor("HeaderFooterProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#headerfooterprocessor"),
             processor("ContentFilterProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#contentfilterprocessor"),

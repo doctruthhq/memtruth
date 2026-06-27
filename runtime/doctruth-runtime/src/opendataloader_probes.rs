@@ -292,6 +292,46 @@ fn opendataloader_probe_table_like_row(row: &[PositionedLine]) -> bool {
     })
 }
 
+fn opendataloader_probe_numeric_table_row(row: &[PositionedLine]) -> bool {
+    row.len() >= 2
+        && row
+            .iter()
+            .any(|line| opendataloader_probe_numeric_cell(&line.text))
+}
+
+fn opendataloader_probe_numeric_cell(text: &str) -> bool {
+    let trimmed = text.trim().trim_end_matches('%');
+    !trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '-' | '+'))
+        && trimmed.chars().any(|ch| ch.is_ascii_digit())
+}
+
+fn opendataloader_probe_survey_chart_label_count(lines: &[PositionedLine]) -> usize {
+    lines
+        .iter()
+        .filter(|line| opendataloader_probe_survey_chart_label(&line.text))
+        .count()
+}
+
+fn opendataloader_probe_survey_chart_label(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    [
+        "july 2020",
+        "jul 2020",
+        "october 2020",
+        "oct 2020",
+        "january 2021",
+        "survey phase",
+        "survey phases",
+        "lockdown period",
+        "chart",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
 fn opendataloader_probe_prose_lines(rows: Vec<Vec<PositionedLine>>) -> Vec<PositionedLine> {
     rows.into_iter()
         .filter(|row| !opendataloader_probe_table_like_row(row))
@@ -465,6 +505,51 @@ pub(crate) fn opendataloader_table_border_probe_json(request: &Value) -> Result<
             .map(|depth| depth < OPENDATALOADER_MAX_NESTED_TABLE_DEPTH)
             .collect::<Vec<_>>(),
         "reference": OPENDATALOADER_TABLE_BORDER_PROCESSOR_REFERENCE
+    }))
+}
+
+pub(crate) fn opendataloader_table_classifier_probe_json(request: &Value) -> Result<Value, String> {
+    let lines = opendataloader_probe_positioned_lines(request)?;
+    let survey_chart_label_count = opendataloader_probe_survey_chart_label_count(&lines);
+    let has_figure = lines.iter().any(|line| {
+        line.text
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with("figure ")
+    });
+    let rows = opendataloader_probe_visual_rows(lines);
+    let table_like_row_count = rows
+        .iter()
+        .filter(|row| opendataloader_probe_table_like_row(row))
+        .count();
+    let numeric_row_count = rows
+        .iter()
+        .filter(|row| opendataloader_probe_numeric_table_row(row))
+        .count();
+    let classification = if has_figure && survey_chart_label_count >= 3 {
+        "chart-or-figure"
+    } else if table_like_row_count >= 2 && numeric_row_count >= 1 {
+        "data-table"
+    } else {
+        "text-or-figure"
+    };
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader table/chart classifier",
+        "classification": classification,
+        "promoteToTable": classification == "data-table",
+        "signals": {
+            "hasFigure": has_figure,
+            "surveyChartLabelCount": survey_chart_label_count,
+            "visualRowCount": rows.len(),
+            "tableLikeRowCount": table_like_row_count,
+            "numericRowCount": numeric_row_count
+        },
+        "references": [
+            OPENDATALOADER_TABLE_BORDER_PROCESSOR_REFERENCE
+        ]
     }))
 }
 

@@ -139,6 +139,10 @@ pub fn run_with_args_and_input(args: &[String], input: &str) -> Result<String, S
             opendataloader_probes::opendataloader_table_border_probe_json(&request)
                 .map(|json| json.to_string())
         }
+        Some("opendataloader_table_classifier_probe") => {
+            opendataloader_probes::opendataloader_table_classifier_probe_json(&request)
+                .map(|json| json.to_string())
+        }
         Some("opendataloader_triage_probe") => {
             opendataloader_probes::opendataloader_triage_probe_json(&request)
                 .map(|json| json.to_string())
@@ -205,6 +209,9 @@ fn run_request_json(request: &Value) -> Result<Value, String> {
         }
         Some("opendataloader_table_border_probe") => {
             opendataloader_probes::opendataloader_table_border_probe_json(request)
+        }
+        Some("opendataloader_table_classifier_probe") => {
+            opendataloader_probes::opendataloader_table_classifier_probe_json(request)
         }
         Some("opendataloader_triage_probe") => {
             opendataloader_probes::opendataloader_triage_probe_json(request)

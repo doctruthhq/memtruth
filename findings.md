@@ -2131,3 +2131,10 @@
   visible at the runtime boundary without enabling broad production paragraph
   rewrites or changing the phase27 full200 quality gate. Verification:
   `opendataloader_line_paragraph_contract` passed 7/7.
+- Phase31 promotes the pure TableBorderProcessor slice into the black-box
+  runtime probe contract. `opendataloader_table_border_probe` covers text-chunk
+  splitting by cell x range, neighbor table linking with the upstream 20%
+  tolerance, and the nested table depth guard at 10. This closes the
+  deterministic probe boundary for those three table-border semantics while
+  leaving real table/layout model decoding and broader table parity open.
+  Verification: `opendataloader_table_processor_contract` passed 6/6.

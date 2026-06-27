@@ -11,8 +11,11 @@ const OPENDATALOADER_REPLACEMENT_CHARACTER_STRING: &str = "\u{fffd}";
 const OPENDATALOADER_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java";
 const OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java";
 const OPENDATALOADER_PARAGRAPH_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ParagraphProcessor.java";
+const OPENDATALOADER_TABLE_BORDER_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableBorderProcessor.java";
 const OPENDATALOADER_HEADING_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java";
 const OPENDATALOADER_LIST_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ListProcessor.java";
+const OPENDATALOADER_MAX_NESTED_TABLE_DEPTH: u64 = 10;
+const OPENDATALOADER_NEIGHBOUR_TABLE_EPSILON: f64 = 0.2;
 
 pub(crate) fn opendataloader_text_processor_probe_json(request: &Value) -> Result<Value, String> {
     let text = request
@@ -341,6 +344,212 @@ fn opendataloader_probe_join_line_text(lines: &[PositionedLine]) -> String {
         }
     }
     normalize_text(&joined)
+}
+
+pub(crate) fn opendataloader_table_border_probe_json(request: &Value) -> Result<Value, String> {
+    let text_chunk = opendataloader_probe_text_chunk(request)?;
+    let cells = opendataloader_probe_cells(request)?;
+    let tables = opendataloader_probe_neighbor_tables(request)?;
+    let depths = opendataloader_probe_depths(request)?;
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader TableBorderProcessor",
+        "cellTextParts": opendataloader_probe_table_cell_text_parts(&text_chunk, &cells),
+        "neighborLinks": opendataloader_probe_neighbor_links(&tables),
+        "depthAllowed": depths
+            .into_iter()
+            .map(|depth| depth < OPENDATALOADER_MAX_NESTED_TABLE_DEPTH)
+            .collect::<Vec<_>>(),
+        "reference": OPENDATALOADER_TABLE_BORDER_PROCESSOR_REFERENCE
+    }))
+}
+
+struct OpendataloaderProbeTextChunk {
+    text: String,
+    x0: f64,
+    x1: f64,
+}
+
+struct OpendataloaderProbeCell {
+    left: f64,
+    right: f64,
+}
+
+struct OpendataloaderProbeTableShape {
+    width: f64,
+    columns: Vec<f64>,
+}
+
+fn opendataloader_probe_text_chunk(
+    request: &Value,
+) -> Result<OpendataloaderProbeTextChunk, String> {
+    let value = request
+        .get("textChunk")
+        .or_else(|| request.get("text_chunk"))
+        .ok_or_else(|| {
+            error_json(
+                "MISSING_TEXT_CHUNK",
+                "request.textChunk is required for table border probe",
+            )
+            .to_string()
+        })?;
+    let text = value.get("text").and_then(Value::as_str).ok_or_else(|| {
+        error_json("INVALID_TEXT_CHUNK", "textChunk.text is required").to_string()
+    })?;
+    let x0 = opendataloader_probe_named_f64(value, "x0", "INVALID_TEXT_CHUNK")?;
+    let x1 = opendataloader_probe_named_f64(value, "x1", "INVALID_TEXT_CHUNK")?;
+    if x1 <= x0 {
+        return Err(error_json("INVALID_TEXT_CHUNK", "textChunk must satisfy x0 < x1").to_string());
+    }
+    Ok(OpendataloaderProbeTextChunk {
+        text: text.to_string(),
+        x0,
+        x1,
+    })
+}
+
+fn opendataloader_probe_cells(request: &Value) -> Result<Vec<OpendataloaderProbeCell>, String> {
+    let values = request
+        .get("cells")
+        .and_then(Value::as_array)
+        .ok_or_else(|| error_json("MISSING_CELLS", "request.cells is required").to_string())?;
+    values
+        .iter()
+        .map(|value| {
+            let left = opendataloader_probe_named_f64(value, "left", "INVALID_CELL")?;
+            let right = opendataloader_probe_named_f64(value, "right", "INVALID_CELL")?;
+            if right <= left {
+                return Err(
+                    error_json("INVALID_CELL", "cell must satisfy left < right").to_string()
+                );
+            }
+            Ok(OpendataloaderProbeCell { left, right })
+        })
+        .collect()
+}
+
+fn opendataloader_probe_neighbor_tables(
+    request: &Value,
+) -> Result<Vec<OpendataloaderProbeTableShape>, String> {
+    let values = request
+        .get("neighborTables")
+        .or_else(|| request.get("neighbor_tables"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            error_json(
+                "MISSING_NEIGHBOR_TABLES",
+                "request.neighborTables is required",
+            )
+            .to_string()
+        })?;
+    values
+        .iter()
+        .map(|value| {
+            let width = opendataloader_probe_named_f64(value, "width", "INVALID_TABLE_SHAPE")?;
+            let columns = value
+                .get("columns")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    error_json("INVALID_TABLE_SHAPE", "neighbor table columns are required")
+                        .to_string()
+                })?
+                .iter()
+                .map(|column| {
+                    column
+                        .as_f64()
+                        .filter(|value| value.is_finite())
+                        .ok_or_else(|| {
+                            error_json("INVALID_TABLE_SHAPE", "column width must be finite")
+                                .to_string()
+                        })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(OpendataloaderProbeTableShape { width, columns })
+        })
+        .collect()
+}
+
+fn opendataloader_probe_depths(request: &Value) -> Result<Vec<u64>, String> {
+    request
+        .get("depths")
+        .and_then(Value::as_array)
+        .ok_or_else(|| error_json("MISSING_DEPTHS", "request.depths is required").to_string())?
+        .iter()
+        .map(|value| {
+            value
+                .as_u64()
+                .ok_or_else(|| error_json("INVALID_DEPTH", "depth must be unsigned").to_string())
+        })
+        .collect()
+}
+
+fn opendataloader_probe_named_f64(value: &Value, field: &str, code: &str) -> Result<f64, String> {
+    value
+        .get(field)
+        .and_then(Value::as_f64)
+        .filter(|number| number.is_finite())
+        .ok_or_else(|| error_json(code, &format!("{field} must be finite")).to_string())
+}
+
+fn opendataloader_probe_table_cell_text_parts(
+    text_chunk: &OpendataloaderProbeTextChunk,
+    cells: &[OpendataloaderProbeCell],
+) -> Vec<String> {
+    cells
+        .iter()
+        .map(|cell| opendataloader_probe_text_part_for_cell(text_chunk, cell))
+        .collect()
+}
+
+fn opendataloader_probe_text_part_for_cell(
+    text_chunk: &OpendataloaderProbeTextChunk,
+    cell: &OpendataloaderProbeCell,
+) -> String {
+    let chars = text_chunk.text.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return String::new();
+    }
+    let char_width = (text_chunk.x1 - text_chunk.x0) / chars.len() as f64;
+    chars
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, ch)| {
+            let center = text_chunk.x0 + char_width * (index as f64 + 0.5);
+            (center >= cell.left && center <= cell.right).then_some(ch)
+        })
+        .collect()
+}
+
+fn opendataloader_probe_neighbor_links(tables: &[OpendataloaderProbeTableShape]) -> Vec<bool> {
+    tables
+        .windows(2)
+        .map(|pair| opendataloader_probe_neighbor_table_link(&pair[0], &pair[1]))
+        .collect()
+}
+
+fn opendataloader_probe_neighbor_table_link(
+    previous: &OpendataloaderProbeTableShape,
+    current: &OpendataloaderProbeTableShape,
+) -> bool {
+    previous.columns.len() == current.columns.len()
+        && opendataloader_probe_close_ratio(
+            previous.width,
+            current.width,
+            OPENDATALOADER_NEIGHBOUR_TABLE_EPSILON,
+        )
+        && previous
+            .columns
+            .iter()
+            .zip(&current.columns)
+            .all(|(left, right)| {
+                opendataloader_probe_close_ratio(
+                    *left,
+                    *right,
+                    OPENDATALOADER_NEIGHBOUR_TABLE_EPSILON,
+                )
+            })
 }
 
 pub(crate) fn opendataloader_structure_probe_json(request: &Value) -> Result<Value, String> {

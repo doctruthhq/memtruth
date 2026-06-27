@@ -92,6 +92,13 @@ the generic two-line paragraph heuristic. This is focused processor coverage;
 it does not update the phase27 full200 quality gate or claim full paragraph
 parity.
 
+Phase31 promotes the pure TableBorderProcessor contracts to a runtime probe.
+`opendataloader_table_border_probe` now covers text-chunk splitting by table
+cell x range, neighboring-table shape linking with OpenDataLoader's 20%
+tolerance, and the nested table depth guard at 10. This is a deterministic
+processor contract only; table/layout model decoding and broader table parity
+remain open.
+
 ## Reference Boundaries
 
 ```text

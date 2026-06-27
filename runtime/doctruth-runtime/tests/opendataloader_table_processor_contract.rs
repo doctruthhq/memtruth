@@ -122,6 +122,45 @@ fn table_processor_contract_records_absent_special_table_reference() {
     );
 }
 
+#[test]
+fn table_border_probe_covers_split_neighbor_and_depth_contracts() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_table_border_probe",
+                "textChunk": {"text": "test", "x0": 10.0, "x1": 30.0},
+                "cells": [
+                    {"left": 10.0, "right": 20.0},
+                    {"left": 20.0, "right": 30.0}
+                ],
+                "neighborTables": [
+                    {"columns": [10.0, 10.0], "width": 20.0},
+                    {"columns": [10.5, 9.5], "width": 20.0},
+                    {"columns": [10.0, 30.0], "width": 40.0}
+                ],
+                "depths": [9, 10]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["source"], "OpenDataLoader TableBorderProcessor");
+    assert_eq!(value["cellTextParts"], json!(["te", "st"]));
+    assert_eq!(value["neighborLinks"], json!([true, false]));
+    assert_eq!(value["depthAllowed"], json!([true, false]));
+    assert!(
+        value["reference"]
+            .as_str()
+            .unwrap()
+            .ends_with("TableBorderProcessor.java")
+    );
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

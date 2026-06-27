@@ -234,6 +234,31 @@ fn processor_contract_buckets_cover_behavior_families_not_pdf_ids() {
 }
 
 #[test]
+fn full200_gate_requires_metrics_resources_and_buckets() {
+    let matrix = opendataloader_parity_matrix_json();
+    let gate = &matrix["full200_gate"];
+
+    for key in [
+        "overall",
+        "nid",
+        "teds",
+        "mhs",
+        "parsed_count",
+        "failed_count",
+        "latency",
+        "resources",
+        "low_score_buckets",
+        "artifact_path",
+        "previous_doc_truth_baseline",
+    ] {
+        assert!(
+            gate[key].is_string() || gate[key].is_array() || gate[key].is_object(),
+            "missing {key}"
+        );
+    }
+}
+
+#[test]
 fn opendataloader_parity_matrix_has_no_unknown_statuses() {
     let matrix = opendataloader_parity_matrix_json();
     for entry in matrix["processors"].as_array().expect("processors array") {

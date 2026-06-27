@@ -143,6 +143,34 @@ to a layout or parsing behavior class. A change that only says
 | table_false_positive_rejection | SpecialTableProcessor | behavior_family | no |
 | ocr_sparse_page_rescue | HybridDocumentProcessor | behavior_family | no |
 
+## Full200 Gate Contract
+
+Full200 is a stage gate. It should run after a coherent processor family
+changes, not after every tiny edit. The gate report must be structured enough
+to show quality, resources, and failure buckets without relying on screenshots
+or subjective review.
+
+Required report fields:
+
+| Field | Source |
+| --- | --- |
+| overall | `evaluation.json:metrics.score.overall_mean` |
+| nid | `evaluation.json:metrics.score.nid_mean` |
+| teds | `evaluation.json:metrics.score.teds_mean` |
+| mhs | `evaluation.json:metrics.score.mhs_mean` |
+| parsed_count | `summary.json:parsed_count` |
+| failed_count | `summary.json:failed_count` |
+| latency | `prediction-report.json` elapsed and mean latency fields |
+| resources | `prediction-report.json` runtime profile and process memory fields |
+| low_score_buckets | behavior-family buckets from this matrix |
+| artifact_path | OpenDataLoader Bench prediction output directory |
+| previous_doc_truth_baseline | previous accepted DocTruth full200 artifact |
+
+The default scripts already write `prediction-report.json` and, when
+evaluation is enabled, `evaluation.json`. The Java-core parity wrapper also
+checks summary and metric presence before accepting smoke or full200 output.
+Future script changes must preserve these fields.
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

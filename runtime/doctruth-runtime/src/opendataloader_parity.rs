@@ -10,6 +10,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
         "pipeline_stages": pipeline_stages(),
         "heuristic_owners": heuristic_owners(),
         "contract_buckets": contract_buckets(),
+        "full200_gate": full200_gate(),
         "processors": [
             processor("DocumentProcessor", "partial", "document_parse", "benchmark_corpus_contract"),
             processor("TaggedDocumentProcessor", "partial", "structure_tree", "benchmark_corpus_contract"),
@@ -33,6 +34,36 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("DoclingSchemaTransformer", "oracle_only", "docling_schema_reference", "opendataloader_parity_matrix_contract"),
             processor("OcrStrategy", "partial", "ocr_routing", "model_worker_contract")
         ]
+    })
+}
+
+fn full200_gate() -> Value {
+    json!({
+        "overall": "evaluation.json:metrics.score.overall_mean",
+        "nid": "evaluation.json:metrics.score.nid_mean",
+        "teds": "evaluation.json:metrics.score.teds_mean",
+        "mhs": "evaluation.json:metrics.score.mhs_mean",
+        "parsed_count": "summary.json:parsed_count",
+        "failed_count": "summary.json:failed_count",
+        "latency": {
+            "source": "prediction-report.json",
+            "required": ["elapsed_ms", "mean_ms_per_document"]
+        },
+        "resources": {
+            "source": "prediction-report.json",
+            "required": ["runtime_profile", "process_memory", "python_torch_docling_residency"]
+        },
+        "low_score_buckets": [
+            "text_noise_filtering",
+            "two_column_reading_order",
+            "sidebar_reading_order",
+            "heading_hierarchy",
+            "bordered_tables",
+            "borderless_tables",
+            "ocr_sparse_page_rescue"
+        ],
+        "artifact_path": "OpenDataLoader Bench prediction output directory",
+        "previous_doc_truth_baseline": "previous accepted DocTruth full200 artifact"
     })
 }
 

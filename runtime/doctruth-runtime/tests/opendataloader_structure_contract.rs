@@ -350,6 +350,44 @@ fn structure_probe_does_not_swallow_non_continuation_after_list() {
 }
 
 #[test]
+fn structure_probe_preserves_nested_list_hierarchy_from_indent() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "1) Parent item", "fontSize": 10.0, "x0": 48.0},
+                    {"text": "- Child detail", "fontSize": 10.0, "x0": 72.0},
+                    {"text": "- Another child", "fontSize": 10.0, "x0": 72.0},
+                    {"text": "2) Next parent", "fontSize": 10.0, "x0": 48.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "list");
+    assert_eq!(
+        value["blocks"][0]["items"],
+        json!([
+            "Parent item",
+            "Child detail",
+            "Another child",
+            "Next parent"
+        ])
+    );
+    assert_eq!(value["blocks"][0]["listItems"][0]["level"], 1);
+    assert_eq!(value["blocks"][0]["listItems"][1]["level"], 2);
+    assert_eq!(value["blocks"][0]["listItems"][2]["level"], 2);
+    assert_eq!(value["blocks"][0]["listItems"][3]["level"], 1);
+}
+
+#[test]
 fn structure_probe_reports_remaining_unvendored_caption_reference() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd

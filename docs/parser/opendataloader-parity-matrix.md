@@ -89,7 +89,9 @@ Status: `partial`. List detection is treated as partial document structure
 recovery and is not yet a full upstream processor port.
 `opendataloader_structure_probe` covers sequential lower/upper letter lists,
 sequential numeric lists, bullet lists, and non-sequential false-positive
-guards. Broader nested-list and wrapped-list continuation parity remains
+guards. It also joins wrapped continuation lines and emits structured
+`listItems` with indentation-derived levels for nested list hierarchy while
+preserving the legacy flat `items` field. Full-bench list evidence remains
 pending.
 
 ## CaptionProcessor

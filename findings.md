@@ -2184,3 +2184,10 @@
   the previous list item, while normal paragraph lines still flush the list and
   remain paragraphs. Nested-list hierarchy remains pending. Verification:
   `opendataloader_structure_contract` passed 16/16.
+- Phase39 broadens the ListProcessor structure probe for nested list hierarchy.
+  The probe now accepts line-level `x0` / `indent`, keeps the existing flat
+  `items` array for compatibility, and adds `listItems` entries with `level`
+  and `kind` so indented bullet children under numbered parents can be replayed
+  structurally. This is focused probe coverage only; full-bench list evidence
+  remains pending. Verification: `opendataloader_structure_contract` passed
+  17/17.

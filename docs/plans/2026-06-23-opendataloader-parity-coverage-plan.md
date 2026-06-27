@@ -149,6 +149,14 @@ joined into the previous list item, while non-continuation paragraph lines still
 flush the list instead of being swallowed. Nested-list hierarchy remains
 pending.
 
+Phase39 broadens the `ListProcessor` structure-probe slice for nested lists.
+`opendataloader_structure_probe` now accepts line-level `x0` / `indent`
+geometry, keeps the legacy flat `items` field for downstream compatibility, and
+adds structured `listItems` with `level` and `kind` so indented bullet children
+under numbered parents can be replayed without flattening away hierarchy. This
+is still focused processor coverage; full-bench list-bucket evidence remains
+pending.
+
 ## Reference Boundaries
 
 ```text

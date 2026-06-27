@@ -735,6 +735,7 @@ pub(crate) fn opendataloader_structure_probe_json(request: &Value) -> Result<Val
 struct OpendataloaderStructureLine {
     text: String,
     font_size: f64,
+    x0: Option<f64>,
 }
 
 fn opendataloader_probe_structure_lines(
@@ -778,9 +779,14 @@ fn opendataloader_probe_structure_line(
         )
         .to_string());
     }
+    let x0 = value
+        .get("x0")
+        .or_else(|| value.get("indent"))
+        .and_then(Value::as_f64);
     Ok(OpendataloaderStructureLine {
         text: text.to_string(),
         font_size,
+        x0,
     })
 }
 
@@ -795,7 +801,7 @@ fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>
             blocks.push(opendataloader_probe_structure_block(line));
             continue;
         }
-        if let Some(item) = opendataloader_probe_list_item(&line.text) {
+        if let Some(item) = opendataloader_probe_list_item(&line) {
             if !opendataloader_probe_next_list_item(&pending_list, &item) {
                 opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
             }
@@ -822,6 +828,16 @@ fn opendataloader_probe_next_list_item(
     let Some(previous) = pending_list.last() else {
         return item.starts_sequence();
     };
+    if opendataloader_probe_deeper_list_indent(previous, item) {
+        return item.starts_sequence();
+    }
+    if let Some(peer) = pending_list
+        .iter()
+        .rev()
+        .find(|peer| peer.kind == item.kind && opendataloader_probe_same_list_indent(peer, item))
+    {
+        return peer.next_ordinal() == item.ordinal;
+    }
     previous.kind == item.kind && previous.next_ordinal() == item.ordinal
 }
 
@@ -833,7 +849,7 @@ fn opendataloader_probe_list_continuation(
         return false;
     }
     let trimmed = text.trim_start();
-    if trimmed.is_empty() || opendataloader_probe_list_item(trimmed).is_some() {
+    if trimmed.is_empty() || opendataloader_probe_text_list_item(trimmed).is_some() {
         return false;
     }
     let Some(first) = trimmed.chars().next() else {
@@ -858,13 +874,24 @@ fn opendataloader_probe_flush_list_block(
         blocks.push(json!({"type": "paragraph", "text": item.original_text}));
         return;
     }
-    let items: Vec<String> = std::mem::take(pending_list)
-        .into_iter()
-        .map(|item| item.item_text)
+    let drained = std::mem::take(pending_list);
+    let levels = opendataloader_probe_list_levels(&drained);
+    let items: Vec<String> = drained.iter().map(|item| item.item_text.clone()).collect();
+    let list_items: Vec<Value> = drained
+        .iter()
+        .zip(levels)
+        .map(|(item, level)| {
+            json!({
+                "text": item.item_text,
+                "level": level,
+                "kind": item.kind.as_str()
+            })
+        })
         .collect();
     blocks.push(json!({
         "type": "list",
         "items": items,
+        "listItems": list_items,
         "source": "OpenDataLoader ListProcessor"
     }));
 }
@@ -938,6 +965,7 @@ struct OpendataloaderListItem {
     item_text: String,
     ordinal: Option<u32>,
     kind: OpendataloaderListKind,
+    x0: Option<f64>,
 }
 
 impl OpendataloaderListItem {
@@ -959,7 +987,26 @@ impl OpendataloaderListItem {
     }
 }
 
-fn opendataloader_probe_list_item(text: &str) -> Option<OpendataloaderListItem> {
+impl OpendataloaderListKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            OpendataloaderListKind::LowerLetter => "lower-letter",
+            OpendataloaderListKind::UpperLetter => "upper-letter",
+            OpendataloaderListKind::Numeric => "numeric",
+            OpendataloaderListKind::Bullet => "bullet",
+        }
+    }
+}
+
+fn opendataloader_probe_list_item(
+    line: &OpendataloaderStructureLine,
+) -> Option<OpendataloaderListItem> {
+    let mut item = opendataloader_probe_text_list_item(&line.text)?;
+    item.x0 = line.x0;
+    Some(item)
+}
+
+fn opendataloader_probe_text_list_item(text: &str) -> Option<OpendataloaderListItem> {
     opendataloader_probe_bullet_list_item(text)
         .or_else(|| opendataloader_probe_numeric_list_item(text))
         .or_else(|| opendataloader_probe_letter_list_item(text))
@@ -977,6 +1024,7 @@ fn opendataloader_probe_bullet_list_item(text: &str) -> Option<OpendataloaderLis
         item_text: item_text.to_string(),
         ordinal: None,
         kind: OpendataloaderListKind::Bullet,
+        x0: None,
     })
 }
 
@@ -994,6 +1042,7 @@ fn opendataloader_probe_numeric_list_item(text: &str) -> Option<OpendataloaderLi
         item_text: rest.to_string(),
         ordinal: marker.parse::<u32>().ok(),
         kind: OpendataloaderListKind::Numeric,
+        x0: None,
     })
 }
 
@@ -1014,8 +1063,48 @@ fn opendataloader_probe_letter_list_item(text: &str) -> Option<OpendataloaderLis
             item_text: rest.to_string(),
             ordinal: Some(u32::from(letter.to_ascii_lowercase() as u8 - b'a')),
             kind,
+            x0: None,
         })
     } else {
         None
     }
+}
+
+fn opendataloader_probe_deeper_list_indent(
+    previous: &OpendataloaderListItem,
+    item: &OpendataloaderListItem,
+) -> bool {
+    match (previous.x0, item.x0) {
+        (Some(previous_x0), Some(item_x0)) => item_x0 > previous_x0 + 8.0,
+        _ => false,
+    }
+}
+
+fn opendataloader_probe_same_list_indent(
+    previous: &OpendataloaderListItem,
+    item: &OpendataloaderListItem,
+) -> bool {
+    match (previous.x0, item.x0) {
+        (Some(previous_x0), Some(item_x0)) => (previous_x0 - item_x0).abs() <= 8.0,
+        _ => previous.x0.is_none() && item.x0.is_none(),
+    }
+}
+
+fn opendataloader_probe_list_levels(items: &[OpendataloaderListItem]) -> Vec<usize> {
+    let mut indents = items.iter().filter_map(|item| item.x0).collect::<Vec<_>>();
+    indents.sort_by(f64::total_cmp);
+    indents.dedup_by(|left, right| (*left - *right).abs() <= 8.0);
+    items
+        .iter()
+        .map(|item| {
+            item.x0
+                .and_then(|x0| {
+                    indents
+                        .iter()
+                        .position(|indent| (*indent - x0).abs() <= 8.0)
+                })
+                .map(|level| level + 1)
+                .unwrap_or(1)
+        })
+        .collect()
 }

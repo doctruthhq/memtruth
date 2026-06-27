@@ -189,6 +189,51 @@ fn existing_heuristics_are_mapped_to_processor_owners() {
 }
 
 #[test]
+fn processor_contract_buckets_cover_behavior_families_not_pdf_ids() {
+    let matrix = opendataloader_parity_matrix_json();
+    let buckets = matrix["contract_buckets"]
+        .as_array()
+        .expect("contract buckets");
+    let names = buckets
+        .iter()
+        .filter_map(|entry| entry["bucket"].as_str())
+        .collect::<Vec<_>>();
+
+    for expected in [
+        "text_noise_filtering",
+        "two_column_reading_order",
+        "sidebar_reading_order",
+        "paragraph_merge",
+        "heading_hierarchy",
+        "list_grouping",
+        "caption_binding",
+        "bordered_tables",
+        "borderless_tables",
+        "table_false_positive_rejection",
+        "ocr_sparse_page_rescue",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "missing contract bucket {expected}"
+        );
+    }
+
+    for bucket in buckets {
+        assert_eq!(
+            bucket["contract_style"].as_str(),
+            Some("behavior_family"),
+            "contract bucket must cover a behavior family"
+        );
+        assert_eq!(
+            bucket["not_pdf_id_patch"].as_bool(),
+            Some(true),
+            "contract bucket must reject single PDF id patches"
+        );
+        assert!(bucket["processor"].as_str().is_some(), "missing processor");
+    }
+}
+
+#[test]
 fn opendataloader_parity_matrix_has_no_unknown_statuses() {
     let matrix = opendataloader_parity_matrix_json();
     for entry in matrix["processors"].as_array().expect("processors array") {

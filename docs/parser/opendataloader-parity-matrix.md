@@ -121,6 +121,28 @@ patches.
 | ocr_rescue_sparse_java_output_only | HybridDocumentProcessor | java_core_auto_mnn | benchmark_corpus_contract |
 | prediction_markdown_repair | DocumentProcessor | prediction_export | opendataloader_prediction_contract |
 
+## Behavior-Family Contract Buckets
+
+Processor parity is accepted by behavior family, not by one benchmark PDF id.
+A focused test may use a named fixture, but the rule under test must generalize
+to a layout or parsing behavior class. A change that only says
+`01030000000110 now passes` is not enough; it must be owned by a bucket such as
+`borderless_tables`, `heading_hierarchy`, or `two_column_reading_order`.
+
+| Contract bucket | Owning processor | Contract style | PDF-id patch allowed |
+| --- | --- | --- | --- |
+| text_noise_filtering | ContentFilterProcessor | behavior_family | no |
+| two_column_reading_order | TaggedDocumentProcessor | behavior_family | no |
+| sidebar_reading_order | TaggedDocumentProcessor | behavior_family | no |
+| paragraph_merge | ParagraphProcessor | behavior_family | no |
+| heading_hierarchy | HeadingProcessor | behavior_family | no |
+| list_grouping | ListProcessor | behavior_family | no |
+| caption_binding | CaptionProcessor | behavior_family | no |
+| bordered_tables | TableBorderProcessor | behavior_family | no |
+| borderless_tables | ClusterTableProcessor | behavior_family | no |
+| table_false_positive_rejection | SpecialTableProcessor | behavior_family | no |
+| ocr_sparse_page_rescue | HybridDocumentProcessor | behavior_family | no |
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

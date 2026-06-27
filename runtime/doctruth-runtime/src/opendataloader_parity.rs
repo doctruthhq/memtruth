@@ -9,6 +9,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
         },
         "pipeline_stages": pipeline_stages(),
         "heuristic_owners": heuristic_owners(),
+        "contract_buckets": contract_buckets(),
         "processors": [
             processor("DocumentProcessor", "partial", "document_parse", "benchmark_corpus_contract"),
             processor("TaggedDocumentProcessor", "partial", "structure_tree", "benchmark_corpus_contract"),
@@ -32,6 +33,31 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("DoclingSchemaTransformer", "oracle_only", "docling_schema_reference", "opendataloader_parity_matrix_contract"),
             processor("OcrStrategy", "partial", "ocr_routing", "model_worker_contract")
         ]
+    })
+}
+
+fn contract_buckets() -> Vec<Value> {
+    vec![
+        bucket("text_noise_filtering", "ContentFilterProcessor"),
+        bucket("two_column_reading_order", "TaggedDocumentProcessor"),
+        bucket("sidebar_reading_order", "TaggedDocumentProcessor"),
+        bucket("paragraph_merge", "ParagraphProcessor"),
+        bucket("heading_hierarchy", "HeadingProcessor"),
+        bucket("list_grouping", "ListProcessor"),
+        bucket("caption_binding", "CaptionProcessor"),
+        bucket("bordered_tables", "TableBorderProcessor"),
+        bucket("borderless_tables", "ClusterTableProcessor"),
+        bucket("table_false_positive_rejection", "SpecialTableProcessor"),
+        bucket("ocr_sparse_page_rescue", "HybridDocumentProcessor"),
+    ]
+}
+
+fn bucket(name: &str, processor: &str) -> Value {
+    json!({
+        "bucket": name,
+        "processor": processor,
+        "contract_style": "behavior_family",
+        "not_pdf_id_patch": true
     })
 }
 

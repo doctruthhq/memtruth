@@ -165,6 +165,14 @@ MNN table worker an end-to-end path to assign OCR sidecar text to detected table
 cells without relying on the PDF text layer. Broad OCR/table corpus quality
 evidence remains pending.
 
+Phase41 promotes a focused ContentFilterProcessor / HiddenTextProcessor slice
+to the runtime probe boundary. `opendataloader_content_filter_probe` now takes
+positioned text lines plus optional hidden-text candidates and reports kept
+lines and filtered codes for hidden, off-page, tiny, and same-position duplicate
+text. This closes a black-box contract gap for text-noise filtering, but
+low-contrast graphics/color-derived hidden text and full-bench text-noise
+evidence remain pending.
+
 ## Reference Boundaries
 
 ```text

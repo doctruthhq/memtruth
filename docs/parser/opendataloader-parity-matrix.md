@@ -119,8 +119,10 @@ header/footer object port.
 
 ## ContentFilterProcessor
 
-Status: `partial`. Content filtering behavior exists in parser-quality work, but
-the upstream processor is not fully ported.
+Status: `partial`. `opendataloader_content_filter_probe` now exposes focused
+hidden, off-page, tiny, and duplicate text filtering behavior at the runtime
+boundary. Low-contrast graphics/color evidence and full upstream parity remain
+pending.
 
 ## TextDecorationProcessor
 
@@ -152,9 +154,10 @@ table quality remains unproven.
 
 ## HiddenTextProcessor
 
-Status: `not_ported`. The upstream hidden-text detector is tracked as part of
-the OpenDataLoader surface, but a dedicated DocTruth Rust runtime equivalent has
-not been ported or verified.
+Status: `partial`. Hidden text filtering is covered by
+`opendataloader_content_filter_probe` when hidden text candidates are provided,
+but low-contrast graphics/color-derived hidden text evidence and full-bench
+coverage remain pending.
 
 ## HybridDocumentProcessor
 

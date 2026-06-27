@@ -2199,3 +2199,11 @@
   PDF text-layer extraction. Broad OCR/table corpus quality remains pending.
   Verification: `parse_pdf_forwards_table_text_tokens_to_table_model_worker`
   passed.
+- Phase41 promotes focused ContentFilterProcessor / HiddenTextProcessor behavior
+  to the runtime probe boundary. `opendataloader_content_filter_probe` now
+  accepts positioned lines and optional hidden-text candidates, returns kept
+  lines, and reports filtered codes for hidden, off-page, tiny, and
+  same-position duplicate text. This does not cover low-contrast graphics/color
+  hidden-text evidence or full-bench text-noise buckets yet. Verification:
+  `content_filter_probe_reports_hidden_off_page_tiny_and_duplicate_lines`
+  passed.

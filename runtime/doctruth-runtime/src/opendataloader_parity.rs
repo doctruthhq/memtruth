@@ -24,7 +24,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("ClusterTableProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#clustertableprocessor"),
             processor("SpecialTableProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#specialtableprocessor"),
             processor("TableStructureNormalizer", "partial", "docs/parser/opendataloader-parity-matrix.md#tablestructurenormalizer"),
-            processor("HiddenTextProcessor", "not_ported", "docs/parser/opendataloader-parity-matrix.md#hiddentextprocessor"),
+            processor("HiddenTextProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#hiddentextprocessor"),
             processor("HybridDocumentProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#hybriddocumentprocessor"),
             processor("TriageProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#triageprocessor"),
             processor("DoclingSchemaTransformer", "oracle_only", "docs/parser/opendataloader-parity-matrix.md#doclingschematransformer"),

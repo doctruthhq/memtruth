@@ -11,6 +11,8 @@ const OPENDATALOADER_REPLACEMENT_CHARACTER_STRING: &str = "\u{fffd}";
 const OPENDATALOADER_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java";
 const OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java";
 const OPENDATALOADER_PARAGRAPH_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ParagraphProcessor.java";
+const OPENDATALOADER_CONTENT_FILTER_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ContentFilterProcessor.java";
+const OPENDATALOADER_HIDDEN_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HiddenTextProcessor.java";
 const OPENDATALOADER_TABLE_BORDER_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableBorderProcessor.java";
 const OPENDATALOADER_TRIAGE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TriageProcessor.java";
 const OPENDATALOADER_HEADING_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java";
@@ -42,6 +44,48 @@ pub(crate) fn opendataloader_text_processor_probe_json(request: &Value) -> Resul
         "replacementCount": replacement_count,
         "replacementRatio": replacement_ratio,
         "reference": OPENDATALOADER_TEXT_PROCESSOR_REFERENCE
+    }))
+}
+
+pub(crate) fn opendataloader_content_filter_probe_json(request: &Value) -> Result<Value, String> {
+    let lines = opendataloader_probe_positioned_lines(request)?;
+    let hidden_texts = opendataloader_probe_hidden_texts(request)?;
+    let mut kept = Vec::new();
+    let mut filtered_codes = Vec::new();
+
+    for line in lines {
+        if opendataloader_probe_off_page_line(&line) {
+            filtered_codes.push("off_page_text_filtered");
+            continue;
+        }
+        if opendataloader_probe_tiny_line(&line) {
+            filtered_codes.push("tiny_text_filtered");
+            continue;
+        }
+        if opendataloader_probe_hidden_line(&line, &hidden_texts) {
+            filtered_codes.push("hidden_text_filtered");
+            continue;
+        }
+        if kept
+            .iter()
+            .any(|candidate| opendataloader_probe_duplicate_line(candidate, &line))
+        {
+            filtered_codes.push("duplicate_text_filtered");
+            continue;
+        }
+        kept.push(line);
+    }
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader ContentFilterProcessor/HiddenTextProcessor",
+        "keptLines": kept.iter().map(|line| line.text.as_str()).collect::<Vec<_>>(),
+        "filteredCodes": filtered_codes,
+        "references": [
+            OPENDATALOADER_CONTENT_FILTER_PROCESSOR_REFERENCE,
+            OPENDATALOADER_HIDDEN_TEXT_PROCESSOR_REFERENCE
+        ]
     }))
 }
 
@@ -153,6 +197,63 @@ fn opendataloader_probe_coordinate(value: &Value, index: usize, name: &str) -> R
         )
         .to_string())
     }
+}
+
+fn opendataloader_probe_hidden_texts(request: &Value) -> Result<Vec<String>, String> {
+    let Some(values) = request
+        .get("hiddenTexts")
+        .or_else(|| request.get("hidden_texts"))
+    else {
+        return Ok(Vec::new());
+    };
+    let texts = values.as_array().ok_or_else(|| {
+        error_json(
+            "INVALID_HIDDEN_TEXTS",
+            "request.hiddenTexts must be an array of strings",
+        )
+        .to_string()
+    })?;
+    texts
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value.as_str().map(str::to_string).ok_or_else(|| {
+                error_json(
+                    "INVALID_HIDDEN_TEXTS",
+                    &format!("request.hiddenTexts[{index}] must be a string"),
+                )
+                .to_string()
+            })
+        })
+        .collect()
+}
+
+fn opendataloader_probe_off_page_line(line: &PositionedLine) -> bool {
+    line.raw_bbox.x1 <= 0.0
+        || line.raw_bbox.y1 <= 0.0
+        || line.raw_bbox.x0 >= PAGE_WIDTH
+        || line.raw_bbox.y0 >= PAGE_HEIGHT
+}
+
+fn opendataloader_probe_tiny_line(line: &PositionedLine) -> bool {
+    line.font_size <= 2.0
+        || (line.bbox.x1 - line.bbox.x0).abs() <= 2.0
+        || bbox_height(&line.bbox) <= 2.0
+}
+
+fn opendataloader_probe_hidden_line(line: &PositionedLine, hidden_texts: &[String]) -> bool {
+    let normalized = normalize_text(&line.text);
+    hidden_texts
+        .iter()
+        .any(|hidden| normalize_text(hidden) == normalized)
+}
+
+fn opendataloader_probe_duplicate_line(left: &PositionedLine, right: &PositionedLine) -> bool {
+    normalize_text(&left.text) == normalize_text(&right.text)
+        && (left.bbox.x0 - right.bbox.x0).abs() <= 1.0
+        && (left.bbox.x1 - right.bbox.x1).abs() <= 1.0
+        && (left.bbox.y0 - right.bbox.y0).abs() <= 1.0
+        && (left.bbox.y1 - right.bbox.y1).abs() <= 1.0
 }
 
 fn opendataloader_probe_visual_rows(lines: Vec<PositionedLine>) -> Vec<Vec<PositionedLine>> {

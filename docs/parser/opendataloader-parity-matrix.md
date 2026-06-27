@@ -97,8 +97,10 @@ caption evidence remain pending.
 
 ## LevelProcessor
 
-Status: `partial`. Structural level handling exists only as partial layout and
-reading-order recovery.
+Status: `partial`. Structural level handling exists in layout and reading-order
+recovery, and `opendataloader_structure_probe` now maps numbered heading depth
+(`1.`, `1.2`, `1.2.3`) to heading levels. Full upstream hierarchy parity and
+full-bench MHS evidence remain pending.
 
 ## HeaderFooterProcessor
 

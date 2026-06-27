@@ -2154,3 +2154,9 @@
   model/backend route selection, but it does not claim that full parser quality
   now matches OpenDataLoader hybrid. Verification:
   `opendataloader_triage_contract` passed 6/6.
+- Phase34 promotes a first LevelProcessor slice into the structure probe.
+  `opendataloader_structure_probe` now maps numbered heading depth to levels
+  (`1.` -> 1, `1.2` -> 2, `1.2.3` -> 3) and still rejects malformed markers
+  such as `1..2` as paragraph text. This closes a focused hierarchy contract
+  gap, not full MHS parity. Verification: `opendataloader_structure_contract`
+  passed 10/10.

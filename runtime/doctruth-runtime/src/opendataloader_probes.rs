@@ -727,7 +727,6 @@ pub(crate) fn opendataloader_structure_probe_json(request: &Value) -> Result<Val
             OPENDATALOADER_LIST_PROCESSOR_REFERENCE
         ],
         "coverageGaps": [
-            {"processor": "LevelProcessor", "reason": "reference_not_vendored"},
             {"processor": "CaptionProcessor", "reason": "reference_not_vendored"}
         ]
     }))
@@ -839,32 +838,38 @@ fn opendataloader_probe_flush_list_block(
 fn opendataloader_probe_structure_block(line: OpendataloaderStructureLine) -> Value {
     if opendataloader_probe_caption(&line.text) {
         json!({"type": "caption", "text": line.text, "source": "derived-caption-pattern"})
-    } else if opendataloader_probe_heading(&line) {
+    } else if let Some(level) = opendataloader_probe_heading_level(&line) {
         json!({
             "type": "heading",
             "text": line.text,
-            "level": 1,
-            "source": "OpenDataLoader HeadingProcessor"
+            "level": level,
+            "source": "OpenDataLoader HeadingProcessor/LevelProcessor"
         })
     } else {
         json!({"type": "paragraph", "text": line.text})
     }
 }
 
-fn opendataloader_probe_heading(line: &OpendataloaderStructureLine) -> bool {
-    line.font_size >= 14.0 && opendataloader_probe_numbered_heading(&line.text)
+fn opendataloader_probe_heading_level(line: &OpendataloaderStructureLine) -> Option<usize> {
+    (line.font_size >= 14.0)
+        .then(|| opendataloader_probe_numbered_heading_level(&line.text))
+        .flatten()
 }
 
-fn opendataloader_probe_numbered_heading(text: &str) -> bool {
+fn opendataloader_probe_numbered_heading_level(text: &str) -> Option<usize> {
     let Some(marker) = text.split_whitespace().next() else {
-        return false;
+        return None;
     };
     let marker = marker.trim_end_matches('.');
-    let parts: Vec<&str> = marker.split('.').collect();
-    parts.len() >= 2
-        && parts
+    let parts = marker.split('.').collect::<Vec<_>>();
+    if parts.is_empty()
+        || parts
             .iter()
-            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+            .any(|part| part.is_empty() || !part.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        return None;
+    }
+    Some(parts.len().min(6))
 }
 
 fn opendataloader_probe_caption(text: &str) -> bool {

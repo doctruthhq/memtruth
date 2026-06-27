@@ -23,14 +23,45 @@ fn structure_probe_promotes_numbered_heading_and_keeps_figure_caption_plain() {
         .clone();
     let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(value["blocks"][0]["type"], "heading");
-    assert_eq!(value["blocks"][0]["level"], 1);
+    assert_eq!(value["blocks"][0]["level"], 2);
     assert_eq!(
         value["blocks"][0]["source"],
-        "OpenDataLoader HeadingProcessor"
+        "OpenDataLoader HeadingProcessor/LevelProcessor"
     );
     assert_eq!(value["blocks"][1]["type"], "caption");
     assert_eq!(value["blocks"][1]["source"], "derived-caption-pattern");
     assert_eq!(value["blocks"][2]["type"], "paragraph");
+}
+
+#[test]
+fn structure_probe_assigns_numbered_heading_levels() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "1. Overview", "fontSize": 18.0},
+                    {"text": "1.2 Method", "fontSize": 16.0},
+                    {"text": "1.2.3 Detail", "fontSize": 14.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "heading");
+    assert_eq!(value["blocks"][0]["level"], 1);
+    assert_eq!(value["blocks"][1]["level"], 2);
+    assert_eq!(value["blocks"][2]["level"], 3);
+    assert_eq!(
+        value["coverageGaps"][0],
+        json!({"processor": "CaptionProcessor", "reason": "reference_not_vendored"})
+    );
 }
 
 #[test]
@@ -159,7 +190,7 @@ fn structure_probe_recognizes_sequential_uppercase_letter_list_items() {
 }
 
 #[test]
-fn structure_probe_reports_unvendored_level_and_caption_references() {
+fn structure_probe_reports_remaining_unvendored_caption_reference() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd
         .write_stdin(
@@ -179,10 +210,6 @@ fn structure_probe_reports_unvendored_level_and_caption_references() {
     let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(
         value["coverageGaps"][0],
-        json!({"processor": "LevelProcessor", "reason": "reference_not_vendored"})
-    );
-    assert_eq!(
-        value["coverageGaps"][1],
         json!({"processor": "CaptionProcessor", "reason": "reference_not_vendored"})
     );
     let references = value["references"].as_array().unwrap();

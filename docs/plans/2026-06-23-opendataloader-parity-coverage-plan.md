@@ -115,6 +115,13 @@ pattern, and custom threshold decisions without changing the parser-routing
 algorithm. This makes model/backend selection behavior reproducible in focused
 tests before another full200 gate.
 
+Phase34 promotes the first `LevelProcessor` slice into
+`opendataloader_structure_probe`. Numbered heading markers now map to structural
+levels by depth: `1.` -> level 1, `1.2` -> level 2, and `1.2.3` -> level 3,
+while malformed markers such as `1..2` still stay paragraph text. This improves
+the structure probe contract for heading hierarchy, but full MHS/full-bench
+parity remains pending.
+
 ## Reference Boundaries
 
 ```text

@@ -103,6 +103,24 @@ DocTruth-owned `TrustDocument` output.
 | reading_order | TaggedDocumentProcessor |
 | trust_document_export | DocumentProcessor |
 
+## Heuristic Ownership
+
+Existing parser-quality rules must have a processor owner before they can be
+treated as parity work. This keeps future changes from becoming sample-specific
+patches.
+
+| Heuristic | Owning processor | DocTruth owner | Focused test |
+| --- | --- | --- | --- |
+| hidden_offpage_tiny_duplicate_text_filter | ContentFilterProcessor | content_filter_probe | opendataloader_content_filter_probe |
+| right_aligned_paragraph_precedence | ParagraphProcessor | paragraph_merge | opendataloader_line_paragraph_contract |
+| wrapped_list_continuation | ListProcessor | structure_probe | opendataloader_structure_contract |
+| nested_list_hierarchy | ListProcessor | structure_probe | opendataloader_structure_contract |
+| caption_marker_classification | CaptionProcessor | structure_probe | opendataloader_structure_contract |
+| survey_chart_table_rejection | SpecialTableProcessor | table_classifier_probe | opendataloader_table_processor_contract |
+| borderless_cluster_table_reconstruction | ClusterTableProcessor | table_cluster | opendataloader_table_processor_contract |
+| ocr_rescue_sparse_java_output_only | HybridDocumentProcessor | java_core_auto_mnn | benchmark_corpus_contract |
+| prediction_markdown_repair | DocumentProcessor | prediction_export | opendataloader_prediction_contract |
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

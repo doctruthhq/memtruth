@@ -151,6 +151,44 @@ fn opendataloader_pipeline_stage_order_is_explicit() {
 }
 
 #[test]
+fn existing_heuristics_are_mapped_to_processor_owners() {
+    let matrix = opendataloader_parity_matrix_json();
+    let heuristics = matrix["heuristic_owners"]
+        .as_array()
+        .expect("heuristic owners");
+    let names = heuristics
+        .iter()
+        .filter_map(|entry| entry["heuristic"].as_str())
+        .collect::<Vec<_>>();
+
+    for expected in [
+        "hidden_offpage_tiny_duplicate_text_filter",
+        "right_aligned_paragraph_precedence",
+        "wrapped_list_continuation",
+        "nested_list_hierarchy",
+        "caption_marker_classification",
+        "survey_chart_table_rejection",
+        "borderless_cluster_table_reconstruction",
+        "ocr_rescue_sparse_java_output_only",
+        "prediction_markdown_repair",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "missing heuristic owner {expected}"
+        );
+    }
+
+    for entry in heuristics {
+        assert!(entry["processor"].as_str().is_some(), "missing processor");
+        assert!(entry["owner"].as_str().is_some(), "missing owner");
+        assert!(
+            entry["focused_test"].as_str().is_some(),
+            "missing focused test"
+        );
+    }
+}
+
+#[test]
 fn opendataloader_parity_matrix_has_no_unknown_statuses() {
     let matrix = opendataloader_parity_matrix_json();
     for entry in matrix["processors"].as_array().expect("processors array") {

@@ -8,6 +8,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             "license": "Apache-2.0"
         },
         "pipeline_stages": pipeline_stages(),
+        "heuristic_owners": heuristic_owners(),
         "processors": [
             processor("DocumentProcessor", "partial", "document_parse", "benchmark_corpus_contract"),
             processor("TaggedDocumentProcessor", "partial", "structure_tree", "benchmark_corpus_contract"),
@@ -31,6 +32,74 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("DoclingSchemaTransformer", "oracle_only", "docling_schema_reference", "opendataloader_parity_matrix_contract"),
             processor("OcrStrategy", "partial", "ocr_routing", "model_worker_contract")
         ]
+    })
+}
+
+fn heuristic_owners() -> Vec<Value> {
+    vec![
+        heuristic(
+            "hidden_offpage_tiny_duplicate_text_filter",
+            "ContentFilterProcessor",
+            "content_filter_probe",
+            "opendataloader_content_filter_probe",
+        ),
+        heuristic(
+            "right_aligned_paragraph_precedence",
+            "ParagraphProcessor",
+            "paragraph_merge",
+            "opendataloader_line_paragraph_contract",
+        ),
+        heuristic(
+            "wrapped_list_continuation",
+            "ListProcessor",
+            "structure_probe",
+            "opendataloader_structure_contract",
+        ),
+        heuristic(
+            "nested_list_hierarchy",
+            "ListProcessor",
+            "structure_probe",
+            "opendataloader_structure_contract",
+        ),
+        heuristic(
+            "caption_marker_classification",
+            "CaptionProcessor",
+            "structure_probe",
+            "opendataloader_structure_contract",
+        ),
+        heuristic(
+            "survey_chart_table_rejection",
+            "SpecialTableProcessor",
+            "table_classifier_probe",
+            "opendataloader_table_processor_contract",
+        ),
+        heuristic(
+            "borderless_cluster_table_reconstruction",
+            "ClusterTableProcessor",
+            "table_cluster",
+            "opendataloader_table_processor_contract",
+        ),
+        heuristic(
+            "ocr_rescue_sparse_java_output_only",
+            "HybridDocumentProcessor",
+            "java_core_auto_mnn",
+            "benchmark_corpus_contract",
+        ),
+        heuristic(
+            "prediction_markdown_repair",
+            "DocumentProcessor",
+            "prediction_export",
+            "opendataloader_prediction_contract",
+        ),
+    ]
+}
+
+fn heuristic(name: &str, processor: &str, owner: &str, test: &str) -> Value {
+    json!({
+        "heuristic": name,
+        "processor": processor,
+        "owner": owner,
+        "focused_test": test
     })
 }
 

@@ -1978,6 +1978,21 @@ fn opendataloader_evaluate_prediction_writes_rust_evaluation_without_python() {
     assert_eq!(report["documents"][1]["scores"]["overall"], 0.0);
     assert_eq!(report["documents"][1]["prediction_available"], false);
     assert!(output_path.is_file());
+
+    let bucket_path = prediction.join("low-score-buckets.json");
+    assert!(bucket_path.is_file());
+    let buckets: Value = serde_json::from_str(&fs::read_to_string(bucket_path).unwrap()).unwrap();
+    assert_eq!(
+        buckets["schema"],
+        "doctruth.opendataloader.low_score_buckets.v1"
+    );
+    assert_eq!(buckets["summary"]["case_count"], 1);
+    assert_eq!(buckets["buckets"]["missing_prediction"]["case_count"], 1);
+    assert_eq!(buckets["buckets"]["reading_order"]["metric"], "nid");
+    assert_eq!(buckets["buckets"]["table_structure"]["metric"], "teds");
+    assert_eq!(buckets["buckets"]["heading_hierarchy"]["metric"], "mhs");
+    assert_eq!(buckets["cases"][0]["document_id"], "doc-b");
+    assert_eq!(buckets["cases"][0]["primary_bucket"], "missing_prediction");
 }
 
 #[test]

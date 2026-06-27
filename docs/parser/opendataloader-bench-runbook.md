@@ -75,6 +75,7 @@ The benchmark output is split across the runner artifacts:
 | elapsed and mean ms/doc | `summary.json` at `total_elapsed`, `elapsed_per_doc` |
 | Java backend startup | `summary.json` at `javaBackendStartupMs` |
 | Java startup/RSS, Rust RSS, model worker RSS | `resources.json` when the runtime resource reporter emits it |
+| low-score buckets | `low-score-buckets.json` generated next to `evaluation.json` |
 | worst deltas | `reference-comparison.json` at `top_losses` |
 | bucket counts | `reference-comparison.json` at `summary.failure_buckets` |
 

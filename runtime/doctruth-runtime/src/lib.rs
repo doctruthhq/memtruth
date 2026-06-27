@@ -4197,15 +4197,23 @@ fn opendataloader_evaluate_prediction_json(request: &Value) -> Result<Value, Str
     }
     let summary = prediction_summary_json(prediction_dir);
     let metrics = aggregate_opendataloader_scores(&documents);
+    let low_score_buckets = opendataloader_low_score_buckets(&documents);
     let report = json!({
         "summary": summary,
         "metrics": metrics,
+        "low_score_buckets": low_score_buckets,
         "documents": documents
     });
     if let Some(output_path) = request.get("output_path").and_then(Value::as_str) {
+        let output_path = Path::new(output_path);
         write_pretty_json(
-            Path::new(output_path),
+            output_path,
             &report,
+            "OPENDATALOADER_EVALUATION_WRITE_FAILED",
+        )?;
+        write_pretty_json(
+            &output_path.with_file_name("low-score-buckets.json"),
+            &low_score_buckets,
             "OPENDATALOADER_EVALUATION_WRITE_FAILED",
         )?;
     }
@@ -4382,6 +4390,106 @@ fn aggregate_opendataloader_scores(documents: &[Value]) -> Value {
         "mhs_count": mhs.len(),
         "missing_predictions": missing_predictions
     })
+}
+
+fn opendataloader_low_score_buckets(documents: &[Value]) -> Value {
+    let bucket_specs = [
+        (
+            "missing_prediction",
+            "availability",
+            "prediction_available",
+            1.0,
+        ),
+        ("overall_quality", "overall", "overall", 0.5),
+        ("reading_order", "nid", "nid", 0.75),
+        ("table_structure", "teds", "teds", 0.5),
+        ("heading_hierarchy", "mhs", "mhs", 0.5),
+    ];
+    let mut buckets = BTreeMap::<String, Vec<Value>>::new();
+    let mut cases = Vec::<Value>::new();
+
+    for document in documents {
+        let mut case_buckets = Vec::<String>::new();
+        let prediction_available = document
+            .get("prediction_available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !prediction_available {
+            case_buckets.push("missing_prediction".to_string());
+        }
+        for (bucket, _metric, score_key, threshold) in bucket_specs.iter().skip(1) {
+            if let Some(score) = opendataloader_document_score(document, score_key) {
+                if score < *threshold {
+                    case_buckets.push((*bucket).to_string());
+                }
+            }
+        }
+        if case_buckets.is_empty() {
+            continue;
+        }
+
+        let document_id = document
+            .get("document_id")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let primary_bucket = case_buckets
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "overall_quality".to_string());
+        let case = json!({
+            "document_id": document_id,
+            "primary_bucket": primary_bucket,
+            "buckets": case_buckets,
+            "prediction_available": prediction_available,
+            "scores": document.get("scores").cloned().unwrap_or_else(|| json!({}))
+        });
+        for bucket in case["buckets"].as_array().into_iter().flatten() {
+            if let Some(bucket_name) = bucket.as_str() {
+                buckets
+                    .entry(bucket_name.to_string())
+                    .or_default()
+                    .push(case.clone());
+            }
+        }
+        cases.push(case);
+    }
+
+    let mut bucket_json = serde_json::Map::new();
+    for (bucket, metric, _score_key, threshold) in bucket_specs {
+        let bucket_cases = buckets.remove(bucket).unwrap_or_default();
+        bucket_json.insert(
+            bucket.to_string(),
+            json!({
+                "metric": metric,
+                "threshold": threshold,
+                "case_count": bucket_cases.len(),
+                "cases": bucket_cases
+            }),
+        );
+    }
+
+    json!({
+        "schema": "doctruth.opendataloader.low_score_buckets.v1",
+        "summary": {
+            "document_count": documents.len(),
+            "case_count": cases.len()
+        },
+        "thresholds": {
+            "overall": 0.5,
+            "nid": 0.75,
+            "teds": 0.5,
+            "mhs": 0.5
+        },
+        "buckets": bucket_json,
+        "cases": cases
+    })
+}
+
+fn opendataloader_document_score(document: &Value, key: &str) -> Option<f64> {
+    document
+        .get("scores")
+        .and_then(|scores| scores.get(key))
+        .and_then(Value::as_f64)
 }
 
 fn collect_document_scores(documents: &[Value], key: &str) -> Vec<f64> {

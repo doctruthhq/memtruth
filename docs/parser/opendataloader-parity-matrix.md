@@ -163,16 +163,16 @@ Required report fields:
 | latency | `summary.json:total_elapsed` and `summary.json:elapsed_per_doc` |
 | resources | `resources.json:rssSamples` process memory fields |
 | production_residency | `summary.json:production_residency.python_torch_docling` |
-| low_score_buckets | behavior-family buckets from this matrix |
+| low_score_buckets | `low-score-buckets.json` behavior-family artifact from this matrix |
 | artifact_path | OpenDataLoader Bench prediction output directory |
 | previous_doc_truth_baseline | previous accepted DocTruth full200 artifact |
 
 The default scripts write `summary.json`, `resources.json`,
-`prediction-report.json`, and, when evaluation is enabled, `evaluation.json`.
-The Java-core parity wrapper checks summary and metric presence before
-accepting smoke or full200 output. Future script changes must preserve these
-fields and must not move latency/resource evidence into a screenshot-only or
-free-form report.
+`prediction-report.json`, and, when evaluation is enabled, `evaluation.json`
+plus `low-score-buckets.json`. The Java-core parity wrapper checks summary and
+metric presence before accepting smoke or full200 output. Future script changes
+must preserve these fields and must not move latency/resource evidence into a
+screenshot-only or free-form report.
 
 ## DocumentProcessor
 

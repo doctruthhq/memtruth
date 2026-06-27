@@ -143,6 +143,12 @@ without restarting the worker or requiring a readable PDF text layer. Empty-cell
 `table_cell_text_assignment_pending` warnings remain only when no text/OCR spans
 can be assigned.
 
+Phase38 broadens the `ListProcessor` structure-probe slice for wrapped list
+items. Lowercase/connector continuation lines after a pending list item are now
+joined into the previous list item, while non-continuation paragraph lines still
+flush the list instead of being swallowed. Nested-list hierarchy remains
+pending.
+
 ## Reference Boundaries
 
 ```text

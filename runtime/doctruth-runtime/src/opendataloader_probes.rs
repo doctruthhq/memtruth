@@ -802,6 +802,12 @@ fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>
             pending_list.push(item);
             continue;
         }
+        if opendataloader_probe_list_continuation(&line.text, &pending_list) {
+            if let Some(item) = pending_list.last_mut() {
+                item.item_text = normalize_text(&format!("{} {}", item.item_text, line.text));
+            }
+            continue;
+        }
         opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
         blocks.push(opendataloader_probe_structure_block(line));
     }
@@ -817,6 +823,27 @@ fn opendataloader_probe_next_list_item(
         return item.starts_sequence();
     };
     previous.kind == item.kind && previous.next_ordinal() == item.ordinal
+}
+
+fn opendataloader_probe_list_continuation(
+    text: &str,
+    pending_list: &[OpendataloaderListItem],
+) -> bool {
+    if pending_list.is_empty() {
+        return false;
+    }
+    let trimmed = text.trim_start();
+    if trimmed.is_empty() || opendataloader_probe_list_item(trimmed).is_some() {
+        return false;
+    }
+    let Some(first) = trimmed.chars().next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        || matches!(
+            trimmed.split_whitespace().next(),
+            Some("and" | "or" | "with" | "without" | "for" | "to" | "in" | "on" | "of")
+        )
 }
 
 fn opendataloader_probe_flush_list_block(

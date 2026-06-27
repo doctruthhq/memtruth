@@ -2179,3 +2179,8 @@
   `table_cell_text_assignment_pending` when spans are available; broad OCR table
   quality still needs corpus evidence. Verification:
   `cargo test --features mnn-native --bin doctruth-mnn-model-worker` passed 5/5.
+- Phase38 broadens the ListProcessor structure probe for wrapped list items.
+  Lowercase/connector continuation lines after a pending list item now join into
+  the previous list item, while normal paragraph lines still flush the list and
+  remain paragraphs. Nested-list hierarchy remains pending. Verification:
+  `opendataloader_structure_contract` passed 16/16.

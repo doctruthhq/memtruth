@@ -294,6 +294,62 @@ fn structure_probe_recognizes_bullet_list_items() {
 }
 
 #[test]
+fn structure_probe_merges_wrapped_list_continuations() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "- First item starts here", "fontSize": 10.0},
+                    {"text": "and continues on the next visual line", "fontSize": 10.0},
+                    {"text": "- Second item", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "list");
+    assert_eq!(
+        value["blocks"][0]["items"][0],
+        "First item starts here and continues on the next visual line"
+    );
+    assert_eq!(value["blocks"][0]["items"][1], "Second item");
+}
+
+#[test]
+fn structure_probe_does_not_swallow_non_continuation_after_list() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "- First item", "fontSize": 10.0},
+                    {"text": "- Second item", "fontSize": 10.0},
+                    {"text": "Summary follows.", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "list");
+    assert_eq!(value["blocks"][0]["items"].as_array().unwrap().len(), 2);
+    assert_eq!(value["blocks"][1]["type"], "paragraph");
+    assert_eq!(value["blocks"][1]["text"], "Summary follows.");
+}
+
+#[test]
 fn structure_probe_reports_remaining_unvendored_caption_reference() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd

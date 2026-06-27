@@ -8,35 +8,40 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             "license": "Apache-2.0"
         },
         "processors": [
-            processor("DocumentProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#documentprocessor"),
-            processor("TaggedDocumentProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#taggeddocumentprocessor"),
-            processor("TextProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#textprocessor"),
-            processor("TextLineProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#textlineprocessor"),
-            processor("ParagraphProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#paragraphprocessor"),
-            processor("HeadingProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#headingprocessor"),
-            processor("ListProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#listprocessor"),
-            processor("CaptionProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#captionprocessor"),
-            processor("LevelProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#levelprocessor"),
-            processor("HeaderFooterProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#headerfooterprocessor"),
-            processor("ContentFilterProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#contentfilterprocessor"),
-            processor("TextDecorationProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#textdecorationprocessor"),
-            processor("TableBorderProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#tableborderprocessor"),
-            processor("ClusterTableProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#clustertableprocessor"),
-            processor("SpecialTableProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#specialtableprocessor"),
-            processor("TableStructureNormalizer", "partial", "docs/parser/opendataloader-parity-matrix.md#tablestructurenormalizer"),
-            processor("HiddenTextProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#hiddentextprocessor"),
-            processor("HybridDocumentProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#hybriddocumentprocessor"),
-            processor("TriageProcessor", "partial", "docs/parser/opendataloader-parity-matrix.md#triageprocessor"),
-            processor("DoclingSchemaTransformer", "oracle_only", "docs/parser/opendataloader-parity-matrix.md#doclingschematransformer"),
-            processor("OcrStrategy", "partial", "docs/parser/opendataloader-parity-matrix.md#ocrstrategy")
+            processor("DocumentProcessor", "partial", "document_parse", "benchmark_corpus_contract"),
+            processor("TaggedDocumentProcessor", "partial", "structure_tree", "benchmark_corpus_contract"),
+            processor("TextProcessor", "partial", "text_filter", "opendataloader_text_processor_contract"),
+            processor("TextLineProcessor", "partial", "line_grouping", "opendataloader_line_paragraph_contract"),
+            processor("ParagraphProcessor", "partial", "paragraph_merge", "opendataloader_line_paragraph_contract"),
+            processor("HeadingProcessor", "partial", "structure_probe", "opendataloader_structure_contract"),
+            processor("ListProcessor", "partial", "structure_probe", "opendataloader_structure_contract"),
+            processor("CaptionProcessor", "partial", "structure_probe", "opendataloader_structure_contract"),
+            processor("LevelProcessor", "partial", "structure_probe", "opendataloader_structure_contract"),
+            processor("HeaderFooterProcessor", "partial", "header_footer", "PdfDocumentParserTest"),
+            processor("ContentFilterProcessor", "partial", "content_filter_probe", "opendataloader_content_filter_probe"),
+            processor("TextDecorationProcessor", "partial", "text_decoration", "opendataloader_text_processor_contract"),
+            processor("TableBorderProcessor", "partial", "table_border_probe", "opendataloader_table_processor_contract"),
+            processor("ClusterTableProcessor", "partial", "table_cluster", "opendataloader_table_processor_contract"),
+            processor("SpecialTableProcessor", "partial", "table_special_cases", "opendataloader_table_processor_contract"),
+            processor("TableStructureNormalizer", "partial", "table_normalizer", "opendataloader_table_processor_contract"),
+            processor("HiddenTextProcessor", "partial", "content_filter_probe", "opendataloader_content_filter_probe"),
+            processor("HybridDocumentProcessor", "partial", "java_core_auto_mnn", "benchmark_corpus_contract"),
+            processor("TriageProcessor", "partial", "triage_probe", "opendataloader_triage_probe"),
+            processor("DoclingSchemaTransformer", "oracle_only", "docling_schema_reference", "opendataloader_parity_matrix_contract"),
+            processor("OcrStrategy", "partial", "ocr_routing", "model_worker_contract")
         ]
     })
 }
 
-fn processor(upstream: &str, status: &str, doc: &str) -> Value {
+fn processor(upstream: &str, status: &str, owner: &str, test: &str) -> Value {
+    let anchor = upstream.to_ascii_lowercase();
     json!({
         "upstream": upstream,
         "status": status,
-        "doc": doc
+        "doc_truth_owner": owner,
+        "focused_test": test,
+        "doc": format!("docs/parser/opendataloader-parity-matrix.md#{anchor}"),
+        "full200_evidence": "",
+        "remaining_gap": "tracked in docs/parser/opendataloader-processor-gap-report.md"
     })
 }

@@ -87,6 +87,29 @@ fn opendataloader_parity_matrix_has_unique_upstream_processor_names() {
 }
 
 #[test]
+fn opendataloader_parity_matrix_has_status_and_owner_for_every_processor() {
+    let matrix = opendataloader_parity_matrix_json();
+    let processors = matrix["processors"].as_array().expect("processors array");
+
+    assert!(!processors.is_empty());
+    for entry in processors {
+        assert!(entry["upstream"].as_str().is_some(), "missing upstream");
+        assert!(
+            entry["status"].as_str().is_some(),
+            "missing status for {entry:?}"
+        );
+        assert!(
+            entry["doc_truth_owner"].as_str().is_some(),
+            "missing owner for {entry:?}"
+        );
+        assert!(
+            entry["focused_test"].as_str().is_some(),
+            "missing focused test for {entry:?}"
+        );
+    }
+}
+
+#[test]
 fn opendataloader_parity_matrix_has_no_unknown_statuses() {
     let matrix = opendataloader_parity_matrix_json();
     for entry in matrix["processors"].as_array().expect("processors array") {

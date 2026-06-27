@@ -53,6 +53,32 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
   rowspans, remaining heading hierarchy misses, and broader paragraph/list
   parity.
 
+## Processor Matrix
+
+| Upstream processor | Status | DocTruth owner | Focused test | Full200 evidence |
+| --- | --- | --- | --- | --- |
+| DocumentProcessor | partial | document_parse | benchmark_corpus_contract | current full200 report |
+| TaggedDocumentProcessor | partial | structure_tree | benchmark_corpus_contract | current full200 report |
+| TextProcessor | partial | text_filter | opendataloader_text_processor_contract | text-noise bucket pending |
+| TextLineProcessor | partial | line_grouping | opendataloader_line_paragraph_contract | reading-order bucket pending |
+| ParagraphProcessor | partial | paragraph_merge | opendataloader_line_paragraph_contract | reading-order bucket pending |
+| HeadingProcessor | partial | structure_probe | opendataloader_structure_contract | MHS bucket pending |
+| ListProcessor | partial | structure_probe | opendataloader_structure_contract | list bucket pending |
+| CaptionProcessor | partial | structure_probe | opendataloader_structure_contract | caption bucket pending |
+| LevelProcessor | partial | structure_probe | opendataloader_structure_contract | MHS bucket pending |
+| HeaderFooterProcessor | partial | header_footer | PdfDocumentParserTest | header/footer bucket pending |
+| ContentFilterProcessor | partial | content_filter_probe | opendataloader_content_filter_probe | text-noise bucket pending |
+| TextDecorationProcessor | partial | text_decoration | opendataloader_text_processor_contract | text-decoration bucket pending |
+| TableBorderProcessor | partial | table_border_probe | opendataloader_table_processor_contract | TEDS bucket pending |
+| ClusterTableProcessor | partial | table_cluster | opendataloader_table_processor_contract | TEDS bucket pending |
+| SpecialTableProcessor | partial | table_special_cases | opendataloader_table_processor_contract | TEDS bucket pending |
+| TableStructureNormalizer | partial | table_normalizer | opendataloader_table_processor_contract | TEDS bucket pending |
+| HiddenTextProcessor | partial | content_filter_probe | opendataloader_content_filter_probe | text-noise bucket pending |
+| HybridDocumentProcessor | partial | java_core_auto_mnn | benchmark_corpus_contract | current full200 report |
+| TriageProcessor | partial | triage_probe | opendataloader_triage_probe | routing bucket pending |
+| DoclingSchemaTransformer | oracle_only | docling_schema_reference | opendataloader_parity_matrix_contract | not a runtime processor |
+| OcrStrategy | partial | ocr_routing | model_worker_contract | scanned/OCR bucket pending |
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

@@ -247,6 +247,7 @@ fn full200_gate_requires_metrics_resources_and_buckets() {
         "failed_count",
         "latency",
         "resources",
+        "production_residency",
         "low_score_buckets",
         "artifact_path",
         "previous_doc_truth_baseline",
@@ -256,6 +257,26 @@ fn full200_gate_requires_metrics_resources_and_buckets() {
             "missing {key}"
         );
     }
+    assert_eq!(gate["latency"]["source"].as_str(), Some("summary.json"));
+    assert_eq!(gate["resources"]["source"].as_str(), Some("resources.json"));
+    assert_eq!(
+        gate["production_residency"]["source"].as_str(),
+        Some("summary.json")
+    );
+    assert!(
+        gate["latency"]["required"]
+            .as_array()
+            .expect("latency required fields")
+            .iter()
+            .any(|field| field.as_str() == Some("elapsed_per_doc"))
+    );
+    assert!(
+        gate["resources"]["required"]
+            .as_array()
+            .expect("resource required fields")
+            .iter()
+            .any(|field| field.as_str() == Some("rssSamples.peakMb"))
+    );
 }
 
 #[test]

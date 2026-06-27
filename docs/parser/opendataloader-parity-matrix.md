@@ -36,17 +36,17 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 - Report:
   `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-java-core-phase27-regulatory-narrative-full200/full200/`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-auto-mnn-full200-v2/full200/`
 - DocTruth revision used for run: worktree benchmark run, pending commit
 - Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
 - Prediction: 200 parsed, 0 failed
-- Overall mean: `0.779731`
-- NID mean: `0.898148`
+- Overall mean: `0.781875`
+- NID mean: `0.900985`
 - TEDS mean: `0.736174`
-- MHS mean: `0.489455`
-- Resource: mean `81.093350` ms/doc, process RSS peak `21MB`, no
-  Python/Torch/Docling production residency
+- MHS mean: `0.492119`
+- Resource: mean `127.476316` ms/doc, one OCR model route
+  (`01030000000141`), no Python/Torch/Docling production residency
 - Interpretation: current Java/OpenDataLoader-compatible quality core clears
   the initial local acceptance baseline, but it is still not OpenDataLoader
   hybrid parity. The next gaps are OCR/model-backed tables, multi-segment
@@ -160,16 +160,19 @@ Required report fields:
 | mhs | `evaluation.json:metrics.score.mhs_mean` |
 | parsed_count | `summary.json:parsed_count` |
 | failed_count | `summary.json:failed_count` |
-| latency | `prediction-report.json` elapsed and mean latency fields |
-| resources | `prediction-report.json` runtime profile and process memory fields |
+| latency | `summary.json:total_elapsed` and `summary.json:elapsed_per_doc` |
+| resources | `resources.json:rssSamples` process memory fields |
+| production_residency | `summary.json:production_residency.python_torch_docling` |
 | low_score_buckets | behavior-family buckets from this matrix |
 | artifact_path | OpenDataLoader Bench prediction output directory |
 | previous_doc_truth_baseline | previous accepted DocTruth full200 artifact |
 
-The default scripts already write `prediction-report.json` and, when
-evaluation is enabled, `evaluation.json`. The Java-core parity wrapper also
-checks summary and metric presence before accepting smoke or full200 output.
-Future script changes must preserve these fields.
+The default scripts write `summary.json`, `resources.json`,
+`prediction-report.json`, and, when evaluation is enabled, `evaluation.json`.
+The Java-core parity wrapper checks summary and metric presence before
+accepting smoke or full200 output. Future script changes must preserve these
+fields and must not move latency/resource evidence into a screenshot-only or
+free-form report.
 
 ## DocumentProcessor
 

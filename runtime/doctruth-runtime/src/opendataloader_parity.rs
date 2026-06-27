@@ -46,12 +46,16 @@ fn full200_gate() -> Value {
         "parsed_count": "summary.json:parsed_count",
         "failed_count": "summary.json:failed_count",
         "latency": {
-            "source": "prediction-report.json",
-            "required": ["elapsed_ms", "mean_ms_per_document"]
+            "source": "summary.json",
+            "required": ["total_elapsed", "elapsed_per_doc"]
         },
         "resources": {
-            "source": "prediction-report.json",
-            "required": ["runtime_profile", "process_memory", "python_torch_docling_residency"]
+            "source": "resources.json",
+            "required": ["rssSamples.measurement", "rssSamples.startMb", "rssSamples.endMb", "rssSamples.peakMb"]
+        },
+        "production_residency": {
+            "source": "summary.json",
+            "required": ["production_residency.python_torch_docling"]
         },
         "low_score_buckets": [
             "text_noise_filtering",

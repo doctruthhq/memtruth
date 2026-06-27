@@ -1360,6 +1360,9 @@ fn table_text_tokens(
     image_width: u32,
     image_height: u32,
 ) -> Result<Vec<TableTextToken>, String> {
+    if let Some(tokens) = request_supplied_table_text_tokens(request, image_width, image_height)? {
+        return Ok(tokens);
+    }
     let source_path = request
         .get("source_path")
         .or_else(|| request.get("sourcePath"))
@@ -1374,6 +1377,126 @@ fn table_text_tokens(
         .into_iter()
         .filter_map(|line| table_text_token_from_line(line, page_width, page_height))
         .collect())
+}
+
+#[cfg(feature = "mnn-native")]
+fn request_supplied_table_text_tokens(
+    request: &Value,
+    image_width: u32,
+    image_height: u32,
+) -> Result<Option<Vec<TableTextToken>>, String> {
+    let Some(values) = request
+        .get("tableTextTokens")
+        .or_else(|| request.get("table_text_tokens"))
+        .or_else(|| request.get("ocrTokens"))
+        .or_else(|| request.get("ocr_tokens"))
+        .and_then(Value::as_array)
+    else {
+        return Ok(None);
+    };
+    let tokens = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            request_supplied_table_text_token(value, index, image_width, image_height)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(tokens))
+}
+
+#[cfg(feature = "mnn-native")]
+fn request_supplied_table_text_token(
+    value: &Value,
+    index: usize,
+    image_width: u32,
+    image_height: u32,
+) -> Result<TableTextToken, String> {
+    let text = value
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| format!("tableTextTokens[{index}].text missing"))?;
+    let bbox = request_supplied_token_bbox(value, index, image_width, image_height)?;
+    Ok(TableTextToken {
+        text: text.to_string(),
+        bbox,
+    })
+}
+
+#[cfg(feature = "mnn-native")]
+fn request_supplied_token_bbox(
+    value: &Value,
+    index: usize,
+    image_width: u32,
+    image_height: u32,
+) -> Result<NormalizedBox, String> {
+    if let Some(bbox) = value
+        .get("boundingBox")
+        .or_else(|| value.get("bounding_box"))
+        .and_then(Value::as_object)
+    {
+        return normalize_absolute_bbox(
+            bbox_number(bbox.get("x0"), index, "x0")?,
+            bbox_number(bbox.get("y0"), index, "y0")?,
+            bbox_number(bbox.get("x1"), index, "x1")?,
+            bbox_number(bbox.get("y1"), index, "y1")?,
+            image_width,
+            image_height,
+            index,
+        );
+    }
+    let values = value
+        .get("bbox")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("tableTextTokens[{index}].bbox missing"))?;
+    if values.len() != 4 {
+        return Err(format!(
+            "tableTextTokens[{index}].bbox must have four numbers"
+        ));
+    }
+    normalize_absolute_bbox(
+        bbox_number(values.first(), index, "bbox[0]")?,
+        bbox_number(values.get(1), index, "bbox[1]")?,
+        bbox_number(values.get(2), index, "bbox[2]")?,
+        bbox_number(values.get(3), index, "bbox[3]")?,
+        image_width,
+        image_height,
+        index,
+    )
+}
+
+#[cfg(feature = "mnn-native")]
+fn bbox_number(value: Option<&Value>, index: usize, field: &str) -> Result<f64, String> {
+    value
+        .and_then(Value::as_f64)
+        .filter(|number| number.is_finite())
+        .ok_or_else(|| format!("tableTextTokens[{index}].{field} must be finite"))
+}
+
+#[cfg(feature = "mnn-native")]
+fn normalize_absolute_bbox(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    image_width: u32,
+    image_height: u32,
+    index: usize,
+) -> Result<NormalizedBox, String> {
+    if x1 <= x0 || y1 <= y0 {
+        return Err(format!(
+            "tableTextTokens[{index}] must satisfy x0 < x1 and y0 < y1"
+        ));
+    }
+    let width = image_width.max(1) as f64;
+    let height = image_height.max(1) as f64;
+    Ok(NormalizedBox {
+        x0: (x0 / width).clamp(0.0, 1.0),
+        y0: (y0 / height).clamp(0.0, 1.0),
+        x1: (x1 / width).clamp(0.0, 1.0),
+        y1: (y1 / height).clamp(0.0, 1.0),
+    })
 }
 
 #[cfg(all(feature = "mnn-native", feature = "mnn-ocr"))]
@@ -2576,6 +2699,83 @@ mod tests {
         );
     }
 
+    #[test]
+    fn table_text_tokens_accept_request_supplied_ocr_spans() {
+        let request = json!({
+            "tableTextTokens": [
+                {
+                    "text": "Temperature",
+                    "boundingBox": {"x0": 100.0, "y0": 200.0, "x1": 220.0, "y1": 240.0}
+                },
+                {
+                    "text": "1.793E-06",
+                    "bbox": [300.0, 200.0, 430.0, 240.0]
+                }
+            ]
+        });
+
+        let tokens = table_text_tokens(&request, 1000, 1000).unwrap();
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].text, "Temperature");
+        assert_eq!(tokens[0].bbox.x0, 0.1);
+        assert_eq!(tokens[1].text, "1.793E-06");
+        assert_eq!(tokens[1].bbox.x0, 0.3);
+    }
+
+    #[test]
+    fn table_cells_assign_request_supplied_ocr_text_without_pending_warning() {
+        let row = TableDetection {
+            label: "table row",
+            score: 0.92,
+            bbox: NormalizedBox {
+                x0: 0.0,
+                y0: 0.10,
+                x1: 1.0,
+                y1: 0.20,
+            },
+        };
+        let columns = vec![
+            TableDetection {
+                label: "table column",
+                score: 0.91,
+                bbox: NormalizedBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 0.50,
+                    y1: 1.0,
+                },
+            },
+            TableDetection {
+                label: "table column",
+                score: 0.90,
+                bbox: NormalizedBox {
+                    x0: 0.50,
+                    y0: 0.0,
+                    x1: 1.0,
+                    y1: 1.0,
+                },
+            },
+        ];
+        let tokens = vec![
+            token("Temperature", 100.0, 180.0, 220.0, 240.0),
+            token("1.793E-06", 700.0, 180.0, 850.0, 240.0),
+        ];
+
+        let cells = table_cells_from_detections(&[row], &columns, 1000, 1000, &tokens);
+        let units = table_detection_units(&[], 1000, 1000, &cells);
+
+        assert_eq!(cells[0]["text"], "Temperature");
+        assert_eq!(cells[1]["text"], "1.793E-06");
+        assert!(table_detection_warnings(&cells).is_empty());
+        assert!(
+            units
+                .iter()
+                .flat_map(|unit| unit["warnings"].as_array().unwrap())
+                .all(|warning| warning["code"] != "table_cell_text_assignment_pending")
+        );
+    }
+
     #[cfg(feature = "mnn-ocr")]
     #[test]
     fn numeric_ocr_grid_reconstructs_four_column_viscosity_rows() {
@@ -2769,7 +2969,6 @@ mod tests {
         json!({"text": text})
     }
 
-    #[cfg(feature = "mnn-ocr")]
     fn token(text: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> TableTextToken {
         TableTextToken {
             text: text.to_string(),

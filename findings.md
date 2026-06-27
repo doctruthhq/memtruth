@@ -2172,3 +2172,10 @@
   `fig tree` and `table stakes` remain paragraph text. Full caption binding and
   full-bench caption evidence remain pending. Verification:
   `opendataloader_structure_contract` passed 14/14.
+- Phase37 reduces the native MNN table text-assignment gap. The worker now
+  accepts request-supplied `tableTextTokens` / `ocrTokens` with absolute bbox
+  coordinates and uses them before falling back to PDF text-layer extraction.
+  This gives RapidOCR/OCR sidecars a direct path to fill table cells and avoid
+  `table_cell_text_assignment_pending` when spans are available; broad OCR table
+  quality still needs corpus evidence. Verification:
+  `cargo test --features mnn-native --bin doctruth-mnn-model-worker` passed 5/5.

@@ -135,6 +135,14 @@ numeric markers that may end in `.` or `:`, while ordinary phrases such as
 `fig tree` and `table stakes` remain paragraph text. Full image/figure caption
 binding and full-bench caption evidence remain pending.
 
+Phase37 reduces the MNN table text-assignment gap. The native MNN table worker
+now accepts request-supplied `tableTextTokens` / `ocrTokens` with absolute bbox
+coordinates and uses them before falling back to PDF text-layer extraction. This
+lets a RapidOCR or OCR sidecar pass recognized spans into table cell assignment
+without restarting the worker or requiring a readable PDF text layer. Empty-cell
+`table_cell_text_assignment_pending` warnings remain only when no text/OCR spans
+can be assigned.
+
 ## Reference Boundaries
 
 ```text

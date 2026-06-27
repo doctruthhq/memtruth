@@ -90,6 +90,77 @@ fn runtime_jsonl_batch_keeps_model_worker_alive_until_all_jobs_complete() {
 }
 
 #[test]
+fn runtime_jsonl_batch_keeps_rapidocr_worker_alive_for_all_ocr_jobs() {
+    let fake_python_path = write_fake_rapidocr_pythonpath();
+    let first_image = write_fake_png("doctruth-runtime-rapidocr-runtime-first");
+    let second_image = write_fake_png("doctruth-runtime-rapidocr-runtime-second");
+    let worker_start_log = temp_path("doctruth-runtime-rapidocr-worker-starts", "log");
+    let worker = write_rapidocr_worker_wrapper(&worker_start_log);
+    let (cache_dir, manifest) =
+        ready_mnn_ocr_model_pack_manifest("doctruth-runtime-rapidocr-jsonl-cache");
+    let input = format!(
+        "{}\n{}\n",
+        json!({
+            "command": "parse_pdf",
+            "source_path": first_image,
+            "source_hash": "sha256:rapidocr-first",
+            "preset": "ocr",
+            "offline_mode": true,
+            "allow_model_downloads": false
+        }),
+        json!({
+            "command": "parse_pdf",
+            "source_path": second_image,
+            "source_hash": "sha256:rapidocr-second",
+            "preset": "ocr",
+            "offline_mode": true,
+            "allow_model_downloads": false
+        })
+    );
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .env("DOCTRUTH_ALLOW_PYTHON_ORACLE", "1")
+        .env("PYTHONPATH", fake_python_path)
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let lines = String::from_utf8(output).unwrap();
+    let documents = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(documents.len(), 2, "{lines}");
+    assert_eq!(fs::read_to_string(&worker_start_log).unwrap(), "started\n");
+    assert_eq!(documents[0]["docId"], "sha256:rapidocr-first");
+    assert_eq!(documents[1]["docId"], "sha256:rapidocr-second");
+    for document in documents {
+        assert_eq!(
+            document["parserRun"]["backend"],
+            "rust-sidecar+model-worker"
+        );
+        assert_eq!(document["parserRun"]["workerBackend"], "rapidocr-worker");
+        assert_eq!(document["parserRun"]["preset"], "ocr");
+        assert_eq!(
+            document["parserRun"]["modelRuntime"]["unloadPolicy"],
+            "after-job-batch"
+        );
+        assert_eq!(document["body"]["units"][0]["kind"], "OCR_REGION");
+        assert_eq!(
+            document["body"]["units"][0]["text"],
+            "RapidOCR batch evidence"
+        );
+    }
+}
+
+#[test]
 fn parse_pdf_edge_fast_profile_does_not_start_configured_worker() {
     let pdf = write_pdf_fixture("Edge fast deterministic evidence.");
     let worker = write_failing_model_worker();
@@ -297,6 +368,63 @@ fn parse_pdf_auto_preset_scanned_pdf_routes_to_ocr_mnn_worker() {
     );
     assert_eq!(json["body"]["units"][0]["kind"], "OCR_REGION");
     assert_eq!(json["body"]["units"][0]["text"], "Auto OCR evidence");
+}
+
+#[test]
+fn rapidocr_mnn_worker_accepts_jsonl_batch_until_stdin_closes() {
+    let fake_python_path = write_fake_rapidocr_pythonpath();
+    let first_image = write_fake_png("doctruth-runtime-rapidocr-jsonl-first");
+    let second_image = write_fake_png("doctruth-runtime-rapidocr-jsonl-second");
+    let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("scripts/doctruth-rapidocr-mnn-worker");
+    let input = format!(
+        "{}\n{}\n",
+        json!({
+            "command": "parse_pdf",
+            "source_path": first_image,
+            "source_hash": "sha256:first",
+            "preset": "ocr",
+            "models": [{"name": "ocr-router", "version": "v1"}]
+        }),
+        json!({
+            "command": "parse_pdf",
+            "source_path": second_image,
+            "source_hash": "sha256:second",
+            "preset": "ocr",
+            "models": [{"name": "ocr-router", "version": "v1"}]
+        })
+    );
+    let mut cmd = Command::new(worker);
+
+    let output = cmd
+        .env("DOCTRUTH_ALLOW_PYTHON_ORACLE", "1")
+        .env("PYTHONPATH", fake_python_path)
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let responses = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(responses.len(), 2, "{lines}");
+    assert_eq!(responses[0]["ok"], true);
+    assert_eq!(responses[1]["ok"], true);
+    assert_eq!(responses[0]["document"]["docId"], "sha256:first");
+    assert_eq!(responses[1]["document"]["docId"], "sha256:second");
+    assert_eq!(
+        responses[0]["document"]["body"]["units"][0]["kind"],
+        "OCR_REGION"
+    );
+    assert_eq!(
+        responses[1]["document"]["body"]["units"][0]["text"],
+        "RapidOCR batch evidence"
+    );
 }
 
 #[test]
@@ -2070,6 +2198,50 @@ fn write_empty_text_layer_pdf() -> PathBuf {
     let path = temp_path("doctruth-runtime-worker-empty-text-layer", "pdf");
     fs::write(&path, minimal_empty_text_layer_pdf()).unwrap();
     path
+}
+
+fn write_fake_png(prefix: &str) -> PathBuf {
+    let path = temp_path(prefix, "png");
+    fs::write(&path, b"fake png").unwrap();
+    path
+}
+
+fn write_fake_rapidocr_pythonpath() -> PathBuf {
+    let python_path = temp_dir("doctruth-runtime-fake-rapidocr-pythonpath");
+    fs::create_dir_all(&python_path).unwrap();
+    fs::write(
+        python_path.join("rapidocr.py"),
+        r#"
+class Result:
+    boxes = [[[10, 20], [120, 20], [120, 48], [10, 48]]]
+    txts = ["RapidOCR batch evidence"]
+    scores = [0.94]
+
+class RapidOCR:
+    def __call__(self, image_path):
+        return Result()
+"#,
+    )
+    .unwrap();
+    python_path
+}
+
+fn write_rapidocr_worker_wrapper(start_log: &Path) -> PathBuf {
+    let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("scripts/doctruth-rapidocr-mnn-worker");
+    write_worker_script(
+        "doctruth-runtime-rapidocr-worker-wrapper",
+        &format!(
+            r#"#!/usr/bin/env sh
+set -eu
+printf 'started\n' >> '{}'
+exec '{}'
+"#,
+            start_log.display(),
+            worker.display()
+        ),
+    )
 }
 
 fn opendataloader_worker_fixture(name: &str) -> PathBuf {

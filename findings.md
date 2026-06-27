@@ -2138,3 +2138,11 @@
   deterministic probe boundary for those three table-border semantics while
   leaving real table/layout model decoding and broader table parity open.
   Verification: `opendataloader_table_processor_contract` passed 6/6.
+- Phase32 fixes the RapidOCR worker's JSONL lifecycle. The prior adapter read
+  stdin to EOF as one JSON payload, which made it incompatible with the Rust
+  runtime's persistent line protocol and could deadlock a batch that expected a
+  response after each request. The worker now processes stdin line by line,
+  flushes one response per request, keeps compact one-line request
+  compatibility, and the runtime JSONL OCR test proves the wrapper starts once
+  for two OCR parse jobs with `unloadPolicy=after-job-batch`. Verification:
+  `model_worker_contract` passed 29/29.

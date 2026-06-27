@@ -19,30 +19,55 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--doctor":
         return doctor()
 
-    try:
-        request = json.loads(sys.stdin.read())
-    except Exception as exc:
-        return emit_failure("worker_protocol_error", f"invalid request JSON: {exc}")
+    return process_stdin_requests()
 
+
+def process_stdin_requests() -> int:
+    exit_code = 0
+    seen_request = False
+    for index, line in enumerate(sys.stdin, start=1):
+        if not line.strip():
+            continue
+        seen_request = True
+        try:
+            request = json.loads(line)
+        except Exception as exc:
+            print(json.dumps({
+                "ok": False,
+                "code": "worker_protocol_error",
+                "engine": "mnn",
+                "message": f"invalid JSONL request {index}: {exc}",
+                "pages": [],
+                "warnings": ["worker_protocol_error"],
+            }, ensure_ascii=False, separators=(",", ":")), flush=True)
+            exit_code = 2
+            continue
+        exit_code = max(exit_code, process_request(request, flush=True))
+    if not seen_request:
+        return emit_failure("worker_protocol_error", "empty request JSON", flush=True)
+    return exit_code
+
+
+def process_request(request: dict, flush: bool = False) -> int:
     if request.get("command") == "parse_pdf":
-        return parse_pdf_request(request)
+        return parse_pdf_request(request, flush=flush)
 
     engine_name = str(request.get("engine") or "mnn")
     try:
         image_path = write_image(request)
     except Exception as exc:
-        return emit_failure("worker_protocol_error", f"invalid image payload: {exc}", engine_name)
+        return emit_failure("worker_protocol_error", f"invalid image payload: {exc}", engine_name, flush=flush)
 
     try:
         from rapidocr import RapidOCR  # type: ignore
     except Exception as exc:
-        return emit_failure("rapidocr_unavailable", str(exc), engine_name)
+        return emit_failure("rapidocr_unavailable", str(exc), engine_name, flush=flush)
 
     try:
         result = RapidOCR()(str(image_path))
         regions = normalize_regions(result)
     except Exception as exc:
-        return emit_failure("rapidocr_failed", str(exc), engine_name)
+        return emit_failure("rapidocr_failed", str(exc), engine_name, flush=flush)
 
     text = "\n".join(region["text"] for region in regions if region["text"]).strip()
     confidence_values = [region["confidence"] for region in regions]
@@ -62,7 +87,7 @@ def main() -> int:
         ],
         "warnings": [],
     }
-    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=flush)
     return 0
 
 
@@ -80,23 +105,23 @@ def emit_oracle_disabled() -> int:
     return 2
 
 
-def parse_pdf_request(request: dict) -> int:
+def parse_pdf_request(request: dict, flush: bool = False) -> int:
     started = time.perf_counter()
     engine_name = str(request.get("engine") or "mnn")
     try:
         image_path = page_image(request)
     except Exception as exc:
-        return emit_failure("worker_protocol_error", f"invalid source image: {exc}", engine_name)
+        return emit_failure("worker_protocol_error", f"invalid source image: {exc}", engine_name, flush=flush)
     try:
         from rapidocr import RapidOCR  # type: ignore
     except Exception as exc:
-        return emit_failure("rapidocr_unavailable", str(exc), engine_name)
+        return emit_failure("rapidocr_unavailable", str(exc), engine_name, flush=flush)
     try:
         result = RapidOCR()(str(image_path))
         regions = normalize_regions(result)
         document = trust_document(request, regions)
     except Exception as exc:
-        return emit_failure("rapidocr_failed", str(exc), engine_name)
+        return emit_failure("rapidocr_failed", str(exc), engine_name, flush=flush)
     print(json.dumps({
         "ok": True,
         "document": document,
@@ -104,7 +129,7 @@ def parse_pdf_request(request: dict) -> int:
             "runtime": "rapidocr",
             "wallMs": round((time.perf_counter() - started) * 1000.0, 3),
         },
-    }, ensure_ascii=False, separators=(",", ":")))
+    }, ensure_ascii=False, separators=(",", ":")), flush=flush)
     return 0
 
 
@@ -385,7 +410,7 @@ def clamp_score(value) -> float:
     return round(max(0.0, min(1.0, score)), 6)
 
 
-def emit_failure(code: str, message: str, engine_name: str = "mnn") -> int:
+def emit_failure(code: str, message: str, engine_name: str = "mnn", flush: bool = False) -> int:
     print(json.dumps({
         "ok": False,
         "code": code,
@@ -393,7 +418,7 @@ def emit_failure(code: str, message: str, engine_name: str = "mnn") -> int:
         "message": message,
         "pages": [],
         "warnings": [code],
-    }, ensure_ascii=False, separators=(",", ":")))
+    }, ensure_ascii=False, separators=(",", ":")), flush=flush)
     return 0
 
 

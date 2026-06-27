@@ -99,6 +99,15 @@ tolerance, and the nested table depth guard at 10. This is a deterministic
 processor contract only; table/layout model decoding and broader table parity
 remain open.
 
+Phase32 closes the RapidOCR worker lifecycle seam for the MNN/OCR lane. The
+RapidOCR worker now speaks the same newline-delimited JSON request/response
+protocol as the Rust runtime's persistent model-worker sessions, emits one
+flushed JSON response per request line, preserves compact single-request stdin
+compatibility, and stays alive across a runtime JSONL OCR batch until stdin
+closes. This proves the sidecar lifecycle needed for scanned/OCR jobs; it does
+not prove OCR accuracy, table-model decoding, or full OpenDataLoader hybrid
+parity.
+
 ## Reference Boundaries
 
 ```text

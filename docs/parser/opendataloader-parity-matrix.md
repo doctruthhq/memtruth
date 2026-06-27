@@ -79,6 +79,30 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 | DoclingSchemaTransformer | oracle_only | docling_schema_reference | opendataloader_parity_matrix_contract | not a runtime processor |
 | OcrStrategy | partial | ocr_routing | model_worker_contract | scanned/OCR bucket pending |
 
+## Pipeline Stage Order
+
+This stage order is the contract for OpenDataLoader-style behavior alignment.
+It is not a second parser schema. Each stage normalizes behavior toward
+DocTruth-owned `TrustDocument` output.
+
+| Stage | Owning reference processor |
+| --- | --- |
+| pdf_text_extraction | DocumentProcessor |
+| text_normalization | TextProcessor |
+| content_filtering | ContentFilterProcessor |
+| line_grouping | TextLineProcessor |
+| paragraph_merge | ParagraphProcessor |
+| heading_hierarchy | HeadingProcessor |
+| list_grouping | ListProcessor |
+| caption_binding | CaptionProcessor |
+| table_border_detection | TableBorderProcessor |
+| borderless_table_clustering | ClusterTableProcessor |
+| table_structure_normalization | TableStructureNormalizer |
+| chart_table_gate | SpecialTableProcessor |
+| ocr_table_model_routing | HybridDocumentProcessor |
+| reading_order | TaggedDocumentProcessor |
+| trust_document_export | DocumentProcessor |
+
 ## DocumentProcessor
 
 Status: `partial`. DocTruth has document-level parsing and `TrustDocument`

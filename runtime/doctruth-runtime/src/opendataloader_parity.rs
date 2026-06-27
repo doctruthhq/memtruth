@@ -7,6 +7,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             "path": "third_party/opendataloader-pdf-reference",
             "license": "Apache-2.0"
         },
+        "pipeline_stages": pipeline_stages(),
         "processors": [
             processor("DocumentProcessor", "partial", "document_parse", "benchmark_corpus_contract"),
             processor("TaggedDocumentProcessor", "partial", "structure_tree", "benchmark_corpus_contract"),
@@ -30,6 +31,34 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("DoclingSchemaTransformer", "oracle_only", "docling_schema_reference", "opendataloader_parity_matrix_contract"),
             processor("OcrStrategy", "partial", "ocr_routing", "model_worker_contract")
         ]
+    })
+}
+
+fn pipeline_stages() -> Vec<Value> {
+    vec![
+        stage("pdf_text_extraction", "DocumentProcessor"),
+        stage("text_normalization", "TextProcessor"),
+        stage("content_filtering", "ContentFilterProcessor"),
+        stage("line_grouping", "TextLineProcessor"),
+        stage("paragraph_merge", "ParagraphProcessor"),
+        stage("heading_hierarchy", "HeadingProcessor"),
+        stage("list_grouping", "ListProcessor"),
+        stage("caption_binding", "CaptionProcessor"),
+        stage("table_border_detection", "TableBorderProcessor"),
+        stage("borderless_table_clustering", "ClusterTableProcessor"),
+        stage("table_structure_normalization", "TableStructureNormalizer"),
+        stage("chart_table_gate", "SpecialTableProcessor"),
+        stage("ocr_table_model_routing", "HybridDocumentProcessor"),
+        stage("reading_order", "TaggedDocumentProcessor"),
+        stage("trust_document_export", "DocumentProcessor"),
+    ]
+}
+
+fn stage(name: &str, owner: &str) -> Value {
+    json!({
+        "name": name,
+        "owner": owner,
+        "canonical_output": "TrustDocument intermediate block stream"
     })
 }
 

@@ -110,6 +110,47 @@ fn opendataloader_parity_matrix_has_status_and_owner_for_every_processor() {
 }
 
 #[test]
+fn opendataloader_pipeline_stage_order_is_explicit() {
+    let matrix = opendataloader_parity_matrix_json();
+    let stages = matrix["pipeline_stages"]
+        .as_array()
+        .expect("pipeline stages");
+    let names = stages
+        .iter()
+        .filter_map(|stage| stage["name"].as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        names,
+        vec![
+            "pdf_text_extraction",
+            "text_normalization",
+            "content_filtering",
+            "line_grouping",
+            "paragraph_merge",
+            "heading_hierarchy",
+            "list_grouping",
+            "caption_binding",
+            "table_border_detection",
+            "borderless_table_clustering",
+            "table_structure_normalization",
+            "chart_table_gate",
+            "ocr_table_model_routing",
+            "reading_order",
+            "trust_document_export",
+        ]
+    );
+
+    for stage in stages {
+        assert!(stage["owner"].as_str().is_some(), "missing owner");
+        assert!(
+            stage["canonical_output"].as_str().is_some(),
+            "missing canonical output"
+        );
+    }
+}
+
+#[test]
 fn opendataloader_parity_matrix_has_no_unknown_statuses() {
     let matrix = opendataloader_parity_matrix_json();
     for entry in matrix["processors"].as_array().expect("processors array") {

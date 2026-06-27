@@ -2438,7 +2438,7 @@ fn configured_model_worker_parse(
     };
     let model_identities =
         model_identities_for_parse_output(manifest_configured, required_models, model_artifacts);
-    let worker_request = json!({
+    let mut worker_request = json!({
         "runtime": RUNTIME,
         "protocol_version": PROTOCOL_VERSION,
         "command": "parse_pdf",
@@ -2463,6 +2463,7 @@ fn configured_model_worker_parse(
         "modelRuntime": model_runtime_request_json(profile, preset, model_artifacts),
         "modelRouting": route.to_json(true, &model_identities)
     });
+    forward_model_worker_token_fields(&mut worker_request, request);
     let output = run_model_worker(&command, &worker_request)?;
     let response: Value = serde_json::from_str(&output).map_err(|error| {
         error_json("MODEL_WORKER_FAILED", &format!("invalid JSON: {error}")).to_string()
@@ -2485,6 +2486,17 @@ fn configured_model_worker_parse(
     );
     validate_worker_document(&document)?;
     Ok(Some(document))
+}
+
+fn forward_model_worker_token_fields(worker_request: &mut Value, request: &Value) {
+    for (target, aliases) in [
+        ("tableTextTokens", ["tableTextTokens", "table_text_tokens"]),
+        ("ocrTokens", ["ocrTokens", "ocr_tokens"]),
+    ] {
+        if let Some(value) = aliases.iter().find_map(|alias| request.get(alias)) {
+            worker_request[target] = value.clone();
+        }
+    }
 }
 
 fn model_runtime_metrics_with_context(

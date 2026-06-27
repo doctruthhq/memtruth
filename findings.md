@@ -2191,3 +2191,11 @@
   structurally. This is focused probe coverage only; full-bench list evidence
   remains pending. Verification: `opendataloader_structure_contract` passed
   17/17.
+- Phase40 closes the runtime token handoff needed by OCR-backed table cells.
+  `configured_model_worker_parse` now forwards request-level
+  `tableTextTokens` / `table_text_tokens` and `ocrTokens` / `ocr_tokens` into
+  the configured model-worker request, so the MNN table worker path added in
+  Phase37 can receive bbox-backed OCR/table spans instead of depending only on
+  PDF text-layer extraction. Broad OCR/table corpus quality remains pending.
+  Verification: `parse_pdf_forwards_table_text_tokens_to_table_model_worker`
+  passed.

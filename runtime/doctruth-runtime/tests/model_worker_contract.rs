@@ -1216,6 +1216,50 @@ fn parse_pdf_sends_ocr_model_pack_auxiliary_artifacts_to_worker() {
 }
 
 #[test]
+fn parse_pdf_forwards_table_text_tokens_to_table_model_worker() {
+    let pdf = write_pdf_fixture("Item Qty\nA 2");
+    let worker = write_table_tokens_asserting_model_worker();
+    let (cache_dir, manifest) = ready_mnn_model_manifest("doctruth-runtime-table-token-cache");
+    let request = json!({
+        "command": "parse_pdf",
+        "source_path": pdf,
+        "source_hash": "sha256:model-worker",
+        "preset": "table-lite",
+        "offline_mode": true,
+        "allow_model_downloads": false,
+        "tableTextTokens": [
+            {
+                "text": "A",
+                "bbox": [10.0, 20.0, 30.0, 40.0],
+                "page": 1
+            }
+        ],
+        "ocrTokens": [
+            {
+                "text": "2",
+                "boundingBox": {"x0": 40.0, "y0": 20.0, "x1": 50.0, "y1": 40.0},
+                "page": 1
+            }
+        ]
+    });
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .env("DOCTRUTH_RUNTIME_MODEL_COMMAND", &worker)
+        .env("DOCTRUTH_MODEL_CACHE", &cache_dir)
+        .env("DOCTRUTH_MODEL_MANIFEST", &manifest)
+        .write_stdin(request.to_string())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["body"]["units"][0]["text"], "Table token evidence");
+}
+
+#[test]
 fn parse_pdf_edge_model_rejects_onnx_manifest_and_does_not_start_worker() {
     let pdf = write_pdf_fixture("Unsupported ONNX manifest fallback evidence.");
     let worker = write_failing_model_worker();
@@ -1945,6 +1989,69 @@ print(json.dumps({
         "warnings": []
     },
     "auditGradeStatus": "AUDIT_GRADE"
+}))
+"#,
+    )
+}
+
+fn write_table_tokens_asserting_model_worker() -> PathBuf {
+    write_worker_script(
+        "doctruth-runtime-table-token-model-worker",
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+request = json.load(sys.stdin)
+assert request["preset"] == "table-lite"
+assert request["tableTextTokens"][0]["text"] == "A"
+assert request["tableTextTokens"][0]["bbox"] == [10.0, 20.0, 30.0, 40.0]
+assert request["ocrTokens"][0]["text"] == "2"
+assert request["ocrTokens"][0]["boundingBox"]["x0"] == 40.0
+print(json.dumps({
+    "docId": request["source_hash"],
+    "source": {
+        "sourceFilename": "table-token-worker.pdf",
+        "sourceHash": request["source_hash"],
+        "metadata": {"sourceFilename": "table-token-worker.pdf", "pageCount": 1}
+    },
+    "body": {
+        "pages": [{
+            "pageNumber": 1,
+            "width": 612.0,
+            "height": 792.0,
+            "textLayerAvailable": True,
+            "imageHash": "sha256:" + "0" * 64
+        }],
+        "units": [{
+            "unitId": "unit-0001",
+            "kind": "TABLE_CELL",
+            "page": 1,
+            "text": "Table token evidence",
+            "evidenceSpanIds": ["span-0001"],
+            "location": {
+                "page": 1,
+                "readingOrder": 1,
+                "boundingBox": {"x0": 10.0, "y0": 20.0, "x1": 50.0, "y1": 40.0}
+            },
+            "sourceObjectId": "table-token-worker-cell-1",
+            "confidence": {"score": 0.95, "rationale": "fake table token worker"},
+            "warnings": []
+        }],
+        "tables": []
+    },
+    "parserRun": {
+        "parserVersion": "test-worker",
+        "preset": request["preset"],
+        "backend": "rust-sidecar+model-worker",
+        "models": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"],
+        "warnings": []
+    },
+    "auditGradeStatus": "AUDIT_GRADE",
+    "metrics": {
+        "runtime": "mnn",
+        "inferenceMs": 1.0,
+        "loadedModels": ["xenova-table-transformer-structure-recognition:model-main-2026-06-30"]
+    }
 }))
 "#,
     )

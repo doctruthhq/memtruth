@@ -145,7 +145,10 @@ coverage until parity tests prove the behavior.
 ## TableStructureNormalizer
 
 Status: `partial`. Table normalization exists only in partial form and remains a
-known parity area.
+known parity area. The runtime now forwards request-supplied `tableTextTokens`
+and `ocrTokens` into configured table model workers, and the native MNN worker
+can use those spans for bbox-backed cell text assignment; broader model/OCR
+table quality remains unproven.
 
 ## HiddenTextProcessor
 

@@ -157,6 +157,14 @@ under numbered parents can be replayed without flattening away hierarchy. This
 is still focused processor coverage; full-bench list-bucket evidence remains
 pending.
 
+Phase40 closes the runtime side of the OCR-to-table token handoff. When a parse
+request supplies `tableTextTokens` / `table_text_tokens` or `ocrTokens` /
+`ocr_tokens`, `doctruth-runtime` now forwards those bbox-backed spans into the
+configured table model worker request. Together with Phase37, this gives the
+MNN table worker an end-to-end path to assign OCR sidecar text to detected table
+cells without relying on the PDF text layer. Broad OCR/table corpus quality
+evidence remains pending.
+
 ## Reference Boundaries
 
 ```text

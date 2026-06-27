@@ -18,17 +18,36 @@ The work is not done. The upstream vendored OpenDataLoader PDF tree has about 17
 
 Do not run full200 after every tiny change. Run focused red/green tests while porting a module. Run full200 only at the planned gates below.
 
-Latest accepted Java-core gate:
+Source-of-truth split:
 
 ```text
-artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-phase27-regulatory-narrative-full200/full200
+docs/parser/opendataloader-parity-matrix.md
+  owns processor status, processor ownership, pipeline stage order,
+  heuristic ownership, behavior-family buckets, and full200 gate schema
+
+docs/parser/opendataloader-processor-gap-report.md
+  owns detailed evidence, benchmark narrative, low-score buckets, and
+  why a row remains partial or can move to matched
+
+this implementation plan
+  owns task execution steps, test commands, and commit boundaries
+```
+
+OpenDataLoader output is not canonical. `TrustDocument` remains canonical.
+Single benchmark PDF fixes are not parity unless they are generalized under a
+processor behavior-family contract.
+
+Latest accepted Java-core plus Rust MNN auto-routing gate:
+
+```text
+artifact: third_party/opendataloader-bench/prediction/doctruth-java-core-auto-mnn-full200-v2/full200
 parsed:   200/200
-overall:  0.779731
-nid:      0.898148
+overall:  0.781875
+nid:      0.900985
 teds:     0.736174
-mhs:      0.489455
-latency:  81.093350 ms/doc mean
-rss:      21MB peak process RSS
+mhs:      0.492119
+latency:  127.476316 ms/doc mean
+ocr:      one model route, 01030000000141
 runtime:  no Python/Torch/Docling production residency
 ```
 
@@ -179,6 +198,21 @@ figure/chart layouts from data tables using Figure context, survey/chart labels,
 visual rows, and numeric-row signals. It keeps numeric grids promotable while
 blocking chart captions and survey labels from table promotion. This directly
 targets the chart/table distinction gap before the next full200 gate.
+
+Phase43 wires Java-core OpenDataLoader prediction to Rust auto model rescue
+without letting OCR replace readable Java/PDFBox output. For
+`backend=opendataloader-java-core` and `preset=auto`, the runtime first asks the
+warm Java backend for `lite` output. If that Markdown is readable, it remains
+canonical for the prediction case; if it is too sparse, Rust auto-routing may
+start the MNN OCR/table worker. The prediction loop also enables model-worker
+batch mode so full200 keeps the worker alive across the internal PDF loop. The
+bench scripts prepare the local PP-OCRv5 MNN cache from
+`model-packs/ppocr-v5-mobile-mnn.json` when needed. Full200 result:
+`doctruth-java-core-auto-mnn-full200-v2/full200`, 200/200 parsed, overall
+`0.781875`, NID `0.900985`, TEDS `0.736174`, MHS `0.492119`, one OCR route
+(`01030000000141`). Verification: `benchmark_corpus_contract
+opendataloader_prediction_`, `model_worker_contract`, and release full200
+passed.
 
 ## Reference Boundaries
 

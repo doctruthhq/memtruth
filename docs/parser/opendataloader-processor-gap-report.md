@@ -17,6 +17,21 @@ Status values are intentionally conservative:
 - `oracle-only`: behavior exists only in the reference/oracle path.
 - `missing`: no equivalent DocTruth behavior is implemented yet.
 
+## Source Of Truth
+
+The parity matrix owns processor status, processor ownership, pipeline stage
+order, heuristic ownership, behavior-family buckets, and full200 gate schema:
+`docs/parser/opendataloader-parity-matrix.md`.
+
+This gap report owns detailed evidence and narrative for why a processor area
+is still `partial`, `matched`, `oracle-only`, or `missing`. It should not make a
+single benchmark PDF fix look like parity. A row can move to `matched` only
+when focused processor contracts and full-bench evidence both support it.
+
+The implementation plan owns execution steps. OpenDataLoader output is a
+reference and benchmark surface; `TrustDocument` remains the canonical DocTruth
+output.
+
 | Processor area | Status | Focused test | Full-bench evidence | Notes |
 | --- | --- | --- | --- | --- |
 | PDF text normalization | partial | `PdfDocumentParserTest`, `PdfTextRenderingNormalizationTest`, `PdfTextPositionFilterTest` | current-full200 text buckets | Generated PDF text-layer output is covered for trimming and repeated-space compression in the live parser path; `PdfTextPositionFilter` also exposes box-level normalization and U+FFFD ratio helpers. Full chunk splitting/merge parity still needs bench evidence. |
@@ -31,7 +46,7 @@ Status values are intentionally conservative:
 | Borderless table clustering | partial | `PdfBorderlessTableExtractionTest` | `doctruth-java-core-phase27-regulatory-narrative-full200/full200`; cases `01030000000064`, `01030000000119`, `01030000000120`, `01030000000147`, `01030000000178`, `01030000000200`, `01030000000117`, `01030000000121`, `01030000000128`, `01030000000132`, `01030000000146`, `01030000000150`, `01030000000165`, `01030000000187`, and `01030000000182` are covered by focused tests | Borderless clustering segments aligned row runs, assigns text by cell cluster for normal tables, absorbs stacked header bands into table rows, merges first-column continuation rows, has a wide-text comparative-table path with word-zone column assignment, splits dense spanning header cells by word-center column assignment, avoids promoting sparse one-cell grids, resume-style parallel section headings, table-of-contents pages, ordinary two-column narrative text, and selected regulatory narrative shards as borderless tables, adds a final geometry-driven cluster fallback for text-heavy tables, repairs the selected five-column arrow-flow gene/protein/characteristics table, and lets later section merges recover selected blank comparison, competence-framework, and national-initiative row structures. Remaining gap: broader multi-segment cluster parity. |
 | Table cell grid reconstruction | partial | `OpenDataLoaderBackendProtocolTest`, `PdfBorderlessTableExtractionTest`, `opendataloader_table_processor_contract`, `model_worker_contract`, `doctruth-mnn-model-worker --features mnn-native` | `doctruth-java-core-phase27-regulatory-narrative-full200/full200` records 200/200 parsed at mean `81.093350` ms/doc, RSS peak `21MB`, and no Python/Torch/Docling residency | TrustTable cells are projected and real OpenDataLoader table smoke cases produce high TEDS for selected cases. Header-only/data-only spacer columns collapse for `Small / Medium / Large` style tables; wide long-text tables merge multi-row headers and blank-first continuation rows; dense matrix tables split spanning header cells; sparse grid false positives are discarded; headered column-stream numeric tables use data-row anchors plus header-zone projection; data-only continuation tables use numeric-row anchors and first-column continuation merging; same-page spreadsheet fragments merge letter headers, split row-number cells, combine multi-row confidence-bound labels, and append data continuations; Area/Competence blocks promote numbered left-column groups with right-column numbered items; selected inline observation tables split caption/header/row-token runs; selected PORT/SHIPCALLS tables merge detected headers with following name and numeric column streams; selected Training Datasets fragments merge top caption/header rows and adjacent data fragments; selected arrow-flow gene/protein/characteristics tables normalize to five columns; selected blank comparison tables merge following row-label blocks; selected competence-framework tables split heading rows and normalize bullet outcomes to two columns; selected national-initiatives tables collapse over-fragmented 15-column output to four long-text columns; selected narrative-shard tables demote back to text; text-heavy cluster tables now support stacked headers, single-cell header splitting, blank-first/lowercase continuation merges, explicit two-column Reagents/Supplies lists, horizontal matrix row-label recovery, and compact Latin-species two-column lists. The runtime table-border probe also locks text splitting by cell x range, neighbor-table link tolerance, and nested-depth guard behavior. The native MNN table worker can consume request-supplied `tableTextTokens` / `ocrTokens` before PDF text-layer fallback, and the runtime now forwards those token fields into configured table workers, so OCR sidecars have an end-to-end bbox-backed cell-text assignment path. Remaining gaps are broader model/OCR table cases and multi-segment rowspans. |
 | Caption binding | partial | `PdfDocumentParserTest`, `OpenDataLoaderJavaBackendContractTest`, `TrustDocumentRenderedOutputTest`, `opendataloader_structure_contract` | current-full200 caption buckets pending | Standalone table/figure-style captions adjacent to detected tables are promoted into `FigureSection`, preserve bbox evidence, and project as `caption` blocks in `content_blocks` and OpenDataLoader-shaped `blocks[]`. The structure probe recognizes `Figure`, `Table`, `Fig.`, and `Tab.` numeric caption markers while keeping ordinary phrases such as `Figure skating` or `table stakes` as paragraph text; broader figure, image, and full-bench caption parity is still pending. |
-| OCR region routing | partial | `PdfDocumentParserTest`, `TrustDocumentAdapterTest`, `model_worker_contract` | scanned/OCR corpus pending | Low-text pages route through OCR worker SPI; worker-returned regions now remain separate bbox-backed parser sections and become `OCR_REGION` units under OCR parser runs. RapidOCR/MNN worker requests now support runtime JSONL batches and keep the sidecar alive until the batch completes. OCR accuracy, scanned-corpus quality, and OpenDataLoader strategy parity are not proven. |
+| OCR region routing | partial | `PdfDocumentParserTest`, `TrustDocumentAdapterTest`, `model_worker_contract`, `benchmark_corpus_contract` | `doctruth-java-core-auto-mnn-full200-v2/full200`: only `01030000000141` routed to OCR, improving that case from overall `0.003407` to `0.432270` | Low-text pages route through OCR worker SPI; worker-returned regions now remain separate bbox-backed parser sections and become `OCR_REGION` units under OCR parser runs. RapidOCR/MNN worker requests now support runtime JSONL batches and keep the sidecar alive until the batch completes. The Java-core OpenDataLoader prediction path now uses Java/PDFBox `lite` as a quality gate before OCR rescue, so readable Java output such as `01030000000165` is not replaced by weaker OCR text. OCR accuracy, scanned-corpus quality, and OpenDataLoader strategy parity are still not proven. |
 | Scanned PDF error semantics | partial | `OcrPresetTest` | scanned/OCR corpus pending | Fail-closed semantics exist, but full scanned-document benchmark coverage is pending. |
 
 ## Current Priority
@@ -43,19 +58,23 @@ Status values are intentionally conservative:
 
 ## Latest Full200 Run
 
-`doctruth-java-core-phase27-regulatory-narrative-full200/full200` is the latest
-recorded Java-core run. It parsed 200/200 documents in `16218.670041` ms, with
-a mean `81.093350` ms/doc, lazy model startup enabled, process RSS peak `21MB`,
-and no Python/Torch/Docling production residency.
+`doctruth-java-core-auto-mnn-full200-v2/full200` is the latest recorded
+Java-core plus Rust MNN auto-routing run. It parsed 200/200 documents in
+`25495.263167` ms, with a mean `127.476316` ms/doc, no failures, no
+Python/Torch/Docling production residency, and one OCR model route.
 
 Quality now clears the initial plan target:
 
 ```text
-overall: 0.779731
-nid:     0.898148
+overall: 0.781875
+nid:     0.900985
 teds:    0.736174
-mhs:     0.489455
+mhs:     0.492119
 ```
+
+The prior accepted Java-core deterministic run was
+`doctruth-java-core-phase27-regulatory-narrative-full200/full200` with overall
+`0.779731`, NID `0.898148`, TEDS `0.736174`, and MHS `0.489455`.
 
 The phase8 sparse-grid guard fixed a real class of table false positives,
 especially content pages where one large text cell was being rendered as a fake

@@ -2146,3 +2146,11 @@
   compatibility, and the runtime JSONL OCR test proves the wrapper starts once
   for two OCR parse jobs with `unloadPolicy=after-job-batch`. Verification:
   `model_worker_contract` passed 29/29.
+- Phase33 promotes TriageProcessor routing signals into a black-box runtime
+  probe. `opendataloader_triage_probe` reuses the existing internal triage
+  decision code and exposes replacement-ratio, vector-line/table-border,
+  suspicious-gap, large-image, aligned-line, text-table-pattern, and custom
+  line-ratio-threshold signals. This closes the contract visibility gap for
+  model/backend route selection, but it does not claim that full parser quality
+  now matches OpenDataLoader hybrid. Verification:
+  `opendataloader_triage_contract` passed 6/6.

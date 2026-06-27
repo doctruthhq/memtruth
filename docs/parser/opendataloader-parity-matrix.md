@@ -151,7 +151,10 @@ model slots, but upstream hybrid behavior is not fully ported.
 ## TriageProcessor
 
 Status: `partial`. Runtime routing and warnings cover some triage concerns, but
-the upstream processor is not fully ported.
+the upstream processor is not fully ported. The black-box
+`opendataloader_triage_probe` now exposes replacement-ratio, vector-line,
+table-border, suspicious-gap, large-image, and threshold routing signals for
+focused parity tests.
 
 ## DoclingSchemaTransformer
 

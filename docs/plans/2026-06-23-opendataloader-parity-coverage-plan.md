@@ -108,6 +108,13 @@ closes. This proves the sidecar lifecycle needed for scanned/OCR jobs; it does
 not prove OCR accuracy, table-model decoding, or full OpenDataLoader hybrid
 parity.
 
+Phase33 promotes `TriageProcessor` routing signals to the runtime probe
+boundary. `opendataloader_triage_probe` now exposes replacement-ratio,
+vector-line/table-border, suspicious-gap, large-image, aligned-line, text-table
+pattern, and custom threshold decisions without changing the parser-routing
+algorithm. This makes model/backend selection behavior reproducible in focused
+tests before another full200 gate.
+
 ## Reference Boundaries
 
 ```text
@@ -1442,6 +1449,7 @@ cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test opendatalo
 cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test opendataloader_line_paragraph_contract -- --nocapture
 cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test opendataloader_structure_contract -- --nocapture
 cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test opendataloader_table_processor_contract -- --nocapture
+cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test opendataloader_triage_contract -- --nocapture
 cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test opendataloader_model_runtime_contract -- --nocapture
 cargo test --manifest-path runtime/doctruth-runtime/Cargo.toml --test borderless_table_contract
 cargo fmt --manifest-path runtime/doctruth-runtime/Cargo.toml -- --check

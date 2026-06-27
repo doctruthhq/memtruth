@@ -1,9 +1,9 @@
 use serde_json::{Value, json};
 
 use super::{
-    PAGE_HEIGHT, PAGE_WIDTH, PROTOCOL_VERSION, PositionedLine, RUNTIME, RawPdfBox, RuntimeBox,
-    bbox_center_y, bbox_height, error_json, merge_positioned_visual_row, normalize_text,
-    sort_positioned_y_then_x,
+    OpendataloaderTriageInput, PAGE_HEIGHT, PAGE_WIDTH, PROTOCOL_VERSION, PositionedLine, RUNTIME,
+    RawPdfBox, RuntimeBox, Segment, bbox_center_y, bbox_height, error_json,
+    merge_positioned_visual_row, normalize_text, opendataloader_triage, sort_positioned_y_then_x,
 };
 
 const OPENDATALOADER_REPLACEMENT_CHARACTER: char = '\u{fffd}';
@@ -12,6 +12,7 @@ const OPENDATALOADER_TEXT_PROCESSOR_REFERENCE: &str = "third_party/opendataloade
 const OPENDATALOADER_TEXT_LINE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java";
 const OPENDATALOADER_PARAGRAPH_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ParagraphProcessor.java";
 const OPENDATALOADER_TABLE_BORDER_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableBorderProcessor.java";
+const OPENDATALOADER_TRIAGE_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TriageProcessor.java";
 const OPENDATALOADER_HEADING_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java";
 const OPENDATALOADER_LIST_PROCESSOR_REFERENCE: &str = "third_party/opendataloader-pdf-reference/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ListProcessor.java";
 const OPENDATALOADER_MAX_NESTED_TABLE_DEPTH: u64 = 10;
@@ -550,6 +551,166 @@ fn opendataloader_probe_neighbor_table_link(
                     OPENDATALOADER_NEIGHBOUR_TABLE_EPSILON,
                 )
             })
+}
+
+pub(crate) fn opendataloader_triage_probe_json(request: &Value) -> Result<Value, String> {
+    let lines = opendataloader_probe_optional_positioned_lines(request)?;
+    let segments = opendataloader_probe_segments(request)?;
+    let image_boxes =
+        opendataloader_probe_runtime_boxes(request, "imageBoxes", "INVALID_IMAGE_BOX")?;
+    let page_box =
+        opendataloader_probe_optional_runtime_box(request, "pageBox", "INVALID_PAGE_BOX")?;
+    let line_art_count = request
+        .get("lineArtCount")
+        .or_else(|| request.get("line_art_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let has_table_border = request
+        .get("hasTableBorder")
+        .or_else(|| request.get("has_table_border"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let replacement_ratio = request
+        .get("replacementRatio")
+        .or_else(|| request.get("replacement_ratio"))
+        .and_then(Value::as_f64)
+        .filter(|number| number.is_finite())
+        .unwrap_or(0.0);
+    let line_ratio_threshold = request
+        .get("lineRatioThreshold")
+        .or_else(|| request.get("line_ratio_threshold"))
+        .and_then(Value::as_f64)
+        .filter(|number| number.is_finite())
+        .unwrap_or(0.3);
+
+    let input = OpendataloaderTriageInput {
+        text_lines: &lines,
+        segments: &segments,
+        line_art_count,
+        has_table_border,
+        image_boxes: &image_boxes,
+        page_box,
+        replacement_ratio,
+        line_ratio_threshold,
+    };
+    let decision = opendataloader_triage(input);
+    let signals = decision.signals;
+
+    Ok(json!({
+        "runtime": RUNTIME,
+        "protocol_version": PROTOCOL_VERSION,
+        "source": "OpenDataLoader TriageProcessor",
+        "route": decision.route,
+        "confidence": decision.confidence,
+        "signals": {
+            "replacementRatio": replacement_ratio,
+            "lineRatioThreshold": line_ratio_threshold,
+            "lineChunkCount": signals.line_chunk_count,
+            "textChunkCount": signals.text_chunk_count,
+            "lineToTextRatio": signals.line_to_text_ratio,
+            "alignedLineGroups": signals.aligned_line_groups,
+            "hasTableBorder": signals.has_table_border,
+            "hasSuspiciousPattern": signals.has_suspicious_pattern,
+            "horizontalLineCount": signals.horizontal_line_count,
+            "verticalLineCount": signals.vertical_line_count,
+            "lineArtCount": signals.line_art_count,
+            "hasGridLines": signals.has_grid_lines,
+            "hasTableBorderLines": signals.has_table_border_lines,
+            "hasRowSeparatorPattern": signals.has_row_separator_pattern,
+            "hasAlignedShortLines": signals.has_aligned_short_lines,
+            "tablePatternCount": signals.table_pattern_count,
+            "maxConsecutiveStreak": signals.max_consecutive_streak,
+            "patternDensity": signals.pattern_density,
+            "hasConsecutivePatterns": signals.has_consecutive_patterns,
+            "largeImageRatio": signals.large_image_ratio,
+            "largeImageAspectRatio": signals.large_image_aspect_ratio,
+            "hasVectorTableSignal": signals.has_vector_table_signal(),
+            "hasTextTablePattern": signals.has_text_table_pattern(),
+            "hasLargeImage": signals.has_large_image()
+        },
+        "reference": OPENDATALOADER_TRIAGE_PROCESSOR_REFERENCE
+    }))
+}
+
+fn opendataloader_probe_optional_positioned_lines(
+    request: &Value,
+) -> Result<Vec<PositionedLine>, String> {
+    match request.get("lines") {
+        Some(_) => opendataloader_probe_positioned_lines(request),
+        None => Ok(Vec::new()),
+    }
+}
+
+fn opendataloader_probe_segments(request: &Value) -> Result<Vec<Segment>, String> {
+    let Some(values) = request.get("segments").and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    values
+        .iter()
+        .enumerate()
+        .map(opendataloader_probe_segment)
+        .collect()
+}
+
+fn opendataloader_probe_segment((index, value): (usize, &Value)) -> Result<Segment, String> {
+    let x0 = opendataloader_probe_named_f64(value, "x0", "INVALID_SEGMENT")?;
+    let y0 = opendataloader_probe_named_f64(value, "y0", "INVALID_SEGMENT")?;
+    let x1 = opendataloader_probe_named_f64(value, "x1", "INVALID_SEGMENT")?;
+    let y1 = opendataloader_probe_named_f64(value, "y1", "INVALID_SEGMENT")?;
+    if (x1 - x0).abs() <= f64::EPSILON && (y1 - y0).abs() <= f64::EPSILON {
+        return Err(error_json(
+            "INVALID_SEGMENT",
+            &format!("request.segments[{index}] must not be a point"),
+        )
+        .to_string());
+    }
+    Ok(Segment { x0, y0, x1, y1 })
+}
+
+fn opendataloader_probe_runtime_boxes(
+    request: &Value,
+    field: &str,
+    error_code: &str,
+) -> Result<Vec<RuntimeBox>, String> {
+    let Some(values) = request.get(field).and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| opendataloader_probe_runtime_box(value, field, index, error_code))
+        .collect()
+}
+
+fn opendataloader_probe_optional_runtime_box(
+    request: &Value,
+    field: &str,
+    error_code: &str,
+) -> Result<Option<RuntimeBox>, String> {
+    request
+        .get(field)
+        .map(|value| opendataloader_probe_runtime_box(value, field, 0, error_code))
+        .transpose()
+}
+
+fn opendataloader_probe_runtime_box(
+    value: &Value,
+    field: &str,
+    index: usize,
+    error_code: &str,
+) -> Result<RuntimeBox, String> {
+    let x0 = opendataloader_probe_named_f64(value, "x0", error_code)?;
+    let y0 = opendataloader_probe_named_f64(value, "y0", error_code)?;
+    let x1 = opendataloader_probe_named_f64(value, "x1", error_code)?;
+    let y1 = opendataloader_probe_named_f64(value, "y1", error_code)?;
+    if x1 <= x0 || y1 <= y0 {
+        return Err(error_json(
+            error_code,
+            &format!("{field}[{index}] must satisfy x0 < x1 and y0 < y1"),
+        )
+        .to_string());
+    }
+    Ok(RuntimeBox { x0, y0, x1, y1 })
 }
 
 pub(crate) fn opendataloader_structure_probe_json(request: &Value) -> Result<Value, String> {

@@ -172,7 +172,9 @@ from `0.391496` to `0.781736`; full200 NID rose from `0.896197` to
 
 Overall, TEDS, and MHS now beat the historical initial acceptance baseline
 `overall=0.745414`, `TEDS=0.496416`, and `MHS=0.483837`. This is still not a
-claim of full OpenDataLoader hybrid/model parity. The next high-impact gaps are
-multi-segment rowspan tables, OCR/image-only table content, chart/table
-distinction, remaining heading hierarchy misses, and broader reading-order/text
-normalization.
+claim of full OpenDataLoader hybrid/model parity. Runtime probe coverage now
+includes the TriageProcessor signal family for replacement-ratio,
+vector-line/table-border, suspicious-gap, large-image, aligned-line, and custom
+threshold decisions. The next high-impact gaps are multi-segment rowspan
+tables, OCR/image-only table content, chart/table distinction, remaining
+heading hierarchy misses, and broader reading-order/text normalization.

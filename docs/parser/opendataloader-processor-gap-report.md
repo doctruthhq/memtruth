@@ -40,7 +40,7 @@ remains the canonical DocTruth output.
 | XY-Cut geometry reading order | partial | `PdfGeometryReadingOrderTest` | current-full200 reading-order bucket | Projection-cut ordering now covers a full-width heading between two-column regions and a narrow-outlier vertical-cut retry for page-marker-like gap elements; full XY-Cut++ projection parity is not proven. |
 | Paragraph and line merging | partial | `PdfDocumentParserTest`, `opendataloader_line_paragraph_contract` | current-full200 reading-order bucket | Basic merging exists and the runtime probe now locks OpenDataLoader right-alignment precedence before the generic two-line paragraph heuristic. Broader paragraph and list heuristics are still not fully matched. |
 | List grouping | partial | `opendataloader_structure_contract` | full-bench list buckets pending | The structure probe groups sequential lower/upper letter lists, sequential numeric lists, and bullet lists, keeps non-sequential letter/numeric markers as paragraph text, joins lowercase/connector continuation lines into the previous list item, and preserves indented nested-list hierarchy through `listItems[].level` while keeping flat `items` for compatibility. Heading/caption classification takes priority over list grouping so numbered headings are not swallowed as single-item lists. Full-bench list evidence remains pending. |
-| Heading promotion and hierarchy | partial | `PdfHeadingClassificationTest`, `OpenDataLoaderJavaBackendContractTest`, `TrustDocumentRenderedOutputTest`, `PdfTwoColumnSemanticSectionTest`, `opendataloader_structure_contract` | `doctruth-java-core-20260628T204700Z/full200`: MHS `0.535658`, MHS_s `0.670731`, overall `0.805128` | Java/PDFBox heading signals survive into `TrustDocument`, `content_blocks`, OpenDataLoader `blocks[]`, `headings[]`, and clean Markdown heading nodes. Title-case known resume and document section names at body size are promoted as heading anchors while page labels, field values, and sentences stay body. Bare numbered chapter headings such as `8 Choosing between Observer Models and Rejecting Participants` and `12 Conclusion` are split from joined body prose in the Java parser core. Dotted numbered section headings such as `2.1. Diesel and biodiesel use` and `5. Natural dispersal` are promoted while table-of-contents entries are guarded. Numbered heading continuation lines such as `6. Modeling` + `the dynamics` and `8. Numerical computations` + `in the combinatorial multiverse` are merged back into one heading. Short colon headings such as `Changing objectives:` and `Steps for Using the Microscope:` are promoted, while imperative procedure steps such as `1. Place` and single-word labels such as `Reagents:` stay body/list text. Activity headings are promoted as heading blocks before body text. The structure probe maps numbered heading depth (`1.`, `1.2`, `1.2.3`) to heading levels and keeps malformed markers such as `1..2` as paragraph text. Remaining heading gap is broader hierarchy, non-numbered levels, and missed headings that do not match title/all-caps/known-section rules. |
+| Heading promotion and hierarchy | partial | `PdfHeadingClassificationTest`, `OpenDataLoaderJavaBackendContractTest`, `TrustDocumentRenderedOutputTest`, `PdfTwoColumnSemanticSectionTest`, `opendataloader_structure_contract` | `doctruth-java-core-20260628T211000Z/full200`: MHS `0.565785`, MHS_s `0.699299`, overall `0.813414` | Java/PDFBox heading signals survive into `TrustDocument`, `content_blocks`, OpenDataLoader `blocks[]`, `headings[]`, and clean Markdown heading nodes. Title-case known resume and document section names at body size are promoted as heading anchors while page labels, field values, and sentences stay body. Bare numbered chapter headings such as `8 Choosing between Observer Models and Rejecting Participants` and `12 Conclusion` are split from joined body prose in the Java parser core. Dotted numbered section headings such as `2.1. Diesel and biodiesel use` and `5. Natural dispersal` are promoted. Table-of-contents pages keep only `Contents` / `Table of contents` as document headings while demoting same-page TOC entries. Numbered heading continuation lines such as `6. Modeling` + `the dynamics` and `8. Numerical computations` + `in the combinatorial multiverse` are merged back into one heading. Short colon headings such as `Changing objectives:` and `Steps for Using the Microscope:` are promoted, while imperative procedure steps such as `1. Place` and single-word labels such as `Reagents:` stay body/list text. Activity headings are promoted as heading blocks before body text. The structure probe maps numbered heading depth (`1.`, `1.2`, `1.2.3`) to heading levels and keeps malformed markers such as `1..2` as paragraph text. Remaining heading gap is broader hierarchy, non-numbered levels, and missed headings that do not match title/all-caps/known-section rules. |
 | Header/footer furniture | partial | `PdfDocumentParserTest` | current-full200 header/footer bucket pending | Repeated top/bottom-band page furniture is suppressed from body sections and preserved in parse_trace `discardedBlocks`; full OpenDataLoader semantic header/footer parity is not claimed. |
 | Table detection | partial | `PdfPageTableExtractorTest`, `PdfBorderlessTableExtractionTest`, `opendataloader_table_processor_contract` | `doctruth-java-core-phase27-regulatory-narrative-full200/full200`: overall `0.779731`, TEDS `0.736174`; cases `01030000000064`, `01030000000119`, `01030000000120`, `01030000000121`, `01030000000128`, `01030000000132`, `01030000000146`, `01030000000147`, `01030000000150`, `01030000000165`, `01030000000187`, and `01030000000182` now recover structured tables while `01030000000044`, `01030000000080`, and `01030000000196` stay non-table text | Regular and borderless table extraction now handles multiple table runs on one page, detects wide long-text comparative tables, preserves dense benchmark matrix tables, rejects sparse grid furniture/whole-page text promoted as fake tables, restores headered column-stream numeric tables, restores data-only continuation numeric tables, merges same-page spreadsheet fragments, promotes narrow Area/Competence list blocks, restores selected inline caption/header/token tables, reconstructs selected header-plus-column-stream tables, merges selected split header/data table fragments, normalizes selected arrow-flow chart tables, merges selected blank comparison table row labels, normalizes selected competence-framework tables, normalizes selected national-initiatives long-text tables, demotes selected narrative-shard false tables, and reconstructs selected text-heavy cluster tables when the text layer exposes stable row/cell positions. The runtime table-classifier probe now blocks survey-style figure/chart layouts from table promotion while keeping numeric grids promotable. Full table parity is still not claimed because many weak-border, OCR/model, multi-segment rowspan, and other chart-adjacent table cases remain. |
 | Borderless table clustering | partial | `PdfBorderlessTableExtractionTest` | `doctruth-java-core-phase27-regulatory-narrative-full200/full200`; cases `01030000000064`, `01030000000119`, `01030000000120`, `01030000000147`, `01030000000178`, `01030000000200`, `01030000000117`, `01030000000121`, `01030000000128`, `01030000000132`, `01030000000146`, `01030000000150`, `01030000000165`, `01030000000187`, and `01030000000182` are covered by focused tests | Borderless clustering segments aligned row runs, assigns text by cell cluster for normal tables, absorbs stacked header bands into table rows, merges first-column continuation rows, has a wide-text comparative-table path with word-zone column assignment, splits dense spanning header cells by word-center column assignment, avoids promoting sparse one-cell grids, resume-style parallel section headings, table-of-contents pages, ordinary two-column narrative text, and selected regulatory narrative shards as borderless tables, adds a final geometry-driven cluster fallback for text-heavy tables, repairs the selected five-column arrow-flow gene/protein/characteristics table, and lets later section merges recover selected blank comparison, competence-framework, and national-initiative row structures. Remaining gap: broader multi-segment cluster parity. |
@@ -68,18 +68,18 @@ owned by `ClusterTableProcessor`.
 
 ## Latest Full200 Run
 
-`doctruth-java-core-20260628T204700Z/full200` is the latest recorded
+`doctruth-java-core-20260628T211000Z/full200` is the latest recorded
 Java-core plus Rust MNN auto-routing run. It parsed 200/200 documents in
-`17936.884875` ms, with a mean `89.684424` ms/doc, no failures, no
+`17580.299292` ms, with a mean `87.901496` ms/doc, no failures, no
 Python/Torch/Docling production residency, and no OCR model route recorded.
 
 Quality now clears the initial plan target:
 
 ```text
-overall: 0.805128
-nid:     0.910547
+overall: 0.813414
+nid:     0.910700
 teds:    0.781018
-mhs:     0.535658
+mhs:     0.565785
 ```
 
 The prior accepted Java-core deterministic run was
@@ -96,11 +96,18 @@ activity headings as heading blocks. Focused fixtures now show
 `01030000000054`, `01030000000065`, `01030000000115`, and `01030000000168`
 rendering those sections as clean Markdown headings while guarding
 table-of-contents entries, equation prose, one-word labels, and imperative list
-steps. Full200 MHS rose from `0.495476` to `0.535658`, MHS_s rose from
-`0.637201` to `0.670731`, and overall rose from `0.795795` to `0.805128` while
+steps. Full200 MHS rose from `0.495476` to `0.565785`, MHS_s rose from `0.637201` to `0.699299`, and overall rose from `0.795795` to `0.813414` while
 TEDS stayed flat at `0.781018`. The OCR sparse-page case `01030000000141`
 still failed in this run and remains owned by the OCR/model path, not
 HeadingProcessor.
+
+Phase45 broadens the table-of-contents guard from paragraph-local suppression
+to a same-page heading demotion pass. Focused fixtures now show
+`01030000000016`, `01030000000155`, and `01030000000198` preserving only the
+page title (`Table of contents` / `Contents`) as Markdown headings while
+demoting numbered TOC entries such as `1. Front Matter` and `5. FAQ` back to
+body/list text. The full200 heading bucket dropped from `51` to `47`, MHS rose
+from `0.535658` to `0.565785`, and overall rose from `0.805128` to `0.813414`.
 
 The phase8 sparse-grid guard fixed a real class of table false positives,
 especially content pages where one large text cell was being rendered as a fake

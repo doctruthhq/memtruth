@@ -157,6 +157,31 @@ class OpenDataLoaderJavaBackendContractTest {
     }
 
     @Test
+    void tableOfContentsEntriesDoNotProjectAsDocumentHeadings() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        var textbookResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000155"), ParserPreset.LITE));
+        assertThat(textbookResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .containsExactly("Contents");
+        assertThat(textbookResponse.markdown())
+                .contains("# Contents")
+                .doesNotContain("# 1. Front Matter")
+                .doesNotContain("# Instructor Resources");
+
+        var ocrPackResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000198"), ParserPreset.LITE));
+        assertThat(ocrPackResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .containsExactly("Contents");
+        assertThat(ocrPackResponse.markdown())
+                .contains("# Contents")
+                .doesNotContain("# 1. Overview of OCR Pack")
+                .doesNotContain("# 5. FAQ");
+    }
+
+    @Test
     void joinedActivityHeadingsAreSplitFromBodyText() throws Exception {
         var response = new OpenDataLoaderJavaBackend()
                 .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000168"), ParserPreset.LITE));

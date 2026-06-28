@@ -194,7 +194,7 @@ public final class PdfDocumentParser {
                 out.add(section);
             }
         }
-        return mergeHeadingContinuationLines(out);
+        return demoteTableOfContentsEntryHeadings(mergeHeadingContinuationLines(out));
     }
 
     private static List<ParsedSection> repairHeadingSection(TextSection section) {
@@ -502,6 +502,59 @@ public final class PdfDocumentParser {
             index++;
         }
         return List.copyOf(out);
+    }
+
+    private static List<ParsedSection> demoteTableOfContentsEntryHeadings(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        Integer contentsPage = null;
+        int tocEntries = 0;
+        for (var section : sections) {
+            if (section instanceof TextSection text) {
+                if (text.kind() == BlockKind.HEADING && contentsHeading(text.text())) {
+                    contentsPage = text.location().pageStart();
+                    tocEntries = 0;
+                    out.add(text);
+                    continue;
+                }
+                if (contentsPage != null
+                        && text.location().pageStart() == contentsPage
+                        && text.kind() == BlockKind.HEADING
+                        && tocEntryHeading(text.text())) {
+                    tocEntries++;
+                    out.add(new TextSection(text.text(), text.location(), BlockKind.BODY, text.boundingBox()));
+                    continue;
+                }
+                if (contentsPage != null && text.location().pageStart() != contentsPage) {
+                    contentsPage = null;
+                    tocEntries = 0;
+                } else if (contentsPage != null
+                        && tocEntries > 0
+                        && text.kind() == BlockKind.BODY
+                        && tableOfContentsPageNumbers(text.text())) {
+                    contentsPage = null;
+                    tocEntries = 0;
+                }
+            }
+            out.add(section);
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean contentsHeading(String text) {
+        var normalized = text.strip().toLowerCase(Locale.ROOT);
+        return normalized.equals("contents") || normalized.equals("table of contents");
+    }
+
+    private static boolean tocEntryHeading(String text) {
+        var trimmed = text.strip();
+        if (trimmed.length() > 120) {
+            return false;
+        }
+        return trimmed.matches("^\\d{1,2}\\.\\s+\\S.+") || trimmed.matches("^[A-Z][\\p{L}\\p{N} ,&/'()-]{2,80}$");
+    }
+
+    private static boolean tableOfContentsPageNumbers(String text) {
+        return text.strip().matches("^(?:\\d+\\s+){2,}\\d+$");
     }
 
     private static Optional<HeadingContinuationMerge> mergeHeadingContinuation(TextSection heading, TextSection body) {

@@ -45,13 +45,15 @@ fn next_processor_work() -> Vec<Value> {
         next_work(
             "HeadingProcessor",
             "heading_hierarchy",
+            &["heading_hierarchy"],
             57,
             "mhs",
             "port generalized heading hierarchy reconstruction before additional case repairs",
         ),
         next_work(
             "TaggedDocumentProcessor",
-            "two_column_reading_order,sidebar_reading_order",
+            "reading_order",
+            &["two_column_reading_order", "sidebar_reading_order"],
             15,
             "nid",
             "port generalized tagged reading-order reconstruction for two-column and sidebar layouts",
@@ -59,20 +61,23 @@ fn next_processor_work() -> Vec<Value> {
         next_work(
             "TableStructureNormalizer",
             "table_structure",
+            &["bordered_tables", "borderless_tables"],
             5,
             "teds",
             "port generalized table structure normalization before adding more table case repairs",
         ),
         next_work(
             "SpecialTableProcessor",
-            "table_false_positive_rejection,text_noise overlap",
+            "overall_quality",
+            &["table_false_positive_rejection", "text_noise_filtering"],
             18,
             "overall/teds",
             "port generalized false-table and text-noise overlap rejection gates",
         ),
         next_work(
             "ContentFilterProcessor",
-            "text_noise_filtering",
+            "overall_quality",
+            &["text_noise_filtering"],
             18,
             "overall",
             "port generalized text-noise filtering for latest full200 noisy-content failures",
@@ -82,14 +87,16 @@ fn next_processor_work() -> Vec<Value> {
 
 fn next_work(
     processor: &str,
-    bucket: &str,
+    metric_bucket: &str,
+    behavior_buckets: &[&str],
     current_cases: u64,
     current_metric: &str,
     next_action: &str,
 ) -> Value {
     json!({
         "processor": processor,
-        "bucket": bucket,
+        "metric_bucket": metric_bucket,
+        "behavior_buckets": behavior_buckets,
         "current_cases": current_cases,
         "current_metric": current_metric,
         "next_action": next_action

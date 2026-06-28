@@ -311,6 +311,18 @@ fn next_processor_work_prioritizes_latest_full200_buckets() {
     let next = matrix["next_processor_work"]
         .as_array()
         .expect("next processor work");
+    let processor_names = matrix["processors"]
+        .as_array()
+        .expect("processors array")
+        .iter()
+        .map(|entry| entry["upstream"].as_str().expect("upstream"))
+        .collect::<HashSet<_>>();
+    let bucket_names = matrix["contract_buckets"]
+        .as_array()
+        .expect("contract buckets")
+        .iter()
+        .map(|entry| entry["bucket"].as_str().expect("bucket"))
+        .collect::<HashSet<_>>();
     let names = next
         .iter()
         .filter_map(|entry| entry["processor"].as_str())
@@ -324,6 +336,44 @@ fn next_processor_work_prioritizes_latest_full200_buckets() {
         "ContentFilterProcessor",
     ] {
         assert!(names.contains(&expected), "missing next work {expected}");
+    }
+
+    for entry in next {
+        assert!(
+            entry.get("bucket").is_none(),
+            "next processor work must not use legacy free-form bucket strings"
+        );
+        let processor = entry["processor"].as_str().expect("processor");
+        assert!(
+            processor_names.contains(processor),
+            "next processor {processor} is not listed in processors"
+        );
+        let metric_bucket = entry["metric_bucket"]
+            .as_str()
+            .expect("metric bucket string");
+        assert!(
+            !metric_bucket.contains(',') && !metric_bucket.contains(' '),
+            "metric bucket {metric_bucket} must be a canonical metric bucket"
+        );
+        let behavior_buckets = entry["behavior_buckets"]
+            .as_array()
+            .expect("behavior buckets array");
+        assert!(
+            !behavior_buckets.is_empty(),
+            "next processor work must include behavior buckets"
+        );
+
+        for behavior_bucket in behavior_buckets {
+            let behavior_bucket = behavior_bucket.as_str().expect("behavior bucket string");
+            assert!(
+                !behavior_bucket.contains(',') && !behavior_bucket.contains(' '),
+                "behavior bucket {behavior_bucket} must not pack multiple pseudo-buckets"
+            );
+            assert!(
+                bucket_names.contains(behavior_bucket),
+                "behavior bucket {behavior_bucket} is not listed in contract_buckets"
+            );
+        }
     }
 }
 

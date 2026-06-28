@@ -534,9 +534,9 @@ class TrustDocumentCliOutputProfileTest {
                 () -> withSystemProperty(
                         "doctruth.runtime.disableEnvironmentDiscovery",
                         "true",
-                        () -> missingRuntime.run(new String[] {
-                            "parse", pdf.toString(), "--backend", "sidecar", "--format", "markdown"
-                        })));
+                        () -> missingRuntime.run(
+                                new String[] {"parse", pdf.toString(), "--backend", "sidecar", "--format", "markdown"
+                                })));
         int summaryCode = missingFormat.run(
                 new String[] {"parse", pdf.toString(), "--backend", "sidecar", "--runtime", runtime.toString()});
         int runtimeAsDefaultCode = runtimeAsDefault.run(

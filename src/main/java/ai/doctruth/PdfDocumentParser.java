@@ -1417,7 +1417,9 @@ public final class PdfDocumentParser {
         var candidateBox = candidate.boundingBox().orElseThrow();
         String candidateText = normalizeFurnitureText(candidate.text());
         for (var block : page.blocks()) {
-            if (block == candidate || block.kind() != BlockKind.HEADING || block.boundingBox().isEmpty()) {
+            if (block == candidate
+                    || block.kind() != BlockKind.HEADING
+                    || block.boundingBox().isEmpty()) {
                 continue;
             }
             var box = block.boundingBox().orElseThrow();

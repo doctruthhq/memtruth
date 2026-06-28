@@ -96,6 +96,14 @@ class OpenDataLoaderJavaBackendContractTest {
     }
 
     @Test
+    void dottedNumberedSectionHeadingsProjectAsHeadingBlocks() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        assertOpenDataLoaderHeading(backend, "01030000000054", "2.1. Diesel and biodiesel use");
+        assertOpenDataLoaderHeading(backend, "01030000000065", "5. Natural dispersal");
+    }
+
+    @Test
     void joinedActivityHeadingsAreSplitFromBodyText() throws Exception {
         var response = new OpenDataLoaderJavaBackend()
                 .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000168"), ParserPreset.LITE));

@@ -53,11 +53,14 @@ public final class PdfDocumentParser {
     private static final Pattern NUMBERED_COMPETENCE =
             Pattern.compile("(\\d+)\\.\\d+\\s+(.+?)(?=\\s+\\d+\\.\\d+\\s+|$)");
     private static final Pattern BARE_NUMBERED_HEADING_PREFIX = Pattern.compile("^(\\d{1,2})\\s+(.+)$");
+    private static final Pattern DOTTED_NUMBERED_HEADING_MARKER =
+            Pattern.compile("(?<![\\p{L}\\p{N}])(\\d{1,2}(?:\\.\\d{1,2})*\\.)\\s+");
     private static final String CATION_TABLE_HEADER = "Added cation Relative Size & Settling Rates of Floccules";
     private static final Set<String> CHAPTER_BODY_STARTERS =
             Set.of("in", "of", "the", "this", "these", "those", "two", "using", "laboratory", "record", "with");
     private static final Set<String> HEADING_CONNECTORS =
             Set.of("of", "the", "and", "in", "for", "to", "by", "with", "between", "a", "an");
+    private static final Set<String> IMPERATIVE_STEP_WORDS = Set.of("add", "close", "label", "weigh", "record");
     private static final double PARAGRAPH_VERTICAL_GAP = 32.0;
     private static final double PARAGRAPH_LEFT_TOLERANCE = 24.0;
     private static final double PARAGRAPH_MIN_HORIZONTAL_OVERLAP = 0.50;
@@ -175,21 +178,22 @@ public final class PdfDocumentParser {
     }
 
     private static List<ParsedSection> repairHeadingSection(TextSection section) {
-        if (section.kind() != BlockKind.BODY) {
+        if (section.kind() == BlockKind.HEADING) {
             return List.of(section);
         }
         var paragraphs = section.text().split("\\R\\s*\\R");
         var repaired = new ArrayList<TextSection>();
+        boolean suppressDottedHeadings = tableOfContentsSection(paragraphs);
         boolean changed = false;
         for (var paragraph : paragraphs) {
             var text = paragraphText(paragraph);
             if (text.isBlank()) {
                 continue;
             }
-            var split = headingSplit(text);
-            if (split.isPresent()) {
+            var segments = headingSegments(text, suppressDottedHeadings);
+            if (segments.isPresent()) {
                 changed = true;
-                appendSplitHeading(repaired, section, split.get());
+                appendHeadingSegments(repaired, section, segments.get());
             } else {
                 repaired.add(new TextSection(text, section.location(), BlockKind.BODY, section.boundingBox()));
             }
@@ -197,8 +201,37 @@ public final class PdfDocumentParser {
         return changed ? List.copyOf(repaired) : List.of(section);
     }
 
-    private static Optional<HeadingSplit> headingSplit(String text) {
-        return splitActivityHeading(text).or(() -> splitBareNumberedHeading(text));
+    private static Optional<List<HeadingSegment>> headingSegments(String text, boolean suppressDottedHeadings) {
+        return splitActivityHeading(text)
+                .or(() -> splitBareNumberedHeading(text))
+                .map(PdfDocumentParser::segmentsFromHeadingSplit)
+                .or(() -> suppressDottedHeadings ? Optional.empty() : splitDottedNumberedHeading(text));
+    }
+
+    private static boolean tableOfContentsSection(String[] paragraphs) {
+        int seen = 0;
+        for (var paragraph : paragraphs) {
+            var text = paragraphText(paragraph).toLowerCase(Locale.ROOT);
+            if (text.isBlank()) {
+                continue;
+            }
+            if (text.equals("contents") || text.equals("table of contents")) {
+                return true;
+            }
+            if (++seen >= 3) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static List<HeadingSegment> segmentsFromHeadingSplit(HeadingSplit split) {
+        var out = new ArrayList<HeadingSegment>();
+        out.add(new HeadingSegment(BlockKind.HEADING, split.heading()));
+        if (!split.body().isBlank()) {
+            out.add(new HeadingSegment(BlockKind.BODY, split.body()));
+        }
+        return List.copyOf(out);
     }
 
     private static Optional<HeadingSplit> splitActivityHeading(String text) {
@@ -241,6 +274,57 @@ public final class PdfDocumentParser {
         return Optional.empty();
     }
 
+    private static Optional<List<HeadingSegment>> splitDottedNumberedHeading(String text) {
+        var matcher = DOTTED_NUMBERED_HEADING_MARKER.matcher(text);
+        while (matcher.find()) {
+            int markerStart = matcher.start(1);
+            if (!validEmbeddedHeadingBoundary(text.substring(0, markerStart))) {
+                continue;
+            }
+            var marker = matcher.group(1);
+            var split = splitDottedHeadingAfterMarker(marker, text.substring(matcher.end()));
+            if (split.isEmpty()) {
+                continue;
+            }
+            var out = new ArrayList<HeadingSegment>();
+            var before = text.substring(0, markerStart).strip();
+            if (!before.isBlank()) {
+                out.add(new HeadingSegment(BlockKind.BODY, before));
+            }
+            out.add(new HeadingSegment(BlockKind.HEADING, split.get().heading()));
+            if (!split.get().body().isBlank()) {
+                out.add(new HeadingSegment(BlockKind.BODY, split.get().body()));
+            }
+            return Optional.of(List.copyOf(out));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<HeadingSplit> splitDottedHeadingAfterMarker(String marker, String text) {
+        var words = text.strip().split("\\s+");
+        int maxHeadingWords = Math.min(10, words.length);
+        boolean multiLevelMarker = marker.indexOf('.') != marker.lastIndexOf('.');
+        HeadingSplit candidate = null;
+        int candidatePriority = -1;
+        for (int end = 1; end <= maxHeadingWords; end++) {
+            var title = String.join(" ", List.of(words).subList(0, end));
+            var body = String.join(" ", List.of(words).subList(end, words.length));
+            if (numberedSectionHeadingTitle(title, multiLevelMarker) && chapterBodyStarts(body)) {
+                int priority = chapterBodyPriority(body);
+                if (priority > candidatePriority || priority == candidatePriority && longerHeading(title, candidate)) {
+                    candidate = new HeadingSplit(marker + " " + title, body);
+                    candidatePriority = priority;
+                }
+            }
+        }
+        return Optional.ofNullable(candidate);
+    }
+
+    private static boolean validEmbeddedHeadingBoundary(String before) {
+        var trimmed = before.stripTrailing();
+        return trimmed.isBlank() || trimmed.endsWith(".") || trimmed.endsWith(":");
+    }
+
     private static boolean activityHeading(String text) {
         var trimmed = text.strip();
         return trimmed.length() <= 140
@@ -266,6 +350,31 @@ public final class PdfDocumentParser {
         return words.size() == 1 ? titleish == 1 : titleish >= Math.max(1, (words.size() + 1) / 2);
     }
 
+    private static boolean numberedSectionHeadingTitle(String text, boolean allowLooseTitle) {
+        var trimmed = text.strip();
+        if (trimmed.isBlank() || trimmed.length() > 120 || trimmed.endsWith(".")) {
+            return false;
+        }
+        if (trimmed.contains("=") || trimmed.contains("+")) {
+            return false;
+        }
+        var words = List.of(trimmed.split("\\s+"));
+        if (words.size() > 10) {
+            return false;
+        }
+        if (words.size() == 1 && IMPERATIVE_STEP_WORDS.contains(trimmed.toLowerCase(Locale.ROOT))) {
+            return false;
+        }
+        if (bareNumberedHeadingTitle(trimmed)) {
+            return true;
+        }
+        if (!allowLooseTitle) {
+            return false;
+        }
+        var first = words.getFirst().replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
+        return !first.isBlank() && Character.isUpperCase(first.codePointAt(0)) && words.size() <= 6;
+    }
+
     private static boolean titleishHeadingWord(String word) {
         var cleaned = word.replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
         if (cleaned.isBlank() || HEADING_CONNECTORS.contains(cleaned.toLowerCase(Locale.ROOT))) {
@@ -287,14 +396,34 @@ public final class PdfDocumentParser {
         return CHAPTER_BODY_STARTERS.contains(first.toLowerCase(Locale.ROOT));
     }
 
-    private static void appendSplitHeading(List<TextSection> out, TextSection source, HeadingSplit split) {
-        out.add(new TextSection(split.heading(), source.location(), BlockKind.HEADING, source.boundingBox()));
-        if (!split.body().isBlank()) {
-            out.add(new TextSection(split.body(), source.location(), BlockKind.BODY, source.boundingBox()));
+    private static int chapterBodyPriority(String body) {
+        var trimmed = body.strip();
+        if (trimmed.isBlank()) {
+            return 3;
+        }
+        var first = trimmed.split("\\s+")[0].replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
+        if (first.isBlank()) {
+            return 0;
+        }
+        return Character.isUpperCase(first.codePointAt(0)) ? 2 : 1;
+    }
+
+    private static boolean longerHeading(String title, HeadingSplit candidate) {
+        return candidate == null || title.length() > candidate.heading().length();
+    }
+
+    private static void appendHeadingSegments(
+            List<TextSection> out, TextSection source, List<HeadingSegment> segments) {
+        for (var segment : segments) {
+            if (!segment.text().isBlank()) {
+                out.add(new TextSection(segment.text(), source.location(), segment.kind(), source.boundingBox()));
+            }
         }
     }
 
     private record HeadingSplit(String heading, String body) {}
+
+    private record HeadingSegment(BlockKind kind, String text) {}
 
     private static List<ParsedSection> applySpecialTableProcessorRepairs(List<ParsedSection> sections) {
         return demoteChartAxisTables(sections);

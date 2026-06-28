@@ -239,6 +239,20 @@ fn temporary_benchmark_repairs_are_explicitly_owned_and_not_claimed_as_parity() 
     let repairs = matrix["temporary_repairs"]
         .as_array()
         .expect("temporary repairs array");
+    let processor_names = matrix["processors"]
+        .as_array()
+        .expect("processors array")
+        .iter()
+        .map(|entry| entry["upstream"].as_str().expect("upstream"))
+        .collect::<HashSet<_>>();
+    let bucket_names = matrix["contract_buckets"]
+        .as_array()
+        .expect("contract buckets")
+        .iter()
+        .map(|entry| entry["bucket"].as_str().expect("bucket"))
+        .collect::<HashSet<_>>();
+    let doc_path = repo_root().join("docs/parser/opendataloader-parity-matrix.md");
+    let markdown = fs::read_to_string(&doc_path).expect("parity matrix markdown exists");
     let names = repairs
         .iter()
         .filter_map(|entry| entry["repair"].as_str())
@@ -265,7 +279,21 @@ fn temporary_benchmark_repairs_are_explicitly_owned_and_not_claimed_as_parity() 
 
     for entry in repairs {
         assert_eq!(entry["parity_claim"].as_bool(), Some(false));
-        assert!(entry["processor"].as_str().is_some(), "missing processor");
+        let processor = entry["processor"].as_str().expect("processor");
+        assert!(
+            processor_names.contains(processor),
+            "temporary repair processor {processor} is not listed in processors"
+        );
+        let bucket = entry["bucket"].as_str().expect("bucket");
+        assert!(
+            bucket_names.contains(bucket),
+            "temporary repair bucket {bucket} is not listed in contract_buckets"
+        );
+        let repair = entry["repair"].as_str().expect("repair");
+        assert!(
+            markdown.contains(repair),
+            "temporary repair {repair} is missing from parity matrix markdown"
+        );
         assert!(
             entry["replacement_plan"].as_str().is_some(),
             "missing replacement plan"

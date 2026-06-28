@@ -27,6 +27,7 @@ mod opendataloader_parity;
 mod opendataloader_prediction;
 mod opendataloader_probes;
 mod opendataloader_report;
+mod opendataloader_temporary_repairs;
 
 pub use opendataloader_parity::opendataloader_parity_matrix_json;
 

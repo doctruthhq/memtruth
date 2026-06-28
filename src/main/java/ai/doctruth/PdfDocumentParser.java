@@ -1368,8 +1368,12 @@ public final class PdfDocumentParser {
         var counts = new HashMap<FurnitureKey, Set<Integer>>();
         for (var page : pages.values()) {
             for (var block : page.blocks()) {
-                furnitureKey(block).ifPresent(key -> counts.computeIfAbsent(key, ignored -> new HashSet<>())
-                        .add(page.page()));
+                furnitureKey(block).ifPresent(key -> {
+                    if (key.isRunningHeader() && !hasLowerSamePageHeading(page, block)) {
+                        return;
+                    }
+                    counts.computeIfAbsent(key, ignored -> new HashSet<>()).add(page.page());
+                });
             }
         }
         var repeated = new HashSet<FurnitureKey>();
@@ -1400,7 +1404,31 @@ public final class PdfDocumentParser {
         if (LEGAL_OR_CONFIDENTIAL_FURNITURE.matcher(text).matches()) {
             return Optional.of(new FurnitureKey(reason, text));
         }
+        if ("repeated_header".equals(reason) && block.kind() == BlockKind.HEADING) {
+            return Optional.of(new FurnitureKey("repeated_running_header", text));
+        }
         return Optional.empty();
+    }
+
+    private static boolean hasLowerSamePageHeading(PageBlocks page, PdfTextBlock candidate) {
+        if (candidate.boundingBox().isEmpty()) {
+            return false;
+        }
+        var candidateBox = candidate.boundingBox().orElseThrow();
+        String candidateText = normalizeFurnitureText(candidate.text());
+        for (var block : page.blocks()) {
+            if (block == candidate || block.kind() != BlockKind.HEADING || block.boundingBox().isEmpty()) {
+                continue;
+            }
+            var box = block.boundingBox().orElseThrow();
+            if (box.y0() <= candidateBox.y1()) {
+                continue;
+            }
+            if (!normalizeFurnitureText(block.text()).equals(candidateText)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Optional<String> furnitureReason(BoundingBox box) {
@@ -1474,5 +1502,9 @@ public final class PdfDocumentParser {
 
     private record PromotedTable(TableSection section, int lastIndex) {}
 
-    private record FurnitureKey(String reason, String normalizedText) {}
+    private record FurnitureKey(String reason, String normalizedText) {
+        boolean isRunningHeader() {
+            return "repeated_running_header".equals(reason);
+        }
+    }
 }

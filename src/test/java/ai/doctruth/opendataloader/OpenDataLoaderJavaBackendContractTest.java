@@ -73,6 +73,18 @@ class OpenDataLoaderJavaBackendContractTest {
                 .contains("Table 1. Quarterly revenue by region");
     }
 
+    @Test
+    void repeatedTopBandRunningHeaderDoesNotProjectAsHeading() throws Exception {
+        var response = new OpenDataLoaderJavaBackend()
+                .parse(new OpenDataLoaderBackendRequest(writeRunningHeaderPdf(), ParserPreset.LITE));
+
+        assertThat(response.markdown()).doesNotContain("# Probability, Combinatorics and Control");
+        assertThat(response.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .containsExactly("Opening Context", "Main Result", "Proof Sketch")
+                .doesNotContain("Probability, Combinatorics and Control");
+    }
+
     private Path writePdf(String firstLine, String secondLine) throws Exception {
         var path = tempDir.resolve(firstLine.replaceAll("[^A-Za-z0-9]+", "-").toLowerCase() + ".pdf");
         try (var doc = new PDDocument()) {
@@ -116,9 +128,34 @@ class OpenDataLoaderJavaBackendContractTest {
         return path;
     }
 
+    private Path writeRunningHeaderPdf() throws Exception {
+        var path = tempDir.resolve("running-header.pdf");
+        var headings = new String[] {"Opening Context", "Main Result", "Proof Sketch"};
+        try (var doc = new PDDocument()) {
+            for (int i = 0; i < headings.length; i++) {
+                var page = new PDPage();
+                doc.addPage(page);
+                try (var content = new PDPageContentStream(doc, page)) {
+                    writeText(content, "Probability, Combinatorics and Control", 72, 760, 14, true);
+                    writeText(content, headings[i], 72, 690, 16, true);
+                    writeText(content, "Unique body paragraph for page " + (i + 1) + ".", 72, 630, 12, false);
+                }
+            }
+            doc.save(path.toFile());
+        }
+        return path;
+    }
+
     private static void writeText(PDPageContentStream stream, String text, float x, float y) throws Exception {
+        writeText(stream, text, x, y, 12, false);
+    }
+
+    private static void writeText(PDPageContentStream stream, String text, float x, float y, int size, boolean bold)
+            throws Exception {
         stream.beginText();
-        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        stream.setFont(
+                new PDType1Font(bold ? Standard14Fonts.FontName.HELVETICA_BOLD : Standard14Fonts.FontName.HELVETICA),
+                size);
         stream.newLineAtOffset(x, y);
         stream.showText(text);
         stream.endText();

@@ -53,6 +53,19 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
   rowspans, remaining heading hierarchy misses, and broader paragraph/list
   parity.
 
+## Next Processor Work
+
+The latest full200 low-score buckets are owned by processor families before
+new sample repairs are accepted.
+
+| Processor | Bucket | Current cases | Current metric | Next action |
+| --- | --- | --- | --- | --- |
+| HeadingProcessor | heading_hierarchy | 57 | mhs | port generalized heading hierarchy reconstruction before additional case repairs |
+| TaggedDocumentProcessor | two_column_reading_order,sidebar_reading_order | 15 | nid | port generalized tagged reading-order reconstruction for two-column and sidebar layouts |
+| TableStructureNormalizer | table_structure | 5 | teds | port generalized table structure normalization before adding more table case repairs |
+| SpecialTableProcessor | table_false_positive_rejection,text_noise overlap | 18 | overall/teds | port generalized false-table and text-noise overlap rejection gates |
+| ContentFilterProcessor | text_noise_filtering | 18 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |
+
 ## Processor Matrix
 
 | Upstream processor | Status | DocTruth owner | Focused test | Full200 evidence |

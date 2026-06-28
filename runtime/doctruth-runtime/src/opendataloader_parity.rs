@@ -11,6 +11,7 @@ pub fn opendataloader_parity_matrix_json() -> Value {
         "pipeline_stages": pipeline_stages(),
         "heuristic_owners": heuristic_owners(),
         "contract_buckets": contract_buckets(),
+        "next_processor_work": next_processor_work(),
         "temporary_repairs": temporary_repairs(),
         "full200_gate": full200_gate(),
         "processors": [
@@ -36,6 +37,62 @@ pub fn opendataloader_parity_matrix_json() -> Value {
             processor("DoclingSchemaTransformer", "oracle_only", "docling_schema_reference", "opendataloader_parity_matrix_contract"),
             processor("OcrStrategy", "partial", "ocr_routing", "model_worker_contract")
         ]
+    })
+}
+
+fn next_processor_work() -> Vec<Value> {
+    vec![
+        next_work(
+            "HeadingProcessor",
+            "heading_hierarchy",
+            57,
+            "mhs",
+            "port generalized heading hierarchy reconstruction before additional case repairs",
+        ),
+        next_work(
+            "TaggedDocumentProcessor",
+            "two_column_reading_order,sidebar_reading_order",
+            15,
+            "nid",
+            "port generalized tagged reading-order reconstruction for two-column and sidebar layouts",
+        ),
+        next_work(
+            "TableStructureNormalizer",
+            "table_structure",
+            5,
+            "teds",
+            "port generalized table structure normalization before adding more table case repairs",
+        ),
+        next_work(
+            "SpecialTableProcessor",
+            "table_false_positive_rejection,text_noise overlap",
+            18,
+            "overall/teds",
+            "port generalized false-table and text-noise overlap rejection gates",
+        ),
+        next_work(
+            "ContentFilterProcessor",
+            "text_noise_filtering",
+            18,
+            "overall",
+            "port generalized text-noise filtering for latest full200 noisy-content failures",
+        ),
+    ]
+}
+
+fn next_work(
+    processor: &str,
+    bucket: &str,
+    current_cases: u64,
+    current_metric: &str,
+    next_action: &str,
+) -> Value {
+    json!({
+        "processor": processor,
+        "bucket": bucket,
+        "current_cases": current_cases,
+        "current_metric": current_metric,
+        "next_action": next_action
     })
 }
 

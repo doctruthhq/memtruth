@@ -50,6 +50,23 @@ class OpenDataLoaderProcessorParityTest {
         }
     }
 
+    @Test
+    void latestLowScoreBucketsHaveProcessorOwnersAndNextActions() throws IOException {
+        var matrix = Files.readString(Path.of("docs/parser/opendataloader-parity-matrix.md"));
+
+        assertThat(matrix).contains("| heading_hierarchy | HeadingProcessor |");
+        assertThat(matrix).contains("| two_column_reading_order | TaggedDocumentProcessor |");
+        assertThat(matrix).contains("| sidebar_reading_order | TaggedDocumentProcessor |");
+        assertThat(matrix).contains("| text_noise_filtering | ContentFilterProcessor |");
+        assertThat(matrix).contains("| bordered_tables | TableBorderProcessor |");
+        assertThat(matrix).contains("| borderless_tables | ClusterTableProcessor |");
+
+        assertThat(matrix).contains("Next Processor Work");
+        assertThat(matrix).contains("HeadingProcessor");
+        assertThat(matrix).contains("TaggedDocumentProcessor");
+        assertThat(matrix).contains("TableStructureNormalizer");
+    }
+
     private static List<Row> processorRows() throws IOException {
         assertThat(REPORT).isRegularFile();
         return Files.readAllLines(REPORT).stream()

@@ -306,6 +306,28 @@ fn temporary_benchmark_repairs_are_explicitly_owned_and_not_claimed_as_parity() 
 }
 
 #[test]
+fn next_processor_work_prioritizes_latest_full200_buckets() {
+    let matrix = opendataloader_parity_matrix_json();
+    let next = matrix["next_processor_work"]
+        .as_array()
+        .expect("next processor work");
+    let names = next
+        .iter()
+        .filter_map(|entry| entry["processor"].as_str())
+        .collect::<Vec<_>>();
+
+    for expected in [
+        "HeadingProcessor",
+        "TaggedDocumentProcessor",
+        "TableStructureNormalizer",
+        "SpecialTableProcessor",
+        "ContentFilterProcessor",
+    ] {
+        assert!(names.contains(&expected), "missing next work {expected}");
+    }
+}
+
+#[test]
 fn full200_gate_requires_metrics_resources_and_buckets() {
     let matrix = opendataloader_parity_matrix_json();
     let gate = &matrix["full200_gate"];

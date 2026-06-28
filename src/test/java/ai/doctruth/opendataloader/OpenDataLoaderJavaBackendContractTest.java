@@ -104,6 +104,35 @@ class OpenDataLoaderJavaBackendContractTest {
     }
 
     @Test
+    void numberedHeadingContinuationLinesStayInsideHeadingBlocks() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        assertOpenDataLoaderHeading(backend, "01030000000029", "6. Modeling the dynamics");
+        assertOpenDataLoaderHeading(
+                backend, "01030000000031", "8. Numerical computations in the combinatorial multiverse");
+    }
+
+    @Test
+    void procedureStepsDoNotProjectAsHeadingBlocks() throws Exception {
+        var response = new OpenDataLoaderJavaBackend()
+                .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000115"), ParserPreset.LITE));
+
+        assertThat(response.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("Changing objectives:", "Steps for Using the Microscope:")
+                .doesNotContain(
+                        "1. Place",
+                        "2. Click",
+                        "3. Look into",
+                        "4. Use",
+                        "5. Rotate",
+                        "6. Refocus using",
+                        "7. Move",
+                        "8. Now use");
+        assertThat(response.markdown()).doesNotContain("# 1. Place").doesNotContain("# 8. Now use");
+    }
+
+    @Test
     void joinedActivityHeadingsAreSplitFromBodyText() throws Exception {
         var response = new OpenDataLoaderJavaBackend()
                 .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000168"), ParserPreset.LITE));

@@ -67,7 +67,7 @@ class OpenDataLoaderProcessorParityTest {
                         "| Processor | Metric bucket | Behavior buckets | Current cases | Current metric | Next action |");
         assertThat(matrix)
                 .contains(
-                        "| HeadingProcessor | heading_hierarchy | heading_hierarchy | 54 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |");
+                        "| HeadingProcessor | heading_hierarchy | heading_hierarchy | 51 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |");
         assertThat(matrix)
                 .contains(
                         "| TaggedDocumentProcessor | reading_order | two_column_reading_order; sidebar_reading_order | 15 | nid | port generalized tagged reading-order reconstruction for two-column and sidebar layouts |");
@@ -76,10 +76,10 @@ class OpenDataLoaderProcessorParityTest {
                         "| TableStructureNormalizer | table_structure | bordered_tables; borderless_tables | 5 | teds | port generalized table structure normalization before adding more table case repairs |");
         assertThat(matrix)
                 .contains(
-                        "| SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 11 | overall/teds | port generalized false-table and text-noise overlap rejection gates |");
+                        "| SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 12 | overall/teds | port generalized false-table and text-noise overlap rejection gates |");
         assertThat(matrix)
                 .contains(
-                        "| ContentFilterProcessor | overall_quality | text_noise_filtering | 11 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |");
+                        "| ContentFilterProcessor | overall_quality | text_noise_filtering | 12 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |");
         assertThat(matrix).doesNotContain("two_column_reading_order,sidebar_reading_order");
         assertThat(matrix).doesNotContain("table_false_positive_rejection,text_noise overlap");
     }

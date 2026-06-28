@@ -151,12 +151,8 @@ public final class PdfDocumentParser {
         }
         var merged = mergeTableContinuations(sections);
         var tableFalsePositiveFiltered = applySpecialTableProcessorRepairs(merged);
-        var preClusterStructureNormalized =
-                applyTableStructureNormalizerPreClusterRepairs(tableFalsePositiveFiltered);
-        var clusterNormalized = applyClusterTableProcessorRepairs(preClusterStructureNormalized);
-        var tableStructureNormalized = applyTableStructureNormalizerRepairs(clusterNormalized);
-        var finalTableFalsePositiveFiltered =
-                applySpecialTableProcessorPostNormalizationRepairs(tableStructureNormalized);
+        var tableStructureNormalized = applyTableStructureNormalizerRepairs(tableFalsePositiveFiltered);
+        var finalTableFalsePositiveFiltered = demoteNarrativeShardTables(tableStructureNormalized);
         return new ExtractedSections(finalTableFalsePositiveFiltered, List.copyOf(discarded));
     }
 
@@ -164,22 +160,16 @@ public final class PdfDocumentParser {
         return demoteChartAxisTables(sections);
     }
 
-    private static List<ParsedSection> applyTableStructureNormalizerPreClusterRepairs(List<ParsedSection> sections) {
-        return promoteBlankComparisonTables(sections);
-    }
-
     private static List<ParsedSection> applyClusterTableProcessorRepairs(List<ParsedSection> sections) {
-        return promoteAreaCompetenceTables(
-                promotePortShipcallColumnStreamTables(promoteTrainingDatasetFragmentTables(sections)));
+        // Historical repair order interleaves cluster and structure processors:
+        // training -> port -> national -> eco -> area.
+        return promoteAreaCompetenceTables(promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(
+                promotePortShipcallColumnStreamTables(promoteTrainingDatasetFragmentTables(sections)))));
     }
 
     private static List<ParsedSection> applyTableStructureNormalizerRepairs(List<ParsedSection> sections) {
         return promoteKinematicViscosityTables(promoteRemittanceGrowthTables(promoteInlineCationObservationTables(
-                promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(sections)))));
-    }
-
-    private static List<ParsedSection> applySpecialTableProcessorPostNormalizationRepairs(List<ParsedSection> sections) {
-        return demoteNarrativeShardTables(sections);
+                applyClusterTableProcessorRepairs(promoteBlankComparisonTables(sections)))));
     }
 
     private static List<ParsedSection> demoteChartAxisTables(List<ParsedSection> sections) {

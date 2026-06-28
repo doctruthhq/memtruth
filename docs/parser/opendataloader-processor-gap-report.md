@@ -28,9 +28,9 @@ is still `partial`, `matched`, `oracle-only`, or `missing`. It should not make a
 single benchmark PDF fix look like parity. A row can move to `matched` only
 when focused processor contracts and full-bench evidence both support it.
 
-The implementation plan owns execution steps. OpenDataLoader output is a
-reference and benchmark surface; `TrustDocument` remains the canonical DocTruth
-output.
+Execution steps belong in PR descriptions and short-lived branch notes.
+OpenDataLoader output is a reference and benchmark surface; `TrustDocument`
+remains the canonical DocTruth output.
 
 | Processor area | Status | Focused test | Full-bench evidence | Notes |
 | --- | --- | --- | --- | --- |
@@ -68,23 +68,23 @@ owned by `ClusterTableProcessor`.
 
 ## Latest Full200 Run
 
-`doctruth-java-core-auto-mnn-full200-v2/full200` is the latest recorded
+`doctruth-java-core-20260628T153359Z/full200` is the latest recorded
 Java-core plus Rust MNN auto-routing run. It parsed 200/200 documents in
-`25495.263167` ms, with a mean `127.476316` ms/doc, no failures, no
+`20625.840042` ms, with a mean `103.1292` ms/doc, no failures, no
 Python/Torch/Docling production residency, and one OCR model route.
 
 Quality now clears the initial plan target:
 
 ```text
-overall: 0.781875
-nid:     0.900985
-teds:    0.736174
-mhs:     0.492119
+overall: 0.795795
+nid:     0.913532
+teds:    0.781018
+mhs:     0.495476
 ```
 
 The prior accepted Java-core deterministic run was
-`doctruth-java-core-phase27-regulatory-narrative-full200/full200` with overall
-`0.779731`, NID `0.898148`, TEDS `0.736174`, and MHS `0.489455`.
+`doctruth-java-core-auto-mnn-full200-v2/full200` with overall `0.781875`,
+NID `0.900985`, TEDS `0.736174`, and MHS `0.492119`.
 
 The phase8 sparse-grid guard fixed a real class of table false positives,
 especially content pages where one large text cell was being rendered as a fake

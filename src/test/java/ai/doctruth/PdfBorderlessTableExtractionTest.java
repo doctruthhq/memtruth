@@ -213,6 +213,33 @@ class PdfBorderlessTableExtractionTest {
 
     @Test
     @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderRemittanceChartFragmentsDoNotReplaceGrowthTable() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000078"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown).contains("Table 1.4. Growth in migrant remittance inflows");
+        assertThat(markdown).contains("| AMS | Average Annual Growth |");
+        assertThat(markdown).contains("| Cambodia | 7.5% | -0.7% | 50.6% | 6.7% | -16.6% | 1,272 |");
+        assertThat(markdown).doesNotContain("| 800 | 90 |");
+        assertThat(markdown).doesNotContain("| 2014 | 2015 | 2016 | 2017 | 2018 | 2019 | 2020 |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderKinematicViscosityTableSurvivesLongHeaderAndNumericRows() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000110"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(document.body().tables()).isNotEmpty();
+        assertThat(markdown)
+                .contains("| Temperature (degree C) | Kinematic viscosity")
+                .contains("| 0 | 1.793E-06 | 25 | 8.930E-07 |")
+                .contains("| 24 | 9.110E-07 | 85 | 3.420E-07 |");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
     void opendataloaderColumnStreamGovernmentPositionsTableBecomesStructuredTable() throws Exception {
         var document = parsePdfBox(opendataloaderBenchPdf("01030000000051"));
         var markdown = document.toMarkdownClean();
@@ -596,6 +623,8 @@ class PdfBorderlessTableExtractionTest {
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000141"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000198"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000080"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000078"))
+                && Files.isRegularFile(opendataloaderBenchPdf("01030000000110"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000051"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000045"))
                 && Files.isRegularFile(opendataloaderBenchPdf("01030000000053"))

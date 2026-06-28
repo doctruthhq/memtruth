@@ -1,7 +1,9 @@
 package ai.doctruth;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.pdfbox.text.TextPosition;
 
@@ -11,6 +13,7 @@ final class PdfVisualTextLayout {
     private static final double LINE_SEGMENT_GAP_FACTOR = 3.0;
     private static final float BLOCK_GAP_FACTOR = 1.5f;
     private static final double BASELINE_EPSILON = 2.0;
+    private static final double INTERIOR_COLUMN_START_BUCKET = 4.0;
 
     private PdfVisualTextLayout() {
         throw new AssertionError("no instances");
@@ -63,6 +66,7 @@ final class PdfVisualTextLayout {
 
     private static List<PdfLineSegment> splitIntoLineSegments(List<TextPosition> positions, double medianHeight) {
         var lines = groupIntoVisualLines(positions, medianHeight);
+        var interiorColumnStarts = recurringInteriorColumnStarts(lines, medianHeight);
         var out = new ArrayList<PdfLineSegment>();
         for (var line : lines) {
             var sortedLine = PdfTextPositionMetrics.sortByX(line);
@@ -84,7 +88,8 @@ final class PdfVisualTextLayout {
                     continue;
                 }
                 if (previous != null
-                        && PdfLineSegmentSplitPolicy.shouldSplitLineSegment(current, previous, p, splitGap)
+                        && (startsRecurringInteriorColumn(previous, p, interiorColumnStarts, medianHeight)
+                                || PdfLineSegmentSplitPolicy.shouldSplitLineSegment(current, previous, p, splitGap))
                         && !current.isEmpty()) {
                     out.add(PdfLineSegment.from(current));
                     current = new ArrayList<>();
@@ -104,6 +109,71 @@ final class PdfVisualTextLayout {
             return Double.compare(left.x0, right.x0);
         });
         return out;
+    }
+
+    private static List<Double> recurringInteriorColumnStarts(List<List<TextPosition>> lines, double medianHeight) {
+        var counts = new HashMap<Integer, Integer>();
+        double pageLeft = lines.stream()
+                .flatMap(List::stream)
+                .filter(p -> !PdfTextPositionMetrics.isBlank(p))
+                .mapToDouble(TextPosition::getXDirAdj)
+                .min()
+                .orElse(0.0);
+        double pageRight = lines.stream()
+                .flatMap(List::stream)
+                .filter(p -> !PdfTextPositionMetrics.isBlank(p))
+                .mapToDouble(p -> p.getXDirAdj() + p.getWidthDirAdj())
+                .max()
+                .orElse(pageLeft);
+        double width = Math.max(1.0, pageRight - pageLeft);
+        double minInteriorX = pageLeft + width * 0.25;
+        double maxInteriorX = pageLeft + width * 0.85;
+        double minGap = Math.max(8.0, medianHeight * 0.65);
+        for (var line : lines) {
+            countInteriorStarts(line, counts, minGap, minInteriorX, maxInteriorX);
+        }
+        int requiredSupport = Math.max(4, lines.size() / 12);
+        return counts.entrySet().stream()
+                .filter(entry -> entry.getValue() >= requiredSupport)
+                .map(Map.Entry::getKey)
+                .map(bucket -> bucket * INTERIOR_COLUMN_START_BUCKET)
+                .sorted()
+                .toList();
+    }
+
+    private static void countInteriorStarts(
+            List<TextPosition> line,
+            Map<Integer, Integer> counts,
+            double minGap,
+            double minInteriorX,
+            double maxInteriorX) {
+        var sortedLine = PdfTextPositionMetrics.sortByX(line);
+        TextPosition previous = null;
+        for (var p : sortedLine) {
+            if (PdfTextPositionMetrics.isBlank(p)) {
+                continue;
+            }
+            if (previous != null) {
+                double gap = PdfTextPositionMetrics.horizontalGap(previous, p);
+                double x = p.getXDirAdj();
+                if (gap >= minGap && x >= minInteriorX && x <= maxInteriorX) {
+                    int bucket = (int) Math.round(x / INTERIOR_COLUMN_START_BUCKET);
+                    counts.merge(bucket, 1, Integer::sum);
+                }
+            }
+            previous = p;
+        }
+    }
+
+    private static boolean startsRecurringInteriorColumn(
+            TextPosition previous, TextPosition position, List<Double> interiorColumnStarts, double medianHeight) {
+        double minGap = Math.max(8.0, medianHeight * 0.65);
+        if (PdfTextPositionMetrics.horizontalGap(previous, position) < minGap) {
+            return false;
+        }
+        double tolerance = Math.max(4.0, medianHeight * 0.5);
+        double x = position.getXDirAdj();
+        return interiorColumnStarts.stream().anyMatch(start -> Math.abs(x - start) <= tolerance);
     }
 
     private static List<List<TextPosition>> groupIntoVisualLines(List<TextPosition> positions, double medianHeight) {

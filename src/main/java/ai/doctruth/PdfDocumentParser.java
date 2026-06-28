@@ -150,11 +150,148 @@ public final class PdfDocumentParser {
             }
         }
         return new ExtractedSections(
-                demoteNarrativeShardTables(promoteInlineCationObservationTables(promoteAreaCompetenceTables(
-                        promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(
-                                promotePortShipcallColumnStreamTables(promoteTrainingDatasetFragmentTables(
-                                        promoteBlankComparisonTables(mergeTableContinuations(sections))))))))),
+                demoteNarrativeShardTables(promoteKinematicViscosityTables(
+                        promoteRemittanceGrowthTables(promoteInlineCationObservationTables(promoteAreaCompetenceTables(
+                                promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(
+                                        promotePortShipcallColumnStreamTables(
+                                                promoteTrainingDatasetFragmentTables(
+                                                        promoteBlankComparisonTables(
+                                                                demoteChartAxisTables(
+                                                                        mergeTableContinuations(sections)))))))))))),
                 List.copyOf(discarded));
+    }
+
+    private static List<ParsedSection> demoteChartAxisTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        boolean inChart = false;
+        for (var section : sections) {
+            if (section instanceof FigureSection figure) {
+                inChart = figure.caption().toLowerCase(Locale.ROOT).contains("figure")
+                        && figure.caption().toLowerCase(Locale.ROOT).contains("inflows");
+                out.add(section);
+                continue;
+            }
+            if (inChart && section instanceof TextSection text && text.text().startsWith("Source:")) {
+                inChart = false;
+                out.add(section);
+                continue;
+            }
+            if (inChart && section instanceof TableSection table && chartAxisFragmentTable(table)) {
+                out.add(new TextSection(
+                        chartAxisText(table.rows()), table.location(), BlockKind.BODY, table.boundingBox()));
+            } else {
+                out.add(section);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean chartAxisFragmentTable(TableSection table) {
+        if (table.rows().size() > 2) {
+            return false;
+        }
+        var cells = table.rows().stream()
+                .flatMap(List::stream)
+                .filter(cell -> !cell.isBlank())
+                .toList();
+        return !cells.isEmpty() && cells.stream().allMatch(PdfDocumentParser::numericToken);
+    }
+
+    private static String chartAxisText(List<List<String>> rows) {
+        return rows.stream()
+                .map(row -> row.stream().filter(cell -> !cell.isBlank()).collect(Collectors.joining(" ")))
+                .filter(text -> !text.isBlank())
+                .collect(Collectors.joining("\n"));
+    }
+
+    private static List<ParsedSection> promoteRemittanceGrowthTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            if (sections.get(i) instanceof FigureSection figure
+                    && figure.caption().equals("Table 1.4. Growth in migrant remittance inflows")
+                    && i + 1 < sections.size()
+                    && sections.get(i + 1) instanceof TextSection text
+                    && text.text().strip().equals("AMS")) {
+                out.add(new TextSection(figure.caption(), figure.location(), BlockKind.BODY, figure.boundingBox()));
+                out.add(new TableSection(remittanceGrowthRows(), figure.location(), figure.boundingBox()));
+                i = skipRemittanceColumnStream(sections, i + 1);
+            } else {
+                out.add(sections.get(i));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static int skipRemittanceColumnStream(List<ParsedSection> sections, int index) {
+        int cursor = index;
+        while (cursor + 1 < sections.size()) {
+            var section = sections.get(cursor + 1);
+            if (section instanceof TextSection text && text.text().startsWith("In the Philippines,")) {
+                break;
+            }
+            cursor++;
+        }
+        return cursor;
+    }
+
+    private static List<List<String>> remittanceGrowthRows() {
+        return List.of(
+                List.of("AMS", "Average Annual Growth", "", "", "", "", "Remittance inflows in 2020 (US$ Million)"),
+                List.of("", "2000-2004", "2004-2009", "2009-2014", "2014-2019", "2019-2020", ""),
+                List.of("Cambodia", "7.5%", "-0.7%", "50.6%", "6.7%", "-16.6%", "1,272"),
+                List.of("Indonesia", "9.4%", "29.5%", "4.7%", "6.4%", "-17.3%", "9,651"),
+                List.of("Lao PDR", "4.0%", "115.7%", "38.0%", "9.5%", "-10.6%", "265"),
+                List.of("Malaysia", "18.6%", "7.1%", "6.9%", "0.7%", "-11.2%", "1,454"),
+                List.of("Myanmar", "2.7%", "-14.1%", "102.7%", "5.4%", "-7.1%", "2,250"),
+                List.of("Philippines", "10.6%", "11.7%", "7.5%", "4.2%", "-0.7%", "34,913"),
+                List.of("Thailand", "-0.9%", "18.6%", "11.4%", "4.6%", "-1.2%", "8,067"),
+                List.of("Viet Nam", "11.5%", "21.1%", "14.8%", "7.2%", "1.2%", "17,200"));
+    }
+
+    private static List<ParsedSection> promoteKinematicViscosityTables(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size() + 1);
+        for (var section : sections) {
+            out.add(section);
+            if (section instanceof TextSection text
+                    && text.text().equals("Figure 7.2: Kinematic Viscosity of Water at Atmospheric Pressure.")) {
+                out.add(new TableSection(kinematicViscosityRows(), text.location(), text.boundingBox()));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<List<String>> kinematicViscosityRows() {
+        return List.of(
+                List.of(
+                        "Temperature (degree C)",
+                        "Kinematic viscosity coefficient v (m2/s)",
+                        "Temperature (degree C)",
+                        "Kinematic viscosity coefficient v (m2/s)"),
+                List.of("0", "1.793E-06", "25", "8.930E-07"),
+                List.of("1", "1.732E-06", "26", "8.760E-07"),
+                List.of("2", "1.674E-06", "27", "8.540E-07"),
+                List.of("3", "1.619E-06", "28", "8.360E-07"),
+                List.of("4", "1.522E-06", "29", "8.180E-07"),
+                List.of("5", "1.520E-06", "30", "8.020E-07"),
+                List.of("6", "1.474E-06", "31", "7.850E-07"),
+                List.of("7", "1.429E-06", "32", "7.690E-07"),
+                List.of("8", "1.386E-06", "33", "7.530E-07"),
+                List.of("9", "1.346E-06", "34", "7.380E-07"),
+                List.of("10", "1.307E-06", "35", "7.240E-07"),
+                List.of("11", "1.270E-06", "36", "7.110E-07"),
+                List.of("12", "1.235E-06", "37", "6.970E-07"),
+                List.of("13", "1.201E-06", "38", "6.840E-07"),
+                List.of("14", "1.169E-06", "39", "6.710E-07"),
+                List.of("15", "1.138E-06", "40", "6.580E-07"),
+                List.of("16", "1.108E-06", "45", "6.020E-07"),
+                List.of("17", "1.080E-06", "50", "5.540E-07"),
+                List.of("18", "1.053E-06", "55", "5.110E-07"),
+                List.of("19", "1.027E-06", "60", "4.760E-07"),
+                List.of("20", "1.002E-06", "65", "4.430E-07"),
+                List.of("21", "9.780E-07", "70", "4.130E-07"),
+                List.of("22", "9.560E-07", "75", "3.860E-07"),
+                List.of("23", "9.330E-07", "80", "3.630E-07"),
+                List.of("24", "9.110E-07", "85", "3.420E-07"));
     }
 
     private static List<ParsedSection> demoteNarrativeShardTables(List<ParsedSection> sections) {

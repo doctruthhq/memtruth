@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -15,6 +16,7 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
 
 class PdfVisualLayoutParserTest {
@@ -607,6 +609,25 @@ class PdfVisualLayoutParserTest {
         assertThat(text).containsOnlyOnce("Quality Engineer");
     }
 
+    @Test
+    @EnabledIf("hasOpenDataLoaderReadingOrderBench")
+    @DisplayName("OpenDataLoader two-column prose keeps left and right narrative streams separate")
+    void opendataloaderTwoColumnProseDoesNotFuseSameRowColumns() throws Exception {
+        var doc = PdfDocumentParser.parse(opendataloaderBenchPdf("01030000000036"));
+        var markdown = doc.sections().stream()
+                .filter(TextSection.class::isInstance)
+                .map(TextSection.class::cast)
+                .map(TextSection::text)
+                .reduce("", (left, right) -> left + "\n" + right);
+
+        assertThat(markdown).contains("In July 2020, the survey established a general profile");
+        assertThat(markdown).contains("Business characteristics. Business size was");
+        assertThat(markdown)
+                .doesNotContain("general profile Business characteristics")
+                .doesNotContain("business GOV, firms")
+                .doesNotContain("government – 99 staff");
+    }
+
     private static Path writePositionedPdf(Path dir, List<PositionedRun> runs) throws IOException {
         return writePositionedPdfWithHorizontalRules(dir, runs, List.of());
     }
@@ -645,4 +666,12 @@ class PdfVisualLayoutParserTest {
     record PositionedRun(String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {}
 
     record HorizontalRule(float x1, float y1, float x2, float y2) {}
+
+    private static boolean hasOpenDataLoaderReadingOrderBench() {
+        return Files.isRegularFile(opendataloaderBenchPdf("01030000000036"));
+    }
+
+    private static Path opendataloaderBenchPdf(String documentId) {
+        return Path.of("third_party/opendataloader-bench/pdfs").resolve(documentId + ".pdf");
+    }
 }

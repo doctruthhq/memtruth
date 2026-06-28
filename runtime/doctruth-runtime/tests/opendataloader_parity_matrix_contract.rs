@@ -234,6 +234,50 @@ fn processor_contract_buckets_cover_behavior_families_not_pdf_ids() {
 }
 
 #[test]
+fn temporary_benchmark_repairs_are_explicitly_owned_and_not_claimed_as_parity() {
+    let matrix = opendataloader_parity_matrix_json();
+    let repairs = matrix["temporary_repairs"]
+        .as_array()
+        .expect("temporary repairs array");
+    let names = repairs
+        .iter()
+        .filter_map(|entry| entry["repair"].as_str())
+        .collect::<Vec<_>>();
+
+    for expected in [
+        "remittance_growth_table_reconstruction",
+        "kinematic_viscosity_table_reconstruction",
+        "chart_axis_fragment_demotion",
+        "blank_comparison_table_merge",
+        "national_initiatives_table_normalization",
+        "eco_competence_framework_normalization",
+        "area_competence_table_promotion",
+        "training_dataset_fragment_merge",
+        "port_shipcall_column_stream_merge",
+        "inline_cation_observation_split",
+        "regulatory_narrative_shard_demotion",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "missing temporary repair {expected}"
+        );
+    }
+
+    for entry in repairs {
+        assert_eq!(entry["parity_claim"].as_bool(), Some(false));
+        assert!(entry["processor"].as_str().is_some(), "missing processor");
+        assert!(
+            entry["replacement_plan"].as_str().is_some(),
+            "missing replacement plan"
+        );
+        assert!(
+            entry["focused_test"].as_str().is_some(),
+            "missing focused test"
+        );
+    }
+}
+
+#[test]
 fn full200_gate_requires_metrics_resources_and_buckets() {
     let matrix = opendataloader_parity_matrix_json();
     let gate = &matrix["full200_gate"];

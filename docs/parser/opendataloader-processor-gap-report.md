@@ -56,6 +56,12 @@ output.
 3. Re-run OpenDataLoader Bench and update this report with case-level evidence.
 4. Only mark a row `matched` when the focused test and full-bench evidence are both present.
 
+## Temporary Repair Registry Note
+
+The Phase11-Phase28 narrow repairs are accepted benchmark repairs, not processor
+parity claims. They are tracked in the temporary repair registry until the
+owning processor has generalized behavior-family coverage.
+
 ## Latest Full200 Run
 
 `doctruth-java-core-auto-mnn-full200-v2/full200` is the latest recorded

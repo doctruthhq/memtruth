@@ -143,6 +143,26 @@ to a layout or parsing behavior class. A change that only says
 | table_false_positive_rejection | SpecialTableProcessor | behavior_family | no |
 | ocr_sparse_page_rescue | HybridDocumentProcessor | behavior_family | no |
 
+## Temporary Benchmark Repairs
+
+These repairs are accepted benchmark repairs, not processor parity claims. Each
+repair stays temporary until the owning processor has generalized behavior-
+family coverage and full200 evidence for the replacement plan.
+
+| Repair | Processor | Bucket | Parity claim | Focused test | Replacement plan |
+| --- | --- | --- | --- | --- | --- |
+| remittance_growth_table_reconstruction | TableStructureNormalizer | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized multi-column table reconstruction before marking TableStructureNormalizer matched |
+| kinematic_viscosity_table_reconstruction | TableStructureNormalizer | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized numeric table reconstruction before marking TableStructureNormalizer matched |
+| chart_axis_fragment_demotion | SpecialTableProcessor | table_false_positive_rejection | false | opendataloader_table_processor_contract | replace with generalized chart-axis false-table rejection before marking SpecialTableProcessor matched |
+| blank_comparison_table_merge | TableStructureNormalizer | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized blank-row label merge before marking TableStructureNormalizer matched |
+| national_initiatives_table_normalization | TableStructureNormalizer | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized long-text table normalization before marking TableStructureNormalizer matched |
+| eco_competence_framework_normalization | TableStructureNormalizer | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized framework-table normalization before marking TableStructureNormalizer matched |
+| area_competence_table_promotion | ClusterTableProcessor | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized rowspan-style borderless table promotion before marking ClusterTableProcessor matched |
+| training_dataset_fragment_merge | ClusterTableProcessor | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized adjacent table-fragment merging before marking ClusterTableProcessor matched |
+| port_shipcall_column_stream_merge | ClusterTableProcessor | borderless_tables | false | PdfBorderlessTableExtractionTest | replace with generalized header-plus-column-stream merge before marking ClusterTableProcessor matched |
+| inline_cation_observation_split | TableStructureNormalizer | bordered_tables | false | PdfBorderlessTableExtractionTest | replace with generalized inline caption/header/row-token splitting before marking TableStructureNormalizer matched |
+| regulatory_narrative_shard_demotion | SpecialTableProcessor | table_false_positive_rejection | false | PdfBorderlessTableExtractionTest | replace with generalized narrative-shard false-table rejection before marking SpecialTableProcessor matched |
+
 ## Full200 Gate Contract
 
 Full200 is a stage gate. It should run after a coherent processor family

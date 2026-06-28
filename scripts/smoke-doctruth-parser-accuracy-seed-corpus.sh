@@ -17,15 +17,20 @@ fi
 CLI_JAR="$(find target -maxdepth 1 -name 'doctruth-java-*-all.jar' | sort | tail -1)"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/doctruth-parser-accuracy-seed.XXXXXX")"
 WORKER="$WORK_DIR/fake-ocr-worker"
+MODEL_CACHE="$WORK_DIR/model-cache"
+MODEL_MANIFEST="$WORK_DIR/model-manifest.json"
 MANIFEST="$WORK_DIR/parser-accuracy-seed.json"
 RESULT="$WORK_DIR/result.json"
 
 python3 - "$WORK_DIR" <<'PY'
+import hashlib
 import json
 import pathlib
 import sys
 
 work = pathlib.Path(sys.argv[1])
+model_cache = work / "model-cache"
+model_cache.mkdir(parents=True, exist_ok=True)
 
 def write_pdf(path, lines):
     stream = "\n".join(lines) + "\n"
@@ -68,6 +73,35 @@ write_pdf(work / "table.pdf", [
     "BT /F1 14 Tf 330 543 Td (98) Tj ET",
 ])
 write_pdf(work / "scanned.pdf", [])
+
+def write_model(name, version):
+    filename = f"{name}-{version}.bin"
+    payload = f"fake {name} {version} mnn artifact".encode()
+    path = model_cache / filename
+    path.write_bytes(payload)
+    return {
+        "name": name,
+        "version": version,
+        "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+        "sizeBytes": len(payload),
+        "required": True,
+        "task": "ocr",
+        "backend": "mnn",
+        "format": "mnn",
+        "precision": "fp32",
+        "license": "test",
+        "cacheFilename": filename,
+    }
+
+manifest_models = {
+    "presets": {
+        "ocr": [
+            write_model("ppocr-v5-mobile-det", "v0.1.3"),
+            write_model("ppocr-v5-mobile-rec", "v0.1.3"),
+        ]
+    }
+}
+(work / "model-manifest.json").write_text(json.dumps(manifest_models, separators=(",", ":")), encoding="utf-8")
 
 manifest = {
     "name": "parser-accuracy-seed-corpus",
@@ -209,8 +243,16 @@ write_label() {
     preset="$2"
     stem="$3"
     if [ "$preset" = "ocr" ]; then
-        DOCTRUTH_OCR_COMMAND="$WORKER" "$JAVA_BIN" -jar "$CLI_JAR" parse "$WORK_DIR/$source" --format json --preset ocr -o "$WORK_DIR/$stem.json" >/dev/null
-        DOCTRUTH_OCR_COMMAND="$WORKER" "$JAVA_BIN" -jar "$CLI_JAR" parse "$WORK_DIR/$source" --format markdown --preset ocr -o "$WORK_DIR/$stem.md" >/dev/null
+        DOCTRUTH_OCR_COMMAND="$WORKER" \
+            DOCTRUTH_MODEL_COMMAND="$WORKER" \
+            DOCTRUTH_MODEL_CACHE="$MODEL_CACHE" \
+            DOCTRUTH_MODEL_MANIFEST="$MODEL_MANIFEST" \
+            "$JAVA_BIN" -jar "$CLI_JAR" parse "$WORK_DIR/$source" --format json --preset ocr -o "$WORK_DIR/$stem.json" >/dev/null
+        DOCTRUTH_OCR_COMMAND="$WORKER" \
+            DOCTRUTH_MODEL_COMMAND="$WORKER" \
+            DOCTRUTH_MODEL_CACHE="$MODEL_CACHE" \
+            DOCTRUTH_MODEL_MANIFEST="$MODEL_MANIFEST" \
+            "$JAVA_BIN" -jar "$CLI_JAR" parse "$WORK_DIR/$source" --format markdown --preset ocr -o "$WORK_DIR/$stem.md" >/dev/null
     else
         "$JAVA_BIN" -jar "$CLI_JAR" parse "$WORK_DIR/$source" --format json -o "$WORK_DIR/$stem.json" >/dev/null
         "$JAVA_BIN" -jar "$CLI_JAR" parse "$WORK_DIR/$source" --format markdown -o "$WORK_DIR/$stem.md" >/dev/null
@@ -221,7 +263,11 @@ write_label multi-layout.pdf lite multi-layout
 write_label table.pdf lite table
 write_label scanned.pdf ocr scanned
 
-DOCTRUTH_OCR_COMMAND="$WORKER" "$JAVA_BIN" -jar "$CLI_JAR" benchmark-corpus "$MANIFEST" --json > "$RESULT"
+DOCTRUTH_OCR_COMMAND="$WORKER" \
+    DOCTRUTH_MODEL_COMMAND="$WORKER" \
+    DOCTRUTH_MODEL_CACHE="$MODEL_CACHE" \
+    DOCTRUTH_MODEL_MANIFEST="$MODEL_MANIFEST" \
+    "$JAVA_BIN" -jar "$CLI_JAR" benchmark-corpus "$MANIFEST" --json > "$RESULT"
 
 python3 - "$RESULT" <<'PY'
 import json

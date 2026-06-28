@@ -67,7 +67,7 @@ class OpenDataLoaderProcessorParityTest {
                         "| Processor | Metric bucket | Behavior buckets | Current cases | Current metric | Next action |");
         assertThat(matrix)
                 .contains(
-                        "| HeadingProcessor | heading_hierarchy | heading_hierarchy | 37 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |");
+                        "| HeadingProcessor | heading_hierarchy | heading_hierarchy | 36 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |");
         assertThat(matrix)
                 .contains(
                         "| TaggedDocumentProcessor | reading_order | two_column_reading_order; sidebar_reading_order | 15 | nid | port generalized tagged reading-order reconstruction for two-column and sidebar layouts |");

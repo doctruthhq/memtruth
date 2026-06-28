@@ -46,7 +46,7 @@ fn next_processor_work() -> Vec<Value> {
             "HeadingProcessor",
             "heading_hierarchy",
             &["heading_hierarchy"],
-            37,
+            36,
             "mhs",
             "continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses",
         ),

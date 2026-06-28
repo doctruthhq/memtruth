@@ -671,6 +671,7 @@ public final class PdfDocumentParser {
                 || figureLikeHeading(text)
                 || legendLabelHeading(text)
                 || titlePageFooterHeading(text)
+                || institutionHeaderBeforeHeading(sections, index, heading)
                 || spacedFooterHeading(text)
                 || metadataCoverHeading(text)
                 || runningHeaderBeforeNumberedHeading(sections, index, heading)
@@ -687,7 +688,9 @@ public final class PdfDocumentParser {
         if (trimmed.length() > 120) {
             return false;
         }
-        return trimmed.matches("^\\d{1,2}\\.\\s+\\S.+") || trimmed.matches("^[A-Z][\\p{L}\\p{N} ,&/'()-]{2,80}$");
+        return trimmed.matches("^\\d{1,2}\\.\\s+\\S.+")
+                || trimmed.matches("(?i)^part\\s+[ivxlcdm]+\\.\\s+chapter\\s+.+")
+                || trimmed.matches("^[A-Z][\\p{L}\\p{N} ,&/'()-]{2,80}$");
     }
 
     private static boolean tableOfContentsPageNumbers(String text) {
@@ -789,6 +792,17 @@ public final class PdfDocumentParser {
 
     private static boolean titlePageFooterHeading(String text) {
         return text.strip().matches("^.+\\|\\s*\\d{1,4}$");
+    }
+
+    private static boolean institutionHeaderHeading(String text) {
+        var trimmed = text.strip();
+        return trimmed.matches("^[A-Z][A-Z &.-]{6,80}\\b(?:COMMUNITY COLLEGE|COLLEGE|UNIVERSITY)$");
+    }
+
+    private static boolean institutionHeaderBeforeHeading(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        return institutionHeaderHeading(heading.text())
+                && hasFollowingSamePageHeading(sections, index, heading, text -> true);
     }
 
     private static boolean spacedFooterHeading(String text) {

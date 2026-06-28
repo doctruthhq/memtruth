@@ -169,6 +169,13 @@ class OpenDataLoaderJavaBackendContractTest {
                 .contains("6.2 Waste Management")
                 .doesNotContain(
                         "No Allocation", "Figure 20. Percentage of LGU Budget Allocated for Waste Management", "49");
+
+        var microscopeResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000115"), ParserPreset.LITE));
+        assertThat(microscopeResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("Changing objectives:", "Steps for Using the Microscope:")
+                .doesNotContain("MOHAVE COMMUNITY COLLEGE");
     }
 
     @Test
@@ -258,6 +265,16 @@ class OpenDataLoaderJavaBackendContractTest {
                 .contains("# Contents")
                 .doesNotContain("# 1. Overview of OCR Pack")
                 .doesNotContain("# 5. FAQ");
+
+        var statsResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000171"), ParserPreset.LITE));
+        assertThat(statsResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .containsExactly("Contents");
+        assertThat(statsResponse.markdown())
+                .contains("# Contents")
+                .doesNotContain("# Part I. Chapter One - Exploring Your Data")
+                .doesNotContain("# Part IV. Chapter Four - Comparing Associations Between Two Variables");
     }
 
     @Test

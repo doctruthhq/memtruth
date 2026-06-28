@@ -36,17 +36,17 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 - Report:
   `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T220700Z/full200/`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T222800Z/full200/`
 - DocTruth revision used for run: local `feat/opendataloader-parity-coverage`
   worktree with HeadingProcessor numbered continuation, colon-heading, and procedure-step repair
 - Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
 - Prediction: 200 parsed, 0 failed
-- Overall mean: `0.830175`
-- NID mean: `0.910905`
+- Overall mean: `0.833933`
+- NID mean: `0.910917`
 - TEDS mean: `0.781018`
-- MHS mean: `0.629901`
-- Resource: mean `85.419100` ms/doc, no Python/Torch/Docling
+- MHS mean: `0.643669`
+- Resource: mean `83.872992` ms/doc, no Python/Torch/Docling
   production residency; no OCR model route was recorded, and sparse OCR case
   `01030000000141` remains a HybridDocumentProcessor/OCR gap
 - Interpretation: current Java/OpenDataLoader-compatible quality core clears
@@ -58,6 +58,8 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
   demotion for running headers, figure labels, page numbers, and chart legend
   labels in the Java parser core. It also splits selected single-word headings
   and embedded section labels from body paragraphs. The next gaps are
+  It now demotes roman-style TOC chapter entries and selected institution
+  headers when stronger same-page headings exist. The next gaps are
   OCR/model-backed tables, multi-segment rowspans, remaining heading hierarchy
   misses, and broader paragraph/list parity.
 
@@ -68,7 +70,7 @@ new sample repairs are accepted.
 
 | Processor | Metric bucket | Behavior buckets | Current cases | Current metric | Next action |
 | --- | --- | --- | --- | --- | --- |
-| HeadingProcessor | heading_hierarchy | heading_hierarchy | 37 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |
+| HeadingProcessor | heading_hierarchy | heading_hierarchy | 36 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |
 | TaggedDocumentProcessor | reading_order | two_column_reading_order; sidebar_reading_order | 15 | nid | port generalized tagged reading-order reconstruction for two-column and sidebar layouts |
 | TableStructureNormalizer | table_structure | bordered_tables; borderless_tables | 5 | teds | port generalized table structure normalization before adding more table case repairs |
 | SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 9 | overall/teds | port generalized false-table and text-noise overlap rejection gates |

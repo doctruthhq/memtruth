@@ -113,6 +113,65 @@ class OpenDataLoaderJavaBackendContractTest {
     }
 
     @Test
+    void multiLineDocumentTitleFragmentsMergeIntoOneHeading() throws Exception {
+        var response = new OpenDataLoaderJavaBackend()
+                .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000085"), ParserPreset.LITE));
+
+        assertThat(response.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("Restrictions on Land Ownership by Foreigners in Selected Jurisdictions")
+                .doesNotContain("Restrictions on Land Ownership", "by Foreigners in Selected", "Jurisdictions");
+        assertThat(response.markdown())
+                .contains("# Restrictions on Land Ownership by Foreigners in Selected Jurisdictions")
+                .doesNotContain("# by Foreigners in Selected")
+                .doesNotContain("# The Law Library of Congress, Global Legal Research Directorate");
+    }
+
+    @Test
+    void romanNumeralHeadingFragmentsMergeAndSuppressRunningTitle() throws Exception {
+        var response = new OpenDataLoaderJavaBackend()
+                .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000080"), ParserPreset.LITE));
+
+        assertThat(response.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("III. Regulatory cholesterol")
+                .doesNotContain("Jailed for Doing Business", "III.", "Regulatory", "cholesterol", "16");
+        assertThat(response.markdown())
+                .contains("# III. Regulatory cholesterol")
+                .doesNotContain("# Jailed for Doing Business")
+                .doesNotContain("# 16");
+    }
+
+    @Test
+    void runningHeadersFiguresAndPageNumbersDoNotProjectAsHeadings() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        var textileResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000013"), ParserPreset.LITE));
+        assertThat(textileResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("4 Al-Sadu Symbols and Social Significance")
+                .doesNotContain("Al-Ogayyel and Oskay");
+
+        var migrationResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000077"), ParserPreset.LITE));
+        assertThat(migrationResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("1.5. Migrant Workers More at Risk of COVID-19 Infection")
+                .doesNotContain(
+                        "9 Figure 1.9b. Deployment of Overseas Foreign Workers by sex, new hires only (in thousands)",
+                        "ASEAN Mi gr at i on Out l ook");
+
+        var wasteResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000067"), ParserPreset.LITE));
+        assertThat(wasteResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("6.2 Waste Management")
+                .doesNotContain(
+                        "No Allocation", "Figure 20. Percentage of LGU Budget Allocated for Waste Management", "49");
+    }
+
+    @Test
     void procedureStepsDoNotProjectAsHeadingBlocks() throws Exception {
         var response = new OpenDataLoaderJavaBackend()
                 .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000115"), ParserPreset.LITE));

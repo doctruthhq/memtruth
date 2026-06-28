@@ -36,27 +36,29 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 - Report:
   `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T211000Z/full200/`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T214300Z/full200/`
 - DocTruth revision used for run: local `feat/opendataloader-parity-coverage`
   worktree with HeadingProcessor numbered continuation, colon-heading, and procedure-step repair
 - Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
 - Prediction: 200 parsed, 0 failed
-- Overall mean: `0.813414`
-- NID mean: `0.910700`
+- Overall mean: `0.824647`
+- NID mean: `0.910882`
 - TEDS mean: `0.781018`
-- MHS mean: `0.565785`
-- Resource: mean `87.901496` ms/doc, no Python/Torch/Docling
+- MHS mean: `0.606782`
+- Resource: mean `84.420842` ms/doc, no Python/Torch/Docling
   production residency; no OCR model route was recorded, and sparse OCR case
   `01030000000141` remains a HybridDocumentProcessor/OCR gap
 - Interpretation: current Java/OpenDataLoader-compatible quality core clears
   the initial local acceptance baseline, but it is still not OpenDataLoader
   hybrid parity. This run improves heading hierarchy by promoting bare numbered
   chapter headings, dotted numbered section headings, heading continuation
-  lines, colon headings, procedure-step demotion, and activity headings in the
-  Java parser core. The next gaps are OCR/model-backed tables, multi-segment
-  rowspans, remaining heading hierarchy misses, and broader paragraph/list
-  parity.
+  lines, colon headings, procedure-step demotion, activity headings, multi-line
+  cover title merges, roman-numeral heading fragment merges, and false-heading
+  demotion for running headers, figure labels, page numbers, and chart legend
+  labels in the Java parser core. The next gaps are OCR/model-backed tables,
+  multi-segment rowspans, remaining heading hierarchy misses, and broader
+  paragraph/list parity.
 
 ## Next Processor Work
 
@@ -65,11 +67,11 @@ new sample repairs are accepted.
 
 | Processor | Metric bucket | Behavior buckets | Current cases | Current metric | Next action |
 | --- | --- | --- | --- | --- | --- |
-| HeadingProcessor | heading_hierarchy | heading_hierarchy | 47 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |
+| HeadingProcessor | heading_hierarchy | heading_hierarchy | 39 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |
 | TaggedDocumentProcessor | reading_order | two_column_reading_order; sidebar_reading_order | 15 | nid | port generalized tagged reading-order reconstruction for two-column and sidebar layouts |
 | TableStructureNormalizer | table_structure | bordered_tables; borderless_tables | 5 | teds | port generalized table structure normalization before adding more table case repairs |
-| SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 10 | overall/teds | port generalized false-table and text-noise overlap rejection gates |
-| ContentFilterProcessor | overall_quality | text_noise_filtering | 10 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |
+| SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 9 | overall/teds | port generalized false-table and text-noise overlap rejection gates |
+| ContentFilterProcessor | overall_quality | text_noise_filtering | 9 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |
 
 ## Processor Matrix
 

@@ -194,7 +194,10 @@ public final class PdfDocumentParser {
                 out.add(section);
             }
         }
-        return demoteTableOfContentsEntryHeadings(mergeHeadingContinuationLines(out));
+        var mergedContinuations = mergeHeadingContinuationLines(out);
+        var mergedFragments = mergeAdjacentHeadingFragments(mergedContinuations);
+        var tocNormalized = demoteTableOfContentsEntryHeadings(mergedFragments);
+        return demoteFalsePositiveHeadings(tocNormalized);
     }
 
     private static List<ParsedSection> repairHeadingSection(TextSection section) {
@@ -540,6 +543,100 @@ public final class PdfDocumentParser {
         return List.copyOf(out);
     }
 
+    private static List<ParsedSection> mergeAdjacentHeadingFragments(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        int index = 0;
+        while (index < sections.size()) {
+            var section = sections.get(index);
+            if (section instanceof TextSection heading && heading.kind() == BlockKind.HEADING) {
+                var merge = mergeHeadingFragmentRun(sections, index, heading);
+                out.add(merge.heading());
+                index = merge.nextIndex();
+                continue;
+            }
+            out.add(section);
+            index++;
+        }
+        return List.copyOf(out);
+    }
+
+    private static HeadingFragmentMerge mergeHeadingFragmentRun(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        if (romanHeadingMarker(heading.text())) {
+            return mergeRomanHeadingFragments(sections, index, heading);
+        }
+        return mergeCoverTitleFragments(sections, index, heading);
+    }
+
+    private static HeadingFragmentMerge mergeRomanHeadingFragments(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        var parts = new ArrayList<String>();
+        parts.add(heading.text().strip());
+        int cursor = index + 1;
+        while (cursor < sections.size()
+                && parts.size() < 5
+                && sections.get(cursor) instanceof TextSection next
+                && samePage(heading, next)
+                && next.kind() == BlockKind.HEADING
+                && romanHeadingContinuation(next.text())) {
+            parts.add(next.text().strip());
+            cursor++;
+        }
+        if (parts.size() == 1) {
+            return new HeadingFragmentMerge(heading, index + 1);
+        }
+        return new HeadingFragmentMerge(retext(heading, String.join(" ", parts)), cursor);
+    }
+
+    private static HeadingFragmentMerge mergeCoverTitleFragments(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        if (!coverTitleStart(heading)) {
+            return new HeadingFragmentMerge(heading, index + 1);
+        }
+        var parts = new ArrayList<String>();
+        parts.add(heading.text().strip());
+        int cursor = index + 1;
+        while (cursor < sections.size()
+                && parts.size() < 4
+                && sections.get(cursor) instanceof TextSection next
+                && samePage(heading, next)
+                && next.kind() == BlockKind.HEADING
+                && coverTitleContinuation(next.text())) {
+            parts.add(next.text().strip());
+            cursor++;
+        }
+        if (parts.size() == 1) {
+            return new HeadingFragmentMerge(heading, index + 1);
+        }
+        return new HeadingFragmentMerge(retext(heading, String.join(" ", parts)), cursor);
+    }
+
+    private static List<ParsedSection> demoteFalsePositiveHeadings(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            var section = sections.get(i);
+            if (section instanceof TextSection heading
+                    && heading.kind() == BlockKind.HEADING
+                    && falsePositiveHeading(sections, i, heading)) {
+                out.add(new TextSection(heading.text(), heading.location(), BlockKind.BODY, heading.boundingBox()));
+            } else {
+                out.add(section);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean falsePositiveHeading(List<ParsedSection> sections, int index, TextSection heading) {
+        var text = heading.text().strip();
+        return pageNumberHeading(heading)
+                || figureLikeHeading(text)
+                || legendLabelHeading(text)
+                || spacedFooterHeading(text)
+                || metadataCoverHeading(text)
+                || runningHeaderBeforeNumberedHeading(sections, index, heading)
+                || titleBeforeRomanHeading(sections, index, heading);
+    }
+
     private static boolean contentsHeading(String text) {
         var normalized = text.strip().toLowerCase(Locale.ROOT);
         return normalized.equals("contents") || normalized.equals("table of contents");
@@ -555,6 +652,157 @@ public final class PdfDocumentParser {
 
     private static boolean tableOfContentsPageNumbers(String text) {
         return text.strip().matches("^(?:\\d+\\s+){2,}\\d+$");
+    }
+
+    private static boolean samePage(TextSection left, TextSection right) {
+        return left.location().pageStart() == right.location().pageStart();
+    }
+
+    private static TextSection retext(TextSection source, String text) {
+        return new TextSection(text, source.location(), source.kind(), source.boundingBox());
+    }
+
+    private static boolean romanHeadingMarker(String text) {
+        return text.strip().matches("(?i)^(?:[ivxlcdm]{1,6})\\.$");
+    }
+
+    private static boolean romanHeadingContinuation(String text) {
+        var trimmed = text.strip();
+        return trimmed.length() <= 80
+                && !trimmed.endsWith(".")
+                && !standalonePageNumber(trimmed)
+                && !figureLikeHeading(trimmed)
+                && !metadataCoverHeading(trimmed);
+    }
+
+    private static boolean coverTitleStart(TextSection heading) {
+        var text = heading.text().strip();
+        return heading.location().pageStart() == 1
+                && heading.location().lineStart() <= 8
+                && text.length() <= 90
+                && !numberedHeadingText(text)
+                && !romanHeadingMarker(text)
+                && !chapterLabelHeading(text)
+                && !allCapsHeading(text)
+                && !escapedHashHeading(text)
+                && !metadataCoverHeading(text)
+                && titleishPhrase(text);
+    }
+
+    private static boolean coverTitleContinuation(String text) {
+        var trimmed = text.strip();
+        return trimmed.length() <= 90
+                && !numberedHeadingText(trimmed)
+                && !romanHeadingMarker(trimmed)
+                && !chapterLabelHeading(trimmed)
+                && !allCapsHeading(trimmed)
+                && !escapedHashHeading(trimmed)
+                && !standalonePageNumber(trimmed)
+                && !figureLikeHeading(trimmed)
+                && !metadataCoverHeading(trimmed)
+                && (startsWithConnector(trimmed) || titleishPhrase(trimmed));
+    }
+
+    private static boolean titleishPhrase(String text) {
+        var words = List.of(text.strip().split("\\s+"));
+        if (words.isEmpty() || words.size() > 12) {
+            return false;
+        }
+        long titleish =
+                words.stream().filter(PdfDocumentParser::titleishHeadingWord).count();
+        return titleish >= Math.max(1, (words.size() + 1) / 2);
+    }
+
+    private static boolean startsWithConnector(String text) {
+        var first = text.strip().split("\\s+")[0].toLowerCase(Locale.ROOT);
+        return HEADING_CONNECTORS.contains(first);
+    }
+
+    private static boolean standalonePageNumber(String text) {
+        return text.strip().matches("^\\d{1,4}$");
+    }
+
+    private static boolean pageNumberHeading(TextSection heading) {
+        return standalonePageNumber(heading.text()) && heading.location().lineStart() > 3;
+    }
+
+    private static boolean chapterLabelHeading(String text) {
+        return text.strip().matches("(?i)^chapter\\s+\\d+\\.?$");
+    }
+
+    private static boolean escapedHashHeading(String text) {
+        return text.strip().matches("^\\\\?#\\d+[:.].*");
+    }
+
+    private static boolean allCapsHeading(String text) {
+        var letters = text.strip().replaceAll("[^\\p{L}]+", "");
+        return letters.length() >= 4 && letters.equals(letters.toUpperCase(Locale.ROOT));
+    }
+
+    private static boolean figureLikeHeading(String text) {
+        return text.strip().matches("(?i)^\\d*\\s*(?:figure|fig\\.)\\s*\\d+.*");
+    }
+
+    private static boolean legendLabelHeading(String text) {
+        return text.strip().matches("(?i)^(?:no|low|medium|high)\\s+allocation$");
+    }
+
+    private static boolean spacedFooterHeading(String text) {
+        var words = List.of(text.strip().split("\\s+"));
+        long tiny = words.stream().filter(word -> word.length() <= 2).count();
+        return words.size() >= 5 && tiny >= 4 && tiny * 2 >= words.size() && text.length() <= 60;
+    }
+
+    private static boolean metadataCoverHeading(String text) {
+        var trimmed = text.strip();
+        return trimmed.matches("(?i)^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{4}$")
+                || trimmed.matches("^\\d{4}$")
+                || trimmed.matches("(?i).*\\b(library|directorate|department|ministry|university|congress)\\b.*");
+    }
+
+    private static boolean runningHeaderBeforeNumberedHeading(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        var text = heading.text().strip();
+        return text.length() <= 60
+                && text.matches(".*\\band\\b.*")
+                && hasFollowingSamePageNumberedHeading(sections, index, heading);
+    }
+
+    private static boolean titleBeforeRomanHeading(List<ParsedSection> sections, int index, TextSection heading) {
+        var text = heading.text().strip();
+        return text.length() <= 80
+                && titleishPhrase(text)
+                && hasFollowingSamePageRomanHeading(sections, index, heading);
+    }
+
+    private static boolean hasFollowingSamePageNumberedHeading(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        return hasFollowingSamePageHeading(sections, index, heading, PdfDocumentParser::numberedHeadingText);
+    }
+
+    private static boolean hasFollowingSamePageRomanHeading(
+            List<ParsedSection> sections, int index, TextSection heading) {
+        return hasFollowingSamePageHeading(sections, index, heading, PdfDocumentParser::romanNumberedHeadingText);
+    }
+
+    private static boolean hasFollowingSamePageHeading(
+            List<ParsedSection> sections, int index, TextSection heading, java.util.function.Predicate<String> match) {
+        for (int cursor = index + 1; cursor < sections.size(); cursor++) {
+            var section = sections.get(cursor);
+            if (section instanceof TextSection next) {
+                if (!samePage(heading, next)) {
+                    return false;
+                }
+                if (next.kind() == BlockKind.HEADING && match.test(next.text())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean romanNumberedHeadingText(String text) {
+        return text.strip().matches("(?i)^(?:[ivxlcdm]{1,6})\\.\\s+.+$");
     }
 
     private static Optional<HeadingContinuationMerge> mergeHeadingContinuation(TextSection heading, TextSection body) {
@@ -601,6 +849,8 @@ public final class PdfDocumentParser {
     private record HeadingSegment(BlockKind kind, String text) {}
 
     private record HeadingContinuationMerge(TextSection heading, Optional<TextSection> remainingBody) {}
+
+    private record HeadingFragmentMerge(TextSection heading, int nextIndex) {}
 
     private static List<ParsedSection> applySpecialTableProcessorRepairs(List<ParsedSection> sections) {
         return demoteChartAxisTables(sections);

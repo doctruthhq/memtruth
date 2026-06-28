@@ -149,16 +149,37 @@ public final class PdfDocumentParser {
                 appendPageSections(pdf, page, pageBlocks, furniture, sections, discarded);
             }
         }
-        return new ExtractedSections(
-                demoteNarrativeShardTables(promoteKinematicViscosityTables(
-                        promoteRemittanceGrowthTables(promoteInlineCationObservationTables(promoteAreaCompetenceTables(
-                                promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(
-                                        promotePortShipcallColumnStreamTables(
-                                                promoteTrainingDatasetFragmentTables(
-                                                        promoteBlankComparisonTables(
-                                                                demoteChartAxisTables(
-                                                                        mergeTableContinuations(sections)))))))))))),
-                List.copyOf(discarded));
+        var merged = mergeTableContinuations(sections);
+        var tableFalsePositiveFiltered = applySpecialTableProcessorRepairs(merged);
+        var preClusterStructureNormalized =
+                applyTableStructureNormalizerPreClusterRepairs(tableFalsePositiveFiltered);
+        var clusterNormalized = applyClusterTableProcessorRepairs(preClusterStructureNormalized);
+        var tableStructureNormalized = applyTableStructureNormalizerRepairs(clusterNormalized);
+        var finalTableFalsePositiveFiltered =
+                applySpecialTableProcessorPostNormalizationRepairs(tableStructureNormalized);
+        return new ExtractedSections(finalTableFalsePositiveFiltered, List.copyOf(discarded));
+    }
+
+    private static List<ParsedSection> applySpecialTableProcessorRepairs(List<ParsedSection> sections) {
+        return demoteChartAxisTables(sections);
+    }
+
+    private static List<ParsedSection> applyTableStructureNormalizerPreClusterRepairs(List<ParsedSection> sections) {
+        return promoteBlankComparisonTables(sections);
+    }
+
+    private static List<ParsedSection> applyClusterTableProcessorRepairs(List<ParsedSection> sections) {
+        return promoteAreaCompetenceTables(
+                promotePortShipcallColumnStreamTables(promoteTrainingDatasetFragmentTables(sections)));
+    }
+
+    private static List<ParsedSection> applyTableStructureNormalizerRepairs(List<ParsedSection> sections) {
+        return promoteKinematicViscosityTables(promoteRemittanceGrowthTables(promoteInlineCationObservationTables(
+                promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(sections)))));
+    }
+
+    private static List<ParsedSection> applySpecialTableProcessorPostNormalizationRepairs(List<ParsedSection> sections) {
+        return demoteNarrativeShardTables(sections);
     }
 
     private static List<ParsedSection> demoteChartAxisTables(List<ParsedSection> sections) {

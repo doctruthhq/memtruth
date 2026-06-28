@@ -60,7 +60,11 @@ output.
 
 The Phase11-Phase28 narrow repairs are accepted benchmark repairs, not processor
 parity claims. They are tracked in the temporary repair registry until the
-owning processor has generalized behavior-family coverage.
+owning processor has generalized behavior-family coverage. Current table repair
+ownership is explicit: false-positive demotions are owned by
+`SpecialTableProcessor`, structure and cell-grid normalizations are owned by
+`TableStructureNormalizer`, and residual text-cluster/table-fragment recovery is
+owned by `ClusterTableProcessor`.
 
 ## Latest Full200 Run
 

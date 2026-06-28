@@ -227,6 +227,21 @@ class PdfBorderlessTableExtractionTest {
 
     @Test
     @EnabledIf("hasOpenDataLoaderBench")
+    void opendataloaderTemporaryTableRepairsAreProcessorOwnedBehaviorFamilies() throws Exception {
+        var document = parsePdfBox(opendataloaderBenchPdf("01030000000078"));
+        var markdown = document.toMarkdownClean();
+
+        assertThat(markdown).contains("Table 1.4. Growth in migrant remittance inflows");
+        assertThat(markdown).contains("| Cambodia |");
+
+        var report = Files.readString(Path.of("docs/parser/opendataloader-processor-gap-report.md"));
+        assertThat(report).contains("temporary repair registry");
+        assertThat(report).contains("TableStructureNormalizer");
+        assertThat(report).contains("SpecialTableProcessor");
+    }
+
+    @Test
+    @EnabledIf("hasOpenDataLoaderBench")
     void opendataloaderKinematicViscosityTableSurvivesLongHeaderAndNumericRows() throws Exception {
         var document = parsePdfBox(opendataloaderBenchPdf("01030000000110"));
         var markdown = document.toMarkdownClean();

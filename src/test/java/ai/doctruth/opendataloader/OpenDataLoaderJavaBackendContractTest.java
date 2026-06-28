@@ -133,6 +133,30 @@ class OpenDataLoaderJavaBackendContractTest {
     }
 
     @Test
+    void labProcedureActionStepsDoNotProjectAsHeadingBlocks() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        var yeastResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000117"), ParserPreset.LITE));
+        assertThat(yeastResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .doesNotContain(
+                        "2. Record a Hypothesis for",
+                        "3. Predict",
+                        "4. Perform",
+                        "4. Carefully pour",
+                        "5. Carefully tilt",
+                        "6. Begin",
+                        "7. Position");
+
+        var dnaResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000121"), ParserPreset.LITE));
+        assertThat(dnaResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .doesNotContain("18. Briefly spin", "19. Allow");
+    }
+
+    @Test
     void joinedActivityHeadingsAreSplitFromBodyText() throws Exception {
         var response = new OpenDataLoaderJavaBackend()
                 .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000168"), ParserPreset.LITE));

@@ -36,17 +36,17 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 - Report:
   `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T203300Z/full200/`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T204700Z/full200/`
 - DocTruth revision used for run: local `feat/opendataloader-parity-coverage`
   worktree with HeadingProcessor numbered continuation, colon-heading, and procedure-step repair
 - Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
 - Prediction: 200 parsed, 0 failed
-- Overall mean: `0.804633`
-- NID mean: `0.910537`
+- Overall mean: `0.805128`
+- NID mean: `0.910547`
 - TEDS mean: `0.781018`
-- MHS mean: `0.532954`
-- Resource: mean `103.439093` ms/doc, no Python/Torch/Docling
+- MHS mean: `0.535658`
+- Resource: mean `89.684424` ms/doc, no Python/Torch/Docling
   production residency; no OCR model route was recorded, and sparse OCR case
   `01030000000141` remains a HybridDocumentProcessor/OCR gap
 - Interpretation: current Java/OpenDataLoader-compatible quality core clears

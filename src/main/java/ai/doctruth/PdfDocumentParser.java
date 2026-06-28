@@ -61,7 +61,25 @@ public final class PdfDocumentParser {
     private static final Set<String> HEADING_CONNECTORS =
             Set.of("of", "the", "and", "in", "for", "to", "by", "with", "between", "a", "an");
     private static final Set<String> IMPERATIVE_STEP_WORDS = Set.of(
-            "add", "click", "close", "label", "look", "move", "now", "place", "record", "refocus", "rotate", "use",
+            "add",
+            "allow",
+            "begin",
+            "briefly",
+            "carefully",
+            "click",
+            "close",
+            "label",
+            "look",
+            "move",
+            "now",
+            "perform",
+            "place",
+            "position",
+            "predict",
+            "record",
+            "refocus",
+            "rotate",
+            "use",
             "weigh");
     private static final double PARAGRAPH_VERTICAL_GAP = 32.0;
     private static final double PARAGRAPH_LEFT_TOLERANCE = 24.0;
@@ -416,7 +434,7 @@ public final class PdfDocumentParser {
     }
 
     private static boolean shortImperativeStepTitle(List<String> words) {
-        if (words.size() > 3) {
+        if (words.size() > 5) {
             return false;
         }
         var first = words.getFirst().replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");

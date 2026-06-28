@@ -10,8 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import ai.doctruth.BlockKind;
 import ai.doctruth.AuditGradeStatus;
+import ai.doctruth.BlockKind;
 import ai.doctruth.BoundingBox;
 import ai.doctruth.Confidence;
 import ai.doctruth.DocumentMetadata;
@@ -62,10 +62,9 @@ final class BenchmarkOracleCommand {
         var document = runOpenDataLoaderHybridOracle(command, options.document());
         switch (options.format()) {
             case JSON -> context.out().print(document.toJsonFull());
-            case CONTENT_BLOCKS -> TrustDocumentCliWriters.writeToPrintStream(
-                    context.out(), document::writeContentBlocks);
-            case PARSE_TRACE -> TrustDocumentCliWriters.writeToPrintStream(
-                    context.out(), document::writeParseTrace);
+            case CONTENT_BLOCKS ->
+                TrustDocumentCliWriters.writeToPrintStream(context.out(), document::writeContentBlocks);
+            case PARSE_TRACE -> TrustDocumentCliWriters.writeToPrintStream(context.out(), document::writeParseTrace);
             case SUMMARY -> {
                 context.out().println("benchmark oracle: " + ENGINE);
                 context.out().println("parser backend: " + document.parserRun().backend());
@@ -154,9 +153,7 @@ final class BenchmarkOracleCommand {
             String text = cleanMarkdownLine(line);
             if (!text.isBlank()) {
                 sections.add(new TextSection(
-                        text,
-                        new SourceLocation(1, 1, lineNumber, lineNumber, charOffset),
-                        blockKind(line)));
+                        text, new SourceLocation(1, 1, lineNumber, lineNumber, charOffset), blockKind(line)));
             }
             charOffset += line.length() + 1;
             lineNumber++;
@@ -186,7 +183,8 @@ final class BenchmarkOracleCommand {
                     units.addAll(adapted.units());
                     tables.add(adapted.table());
                     unitIndex += adapted.units().size();
-                    contentBlocks.add(contentBlock(block, blockId, "table", adapted.units(), adapted.table(), readingOrder));
+                    contentBlocks.add(
+                            contentBlock(block, blockId, "table", adapted.units(), adapted.table(), readingOrder));
                 }
                 case "list" -> {
                     var adapted = addStructuredList(block, blockId, page, readingOrder, unitIndex);
@@ -308,9 +306,14 @@ final class BenchmarkOracleCommand {
         if (table != null) {
             node.set("rows", tableRows(table));
         }
-        node.set("sourceUnitIds", MAPPER.valueToTree(units.stream().map(TrustUnit::unitId).toList()));
-        node.set("evidenceSpanIds", MAPPER.valueToTree(
-                units.stream().flatMap(unit -> unit.evidence().evidenceSpanIds().stream()).toList()));
+        node.set(
+                "sourceUnitIds",
+                MAPPER.valueToTree(units.stream().map(TrustUnit::unitId).toList()));
+        node.set(
+                "evidenceSpanIds",
+                MAPPER.valueToTree(units.stream()
+                        .flatMap(unit -> unit.evidence().evidenceSpanIds().stream())
+                        .toList()));
         node.set("warnings", MAPPER.createArrayNode());
         return node;
     }
@@ -327,8 +330,14 @@ final class BenchmarkOracleCommand {
     }
 
     private static ArrayNode tableRows(TrustTable table) {
-        int maxRow = table.cells().stream().mapToInt(cell -> cell.rowRange().end()).max().orElse(-1);
-        int maxColumn = table.cells().stream().mapToInt(cell -> cell.columnRange().end()).max().orElse(-1);
+        int maxRow = table.cells().stream()
+                .mapToInt(cell -> cell.rowRange().end())
+                .max()
+                .orElse(-1);
+        int maxColumn = table.cells().stream()
+                .mapToInt(cell -> cell.columnRange().end())
+                .max()
+                .orElse(-1);
         ArrayNode rows = MAPPER.createArrayNode();
         for (int row = 0; row <= maxRow; row++) {
             ArrayNode cells = MAPPER.createArrayNode();
@@ -344,8 +353,10 @@ final class BenchmarkOracleCommand {
 
     private static String tableCellText(TrustTable table, int row, int column) {
         return table.cells().stream()
-                .filter(cell -> cell.rowRange().start() <= row && row <= cell.rowRange().end())
-                .filter(cell -> cell.columnRange().start() <= column && column <= cell.columnRange().end())
+                .filter(cell ->
+                        cell.rowRange().start() <= row && row <= cell.rowRange().end())
+                .filter(cell -> cell.columnRange().start() <= column
+                        && column <= cell.columnRange().end())
                 .findFirst()
                 .map(TrustTableCell::text)
                 .orElse("");
@@ -407,10 +418,11 @@ final class BenchmarkOracleCommand {
                 "benchmark-oracle",
                 "opendataloader-hybrid-oracle",
                 List.of(),
-                List.of(new ParserWarning(
-                        "opendataloader_structured_source_mapping",
-                        ParserWarningSeverity.INFO,
-                        "OpenDataLoader hybrid oracle returned structured blocks; sourceRefs are normalized from block ids.")),
+                List.of(
+                        new ParserWarning(
+                                "opendataloader_structured_source_mapping",
+                                ParserWarningSeverity.INFO,
+                                "OpenDataLoader hybrid oracle returned structured blocks; sourceRefs are normalized from block ids.")),
                 externalBackend(root.path("externalBackend")),
                 optionalLong(root, "elapsedMs"));
     }
@@ -420,7 +432,9 @@ final class BenchmarkOracleCommand {
             return Map.of();
         }
         var values = new LinkedHashMap<String, String>();
-        node.fields().forEachRemaining(entry -> values.put(entry.getKey(), entry.getValue().asText()));
+        node.fields()
+                .forEachRemaining(
+                        entry -> values.put(entry.getKey(), entry.getValue().asText()));
         return Map.copyOf(values);
     }
 
@@ -490,7 +504,11 @@ final class BenchmarkOracleCommand {
         if (!box.isArray() || box.size() != 4) {
             return Optional.empty();
         }
-        return Optional.of(new BoundingBox(box.get(0).asDouble(), box.get(1).asDouble(), box.get(2).asDouble(), box.get(3).asDouble()));
+        return Optional.of(new BoundingBox(
+                box.get(0).asDouble(),
+                box.get(1).asDouble(),
+                box.get(2).asDouble(),
+                box.get(3).asDouble()));
     }
 
     private static String text(JsonNode root, String field) throws CliException {

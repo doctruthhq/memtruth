@@ -108,12 +108,14 @@ public final class SidecarParserBackend implements ParserBackend {
             configureChildEnvironment(process.environment(), request);
             return process.start();
         } catch (IOException e) {
-            throw parseException("SIDECAR_START_FAILED", "failed to start sidecar parser: " + e.getMessage(), request, e);
+            throw parseException(
+                    "SIDECAR_START_FAILED", "failed to start sidecar parser: " + e.getMessage(), request, e);
         }
     }
 
     private static void configureChildEnvironment(Map<String, String> env, ParserRequest request) {
-        configuredRuntimeWorkerCommand(request).ifPresent(command -> putIfAbsent(env, "DOCTRUTH_RUNTIME_MODEL_COMMAND", command));
+        configuredRuntimeWorkerCommand(request)
+                .ifPresent(command -> putIfAbsent(env, "DOCTRUTH_RUNTIME_MODEL_COMMAND", command));
         LocalModelWorker.configuredCommand().ifPresent(command -> putIfAbsent(env, "DOCTRUTH_MODEL_COMMAND", command));
         setting("doctruth.model.cache").ifPresent(value -> putIfAbsent(env, "DOCTRUTH_MODEL_CACHE", value));
         setting("doctruth.model.manifest").ifPresent(value -> putIfAbsent(env, "DOCTRUTH_MODEL_MANIFEST", value));
@@ -154,8 +156,7 @@ public final class SidecarParserBackend implements ParserBackend {
         return root.toString();
     }
 
-    private static ParseException parseException(
-            String code, String message, ParserRequest request, Throwable cause) {
+    private static ParseException parseException(String code, String message, ParserRequest request, Throwable cause) {
         return new ParseException(code, message, request.sourcePath().toString(), OptionalInt.empty(), cause);
     }
 }

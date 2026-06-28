@@ -73,9 +73,8 @@ final class PdfGeometryReadingOrderSorter {
         }
 
         double narrowThreshold = regionWidth * NARROW_ELEMENT_WIDTH_RATIO;
-        var filtered = lines.stream()
-                .filter(line -> line.width() >= narrowThreshold)
-                .toList();
+        var filtered =
+                lines.stream().filter(line -> line.width() >= narrowThreshold).toList();
         if (filtered.size() < 2 || filtered.size() == lines.size()) {
             return edgeCut;
         }
@@ -89,8 +88,7 @@ final class PdfGeometryReadingOrderSorter {
 
     private static Cut bestVerticalCutByEdges(List<PdfLineSegment> lines) {
         var sorted = new ArrayList<>(lines);
-        sorted.sort(Comparator.comparingDouble((PdfLineSegment line) -> line.x0)
-                .thenComparingDouble(line -> line.x1));
+        sorted.sort(Comparator.comparingDouble((PdfLineSegment line) -> line.x0).thenComparingDouble(line -> line.x1));
         double largestGap = 0.0;
         double position = 0.0;
         Double right = null;
@@ -144,8 +142,7 @@ final class PdfGeometryReadingOrderSorter {
 
     private static List<PdfLineSegment> sortTopLeft(List<PdfLineSegment> lines) {
         var sorted = new ArrayList<>(lines);
-        sorted.sort(Comparator.comparingDouble((PdfLineSegment line) -> line.y0)
-                .thenComparingDouble(line -> line.x0));
+        sorted.sort(Comparator.comparingDouble((PdfLineSegment line) -> line.y0).thenComparingDouble(line -> line.x0));
         return sorted;
     }
 

@@ -11,7 +11,8 @@ import java.util.Objects;
  * @param requiredModels      model artifacts required by the selected preset.
  * @since 1.0.0
  */
-public record ModelRuntimePolicy(boolean offlineMode, boolean allowModelDownloads, List<ModelDescriptor> requiredModels) {
+public record ModelRuntimePolicy(
+        boolean offlineMode, boolean allowModelDownloads, List<ModelDescriptor> requiredModels) {
 
     public ModelRuntimePolicy {
         Objects.requireNonNull(requiredModels, "requiredModels");

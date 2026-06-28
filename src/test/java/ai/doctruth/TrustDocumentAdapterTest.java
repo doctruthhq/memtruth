@@ -54,7 +54,8 @@ class TrustDocumentAdapterTest {
         assertThat(doc.body().tables().getFirst().cells()).hasSize(4);
         assertThat(doc.body().tables().getFirst().cells().getFirst().text()).isEqualTo("Company");
         assertThat(doc.body().units()).extracting(TrustUnit::kind).containsOnly(TrustUnitKind.TABLE_CELL);
-        assertThat(doc.body().units()).extracting(unit -> unit.content().text())
+        assertThat(doc.body().units())
+                .extracting(unit -> unit.content().text())
                 .containsExactly("Company", "Role", "Acme", "Engineer");
     }
 
@@ -66,14 +67,19 @@ class TrustDocumentAdapterTest {
                 "doc-1",
                 List.of(
                         new TextSection("first OCR region", LOC, BlockKind.BODY, Optional.of(BOX)),
-                        new TextSection("second OCR region", new SourceLocation(1, 1, 2, 2, 0), BlockKind.BODY, Optional.of(BOX))),
+                        new TextSection(
+                                "second OCR region",
+                                new SourceLocation(1, 1, 2, 2, 0),
+                                BlockKind.BODY,
+                                Optional.of(BOX))),
                 META);
 
         var doc = TrustDocument.fromParsed(parsed, "sha256:source", ocrRun);
 
         assertThat(doc.body().units()).hasSize(2);
         assertThat(doc.body().units()).extracting(TrustUnit::kind).containsOnly(TrustUnitKind.OCR_REGION);
-        assertThat(doc.body().units()).allSatisfy(unit -> assertThat(unit.location().boundingBox()).contains(BOX));
+        assertThat(doc.body().units())
+                .allSatisfy(unit -> assertThat(unit.location().boundingBox()).contains(BOX));
     }
 
     @Test

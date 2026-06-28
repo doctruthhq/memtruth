@@ -3,9 +3,9 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.io.StringWriter;
 import java.time.Duration;
 import java.util.List;
 
@@ -22,8 +22,7 @@ class SidecarParserBackendTest {
     @Test
     @DisplayName("sidecar backend advertises plain text as a first-class output profile")
     void sidecarCapabilitiesIncludePlainTextOutput() throws Exception {
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 cat >/dev/null
                 """);
@@ -67,8 +66,7 @@ class SidecarParserBackendTest {
     @Test
     @DisplayName("sidecar backend sends parse request on stdin and reads TrustDocument JSON from stdout")
     void parsesThroughSidecarProcess() throws Exception {
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 REQ=$(cat)
                 case "$REQ" in
@@ -98,8 +96,7 @@ class SidecarParserBackendTest {
     @Test
     @DisplayName("sidecar backend preserves Rust layered output observations")
     void preservesRuntimeLayeredOutputObservations() throws Exception {
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 cat >/dev/null
                 cat <<'JSON'
@@ -123,8 +120,7 @@ class SidecarParserBackendTest {
         var worker = tempDir.resolve("ocr-worker");
         Files.writeString(worker, "#!/usr/bin/env sh\nexit 0\n");
         assertThat(worker.toFile().setExecutable(true)).isTrue();
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 cat >/dev/null
                 test "$DOCTRUTH_RUNTIME_MODEL_COMMAND" = "%s"
@@ -150,8 +146,7 @@ class SidecarParserBackendTest {
     @Test
     @DisplayName("sidecar backend maps non-zero exit to structured ParseException")
     void nonZeroExitMapsToParseException() throws Exception {
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 cat >/dev/null
                 echo 'runtime crashed' >&2
@@ -169,8 +164,7 @@ class SidecarParserBackendTest {
     @Test
     @DisplayName("sidecar backend maps invalid stdout JSON to structured ParseException")
     void invalidJsonMapsToParseException() throws Exception {
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 cat >/dev/null
                 echo 'not json'
@@ -187,8 +181,7 @@ class SidecarParserBackendTest {
     @Test
     @DisplayName("sidecar backend maps timeout to structured ParseException")
     void timeoutMapsToParseException() throws Exception {
-        var runtime = writeRuntime(
-                """
+        var runtime = writeRuntime("""
                 #!/usr/bin/env sh
                 cat >/dev/null
                 sleep 1

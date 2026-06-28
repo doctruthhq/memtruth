@@ -17,7 +17,9 @@ final class PdfVisualTextLayout {
     }
 
     static List<List<TextPosition>> groupByColumnsAndTypography(
-            List<TextPosition> positions, double pageMedianHeight, double medianHeight,
+            List<TextPosition> positions,
+            double pageMedianHeight,
+            double medianHeight,
             List<PdfPageGraphicsExtractor.HorizontalSeparator> separators) {
         var lineSegments = splitIntoLineSegments(positions, medianHeight);
         if (lineSegments.isEmpty()) {
@@ -64,7 +66,9 @@ final class PdfVisualTextLayout {
         var out = new ArrayList<PdfLineSegment>();
         for (var line : lines) {
             var sortedLine = PdfTextPositionMetrics.sortByX(line);
-            var nonBlank = sortedLine.stream().filter(p -> !PdfTextPositionMetrics.isBlank(p)).toList();
+            var nonBlank = sortedLine.stream()
+                    .filter(p -> !PdfTextPositionMetrics.isBlank(p))
+                    .toList();
             if (nonBlank.isEmpty()) {
                 continue;
             }
@@ -219,7 +223,11 @@ final class PdfVisualTextLayout {
     }
 
     private static boolean startsNewGroup(
-            List<TextPosition> current, PdfLineSegment line, PdfLineSegment lastLine, float lineHeight, float blockGap,
+            List<TextPosition> current,
+            PdfLineSegment line,
+            PdfLineSegment lastLine,
+            float lineHeight,
+            float blockGap,
             List<PdfPageGraphicsExtractor.HorizontalSeparator> separators) {
         if (current.isEmpty() || lastLine == null) {
             return false;
@@ -252,8 +260,8 @@ final class PdfVisualTextLayout {
         double y1 = Math.max(upper.baseline, lower.baseline);
         double x0 = Math.min(upper.x0, lower.x0);
         double x1 = Math.max(upper.x1, lower.x1);
-        return separators.stream().anyMatch(separator ->
-                separator.y() > y0
+        return separators.stream()
+                .anyMatch(separator -> separator.y() > y0
                         && separator.y() < y1
                         && Math.min(separator.x1(), x1) - Math.max(separator.x0(), x0) > 24.0);
     }

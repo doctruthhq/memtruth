@@ -10,8 +10,7 @@ class PdfHeadingClassificationTest {
     @Test
     @DisplayName("title-case known resume section names at body size are headings")
     void titleCaseKnownSectionNamesAtBodySizeAreHeadings() {
-        assertThat(PdfDocumentParser.classify("Work Experience", 12.0, 12.0))
-                .isEqualTo(BlockKind.HEADING);
+        assertThat(PdfDocumentParser.classify("Work Experience", 12.0, 12.0)).isEqualTo(BlockKind.HEADING);
         assertThat(PdfDocumentParser.classify("Professional Experience", 12.0, 12.0))
                 .isEqualTo(BlockKind.HEADING);
         assertThat(PdfDocumentParser.classify("Latar Belakang Pendidikan", 12.0, 12.0))
@@ -21,8 +20,7 @@ class PdfHeadingClassificationTest {
     @Test
     @DisplayName("standalone title-case document section names at body size are headings")
     void standaloneTitleCaseDocumentSectionNamesAtBodySizeAreHeadings() {
-        assertThat(PdfDocumentParser.classify("Narratives in Chuj", 12.0, 12.0))
-                .isEqualTo(BlockKind.HEADING);
+        assertThat(PdfDocumentParser.classify("Narratives in Chuj", 12.0, 12.0)).isEqualTo(BlockKind.HEADING);
         assertThat(PdfDocumentParser.classify("Introduction to the Texts", 12.0, 12.0))
                 .isEqualTo(BlockKind.HEADING);
         assertThat(PdfDocumentParser.classify("7 Variants of SJ Observer Models", 12.0, 12.0))
@@ -49,12 +47,9 @@ class PdfHeadingClassificationTest {
     @Test
     @DisplayName("page labels and sentence-like title-case text stay body")
     void pageLabelsAndSentenceLikeTitleCaseTextStayBody() {
-        assertThat(PdfDocumentParser.classify("Chapter 2", 12.0, 12.0))
-                .isEqualTo(BlockKind.BODY);
+        assertThat(PdfDocumentParser.classify("Chapter 2", 12.0, 12.0)).isEqualTo(BlockKind.BODY);
         assertThat(PdfDocumentParser.classify(
-                        "This Collection of Six Narratives Told in Chuj Demonstrates the Broad Variety.",
-                        12.0,
-                        12.0))
+                        "This Collection of Six Narratives Told in Chuj Demonstrates the Broad Variety.", 12.0, 12.0))
                 .isEqualTo(BlockKind.BODY);
     }
 }

@@ -91,7 +91,8 @@ final class VerifySourceMapCommand {
     private record Options(Path rendered, Path sourceMap, Path source) {
         static Options parse(String[] args) {
             if (args.length < 3) {
-                throw new UsageException("usage: doctruth verify-source-map <rendered> <map.json> [--source <document>]");
+                throw new UsageException(
+                        "usage: doctruth verify-source-map <rendered> <map.json> [--source <document>]");
             }
             Path rendered = Path.of(args[1]);
             Path sourceMap = Path.of(args[2]);

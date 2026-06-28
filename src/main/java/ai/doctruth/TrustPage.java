@@ -27,4 +27,3 @@ public record TrustPage(int pageNumber, double width, double height, boolean tex
         }
     }
 }
-

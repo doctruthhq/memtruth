@@ -47,12 +47,7 @@ class DocTruthSkillPackageContractTest {
         Path bootstrap = ROOT.resolve("skills/doctruth/scripts/bootstrap-local-mcp.sh");
 
         var process = new ProcessBuilder(
-                        "sh",
-                        bootstrap.toString(),
-                        "--command",
-                        "/opt/doctruth/bin/doctruth",
-                        "--out",
-                        out.toString())
+                        "sh", bootstrap.toString(), "--command", "/opt/doctruth/bin/doctruth", "--out", out.toString())
                 .directory(ROOT.toFile())
                 .redirectErrorStream(true)
                 .start();

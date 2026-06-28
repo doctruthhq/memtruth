@@ -114,7 +114,8 @@ final class PdfResumeSectionNames {
     }
 
     static boolean isCompactRowValue(String text) {
-        var lines = text.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
+        var lines =
+                text.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
         if (lines.isEmpty() || lines.size() > 3) {
             return false;
         }

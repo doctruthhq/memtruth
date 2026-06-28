@@ -47,11 +47,10 @@ class ModelRuntimePolicyTest {
         assertThat(policy.warnings()).hasSize(2);
         assertThat(policy.warnings())
                 .extracting(ParserWarning::message)
-                .anySatisfy(message -> assertThat(message).contains("layout-rtdetr:v2").contains("sha256:layout"))
+                .anySatisfy(message ->
+                        assertThat(message).contains("layout-rtdetr:v2").contains("sha256:layout"))
                 .anySatisfy(message -> assertThat(message).contains("tatr:v1").contains("sha256:table"));
-        assertThat(policy.warnings())
-                .extracting(ParserWarning::severity)
-                .containsOnly(ParserWarningSeverity.SEVERE);
+        assertThat(policy.warnings()).extracting(ParserWarning::severity).containsOnly(ParserWarningSeverity.SEVERE);
     }
 
     @Test

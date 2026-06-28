@@ -21,4 +21,3 @@ public record ParserWarning(String code, ParserWarningSeverity severity, String 
         }
     }
 }
-

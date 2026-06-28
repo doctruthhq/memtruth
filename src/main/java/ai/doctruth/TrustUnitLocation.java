@@ -23,4 +23,3 @@ public record TrustUnitLocation(int page, Optional<BoundingBox> boundingBox, int
         }
     }
 }
-

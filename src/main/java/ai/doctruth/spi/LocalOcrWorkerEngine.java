@@ -1,11 +1,11 @@
 package ai.doctruth.spi;
 
 import java.awt.image.BufferedImage;
-import java.util.ArrayList;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
@@ -75,8 +75,12 @@ public final class LocalOcrWorkerEngine implements OcrEngine {
             String stderr = redact(new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
             JsonNode response = MAPPER.readTree(extractJsonObject(stdout));
             if (!response.path("ok").asBoolean(false)) {
-                LOG.warn("local OCR worker failed command={} page={} message={} stderr={}",
-                        command, pageNumber, response.path("message").asText("unknown"), stderr);
+                LOG.warn(
+                        "local OCR worker failed command={} page={} message={} stderr={}",
+                        command,
+                        pageNumber,
+                        response.path("message").asText("unknown"),
+                        stderr);
                 return OcrPageResult.empty(pageNumber);
             }
             return toResult(response, pageNumber);
@@ -88,8 +92,11 @@ public final class LocalOcrWorkerEngine implements OcrEngine {
             LOG.warn("local OCR worker interrupted command={} page={}", command, pageNumber);
             return OcrPageResult.empty(pageNumber);
         } catch (RuntimeException e) {
-            LOG.warn("local OCR worker returned unusable output command={} page={} message={}",
-                    command, pageNumber, e.getMessage());
+            LOG.warn(
+                    "local OCR worker returned unusable output command={} page={} message={}",
+                    command,
+                    pageNumber,
+                    e.getMessage());
             return OcrPageResult.empty(pageNumber);
         }
     }
@@ -205,7 +212,11 @@ public final class LocalOcrWorkerEngine implements OcrEngine {
                     value.path("height").asInt(-1));
         }
         if (value.isArray() && value.size() >= 4) {
-            return positiveBox(value.get(0).asInt(-1), value.get(1).asInt(-1), value.get(2).asInt(-1), value.get(3).asInt(-1));
+            return positiveBox(
+                    value.get(0).asInt(-1),
+                    value.get(1).asInt(-1),
+                    value.get(2).asInt(-1),
+                    value.get(3).asInt(-1));
         }
         return java.util.Optional.empty();
     }

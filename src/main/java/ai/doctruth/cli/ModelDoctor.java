@@ -17,18 +17,18 @@ import ai.doctruth.ModelRuntimePolicy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-record ModelDoctor(
-        Path cacheDirectory,
-        CacheState cache,
-        ModelWorkerDoctor worker) {
+record ModelDoctor(Path cacheDirectory, CacheState cache, ModelWorkerDoctor worker) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     static ModelDoctor local(Map<String, String> env) {
         Path cache = modelCache(env);
         var required = requiredModels(env);
-        var report = ModelCacheVerifier.verify(cache, required.stream().map(ManifestModel::descriptor).toList());
-        long estimatedBytes = required.stream().mapToLong(model -> model.descriptor().sizeBytes()).sum();
+        var report = ModelCacheVerifier.verify(
+                cache, required.stream().map(ManifestModel::descriptor).toList());
+        long estimatedBytes = required.stream()
+                .mapToLong(model -> model.descriptor().sizeBytes())
+                .sum();
         return new ModelDoctor(
                 cache,
                 new CacheState(
@@ -65,9 +65,7 @@ record ModelDoctor(
     }
 
     List<Map<String, Object>> artifactSummaries() {
-        return artifacts().stream()
-                .map(this::artifactSummary)
-                .toList();
+        return artifacts().stream().map(this::artifactSummary).toList();
     }
 
     private Map<String, Object> artifactSummary(ModelCacheArtifact artifact) {
@@ -92,7 +90,6 @@ record ModelDoctor(
         item.put("license", runtime.license());
         return Map.copyOf(item);
     }
-
 
     private static Path modelCache(Map<String, String> env) {
         String configured = env.get("DOCTRUTH_MODEL_CACHE");
@@ -138,15 +135,17 @@ record ModelDoctor(
                     requiredText(item, "sha256"),
                     item.path("sizeBytes").asLong(0),
                     item.path("required").asBoolean(true));
-            models.putIfAbsent(descriptor.identity(), new ManifestModel(
-                    descriptor,
-                    remoteSource(item),
-                    new RuntimeFields(
-                            optionalText(item, "task"),
-                            optionalText(item, "backend"),
-                            optionalText(item, "format"),
-                            optionalText(item, "precision"),
-                            optionalText(item, "license"))));
+            models.putIfAbsent(
+                    descriptor.identity(),
+                    new ManifestModel(
+                            descriptor,
+                            remoteSource(item),
+                            new RuntimeFields(
+                                    optionalText(item, "task"),
+                                    optionalText(item, "backend"),
+                                    optionalText(item, "format"),
+                                    optionalText(item, "precision"),
+                                    optionalText(item, "license"))));
         }
     }
 
@@ -157,7 +156,9 @@ record ModelDoctor(
                 missing.add(artifact.descriptor().identity());
             }
         }
-        return models.stream().anyMatch(model -> model.remoteSource() && missing.contains(model.descriptor().identity()));
+        return models.stream()
+                .anyMatch(model -> model.remoteSource()
+                        && missing.contains(model.descriptor().identity()));
     }
 
     private static boolean remoteSource(JsonNode node) {

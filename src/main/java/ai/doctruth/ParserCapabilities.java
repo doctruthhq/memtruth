@@ -14,7 +14,11 @@ import java.util.Objects;
  * @since 1.0.0
  */
 public record ParserCapabilities(
-        String backend, boolean supportsPdf, boolean supportsModels, boolean networkRequired, List<String> outputProfiles) {
+        String backend,
+        boolean supportsPdf,
+        boolean supportsModels,
+        boolean networkRequired,
+        List<String> outputProfiles) {
 
     public ParserCapabilities {
         Objects.requireNonNull(backend, "backend");
@@ -35,4 +39,3 @@ public record ParserCapabilities(
         return List.copyOf(values);
     }
 }
-

@@ -37,7 +37,8 @@ final class CacheCommand {
 
     void run(String[] args) throws CliException {
         if (args.length < 2 || !"warm".equals(args[1])) {
-            throw new UsageException("usage: doctruth cache warm <manifest.json> --preset <preset> [--cache <dir>] [--offline] [--json]");
+            throw new UsageException(
+                    "usage: doctruth cache warm <manifest.json> --preset <preset> [--cache <dir>] [--offline] [--json]");
         }
         var options = Options.parse(args, context.env());
         var result = warm(options);
@@ -70,7 +71,8 @@ final class CacheCommand {
             }
             var spec = specs.get(i);
             var source = spec.source()
-                    .orElseThrow(() -> new CliException("model source missing: " + spec.descriptor().identity()));
+                    .orElseThrow(() -> new CliException(
+                            "model source missing: " + spec.descriptor().identity()));
             installSource(options, spec, source);
         }
     }
@@ -112,7 +114,9 @@ final class CacheCommand {
             return Path.of(URI.create(source));
         }
         var path = Path.of(source);
-        return path.isAbsolute() ? path : manifest.toAbsolutePath().getParent().resolve(path).normalize();
+        return path.isAbsolute()
+                ? path
+                : manifest.toAbsolutePath().getParent().resolve(path).normalize();
     }
 
     private static List<ModelSpec> specs(Path manifest, String preset) throws IOException {

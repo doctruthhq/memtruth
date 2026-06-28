@@ -24,8 +24,8 @@ public enum ParserPreset {
                     new ModelDescriptor("slanext-auto", "v1", "sha256:pending-slanext-auto-v1", 737_000_000, true)))),
     OCR(
             "ocr",
-            ModelRuntimePolicy.offlineRequired(List.of(
-                    new ModelDescriptor("ocr-router", "v1", "sha256:pending-ocr-router-v1", 0, true))));
+            ModelRuntimePolicy.offlineRequired(
+                    List.of(new ModelDescriptor("ocr-router", "v1", "sha256:pending-ocr-router-v1", 0, true))));
 
     private final String id;
     private final ModelRuntimePolicy runtimePolicy;
@@ -59,7 +59,9 @@ public enum ParserPreset {
     }
 
     public ParserRun parserRun(String backend) {
-        var models = runtimePolicy.requiredModels().stream().map(ModelDescriptor::identity).toList();
+        var models = runtimePolicy.requiredModels().stream()
+                .map(ModelDescriptor::identity)
+                .toList();
         return new ParserRun("1.0.0", id, backend, models, runtimePolicy.warnings());
     }
 }

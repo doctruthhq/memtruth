@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
 import org.junit.jupiter.api.Test;
 
 class OpenDataLoaderProcessorParityTest {
@@ -62,12 +62,7 @@ class OpenDataLoaderProcessorParityTest {
     private static Row parseRow(String line) {
         var cells = line.substring(1, line.length() - 1).split("\\|");
         assertThat(cells).hasSize(5);
-        return new Row(
-                cells[0].trim(),
-                cells[1].trim(),
-                unquote(cells[2].trim()),
-                cells[3].trim(),
-                cells[4].trim());
+        return new Row(cells[0].trim(), cells[1].trim(), unquote(cells[2].trim()), cells[3].trim(), cells[4].trim());
     }
 
     private static String unquote(String value) {
@@ -77,6 +72,5 @@ class OpenDataLoaderProcessorParityTest {
         return value;
     }
 
-    private record Row(
-            String area, String status, String focusedTest, String fullBenchEvidence, String notes) {}
+    private record Row(String area, String status, String focusedTest, String fullBenchEvidence, String notes) {}
 }

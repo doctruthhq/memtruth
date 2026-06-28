@@ -1,8 +1,8 @@
 package ai.doctruth.cli;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -60,7 +60,9 @@ final class BenchmarkCorpusCommand {
         appendLabeling(out, corpus);
         out.append("cases: ").append(results.size()).append('\n');
         out.append("metrics:\n");
-        mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues()).entrySet().stream()
+        mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues())
+                .entrySet()
+                .stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> out.append("  ")
                         .append(entry.getKey())
@@ -69,7 +71,9 @@ final class BenchmarkCorpusCommand {
                         .append('\n'));
         for (var result : results) {
             out.append("- ").append(result.name()).append('\n');
-            result.labelId().ifPresent(labelId -> out.append("  labelId: ").append(labelId).append('\n'));
+            result.labelId()
+                    .ifPresent(
+                            labelId -> out.append("  labelId: ").append(labelId).append('\n'));
             if (!result.tags().isEmpty()) {
                 out.append("  tags: ").append(String.join(", ", result.tags())).append('\n');
             }
@@ -87,30 +91,44 @@ final class BenchmarkCorpusCommand {
 
     private static void appendLabeling(StringBuilder out, ParserBenchmarkCorpus corpus) {
         out.append("kind: ").append(corpus.kind()).append('\n');
-        corpus.qualityProfile().ifPresent(profile -> out.append("qualityProfile: ").append(profile).append('\n'));
-        corpus.reviewType().ifPresent(type -> out.append("reviewType: ").append(type).append('\n'));
-        corpus.labelSetVersion().ifPresent(version -> out.append("labelSetVersion: ").append(version).append('\n'));
+        corpus.qualityProfile()
+                .ifPresent(profile ->
+                        out.append("qualityProfile: ").append(profile).append('\n'));
+        corpus.reviewType()
+                .ifPresent(type -> out.append("reviewType: ").append(type).append('\n'));
+        corpus.labelSetVersion()
+                .ifPresent(version ->
+                        out.append("labelSetVersion: ").append(version).append('\n'));
         if (!corpus.requiredMetrics().isEmpty()) {
-            out.append("requiredMetrics: ").append(String.join(", ", corpus.requiredMetrics())).append('\n');
+            out.append("requiredMetrics: ")
+                    .append(String.join(", ", corpus.requiredMetrics()))
+                    .append('\n');
         }
         if (!corpus.requiredTags().isEmpty()) {
-            out.append("requiredTags: ").append(String.join(", ", corpus.requiredTags())).append('\n');
+            out.append("requiredTags: ")
+                    .append(String.join(", ", corpus.requiredTags()))
+                    .append('\n');
         }
         if (!corpus.minCasesPerTag().isEmpty()) {
             out.append("minCasesPerTag: ");
             out.append(joinEntries(corpus.minCasesPerTag())).append('\n');
         }
         if (!corpus.requiredFixtureTypes().isEmpty()) {
-            out.append("requiredFixtureTypes: ").append(String.join(", ", corpus.requiredFixtureTypes())).append('\n');
+            out.append("requiredFixtureTypes: ")
+                    .append(String.join(", ", corpus.requiredFixtureTypes()))
+                    .append('\n');
             out.append("minCasesPerFixtureType: ");
             out.append(joinEntries(corpus.minCasesPerFixtureType())).append('\n');
         }
         if (!corpus.requiredBehaviors().isEmpty()) {
-            out.append("requiredBehaviors: ").append(String.join(", ", corpus.requiredBehaviors())).append('\n');
+            out.append("requiredBehaviors: ")
+                    .append(String.join(", ", corpus.requiredBehaviors()))
+                    .append('\n');
             out.append("minCasesPerBehavior: ");
             out.append(joinEntries(corpus.minCasesPerBehavior())).append('\n');
         }
-        corpus.minTotalCases().ifPresent(value -> out.append("minTotalCases: ").append(value).append('\n'));
+        corpus.minTotalCases()
+                .ifPresent(value -> out.append("minTotalCases: ").append(value).append('\n'));
     }
 
     private static String joinEntries(Map<String, Integer> values) {
@@ -139,7 +157,8 @@ final class BenchmarkCorpusCommand {
             Options options,
             ParserBenchmarkCorpus corpus,
             List<ParserBenchmarkResult> results,
-            Map<String, Object> externalArtifacts) throws CliException {
+            Map<String, Object> externalArtifacts)
+            throws CliException {
         if (options.reportOut().isEmpty()) {
             return;
         }
@@ -200,10 +219,14 @@ final class BenchmarkCorpusCommand {
         root.put("coverageSatisfied", coverageSatisfied(corpus.minCasesPerTag(), results));
         root.put("casesPerFixtureType", counts(results, ParserBenchmarkResult::fixtureTypes));
         root.put("fixtureCoverageRequired", corpus.minCasesPerFixtureType());
-        root.put("fixtureCoverageSatisfied", coverageSatisfied(corpus.minCasesPerFixtureType(), results, ParserBenchmarkResult::fixtureTypes));
+        root.put(
+                "fixtureCoverageSatisfied",
+                coverageSatisfied(corpus.minCasesPerFixtureType(), results, ParserBenchmarkResult::fixtureTypes));
         root.put("casesPerBehavior", counts(results, ParserBenchmarkResult::behaviors));
         root.put("behaviorCoverageRequired", corpus.minCasesPerBehavior());
-        root.put("behaviorCoverageSatisfied", coverageSatisfied(corpus.minCasesPerBehavior(), results, ParserBenchmarkResult::behaviors));
+        root.put(
+                "behaviorCoverageSatisfied",
+                coverageSatisfied(corpus.minCasesPerBehavior(), results, ParserBenchmarkResult::behaviors));
         root.put("validityInputs", validityInputs());
         root.put("minimums", corpus.minimums());
         root.put("maximums", corpus.maximums());
@@ -211,7 +234,9 @@ final class BenchmarkCorpusCommand {
         root.put("externalArtifacts", externalArtifacts);
         root.put("passed", passed);
         root.put("externalMetrics", corpus.externalMetrics());
-        root.put("metrics", mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues()));
+        root.put(
+                "metrics",
+                mergedMetrics(ParserBenchmarkRunner.aggregateMetrics(results), corpus.externalMetricValues()));
         root.put("cases", results.stream().map(BenchmarkCorpusCommand::caseNode).toList());
     }
 
@@ -221,8 +246,8 @@ final class BenchmarkCorpusCommand {
         return merged;
     }
 
-    private static Map<String, Object> writeOpenDataLoaderPrediction(
-            Options options, ParserBenchmarkCorpus corpus) throws CliException {
+    private static Map<String, Object> writeOpenDataLoaderPrediction(Options options, ParserBenchmarkCorpus corpus)
+            throws CliException {
         if (options.openDataLoaderPredictionOut().isEmpty()) {
             return Map.of();
         }
@@ -232,18 +257,21 @@ final class BenchmarkCorpusCommand {
             Files.createDirectories(markdownDir);
             for (var benchmarkCase : corpus.cases()) {
                 String documentId = benchmarkCase.labelId().orElse(benchmarkCase.name());
-                Files.writeString(markdownDir.resolve(safeDocumentId(documentId) + ".md"),
+                Files.writeString(
+                        markdownDir.resolve(safeDocumentId(documentId) + ".md"),
                         benchmarkCase.document().toMarkdownClean());
             }
             var summary = new LinkedHashMap<String, Object>();
             summary.put("engine_name", "doctruth");
             summary.put("engine_version", "local");
             summary.put("document_count", corpus.cases().size());
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(root.resolve("summary.json").toFile(), summary);
+            MAPPER.writerWithDefaultPrettyPrinter()
+                    .writeValue(root.resolve("summary.json").toFile(), summary);
             var artifact = new LinkedHashMap<String, Object>();
             artifact.put("engine", "doctruth");
             artifact.put("path", root.toAbsolutePath().normalize().toString());
-            artifact.put("markdownPath", markdownDir.toAbsolutePath().normalize().toString());
+            artifact.put(
+                    "markdownPath", markdownDir.toAbsolutePath().normalize().toString());
             artifact.put("documentCount", corpus.cases().size());
             return Map.of("opendataloaderPrediction", artifact);
         } catch (IOException e) {
@@ -270,7 +298,8 @@ final class BenchmarkCorpusCommand {
     }
 
     private static Map<String, Integer> counts(
-            List<ParserBenchmarkResult> results, java.util.function.Function<ParserBenchmarkResult, List<String>> values) {
+            List<ParserBenchmarkResult> results,
+            java.util.function.Function<ParserBenchmarkResult, List<String>> values) {
         var counts = new LinkedHashMap<String, Integer>();
         results.stream()
                 .flatMap(result -> values.apply(result).stream())
@@ -287,8 +316,8 @@ final class BenchmarkCorpusCommand {
         var satisfied = new LinkedHashMap<String, Boolean>();
         minimums.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> satisfied.put(
-                        entry.getKey(), actual.getOrDefault(entry.getKey(), 0) >= entry.getValue()));
+                .forEach(entry ->
+                        satisfied.put(entry.getKey(), actual.getOrDefault(entry.getKey(), 0) >= entry.getValue()));
         return satisfied;
     }
 

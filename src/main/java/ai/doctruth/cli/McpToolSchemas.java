@@ -22,7 +22,8 @@ final class McpToolSchemas {
     static ObjectNode toolsListResult() {
         ObjectNode result = MAPPER.createObjectNode();
         ArrayNode tools = MAPPER.createArrayNode();
-        tools.add(tool(PARSE_DOCUMENT, "Parse a local document into evidence-backed DocTruth output.", parseDocument()));
+        tools.add(
+                tool(PARSE_DOCUMENT, "Parse a local document into evidence-backed DocTruth output.", parseDocument()));
         tools.add(tool(GET_LAYOUT_REGIONS, "Return citeable layout regions with bbox anchors.", path()));
         tools.add(tool(GET_TABLE_CELLS, "Return structured table cells with bbox anchors.", path()));
         tools.add(tool(GET_EVIDENCE_SPAN, "Return one evidence span by id.", evidenceSpan()));
@@ -45,7 +46,9 @@ final class McpToolSchemas {
         ObjectNode properties = (ObjectNode) schema.path("properties");
         ObjectNode format = MAPPER.createObjectNode();
         format.put("type", "string");
-        format.set("enum", MAPPER.createArrayNode().add("compact_llm").add("json_evidence").add("json_full"));
+        format.set(
+                "enum",
+                MAPPER.createArrayNode().add("compact_llm").add("json_evidence").add("json_full"));
         properties.set("format", format);
         ObjectNode sourceMap = MAPPER.createObjectNode();
         sourceMap.put("type", "boolean");
@@ -104,7 +107,8 @@ final class McpToolSchemas {
         properties.set("sizeBytes", numberProperty("Expected size in bytes."));
         properties.set("required", booleanProperty("Whether this model is required."));
         descriptor.set("properties", properties);
-        descriptor.set("required", MAPPER.createArrayNode().add("name").add("version").add("sha256"));
+        descriptor.set(
+                "required", MAPPER.createArrayNode().add("name").add("version").add("sha256"));
         return descriptor;
     }
 

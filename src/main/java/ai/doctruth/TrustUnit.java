@@ -13,7 +13,11 @@ import java.util.Objects;
  * @since 1.0.0
  */
 public record TrustUnit(
-        String unitId, TrustUnitKind kind, TrustUnitLocation location, TrustUnitContent content, TrustUnitEvidence evidence) {
+        String unitId,
+        TrustUnitKind kind,
+        TrustUnitLocation location,
+        TrustUnitContent content,
+        TrustUnitEvidence evidence) {
 
     public TrustUnit {
         Objects.requireNonNull(unitId, "unitId");
@@ -26,4 +30,3 @@ public record TrustUnit(
         }
     }
 }
-

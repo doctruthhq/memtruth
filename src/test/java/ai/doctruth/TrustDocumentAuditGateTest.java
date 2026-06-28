@@ -52,8 +52,12 @@ class TrustDocumentAuditGateTest {
         var parsed = new ParsedDocument("doc-1", List.of(new TextSection("Work Experience", LOC)), META);
         var parserRun = new ParserRun("1.0.0", "lite", "pdfbox", List.of(), parserWarnings);
         var doc = TrustDocument.fromParsed(parsed, "sha256:source", parserRun);
-        return new TrustDocument(doc.docId(), doc.source(), new TrustDocumentBody(doc.body().pages(), units, List.of()),
-                doc.parserRun(), AuditGradeStatus.UNKNOWN);
+        return new TrustDocument(
+                doc.docId(),
+                doc.source(),
+                new TrustDocumentBody(doc.body().pages(), units, List.of()),
+                doc.parserRun(),
+                AuditGradeStatus.UNKNOWN);
     }
 
     private static TrustUnit unit(List<ParserWarning> warnings) {
@@ -65,4 +69,3 @@ class TrustDocumentAuditGateTest {
                 new TrustUnitEvidence(List.of("span-1"), new Confidence(1.0, "exact"), warnings));
     }
 }
-

@@ -48,7 +48,8 @@ public final class TrustDocumentParserBuilder {
     public TrustDocumentParserBuilder backend(ParserBackendMode backend) {
         if (sourcePath == null) {
             if (backend != ParserBackendMode.PDFBOX) {
-                throw new IllegalStateException("parsed-document parser path only supports explicit PDFBox legacy/oracle mode");
+                throw new IllegalStateException(
+                        "parsed-document parser path only supports explicit PDFBox legacy/oracle mode");
             }
             return this;
         }
@@ -64,12 +65,19 @@ public final class TrustDocumentParserBuilder {
 
     public TrustDocument parse() throws ParseException {
         if (sourcePath == null) {
-            return TrustDocument.fromParsed(document, document.docId(), preset.parserRun()).withEvaluatedAuditGrade();
+            return TrustDocument.fromParsed(document, document.docId(), preset.parserRun())
+                    .withEvaluatedAuditGrade();
         }
         return switch (backend) {
-            case AUTO -> new SidecarParserBackend(requiredRuntime()).parse(request("sidecar")).withEvaluatedAuditGrade();
+            case AUTO ->
+                new SidecarParserBackend(requiredRuntime())
+                        .parse(request("sidecar"))
+                        .withEvaluatedAuditGrade();
             case PDFBOX -> new PdfBoxParserBackend().parse(request("pdfbox")).withEvaluatedAuditGrade();
-            case SIDECAR -> new SidecarParserBackend(requiredRuntime()).parse(request("sidecar")).withEvaluatedAuditGrade();
+            case SIDECAR ->
+                new SidecarParserBackend(requiredRuntime())
+                        .parse(request("sidecar"))
+                        .withEvaluatedAuditGrade();
         };
     }
 

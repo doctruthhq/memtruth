@@ -50,7 +50,8 @@ class CliSupportTest {
         assertThat(tree.path("sections").get(0).path("type").asText()).isEqualTo("text");
         assertThat(tree.path("sections").get(1).path("type").asText()).isEqualTo("table");
         assertThat(tree.path("sections").get(2).path("type").asText()).isEqualTo("figure");
-        assertThat(tree.path("sections").get(2).path("boundingBox").path("x0").asDouble()).isEqualTo(10.0);
+        assertThat(tree.path("sections").get(2).path("boundingBox").path("x0").asDouble())
+                .isEqualTo(10.0);
     }
 
     @Test
@@ -61,17 +62,16 @@ class CliSupportTest {
                 java.util.List.of(
                         new TextSection("Work Experience", loc, BlockKind.HEADING),
                         new TextSection("August 2020 to February 2021", loc, BlockKind.HEADING),
-                        new TextSection("1. Built _source_ backed parser\nwith wrapped continuation", loc, BlockKind.LIST),
-                        new TableSection(java.util.List.of(
-                                java.util.List.of("Name", "Role"),
-                                java.util.List.of("Alex", "Parser | QA")),
+                        new TextSection(
+                                "1. Built _source_ backed parser\nwith wrapped continuation", loc, BlockKind.LIST),
+                        new TableSection(
+                                java.util.List.of(
+                                        java.util.List.of("Name", "Role"), java.util.List.of("Alex", "Parser | QA")),
                                 loc),
                         new FigureSection("Pipeline diagram", loc)),
                 new DocumentMetadata("sample.pdf", 1, Optional.empty()));
 
-        assertThat(ParsedDocumentMarkdown.toMarkdown(doc))
-                .isEqualTo(
-                        """
+        assertThat(ParsedDocumentMarkdown.toMarkdown(doc)).isEqualTo("""
                         ## Work Experience
 
                         August 2020 to February 2021
@@ -114,9 +114,7 @@ class CliSupportTest {
                                 Optional.of(new BoundingBox(210, 443, 650, 458)))),
                 new DocumentMetadata("sample.pdf", 1, Optional.empty()));
 
-        assertThat(ParsedDocumentMarkdown.toMarkdown(doc))
-                .isEqualTo(
-                        """
+        assertThat(ParsedDocumentMarkdown.toMarkdown(doc)).isEqualTo("""
                         Contact: 011-11212633
 
                         ## Candidate Name
@@ -131,13 +129,15 @@ class CliSupportTest {
         var doc = new ParsedDocument(
                 "doc",
                 java.util.List.of(
-                        new TextSection("Body below caption", loc, BlockKind.BODY, Optional.of(new BoundingBox(10, 200, 300, 220))),
+                        new TextSection(
+                                "Body below caption",
+                                loc,
+                                BlockKind.BODY,
+                                Optional.of(new BoundingBox(10, 200, 300, 220))),
                         new FigureSection("Table 1. Revenue", loc, Optional.of(new BoundingBox(10, 100, 300, 120)))),
                 new DocumentMetadata("sample.pdf", 1, Optional.empty()));
 
-        assertThat(ParsedDocumentMarkdown.toMarkdown(doc))
-                .isEqualTo(
-                        """
+        assertThat(ParsedDocumentMarkdown.toMarkdown(doc)).isEqualTo("""
                         [Figure: Table 1. Revenue]
 
                         Body below caption

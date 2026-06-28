@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
-import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Map;
 
@@ -74,29 +74,44 @@ class DocTruthCliDoctorCompletionTest {
         assertThat(parser.path("backend").asText()).isEqualTo("sidecar");
         assertThat(parser.path("available").asBoolean()).isTrue();
         assertThat(parser.path("outputProfiles").toString()).contains("json_full", "parse_trace");
-        assertThat(parser.path("runtimeDoctor").path("capabilities").path("native_text").path("available").asBoolean())
+        assertThat(parser.path("runtimeDoctor")
+                        .path("capabilities")
+                        .path("native_text")
+                        .path("available")
+                        .asBoolean())
                 .isTrue();
-        assertThat(parser.path("runtimeDoctor").path("capabilities").path("layout").path("available").asBoolean())
+        assertThat(parser.path("runtimeDoctor")
+                        .path("capabilities")
+                        .path("layout")
+                        .path("available")
+                        .asBoolean())
                 .isFalse();
-        assertThat(parser.path("runtimeDoctor").path("models").path("presets").path("lite").path("allReady").asBoolean())
+        assertThat(parser.path("runtimeDoctor")
+                        .path("models")
+                        .path("presets")
+                        .path("lite")
+                        .path("allReady")
+                        .asBoolean())
                 .isTrue();
-        assertThat(parser.path("runtimeDoctor").path("models").path("worker").path("ready").asBoolean()).isFalse();
+        assertThat(parser.path("runtimeDoctor")
+                        .path("models")
+                        .path("worker")
+                        .path("ready")
+                        .asBoolean())
+                .isFalse();
     }
 
     @Test
     void doctorReportsConfiguredOcrWorkerReadiness() throws Exception {
         Path worker = tempDir.resolve("fake-ocr-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":true,"engine":"mnn","message":"ready"}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of(
                 "DOCTRUTH_OCR_COMMAND", worker.toString(),
@@ -120,17 +135,14 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorSeparatesExecutableOcrWorkerFromRuntimeReadyWorker() throws Exception {
         Path worker = tempDir.resolve("broken-rapidocr-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":false,"code":"rapidocr_unavailable","engine":"mnn","message":"numpy ABI mismatch"}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of("DOCTRUTH_OCR_COMMAND", worker.toString()));
 
@@ -147,8 +159,10 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorReportsOcrDisabledWithoutTryingWorkerDiscovery() throws Exception {
         var cli = cli(Map.of(
-                "DOCTRUTH_OCR_ENABLED", "false",
-                "DOCTRUTH_OCR_COMMAND", tempDir.resolve("missing-worker").toString()));
+                "DOCTRUTH_OCR_ENABLED",
+                "false",
+                "DOCTRUTH_OCR_COMMAND",
+                tempDir.resolve("missing-worker").toString()));
 
         int code = cli.run(new String[] {"doctor", "--json"});
 
@@ -162,17 +176,14 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorReportsOcrUnreadableDoctorOutput() throws Exception {
         Path worker = tempDir.resolve("bad-json-ocr-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf 'not-json'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of("DOCTRUTH_OCR_COMMAND", worker.toString()));
 
@@ -190,17 +201,14 @@ class DocTruthCliDoctorCompletionTest {
         Path bin = tempDir.resolve("bin");
         Files.createDirectories(bin);
         Path worker = bin.resolve("doctruth-rapidocr-mnn-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":true,"engine":"mnn","message":"ready"}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of("PATH", bin.toString()));
 
@@ -217,21 +225,16 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorReportsOcrWorkerTimeoutAndEmptyOutput() throws Exception {
         Path slowWorker = tempDir.resolve("slow-ocr-worker");
-        Files.writeString(
-                slowWorker,
-                """
+        Files.writeString(slowWorker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   sleep 1
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(slowWorker.toFile().setExecutable(true)).isTrue();
-        var timeoutCli = cli(Map.of(
-                "LOCAL_OCR_COMMAND", slowWorker.toString(),
-                "LOCAL_OCR_TIMEOUT_MS", "1"));
+        var timeoutCli = cli(Map.of("LOCAL_OCR_COMMAND", slowWorker.toString(), "LOCAL_OCR_TIMEOUT_MS", "1"));
 
         int timeoutCode = timeoutCli.run(new String[] {"doctor", "--json"});
 
@@ -242,17 +245,14 @@ class DocTruthCliDoctorCompletionTest {
         assertThat(timeoutOcr.path("statusCode").asText()).isEqualTo("worker_doctor_timeout");
 
         Path emptyWorker = tempDir.resolve("empty-ocr-worker");
-        Files.writeString(
-                emptyWorker,
-                """
+        Files.writeString(emptyWorker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   echo 'ocr not initialized' >&2
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(emptyWorker.toFile().setExecutable(true)).isTrue();
         var emptyCli = cli(Map.of("LOCAL_OCR_COMMAND", emptyWorker.toString()));
 
@@ -281,21 +281,16 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorJsonReportsConfiguredModelWorkerReadiness() throws Exception {
         Path worker = tempDir.resolve("fake-model-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":true,"engine":"onnxruntime","message":"model worker ready","loadedModels":["slanet-plus:v1"],"rssMb":128,"peakMemoryMb":512}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
-        var cli = cli(Map.of(
-                "DOCTRUTH_MODEL_COMMAND", worker.toString(),
-                "DOCTRUTH_MODEL_TIMEOUT_MS", "2345"));
+        var cli = cli(Map.of("DOCTRUTH_MODEL_COMMAND", worker.toString(), "DOCTRUTH_MODEL_TIMEOUT_MS", "2345"));
 
         int code = cli.run(new String[] {"doctor", "--json"});
 
@@ -319,17 +314,14 @@ class DocTruthCliDoctorCompletionTest {
         Path bin = tempDir.resolve("model-bin");
         Files.createDirectories(bin);
         Path worker = bin.resolve("doctruth-model-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":true,"message":"path worker ready","loadedModels":[],"rssMb":64,"peakMemoryMb":128}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of(
                 "LOCAL_MODEL_COMMAND", "doctruth-model-worker",
@@ -351,7 +343,8 @@ class DocTruthCliDoctorCompletionTest {
         Path cache = tempDir.resolve("model-cache");
         Files.createDirectories(cache);
         byte[] modelBytes = "ready local model".getBytes(StandardCharsets.UTF_8);
-        String sha256 = "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(modelBytes));
+        String sha256 = "sha256:"
+                + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(modelBytes));
         Files.write(cache.resolve("slanet-plus-local.bin"), modelBytes);
         Path manifest = writeModelManifest("slanet-plus", "local", sha256, modelBytes.length);
         var cli = cli(Map.of(
@@ -400,17 +393,14 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorSeparatesExecutableModelWorkerFromRuntimeReadyWorker() throws Exception {
         Path worker = tempDir.resolve("broken-model-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":false,"code":"model_runtime_unavailable","message":"onnxruntime missing"}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of("DOCTRUTH_MODEL_COMMAND", worker.toString()));
 
@@ -429,17 +419,14 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorReportsModelWorkerProtocolErrorsAndClampsNegativeResources() throws Exception {
         Path worker = tempDir.resolve("bad-model-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"ok":true,"message":"ready","loadedModels":["m"],"rssMb":-9,"peakMemoryMb":-1}'
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of("DOCTRUTH_MODEL_COMMAND", worker.toString()));
 
@@ -456,17 +443,14 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorReportsModelWorkerEmptyStdoutAsNotReady() throws Exception {
         Path worker = tempDir.resolve("empty-model-worker");
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   echo 'worker not initialized' >&2
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         var cli = cli(Map.of("DOCTRUTH_MODEL_COMMAND", worker.toString()));
 
@@ -482,21 +466,16 @@ class DocTruthCliDoctorCompletionTest {
     @Test
     void doctorReportsModelWorkerTimeoutAndMissingPath() throws Exception {
         Path slowWorker = tempDir.resolve("slow-model-worker");
-        Files.writeString(
-                slowWorker,
-                """
+        Files.writeString(slowWorker, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   sleep 1
                   exit 0
                 fi
                 exit 0
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(slowWorker.toFile().setExecutable(true)).isTrue();
-        var timeoutCli = cli(Map.of(
-                "DOCTRUTH_MODEL_COMMAND", slowWorker.toString(),
-                "DOCTRUTH_MODEL_TIMEOUT_MS", "1"));
+        var timeoutCli = cli(Map.of("DOCTRUTH_MODEL_COMMAND", slowWorker.toString(), "DOCTRUTH_MODEL_TIMEOUT_MS", "1"));
 
         int timeoutCode = timeoutCli.run(new String[] {"doctor", "--json"});
 
@@ -581,9 +560,7 @@ class DocTruthCliDoctorCompletionTest {
 
     private Path writeModelManifest(String name, String version, String sha256, long sizeBytes) throws Exception {
         Path manifest = tempDir.resolve("model-manifest-" + version + ".json");
-        Files.writeString(
-                manifest,
-                """
+        Files.writeString(manifest, """
                 {
                   "presets": {
                     "table-lite": [
@@ -602,9 +579,7 @@ class DocTruthCliDoctorCompletionTest {
                     ]
                   }
                 }
-                """
-                        .formatted(name, version, sha256, sizeBytes),
-                StandardCharsets.UTF_8);
+                """.formatted(name, version, sha256, sizeBytes), StandardCharsets.UTF_8);
         return manifest;
     }
 
@@ -629,9 +604,7 @@ class DocTruthCliDoctorCompletionTest {
 
     private Path fakeRustRuntime() throws Exception {
         Path runtime = tempDir.resolve("doctruth-runtime");
-        Files.writeString(
-                runtime,
-                """
+        Files.writeString(runtime, """
                 #!/usr/bin/env sh
                 if [ "$1" = "--doctor" ]; then
                   printf '{"runtime":"doctruth-runtime","capabilities":{"parse_pdf":true,"native_text":{"available":true,"backend":"pdf_oxide"},"layout":{"available":false},"tables":{"available":false},"ocr":{"available":false}},"models":{"worker":{"configured":false,"available":false,"ready":false},"presets":{"lite":{"allReady":true}}}}'
@@ -639,8 +612,7 @@ class DocTruthCliDoctorCompletionTest {
                 fi
                 cat >/dev/null
                 printf '{}'
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
     }

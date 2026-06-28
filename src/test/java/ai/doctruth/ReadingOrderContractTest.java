@@ -27,10 +27,11 @@ class ReadingOrderContractTest {
 
         var doc = TrustDocument.fromParsed(parsed, "sha256:source", PARSER_RUN);
 
-        assertThat(doc.body().units()).extracting(unit -> unit.location().readingOrder())
+        assertThat(doc.body().units())
+                .extracting(unit -> unit.location().readingOrder())
                 .containsExactly(1, 2, 3, 4, 5, 6);
-        assertThat(doc.toCompactLlm()).containsSubsequence(
-                "Left sidebar contact", "Company", "Role", "Acme", "Engineer", "Main summary");
+        assertThat(doc.toCompactLlm())
+                .containsSubsequence("Left sidebar contact", "Company", "Role", "Acme", "Engineer", "Main summary");
     }
 
     private static TextSection section(String text, int line) {

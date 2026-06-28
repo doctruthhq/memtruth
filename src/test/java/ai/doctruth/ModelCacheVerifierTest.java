@@ -62,12 +62,8 @@ class ModelCacheVerifierTest {
         assertThat(report.artifacts())
                 .extracting(ModelCacheArtifact::status)
                 .containsExactly(ModelCacheStatus.SHA_MISMATCH, ModelCacheStatus.MISSING);
-        assertThat(report.warnings())
-                .extracting(ParserWarning::code)
-                .contains("model_sha_mismatch", "model_missing");
-        assertThat(report.warnings())
-                .extracting(ParserWarning::severity)
-                .containsOnly(ParserWarningSeverity.SEVERE);
+        assertThat(report.warnings()).extracting(ParserWarning::code).contains("model_sha_mismatch", "model_missing");
+        assertThat(report.warnings()).extracting(ParserWarning::severity).containsOnly(ParserWarningSeverity.SEVERE);
     }
 
     @Test

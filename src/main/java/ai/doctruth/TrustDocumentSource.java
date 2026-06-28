@@ -24,4 +24,3 @@ public record TrustDocumentSource(String sourceFilename, String sourceHash, Docu
         }
     }
 }
-

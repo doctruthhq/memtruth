@@ -122,8 +122,7 @@ class DocTruthCliTest {
         var tree = MAPPER.readTree(Files.readString(out));
         assertThat(tree.path("docId").asText()).isEqualTo("sha256:cli-sidecar");
         assertThat(tree.path("parserRun").path("backend").asText()).isEqualTo("sidecar");
-        assertThat(tree.path("body").path("units").get(0).path("text").asText())
-                .isEqualTo("Parsed by CLI sidecar.");
+        assertThat(tree.path("body").path("units").get(0).path("text").asText()).isEqualTo("Parsed by CLI sidecar.");
     }
 
     @Test
@@ -187,7 +186,8 @@ class DocTruthCliTest {
         assertThat(Files.readAllBytes(out.resolve("page-0001.png")))
                 .startsWith(new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47});
         var manifest = MAPPER.readTree(Files.readString(out.resolve("page-images.json")));
-        assertThat(manifest.path("sourceFilename").asText()).isEqualTo(pdf.getFileName().toString());
+        assertThat(manifest.path("sourceFilename").asText())
+                .isEqualTo(pdf.getFileName().toString());
         assertThat(manifest.path("pages")).hasSize(1);
         assertThat(manifest.path("pages").get(0).path("imageHash").asText()).startsWith("sha256:");
         assertThat(cli.out()).contains("pages: 1").contains("page-images:");
@@ -232,10 +232,15 @@ class DocTruthCliTest {
         assertThat(Files.exists(out.resolve("span-debug.html"))).isTrue();
 
         var trace = MAPPER.readTree(Files.readString(out.resolve("parse_trace.json")));
-        var block = trace.path("parseTrace").path("pages").get(0).path("readingBlocks").get(0);
+        var block = trace.path("parseTrace")
+                .path("pages")
+                .get(0)
+                .path("readingBlocks")
+                .get(0);
         String blockId = block.path("blockId").asText();
         String lineId = block.path("lines").get(0).path("lineId").asText();
-        String spanId = block.path("lines").get(0).path("spans").get(0).path("spanId").asText();
+        String spanId =
+                block.path("lines").get(0).path("spans").get(0).path("spanId").asText();
 
         assertThat(Files.readString(out.resolve("layout-debug.html")))
                 .contains("data-doctruth-debug-artifact=\"layout\"")
@@ -274,16 +279,25 @@ class DocTruthCliTest {
         Path runtime = fakeOcrRuntime(worker, 0.92, "OCR package text");
         var cli = cliReturning("{}");
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            int code = cli.run(new String[] {"review-package", pdf.toString(), "--preset", "ocr", "-o", out.toString()});
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    int code = cli.run(
+                            new String[] {"review-package", pdf.toString(), "--preset", "ocr", "-o", out.toString()});
 
-            assertThat(code).isZero();
-            var trust = MAPPER.readTree(Files.readString(out.resolve("trust-document.json")));
-            assertThat(trust.path("parserRun").path("backend").asText()).isEqualTo("rust-sidecar+model-worker");
-            assertThat(trust.path("parserRun").path("models").toString()).contains("ocr-router:v1");
-            assertThat(trust.path("body").path("units").get(0).path("kind").asText()).isEqualTo("OCR_REGION");
-            assertThat(Files.readString(out.resolve("review.html"))).contains("OCR package text");
-        });
+                    assertThat(code).isZero();
+                    var trust = MAPPER.readTree(Files.readString(out.resolve("trust-document.json")));
+                    assertThat(trust.path("parserRun").path("backend").asText()).isEqualTo("rust-sidecar+model-worker");
+                    assertThat(trust.path("parserRun").path("models").toString())
+                            .contains("ocr-router:v1");
+                    assertThat(trust.path("body")
+                                    .path("units")
+                                    .get(0)
+                                    .path("kind")
+                                    .asText())
+                            .isEqualTo("OCR_REGION");
+                    assertThat(Files.readString(out.resolve("review.html"))).contains("OCR package text");
+                });
     }
 
     @Test
@@ -296,17 +310,29 @@ class DocTruthCliTest {
         Path runtime = fakeOcrRuntime(worker, 0.94, "OCR parse text");
         var cli = cliReturning("{}");
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            int code = cli.run(new String[] {
-                "parse", pdf.toString(), "--format", "json", "--preset", "ocr", "-o", out.toString()
-            });
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    int code = cli.run(new String[] {
+                        "parse", pdf.toString(), "--format", "json", "--preset", "ocr", "-o", out.toString()
+                    });
 
-            assertThat(code).isZero();
-            var trust = MAPPER.readTree(Files.readString(out));
-            assertThat(trust.path("parserRun").path("backend").asText()).isEqualTo("rust-sidecar+model-worker");
-            assertThat(trust.path("body").path("units").get(0).path("kind").asText()).isEqualTo("OCR_REGION");
-            assertThat(trust.path("body").path("units").get(0).path("text").asText()).isEqualTo("OCR parse text");
-        });
+                    assertThat(code).isZero();
+                    var trust = MAPPER.readTree(Files.readString(out));
+                    assertThat(trust.path("parserRun").path("backend").asText()).isEqualTo("rust-sidecar+model-worker");
+                    assertThat(trust.path("body")
+                                    .path("units")
+                                    .get(0)
+                                    .path("kind")
+                                    .asText())
+                            .isEqualTo("OCR_REGION");
+                    assertThat(trust.path("body")
+                                    .path("units")
+                                    .get(0)
+                                    .path("text")
+                                    .asText())
+                            .isEqualTo("OCR parse text");
+                });
     }
 
     @Test
@@ -319,19 +345,23 @@ class DocTruthCliTest {
         Path runtime = fakeOcrRuntime(worker, 0.41, "Weak OCR parse text");
         var cli = cliReturning("{}");
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            int code = cli.run(new String[] {
-                "parse", pdf.toString(), "--format", "json", "--preset", "ocr", "-o", out.toString()
-            });
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    int code = cli.run(new String[] {
+                        "parse", pdf.toString(), "--format", "json", "--preset", "ocr", "-o", out.toString()
+                    });
 
-            assertThat(code).isZero();
-            var trust = MAPPER.readTree(Files.readString(out));
-            var unit = trust.path("body").path("units").get(0);
-            assertThat(trust.path("auditGradeStatus").asText()).isEqualTo("NOT_AUDIT_GRADE");
-            assertThat(unit.path("confidence").path("score").asDouble()).isEqualTo(0.41);
-            assertThat(unit.path("warnings").get(0).path("code").asText()).isEqualTo("ocr_low_confidence");
-            assertThat(unit.path("warnings").get(0).path("severity").asText()).isEqualTo("SEVERE");
-        });
+                    assertThat(code).isZero();
+                    var trust = MAPPER.readTree(Files.readString(out));
+                    var unit = trust.path("body").path("units").get(0);
+                    assertThat(trust.path("auditGradeStatus").asText()).isEqualTo("NOT_AUDIT_GRADE");
+                    assertThat(unit.path("confidence").path("score").asDouble()).isEqualTo(0.41);
+                    assertThat(unit.path("warnings").get(0).path("code").asText())
+                            .isEqualTo("ocr_low_confidence");
+                    assertThat(unit.path("warnings").get(0).path("severity").asText())
+                            .isEqualTo("SEVERE");
+                });
     }
 
     @Test
@@ -344,12 +374,14 @@ class DocTruthCliTest {
         Path runtime = fakeOcrRuntime(worker, 0.91, "OCR recovered scanned resume");
         var cli = cliReturning("{}");
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            int code = cli.run(new String[] {"parse", pdf.toString(), "--markdown", "-o", out.toString()});
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    int code = cli.run(new String[] {"parse", pdf.toString(), "--markdown", "-o", out.toString()});
 
-            assertThat(code).isZero();
-            assertThat(Files.readString(out)).contains("OCR recovered scanned resume");
-        });
+                    assertThat(code).isZero();
+                    assertThat(Files.readString(out)).contains("OCR recovered scanned resume");
+                });
     }
 
     @Test
@@ -730,16 +762,13 @@ class DocTruthCliTest {
 
     private Path fakeSidecarRuntime() throws IOException {
         Path runtime = tempDir.resolve("fake-doctruth-runtime");
-        Files.writeString(
-                runtime,
-                """
+        Files.writeString(runtime, """
                 #!/usr/bin/env sh
                 cat >/dev/null
                 cat <<'JSON'
                 {"docId":"sha256:cli-sidecar","source":{"sourceFilename":"contract.pdf","sourceHash":"sha256:cli-sidecar","metadata":{"sourceFilename":"contract.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":true,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"TEXT_BLOCK","page":1,"text":"Parsed by CLI sidecar.","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1},"sourceObjectId":"section-0001","confidence":{"score":1.0,"rationale":"sidecar"},"warnings":[]}],"tables":[]},"parserRun":{"parserVersion":"runtime-test","preset":"lite","backend":"sidecar","models":[],"warnings":[]},"auditGradeStatus":"AUDIT_GRADE"}
                 JSON
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
     }
@@ -775,20 +804,18 @@ class DocTruthCliTest {
                 {"docId":"sha256:rust-ocr","source":{"sourceFilename":"runtime.pdf","sourceHash":"sha256:rust-ocr","metadata":{"sourceFilename":"runtime.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":false,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"OCR_REGION","page":1,"text":"%s","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1,"boundingBox":{"x0":10,"y0":20,"x1":200,"y1":80}},"sourceObjectId":"ocr-0001","confidence":{"score":%s,"rationale":"OCR page confidence"},"warnings":[%s]}],"tables":[]},"parserRun":{"parserVersion":"runtime-test","preset":"ocr","backend":"rust-sidecar+model-worker","models":["ocr-router:v1"],"warnings":[]},"auditGradeStatus":"%s"}
                 JSON
                 """.formatted(
-                        worker.toString(),
-                        text,
-                        Double.toString(confidence),
-                        warning,
-                        confidence < 0.85 ? "NOT_AUDIT_GRADE" : "AUDIT_GRADE"),
+                                worker.toString(),
+                                text,
+                                Double.toString(confidence),
+                                warning,
+                                confidence < 0.85 ? "NOT_AUDIT_GRADE" : "AUDIT_GRADE"),
                 StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
     }
 
     private static String pythonLiteral(String value) {
-        return "'''"
-                + value.replace("\\", "\\\\").replace("'''", "'\"'\"'")
-                + "'''";
+        return "'''" + value.replace("\\", "\\\\").replace("'''", "'\"'\"'") + "'''";
     }
 
     private static void withSystemProperty(String key, String value, ThrowingRunnable runnable) throws Exception {

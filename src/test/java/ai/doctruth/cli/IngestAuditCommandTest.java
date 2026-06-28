@@ -96,7 +96,8 @@ class IngestAuditCommandTest {
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
-        assertThat(tree.path("issueSummary").path("doctruth_segmentation").asInt()).isZero();
+        assertThat(tree.path("issueSummary").path("doctruth_segmentation").asInt())
+                .isZero();
     }
 
     @Test
@@ -125,7 +126,8 @@ class IngestAuditCommandTest {
 
         assertThat(code).isZero();
         assertThat(cli.out()).contains("output: " + out);
-        assertThat(MAPPER.readTree(Files.readString(out)).path("totalFiles").asInt()).isEqualTo(1);
+        assertThat(MAPPER.readTree(Files.readString(out)).path("totalFiles").asInt())
+                .isEqualTo(1);
     }
 
     @Test
@@ -152,7 +154,9 @@ class IngestAuditCommandTest {
         assertThat(cli.err()).contains("usage: doctruth ingest-audit");
 
         var missingRoot = cli();
-        assertThat(missingRoot.run(new String[] {"ingest-audit", tempDir.resolve("missing").toString()})).isEqualTo(1);
+        assertThat(missingRoot.run(
+                        new String[] {"ingest-audit", tempDir.resolve("missing").toString()}))
+                .isEqualTo(1);
         assertThat(missingRoot.err()).contains("ingest audit root is not a directory");
     }
 
@@ -161,11 +165,13 @@ class IngestAuditCommandTest {
         Path corpus = tempDir.resolve("pdfs");
         var cli = cli();
 
-        assertThat(cli.run(new String[] {"ingest-audit", corpus.toString(), "--limit", "0"})).isEqualTo(2);
+        assertThat(cli.run(new String[] {"ingest-audit", corpus.toString(), "--limit", "0"}))
+                .isEqualTo(2);
         assertThat(cli.err()).contains("--limit requires a positive integer");
 
         var unknown = cli();
-        assertThat(unknown.run(new String[] {"ingest-audit", corpus.toString(), "--wat"})).isEqualTo(2);
+        assertThat(unknown.run(new String[] {"ingest-audit", corpus.toString(), "--wat"}))
+                .isEqualTo(2);
         assertThat(unknown.err()).contains("unknown ingest-audit option");
     }
 

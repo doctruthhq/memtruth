@@ -153,11 +153,20 @@ final class ParseCommand {
         }
 
         boolean usesTrustDocumentParser() {
-            return backend != ParserBackendChoice.PDFBOX && switch (format) {
-                case TRUST_JSON, TRUST_MARKDOWN, TRUST_PLAIN, TRUST_HTML, TRUST_JSONL, TRUST_AUDIT, TRUST_COMPACT,
-                        TRUST_CONTENT_BLOCKS, TRUST_PARSE_TRACE, SUMMARY -> true;
-                case LEGACY_JSON, LEGACY_MARKDOWN -> false;
-            };
+            return backend != ParserBackendChoice.PDFBOX
+                    && switch (format) {
+                        case TRUST_JSON,
+                                TRUST_MARKDOWN,
+                                TRUST_PLAIN,
+                                TRUST_HTML,
+                                TRUST_JSONL,
+                                TRUST_AUDIT,
+                                TRUST_COMPACT,
+                                TRUST_CONTENT_BLOCKS,
+                                TRUST_PARSE_TRACE,
+                                SUMMARY -> true;
+                        case LEGACY_JSON, LEGACY_MARKDOWN -> false;
+                    };
         }
 
         String renderDocument(ai.doctruth.ParsedDocument doc) throws CliException {
@@ -172,8 +181,8 @@ final class ParseCommand {
                 case TRUST_JSONL -> trust(doc).toJsonLines();
                 case TRUST_AUDIT -> trust(doc).toAuditJson();
                 case TRUST_COMPACT -> trust(doc).toCompactLlm();
-                case TRUST_CONTENT_BLOCKS, TRUST_PARSE_TRACE -> throw new UsageException(
-                        "layered parser output requires TrustDocument parser path");
+                case TRUST_CONTENT_BLOCKS, TRUST_PARSE_TRACE ->
+                    throw new UsageException("layered parser output requires TrustDocument parser path");
             };
         }
 
@@ -186,10 +195,11 @@ final class ParseCommand {
                 case TRUST_JSONL -> trust.toJsonLines();
                 case TRUST_AUDIT -> trust.toAuditJson();
                 case TRUST_COMPACT -> trust.toCompactLlm();
-                case TRUST_CONTENT_BLOCKS, TRUST_PARSE_TRACE -> throw new UsageException(
-                        "layered parser output must be written through the streaming writer path");
-                case SUMMARY, LEGACY_JSON, LEGACY_MARKDOWN -> throw new UsageException(
-                        "sidecar backend requires --format json|markdown|plain|html|jsonl|audit|compact");
+                case TRUST_CONTENT_BLOCKS, TRUST_PARSE_TRACE ->
+                    throw new UsageException("layered parser output must be written through the streaming writer path");
+                case SUMMARY, LEGACY_JSON, LEGACY_MARKDOWN ->
+                    throw new UsageException(
+                            "sidecar backend requires --format json|markdown|plain|html|jsonl|audit|compact");
             };
         }
 
@@ -219,8 +229,9 @@ final class ParseCommand {
                         switch (profile) {
                             case DEFAULT, FULL -> TrustDocumentCliWriters.writeJsonFull(trust, writer);
                             case EVIDENCE -> TrustDocumentCliWriters.writeJsonEvidence(trust, writer);
-                            default -> throw new UsageException(
-                                    "parse profile " + profile.flag + " is not valid for json format");
+                            default ->
+                                throw new UsageException(
+                                        "parse profile " + profile.flag + " is not valid for json format");
                         }
                     });
                     return true;
@@ -266,8 +277,9 @@ final class ParseCommand {
                             case DEFAULT, CLEAN -> TrustDocumentCliWriters.writeMarkdownClean(trust, writer);
                             case ANCHORED -> TrustDocumentCliWriters.writeMarkdownAnchored(trust, writer);
                             case REVIEW -> TrustDocumentCliWriters.writeMarkdownReview(trust, writer);
-                            default -> throw new UsageException(
-                                    "parse profile " + profile.flag + " is not valid for markdown format");
+                            default ->
+                                throw new UsageException(
+                                        "parse profile " + profile.flag + " is not valid for markdown format");
                         }
                     });
                     return true;
@@ -285,8 +297,9 @@ final class ParseCommand {
                         switch (profile) {
                             case DEFAULT, FULL -> TrustDocumentCliWriters.writeJsonFull(trust, writer);
                             case EVIDENCE -> TrustDocumentCliWriters.writeJsonEvidence(trust, writer);
-                            default -> throw new UsageException(
-                                    "parse profile " + profile.flag + " is not valid for json format");
+                            default ->
+                                throw new UsageException(
+                                        "parse profile " + profile.flag + " is not valid for json format");
                         }
                     });
                     return true;
@@ -332,8 +345,9 @@ final class ParseCommand {
                             case DEFAULT, CLEAN -> TrustDocumentCliWriters.writeMarkdownClean(trust, writer);
                             case ANCHORED -> TrustDocumentCliWriters.writeMarkdownAnchored(trust, writer);
                             case REVIEW -> TrustDocumentCliWriters.writeMarkdownReview(trust, writer);
-                            default -> throw new UsageException(
-                                    "parse profile " + profile.flag + " is not valid for markdown format");
+                            default ->
+                                throw new UsageException(
+                                        "parse profile " + profile.flag + " is not valid for markdown format");
                         }
                     });
                     return true;
@@ -360,7 +374,9 @@ final class ParseCommand {
                 if (backend == ParserBackendChoice.PDFBOX) {
                     return new PdfBoxParserBackend().parse(request).withEvaluatedAuditGrade();
                 }
-                return new SidecarParserBackend(requiredRuntime()).parse(request).withEvaluatedAuditGrade();
+                return new SidecarParserBackend(requiredRuntime())
+                        .parse(request)
+                        .withEvaluatedAuditGrade();
             } catch (ai.doctruth.ParseException e) {
                 throw new CliException(backendName + " parser failed: " + e.errorCode() + ": " + e.getMessage(), e);
             }
@@ -381,7 +397,8 @@ final class ParseCommand {
                 switch (format) {
                     case TRUST_MARKDOWN -> TrustDocumentCliWriters.writeMarkdownSourceMap(trust, writer);
                     case TRUST_COMPACT -> TrustDocumentCliWriters.writeCompactLlmSourceMap(trust, writer);
-                    default -> throw new UsageException("--source-map is only supported with --format markdown or compact");
+                    default ->
+                        throw new UsageException("--source-map is only supported with --format markdown or compact");
                 }
             });
         }
@@ -399,7 +416,8 @@ final class ParseCommand {
                 case DEFAULT, CLEAN -> trust.toMarkdownClean();
                 case ANCHORED -> trust.toMarkdownAnchored();
                 case REVIEW -> trust.toMarkdownReview();
-                default -> throw new UsageException("parse profile " + profile.flag + " is not valid for markdown format");
+                default ->
+                    throw new UsageException("parse profile " + profile.flag + " is not valid for markdown format");
             };
         }
 
@@ -421,9 +439,11 @@ final class ParseCommand {
             if (sourceMap && format != OutputFormat.TRUST_MARKDOWN && format != OutputFormat.TRUST_COMPACT) {
                 throw new UsageException("--source-map is only supported with --format markdown or compact");
             }
-            if (format != OutputFormat.TRUST_MARKDOWN && format != OutputFormat.TRUST_JSON
+            if (format != OutputFormat.TRUST_MARKDOWN
+                    && format != OutputFormat.TRUST_JSON
                     && profile != OutputProfile.DEFAULT) {
-                throw new UsageException("parse profile " + profile.flag + " is only valid for markdown or json formats");
+                throw new UsageException(
+                        "parse profile " + profile.flag + " is only valid for markdown or json formats");
             }
             if (format != OutputFormat.TRUST_MARKDOWN && profile == OutputProfile.ANCHORED) {
                 throw new UsageException("parse profile anchored is only valid for markdown format");

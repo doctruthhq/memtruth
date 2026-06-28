@@ -99,15 +99,13 @@ final class VerifyBenchmarkReportCommand {
         int actualCaseCount = report.path("cases").size();
         int recordedCaseCount = report.path("caseCount").asInt(-1);
         if (recordedCaseCount != actualCaseCount) {
-            throw new CliException(
-                    "caseCount mismatch: expected " + recordedCaseCount + " actual " + actualCaseCount);
+            throw new CliException("caseCount mismatch: expected " + recordedCaseCount + " actual " + actualCaseCount);
         }
         var actualCasesPerTag = casesPerTag(report);
         var recordedCasesPerTag = report.path("casesPerTag");
         var recordedCounts = integerObject(recordedCasesPerTag);
         if (!recordedCounts.equals(actualCasesPerTag)) {
-            throw new CliException(
-                    "casesPerTag mismatch: expected " + recordedCounts + " actual " + actualCasesPerTag);
+            throw new CliException("casesPerTag mismatch: expected " + recordedCounts + " actual " + actualCasesPerTag);
         }
         var coverageRequired = integerObject(report.path("coverageRequired"));
         if (!coverageRequired.equals(integerObject(report.path("minCasesPerTag")))) {
@@ -117,8 +115,10 @@ final class VerifyBenchmarkReportCommand {
         if (!expectedSatisfied.equals(booleanObject(report.path("coverageSatisfied"), "coverageSatisfied"))) {
             throw new CliException("coverageSatisfied mismatch");
         }
-        verifyCoverageMap(report, "fixtureTypes", "casesPerFixtureType", "fixtureCoverageRequired", "fixtureCoverageSatisfied");
-        verifyCoverageMap(report, "behaviors", "casesPerBehavior", "behaviorCoverageRequired", "behaviorCoverageSatisfied");
+        verifyCoverageMap(
+                report, "fixtureTypes", "casesPerFixtureType", "fixtureCoverageRequired", "fixtureCoverageSatisfied");
+        verifyCoverageMap(
+                report, "behaviors", "casesPerBehavior", "behaviorCoverageRequired", "behaviorCoverageSatisfied");
         verifyCoverageThresholds(report, actualCaseCount, actualCasesPerTag);
     }
 
@@ -147,9 +147,8 @@ final class VerifyBenchmarkReportCommand {
             int minimum = entry.getValue().asInt(-1);
             int actual = actualCasesPerTag.getOrDefault(entry.getKey(), 0);
             if (minimum >= 0 && actual < minimum) {
-                throw new CliException(
-                        "minCasesPerTag not satisfied for " + entry.getKey() + ": minimum " + minimum
-                                + " actual " + actual);
+                throw new CliException("minCasesPerTag not satisfied for " + entry.getKey() + ": minimum " + minimum
+                        + " actual " + actual);
             }
         }
     }
@@ -239,7 +238,10 @@ final class VerifyBenchmarkReportCommand {
 
     private static void verifyCaseReplay(JsonNode report) throws CliException {
         for (JsonNode caseNode : report.path("cases")) {
-            verifyReplayFlag(caseNode, "sourceRefReplayable", !caseNode.path("sourceSha256").asText().isBlank());
+            verifyReplayFlag(
+                    caseNode,
+                    "sourceRefReplayable",
+                    !caseNode.path("sourceSha256").asText().isBlank());
             verifyReplayFlag(
                     caseNode,
                     "quoteReplayable",
@@ -253,20 +255,22 @@ final class VerifyBenchmarkReportCommand {
 
     private static void verifyReplayFlag(JsonNode caseNode, String field, boolean expected) throws CliException {
         JsonNode replay = caseNode.path("replay");
-        if (!replay.isObject() || !replay.path(field).isBoolean() || replay.path(field).asBoolean() != expected) {
-            throw new CliException("case replay mismatch for " + caseNode.path("name").asText() + ": " + field);
+        if (!replay.isObject()
+                || !replay.path(field).isBoolean()
+                || replay.path(field).asBoolean() != expected) {
+            throw new CliException(
+                    "case replay mismatch for " + caseNode.path("name").asText() + ": " + field);
         }
     }
 
     private static void verifyAggregateMetrics(JsonNode report) throws CliException {
         verifyPercentileMetric(report, "parser_latency_p50", "parser_latency_ms", 50);
         verifyPercentileMetric(report, "parser_latency_p95", "parser_latency_ms", 95);
-        verifyMinimumAggregateMetric(
-                report, "compact_llm_size_reduction_min", "compact_llm_size_reduction");
+        verifyMinimumAggregateMetric(report, "compact_llm_size_reduction_min", "compact_llm_size_reduction");
     }
 
-    private static void verifyPercentileMetric(JsonNode report, String aggregateMetric, String caseMetric, int percentile)
-            throws CliException {
+    private static void verifyPercentileMetric(
+            JsonNode report, String aggregateMetric, String caseMetric, int percentile) throws CliException {
         JsonNode aggregate = report.path("metrics").path(aggregateMetric);
         if (!aggregate.isNumber()) {
             return;
@@ -323,8 +327,8 @@ final class VerifyBenchmarkReportCommand {
             double minimum = entry.getValue().asDouble(Double.NaN);
             for (double actual : metricValues(report, name)) {
                 if (!Double.isFinite(actual) || actual < minimum) {
-                    throw new CliException("minimum threshold failed for " + name + ": minimum " + minimum
-                            + " actual " + actual);
+                    throw new CliException(
+                            "minimum threshold failed for " + name + ": minimum " + minimum + " actual " + actual);
                 }
             }
         }
@@ -333,8 +337,8 @@ final class VerifyBenchmarkReportCommand {
             double maximum = entry.getValue().asDouble(Double.NaN);
             for (double actual : metricValues(report, name)) {
                 if (!Double.isFinite(actual) || actual > maximum) {
-                    throw new CliException("maximum threshold failed for " + name + ": maximum " + maximum
-                            + " actual " + actual);
+                    throw new CliException(
+                            "maximum threshold failed for " + name + ": maximum " + maximum + " actual " + actual);
                 }
             }
         }
@@ -376,12 +380,30 @@ final class VerifyBenchmarkReportCommand {
         JsonNode root = readJson(path, "OpenDataLoader evaluation");
         var node = MAPPER.createObjectNode();
         var values = new LinkedHashMap<String, Double>();
-        putExternalMetric(node, values, "nid", "opendataloader_nid", root.path("metrics").path("score").path("nid_mean"));
         putExternalMetric(
-                node, values, "teds", "opendataloader_teds", root.path("metrics").path("score").path("teds_mean"));
-        putExternalMetric(node, values, "mhs", "opendataloader_mhs", root.path("metrics").path("score").path("mhs_mean"));
+                node,
+                values,
+                "nid",
+                "opendataloader_nid",
+                root.path("metrics").path("score").path("nid_mean"));
+        putExternalMetric(
+                node,
+                values,
+                "teds",
+                "opendataloader_teds",
+                root.path("metrics").path("score").path("teds_mean"));
+        putExternalMetric(
+                node,
+                values,
+                "mhs",
+                "opendataloader_mhs",
+                root.path("metrics").path("score").path("mhs_mean"));
         JsonNode speed = root.path("speed").path("elapsed_per_doc");
-        putExternalMetric(node, values, "speed", "opendataloader_speed",
+        putExternalMetric(
+                node,
+                values,
+                "speed",
+                "opendataloader_speed",
                 speed.isNumber() ? speed : root.path("summary").path("elapsed_per_doc"));
         node.put("evaluationSha256", sha256(path, "OpenDataLoader evaluation"));
         return new ExternalMetricSet(node, values);
@@ -457,8 +479,7 @@ final class VerifyBenchmarkReportCommand {
     }
 
     private static void compareExpandedMinimum(
-            JsonNode report, JsonNode manifestLabeling, String minimumField, String requiredField)
-            throws CliException {
+            JsonNode report, JsonNode manifestLabeling, String minimumField, String requiredField) throws CliException {
         JsonNode manifestMinimum = manifestLabeling.path(minimumField);
         if (manifestMinimum.isMissingNode()) {
             return;

@@ -30,7 +30,9 @@ final class PdfTextPositionFilter {
                 .map(PositionCandidate::from)
                 .filter(candidate -> isUsable(candidate.box(), pageWidth, pageHeight))
                 .toList();
-        return removeDuplicateOverlaps(usable).stream().map(PositionCandidate::position).toList();
+        return removeDuplicateOverlaps(usable).stream()
+                .map(PositionCandidate::position)
+                .toList();
     }
 
     static List<TextBox> filterBoxes(List<TextBox> boxes, double pageWidth, double pageHeight) {

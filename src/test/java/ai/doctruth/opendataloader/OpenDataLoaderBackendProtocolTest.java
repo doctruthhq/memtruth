@@ -15,6 +15,7 @@ import ai.doctruth.ParserPreset;
 import ai.doctruth.ParserWarning;
 import ai.doctruth.ParserWarningSeverity;
 import ai.doctruth.TrustDocument;
+
 import org.junit.jupiter.api.Test;
 
 class OpenDataLoaderBackendProtocolTest {
@@ -33,13 +34,7 @@ class OpenDataLoaderBackendProtocolTest {
     void responseDefensivelyCopiesMutableCollections() {
         var blocks = new ArrayList<OpenDataLoaderBlock>();
         var block = new OpenDataLoaderBlock(
-                "block-1",
-                "text",
-                0,
-                Optional.of(new BoundingBox(1, 2, 3, 4)),
-                1,
-                "hello",
-                "unit-1");
+                "block-1", "text", 0, Optional.of(new BoundingBox(1, 2, 3, 4)), 1, "hello", "unit-1");
         blocks.add(block);
         var warnings = new ArrayList<ParserWarning>();
         warnings.add(new ParserWarning("x", ParserWarningSeverity.INFO, "x"));
@@ -60,8 +55,7 @@ class OpenDataLoaderBackendProtocolTest {
 
         assertThat(response.blocks()).hasSize(1);
         assertThat(response.warnings()).hasSize(1);
-        assertThatThrownBy(() -> response.blocks().add(block))
-                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> response.blocks().add(block)).isInstanceOf(UnsupportedOperationException.class);
     }
 
     private static TrustDocument minimalTrustDocument() {

@@ -36,9 +36,9 @@ class TrustDocumentCliOutputProfileTest {
         Path out = tempDir.resolve("trust-document.json");
         var cli = cli();
 
-        int code = cli.run(new String[] {
-            "parse", pdf.toString(), "--format", "json", "--profile", "full", "--out", out.toString()
-        });
+        int code = cli.run(
+                new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "full", "--out", out.toString()
+                });
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(Files.readString(out));
@@ -86,9 +86,8 @@ class TrustDocumentCliOutputProfileTest {
         Path out = tempDir.resolve("context.doctruth-wire");
         var parse = cli();
 
-        int code = parse.run(new String[] {
-            "parse", pdf.toString(), "--format", "compact", "--source-map", "--out", out.toString()
-        });
+        int code = parse.run(
+                new String[] {"parse", pdf.toString(), "--format", "compact", "--source-map", "--out", out.toString()});
 
         assertThat(code).isZero();
         String compact = Files.readString(out);
@@ -101,7 +100,8 @@ class TrustDocumentCliOutputProfileTest {
         assertThat(tree.path("sourceMap")).isNotEmpty();
 
         var verify = cli();
-        int verifyCode = verify.run(new String[] {"verify-source-map", out.toString(), map.toString(), "--source", pdf.toString()});
+        int verifyCode = verify.run(
+                new String[] {"verify-source-map", out.toString(), map.toString(), "--source", pdf.toString()});
 
         assertThat(verifyCode).isZero();
         assertThat(verify.out()).contains("source map verified");
@@ -126,7 +126,8 @@ class TrustDocumentCliOutputProfileTest {
         Path map = tempDir.resolve("document.doctruth-map.json");
         var verify = cli();
 
-        int code = verify.run(new String[] {"verify-source-map", out.toString(), map.toString(), "--source", pdf.toString()});
+        int code = verify.run(
+                new String[] {"verify-source-map", out.toString(), map.toString(), "--source", pdf.toString()});
 
         assertThat(code).isZero();
         assertThat(verify.out()).contains("source map verified");
@@ -152,7 +153,8 @@ class TrustDocumentCliOutputProfileTest {
         Path map = tempDir.resolve("document.doctruth-map.json");
         var verify = cli();
 
-        int code = verify.run(new String[] {"verify-source-map", out.toString(), map.toString(), "--source", pdf.toString()});
+        int code = verify.run(
+                new String[] {"verify-source-map", out.toString(), map.toString(), "--source", pdf.toString()});
 
         assertThat(code).isEqualTo(1);
         assertThat(verify.err()).contains("content hash mismatch");
@@ -188,9 +190,8 @@ class TrustDocumentCliOutputProfileTest {
         Path pdf = samplePdf();
         var anchored = cli();
 
-        int anchoredCode = anchored.run(new String[] {
-            "parse", pdf.toString(), "--format", "markdown", "--profile", "anchored"
-        });
+        int anchoredCode =
+                anchored.run(new String[] {"parse", pdf.toString(), "--format", "markdown", "--profile", "anchored"});
 
         assertThat(anchoredCode).isZero();
         assertThat(anchored.out()).contains("{#ev:span-").contains("page=1");
@@ -230,9 +231,8 @@ class TrustDocumentCliOutputProfileTest {
         Path out = tempDir.resolve("contract.content_blocks.json");
         var cli = cli();
 
-        int code = cli.run(new String[] {
-            "parse", pdf.toString(), "--format", "content_blocks", "--out", out.toString()
-        });
+        int code =
+                cli.run(new String[] {"parse", pdf.toString(), "--format", "content_blocks", "--out", out.toString()});
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(Files.readString(out));
@@ -256,16 +256,11 @@ class TrustDocumentCliOutputProfileTest {
         var html = cli();
         var jsonEvidence = cli();
 
-        int contentBlocksCode = contentBlocks.run(new String[] {
-            "parse", pdf.toString(), "--format", "content_blocks"
-        });
-        int parseTraceCode = parseTrace.run(new String[] {
-            "parse", pdf.toString(), "--format", "parse_trace"
-        });
+        int contentBlocksCode = contentBlocks.run(new String[] {"parse", pdf.toString(), "--format", "content_blocks"});
+        int parseTraceCode = parseTrace.run(new String[] {"parse", pdf.toString(), "--format", "parse_trace"});
         int htmlCode = html.run(new String[] {"parse", pdf.toString(), "--format", "html"});
-        int jsonEvidenceCode = jsonEvidence.run(new String[] {
-            "parse", pdf.toString(), "--format", "json", "--profile", "evidence"
-        });
+        int jsonEvidenceCode =
+                jsonEvidence.run(new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "evidence"});
 
         assertThat(contentBlocksCode).isZero();
         assertThat(contentBlocks.out()).contains("doctruth.content_blocks.v1").contains("sourceUnitIds");
@@ -286,9 +281,7 @@ class TrustDocumentCliOutputProfileTest {
         Path out = tempDir.resolve("contract.parse_trace.json");
         var cli = cli();
 
-        int code = cli.run(new String[] {
-            "parse", pdf.toString(), "--format", "parse_trace", "--out", out.toString()
-        });
+        int code = cli.run(new String[] {"parse", pdf.toString(), "--format", "parse_trace", "--out", out.toString()});
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(Files.readString(out));
@@ -317,7 +310,9 @@ class TrustDocumentCliOutputProfileTest {
         Path audit = tempDir.resolve("audit.json");
         var parseFull = cli();
         var parseAudit = cli();
-        parseFull.run(new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "full", "--out", full.toString()});
+        parseFull.run(
+                new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "full", "--out", full.toString()
+                });
         parseAudit.run(new String[] {"parse", pdf.toString(), "--format", "audit", "--out", audit.toString()});
         var verify = cli();
 
@@ -334,9 +329,12 @@ class TrustDocumentCliOutputProfileTest {
         Path audit = tempDir.resolve("audit.json");
         var parseFull = cli();
         var parseAudit = cli();
-        parseFull.run(new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "full", "--out", full.toString()});
+        parseFull.run(
+                new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "full", "--out", full.toString()
+                });
         parseAudit.run(new String[] {"parse", pdf.toString(), "--format", "audit", "--out", audit.toString()});
-        Files.writeString(audit, Files.readString(audit).replace("Acme Industrial Materials Pty Ltd", "Tampered Pty Ltd"));
+        Files.writeString(
+                audit, Files.readString(audit).replace("Acme Industrial Materials Pty Ltd", "Tampered Pty Ltd"));
         var verify = cli();
 
         int code = verify.run(new String[] {"verify-audit", full.toString(), audit.toString()});
@@ -352,7 +350,9 @@ class TrustDocumentCliOutputProfileTest {
 
         int badUsageCode = badUsage.run(new String[] {"verify-audit", "only-one.json"});
         int missingFilesCode = missingFiles.run(new String[] {
-            "verify-audit", tempDir.resolve("missing-trust.json").toString(), tempDir.resolve("missing-audit.json").toString()
+            "verify-audit",
+            tempDir.resolve("missing-trust.json").toString(),
+            tempDir.resolve("missing-audit.json").toString()
         });
 
         assertThat(badUsageCode).isEqualTo(2);
@@ -432,8 +432,10 @@ class TrustDocumentCliOutputProfileTest {
         Path pdf = samplePdf();
         var auto = cli();
 
-        int code = withSystemProperty("doctruth.runtime.disableSourceDiscovery", "true", () ->
-                auto.run(new String[] {"parse", pdf.toString(), "--backend", "auto", "--format", "json"}));
+        int code = withSystemProperty(
+                "doctruth.runtime.disableSourceDiscovery",
+                "true",
+                () -> auto.run(new String[] {"parse", pdf.toString(), "--backend", "auto", "--format", "json"}));
 
         assertThat(code).isEqualTo(1);
         assertThat(auto.err()).contains("RUST_RUNTIME_NOT_CONFIGURED").contains("Rust runtime is required");
@@ -446,17 +448,18 @@ class TrustDocumentCliOutputProfileTest {
         var pdfbox = cli();
         var auto = cli(Map.of("DOCTRUTH_RUNTIME_COMMAND", runtime.toString()));
 
-        int pdfboxCode = pdfbox.run(new String[] {
-            "parse", pdf.toString(), "--backend", "pdfbox", "--format", "json"
-        });
-        int autoCode = auto.run(new String[] {
-            "parse", pdf.toString(), "--backend", "auto", "--format", "json"
-        });
+        int pdfboxCode = pdfbox.run(new String[] {"parse", pdf.toString(), "--backend", "pdfbox", "--format", "json"});
+        int autoCode = auto.run(new String[] {"parse", pdf.toString(), "--backend", "auto", "--format", "json"});
 
         assertThat(pdfboxCode).isZero();
-        assertThat(MAPPER.readTree(pdfbox.out()).path("parserRun").path("backend").asText()).isEqualTo("pdfbox");
+        assertThat(MAPPER.readTree(pdfbox.out())
+                        .path("parserRun")
+                        .path("backend")
+                        .asText())
+                .isEqualTo("pdfbox");
         assertThat(autoCode).isZero();
-        assertThat(MAPPER.readTree(auto.out()).path("parserRun").path("backend").asText()).isEqualTo("sidecar");
+        assertThat(MAPPER.readTree(auto.out()).path("parserRun").path("backend").asText())
+                .isEqualTo("sidecar");
     }
 
     @Test
@@ -476,11 +479,16 @@ class TrustDocumentCliOutputProfileTest {
         var missingOut = cli();
         var unsupportedFormat = cli();
 
-        int missingOutCode = missingOut.run(new String[] {
-            "parse", pdf.toString(), "--format", "markdown", "--source-map"
-        });
+        int missingOutCode =
+                missingOut.run(new String[] {"parse", pdf.toString(), "--format", "markdown", "--source-map"});
         int unsupportedCode = unsupportedFormat.run(new String[] {
-            "parse", pdf.toString(), "--format", "json", "--source-map", "--out", tempDir.resolve("doc.json").toString()
+            "parse",
+            pdf.toString(),
+            "--format",
+            "json",
+            "--source-map",
+            "--out",
+            tempDir.resolve("doc.json").toString()
         });
 
         assertThat(missingOutCode).isEqualTo(2);
@@ -495,12 +503,10 @@ class TrustDocumentCliOutputProfileTest {
         var plainEvidence = cli();
         var jsonAnchored = cli();
 
-        int plainCode = plainEvidence.run(new String[] {
-            "parse", pdf.toString(), "--format", "plain", "--profile", "evidence"
-        });
-        int jsonCode = jsonAnchored.run(new String[] {
-            "parse", pdf.toString(), "--format", "json", "--profile", "anchored"
-        });
+        int plainCode =
+                plainEvidence.run(new String[] {"parse", pdf.toString(), "--format", "plain", "--profile", "evidence"});
+        int jsonCode =
+                jsonAnchored.run(new String[] {"parse", pdf.toString(), "--format", "json", "--profile", "anchored"});
 
         assertThat(plainCode).isEqualTo(2);
         assertThat(plainEvidence.err()).contains("only valid for markdown or json formats");
@@ -518,22 +524,20 @@ class TrustDocumentCliOutputProfileTest {
         var runtimeWithPdfbox = cli();
         var unknownBackend = cli();
 
-        int missingRuntimeCode = withSystemProperty("doctruth.runtime.disableSourceDiscovery", "true", () ->
-                missingRuntime.run(new String[] {
-                    "parse", pdf.toString(), "--backend", "sidecar", "--format", "markdown"
-                }));
-        int summaryCode = missingFormat.run(new String[] {
-            "parse", pdf.toString(), "--backend", "sidecar", "--runtime", runtime.toString()
-        });
-        int runtimeAsDefaultCode = runtimeAsDefault.run(new String[] {
-            "parse", pdf.toString(), "--runtime", runtime.toString(), "--format", "markdown"
-        });
+        int missingRuntimeCode = withSystemProperty(
+                "doctruth.runtime.disableSourceDiscovery",
+                "true",
+                () -> missingRuntime.run(
+                        new String[] {"parse", pdf.toString(), "--backend", "sidecar", "--format", "markdown"}));
+        int summaryCode = missingFormat.run(
+                new String[] {"parse", pdf.toString(), "--backend", "sidecar", "--runtime", runtime.toString()});
+        int runtimeAsDefaultCode = runtimeAsDefault.run(
+                new String[] {"parse", pdf.toString(), "--runtime", runtime.toString(), "--format", "markdown"});
         int runtimeWithPdfboxCode = runtimeWithPdfbox.run(new String[] {
             "parse", pdf.toString(), "--backend", "pdfbox", "--runtime", runtime.toString(), "--format", "markdown"
         });
-        int unknownBackendCode = unknownBackend.run(new String[] {
-            "parse", pdf.toString(), "--backend", "wat", "--format", "markdown"
-        });
+        int unknownBackendCode =
+                unknownBackend.run(new String[] {"parse", pdf.toString(), "--backend", "wat", "--format", "markdown"});
 
         assertThat(missingRuntimeCode).isEqualTo(1);
         assertThat(missingRuntime.err()).contains("RUST_RUNTIME_NOT_CONFIGURED");
@@ -584,9 +588,7 @@ class TrustDocumentCliOutputProfileTest {
 
     private Path fakeSidecarRuntime() throws IOException {
         Path runtime = tempDir.resolve("fake-doctruth-runtime");
-        Files.writeString(
-                runtime,
-                """
+        Files.writeString(runtime, """
                 #!/usr/bin/env sh
                 REQ=$(cat)
                 case "$REQ" in

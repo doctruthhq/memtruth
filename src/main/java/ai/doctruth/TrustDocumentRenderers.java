@@ -8,9 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -203,13 +203,15 @@ final class TrustDocumentRenderers {
 
     static String toMarkdownClean(TrustDocument doc) {
         var out = new StringBuilder();
-        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tableMarkdown, TrustDocumentRenderers::markdownUnit);
+        appendCleanBlocksInReadingOrder(
+                doc, out, TrustDocumentRenderers::tableMarkdown, TrustDocumentRenderers::markdownUnit);
         return out.toString().stripTrailing() + "\n";
     }
 
     static void writeMarkdownClean(TrustDocument doc, Writer writer) throws IOException {
         boolean[] wrote = new boolean[] {false};
-        writeCleanBlocksInReadingOrder(doc, writer, wrote, TrustDocumentRenderers::tableMarkdown, TrustDocumentRenderers::markdownUnit);
+        writeCleanBlocksInReadingOrder(
+                doc, writer, wrote, TrustDocumentRenderers::tableMarkdown, TrustDocumentRenderers::markdownUnit);
         writeChunked(writer, "\n");
     }
 
@@ -275,19 +277,26 @@ final class TrustDocumentRenderers {
 
     static String toPlainText(TrustDocument doc) {
         var out = new StringBuilder();
-        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tablePlainText, unit -> unit.content().text());
+        appendCleanBlocksInReadingOrder(doc, out, TrustDocumentRenderers::tablePlainText, unit -> unit.content()
+                .text());
         return out.toString().stripTrailing() + "\n";
     }
 
     static void writePlainText(TrustDocument doc, Writer writer) throws IOException {
         boolean[] wrote = new boolean[] {false};
-        writeCleanBlocksInReadingOrder(doc, writer, wrote, TrustDocumentRenderers::tablePlainText, unit -> unit.content().text());
+        writeCleanBlocksInReadingOrder(
+                doc, writer, wrote, TrustDocumentRenderers::tablePlainText, unit -> unit.content()
+                        .text());
         writeChunked(writer, "\n");
     }
 
     static String toCompactLlm(TrustDocument doc) {
         var out = new StringBuilder();
-        out.append("doc|").append(escape(doc.docId())).append('|').append(escape(doc.source().sourceHash())).append('\n');
+        out.append("doc|")
+                .append(escape(doc.docId()))
+                .append('|')
+                .append(escape(doc.source().sourceHash()))
+                .append('\n');
         doc.body().units().stream()
                 .sorted(Comparator.comparingInt(unit -> unit.location().readingOrder()))
                 .forEach(unit -> appendCompactUnit(out, unit));
@@ -303,7 +312,8 @@ final class TrustDocumentRenderers {
     }
 
     static void writeCompactLlm(TrustDocument doc, Writer writer) throws IOException {
-        writeChunked(writer, "doc|" + escape(doc.docId()) + "|" + escape(doc.source().sourceHash()) + "\n");
+        writeChunked(
+                writer, "doc|" + escape(doc.docId()) + "|" + escape(doc.source().sourceHash()) + "\n");
         for (var unit : sortedUnits(doc)) {
             writeChunked(writer, compactUnit(unit) + "\n");
         }
@@ -323,7 +333,11 @@ final class TrustDocumentRenderers {
     static TrustRenderedDocument toMarkdownWithSourceMap(TrustDocument doc) {
         var rendered = renderMarkdownSourceMap(doc);
         return new TrustRenderedDocument(
-                rendered.format(), rendered.text(), rendered.sourceHash(), rendered.contentHash(), rendered.sourceMap());
+                rendered.format(),
+                rendered.text(),
+                rendered.sourceHash(),
+                rendered.contentHash(),
+                rendered.sourceMap());
     }
 
     static void writeMarkdownSourceMap(TrustDocument doc, Writer writer) throws IOException {
@@ -345,7 +359,11 @@ final class TrustDocumentRenderers {
     static TrustRenderedDocument toCompactLlmWithSourceMap(TrustDocument doc) {
         var rendered = renderCompactLlmSourceMap(doc);
         return new TrustRenderedDocument(
-                rendered.format(), rendered.text(), rendered.sourceHash(), rendered.contentHash(), rendered.sourceMap());
+                rendered.format(),
+                rendered.text(),
+                rendered.sourceHash(),
+                rendered.contentHash(),
+                rendered.sourceMap());
     }
 
     static void writeCompactLlmSourceMap(TrustDocument doc, Writer writer) throws IOException {
@@ -355,7 +373,11 @@ final class TrustDocumentRenderers {
     private static RenderedSourceMap renderCompactLlmSourceMap(TrustDocument doc) {
         var out = new StringBuilder();
         var sourceMap = new ArrayList<TrustSourceMapEntry>();
-        out.append("doc|").append(escape(doc.docId())).append('|').append(escape(doc.source().sourceHash())).append('\n');
+        out.append("doc|")
+                .append(escape(doc.docId()))
+                .append('|')
+                .append(escape(doc.source().sourceHash()))
+                .append('\n');
         for (var unit : sortedUnits(doc)) {
             appendMappedCompactUnit(out, sourceMap, unit);
         }
@@ -694,8 +716,14 @@ final class TrustDocumentRenderers {
     }
 
     private static List<List<String>> rows(TrustTable table) {
-        int maxRow = table.cells().stream().mapToInt(cell -> cell.rowRange().end()).max().orElse(-1);
-        int maxCol = table.cells().stream().mapToInt(cell -> cell.columnRange().end()).max().orElse(-1);
+        int maxRow = table.cells().stream()
+                .mapToInt(cell -> cell.rowRange().end())
+                .max()
+                .orElse(-1);
+        int maxCol = table.cells().stream()
+                .mapToInt(cell -> cell.columnRange().end())
+                .max()
+                .orElse(-1);
         var rows = new ArrayList<List<String>>();
         for (int row = 0; row <= maxRow; row++) {
             var values = new ArrayList<String>();
@@ -709,8 +737,10 @@ final class TrustDocumentRenderers {
 
     private static String cellText(TrustTable table, int row, int col) {
         return table.cells().stream()
-                .filter(cell -> cell.rowRange().start() <= row && cell.rowRange().end() >= row)
-                .filter(cell -> cell.columnRange().start() <= col && cell.columnRange().end() >= col)
+                .filter(cell ->
+                        cell.rowRange().start() <= row && cell.rowRange().end() >= row)
+                .filter(cell ->
+                        cell.columnRange().start() <= col && cell.columnRange().end() >= col)
                 .findFirst()
                 .map(TrustTableCell::text)
                 .orElse("");
@@ -718,8 +748,10 @@ final class TrustDocumentRenderers {
 
     private static TrustTableCell cellAt(TrustTable table, int row, int col) {
         return table.cells().stream()
-                .filter(cell -> cell.rowRange().start() <= row && cell.rowRange().end() >= row)
-                .filter(cell -> cell.columnRange().start() <= col && cell.columnRange().end() >= col)
+                .filter(cell ->
+                        cell.rowRange().start() <= row && cell.rowRange().end() >= row)
+                .filter(cell ->
+                        cell.columnRange().start() <= col && cell.columnRange().end() >= col)
                 .findFirst()
                 .orElseThrow();
     }
@@ -813,7 +845,8 @@ final class TrustDocumentRenderers {
             Writer writer,
             boolean[] wrote,
             Function<TrustTable, String> tableRenderer,
-            Function<TrustUnit, String> unitRenderer) throws IOException {
+            Function<TrustUnit, String> unitRenderer)
+            throws IOException {
         var emittedTables = new java.util.HashSet<String>();
         for (var unit : sortedUnits(doc)) {
             if (unit.kind() == TrustUnitKind.TABLE_CELL) {
@@ -831,15 +864,13 @@ final class TrustDocumentRenderers {
     private static java.util.Optional<TrustTable> tableForUnit(TrustDocument doc, TrustUnit unit) {
         return doc.body().tables().stream()
                 .filter(table -> table.tableId().equals(unit.content().sourceObjectId())
-                        || table.cells().stream()
-                                .anyMatch(cell -> cell.cellId().equals(unit.content().sourceObjectId())))
+                        || table.cells().stream().anyMatch(cell -> cell.cellId()
+                                .equals(unit.content().sourceObjectId())))
                 .findFirst();
     }
 
     private static void appendTablesWithoutUnits(
-            TrustDocument doc,
-            java.util.Set<String> emittedTables,
-            java.util.function.Consumer<TrustTable> appender) {
+            TrustDocument doc, java.util.Set<String> emittedTables, java.util.function.Consumer<TrustTable> appender) {
         for (var table : doc.body().tables()) {
             if (emittedTables.add(table.tableId())) {
                 appender.accept(table);
@@ -884,7 +915,8 @@ final class TrustDocumentRenderers {
                 .append('|');
         int start = out.length();
         out.append(escape(unit.content().text()));
-        sourceMap.add(new TrustSourceMapEntry(start, out.length(), unit.unitId(), unit.evidence().evidenceSpanIds()));
+        sourceMap.add(new TrustSourceMapEntry(
+                start, out.length(), unit.unitId(), unit.evidence().evidenceSpanIds()));
         unit.location().boundingBox().ifPresent(box -> out.append("|bbox=").append(escape(bboxAttribute(box))));
         out.append('\n');
     }
@@ -910,16 +942,17 @@ final class TrustDocumentRenderers {
     }
 
     private static String compactTable(TrustTable table) {
-        int rows = table.cells().stream().mapToInt(cell -> cell.rowRange().end()).max().orElse(-1) + 1;
-        int columns = table.cells().stream().mapToInt(cell -> cell.columnRange().end()).max().orElse(-1) + 1;
-        return "t|"
-                + escape(table.tableId())
-                + "|p"
-                + table.pageNumber()
-                + "|rows="
-                + rows
-                + "|cols="
-                + columns;
+        int rows = table.cells().stream()
+                        .mapToInt(cell -> cell.rowRange().end())
+                        .max()
+                        .orElse(-1)
+                + 1;
+        int columns = table.cells().stream()
+                        .mapToInt(cell -> cell.columnRange().end())
+                        .max()
+                        .orElse(-1)
+                + 1;
+        return "t|" + escape(table.tableId()) + "|p" + table.pageNumber() + "|rows=" + rows + "|cols=" + columns;
     }
 
     private static void appendCompactWarning(StringBuilder out, String scope, ParserWarning warning) {
@@ -954,8 +987,8 @@ final class TrustDocumentRenderers {
             return;
         }
         appendBlock(out, "## Parser Warnings");
-        warnings.forEach(warning -> appendBlock(
-                out, "- " + warning.severity() + " " + warning.code() + ": " + warning.message()));
+        warnings.forEach(warning ->
+                appendBlock(out, "- " + warning.severity() + " " + warning.code() + ": " + warning.message()));
     }
 
     private static void appendUnitWarnings(StringBuilder out, TrustDocument doc) {
@@ -966,13 +999,15 @@ final class TrustDocumentRenderers {
             return;
         }
         appendBlock(out, "## Unit Warnings");
-        warnings.forEach(unit -> unit.evidence().warnings().forEach(warning -> appendBlock(
-                out,
-                "- " + unit.unitId() + " " + warning.severity() + " " + warning.code() + ": " + warning.message())));
+        warnings.forEach(unit -> unit.evidence()
+                .warnings()
+                .forEach(warning -> appendBlock(
+                        out,
+                        "- " + unit.unitId() + " " + warning.severity() + " " + warning.code() + ": "
+                                + warning.message())));
     }
 
-    private static void writeWarnings(Writer writer, boolean[] wrote, List<ParserWarning> warnings)
-            throws IOException {
+    private static void writeWarnings(Writer writer, boolean[] wrote, List<ParserWarning> warnings) throws IOException {
         if (warnings.isEmpty()) {
             return;
         }
@@ -1007,8 +1042,7 @@ final class TrustDocumentRenderers {
         }
     }
 
-    private static void appendMappedBlock(
-            StringBuilder out, List<TrustSourceMapEntry> sourceMap, TrustUnit unit) {
+    private static void appendMappedBlock(StringBuilder out, List<TrustSourceMapEntry> sourceMap, TrustUnit unit) {
         String rendered = unit.content().text().strip();
         if (rendered.isBlank()) {
             return;
@@ -1018,7 +1052,8 @@ final class TrustDocumentRenderers {
         }
         int start = out.length();
         out.append(rendered);
-        sourceMap.add(new TrustSourceMapEntry(start, out.length(), unit.unitId(), unit.evidence().evidenceSpanIds()));
+        sourceMap.add(new TrustSourceMapEntry(
+                start, out.length(), unit.unitId(), unit.evidence().evidenceSpanIds()));
     }
 
     private static void appendMappedTable(
@@ -1052,8 +1087,8 @@ final class TrustDocumentRenderers {
             var rendered = markdownCell(rowValues.get(col));
             int start = out.length();
             out.append(rendered);
-            cellUnit(doc, cellAt(table, row, col)).ifPresent(unit ->
-                    sourceMap.add(new TrustSourceMapEntry(
+            cellUnit(doc, cellAt(table, row, col))
+                    .ifPresent(unit -> sourceMap.add(new TrustSourceMapEntry(
                             start, out.length(), unit.unitId(), unit.evidence().evidenceSpanIds())));
         }
         out.append(" |\n");
@@ -1080,9 +1115,7 @@ final class TrustDocumentRenderers {
         unit.location().boundingBox().ifPresent(box -> out.append(" data-bbox=\"")
                 .append(html(bboxAttribute(box)))
                 .append("\" data-bbox-space=\"normalized-0-1000\""));
-        out.append(">")
-                .append(html(unit.content().text()))
-                .append("</section>\n");
+        out.append(">").append(html(unit.content().text())).append("</section>\n");
     }
 
     private static void appendHtmlPageStart(StringBuilder out, TrustPage page) {
@@ -1121,7 +1154,9 @@ final class TrustDocumentRenderers {
     }
 
     private static void appendHtmlCell(StringBuilder out, TrustDocument doc, TrustTableCell cell) {
-        out.append("      <td data-trust-cell-id=\"").append(html(cell.cellId())).append("\"");
+        out.append("      <td data-trust-cell-id=\"")
+                .append(html(cell.cellId()))
+                .append("\"");
         cellUnit(doc, cell).ifPresent(unit -> out.append(" data-trust-unit-id=\"")
                 .append(html(unit.unitId()))
                 .append("\" data-evidence-span-ids=\"")
@@ -1137,8 +1172,9 @@ final class TrustDocumentRenderers {
         out.append("    <div data-trust-overlay-layer=\"bbox\" aria-hidden=\"true\">\n");
         sortedUnits(doc).stream()
                 .filter(unit -> unit.location().page() == page.pageNumber())
-                .forEach(unit -> unit.location().boundingBox().ifPresent(box ->
-                        appendHtmlOverlay(out, "unit", unit.unitId(), box)));
+                .forEach(unit -> unit.location()
+                        .boundingBox()
+                        .ifPresent(box -> appendHtmlOverlay(out, "unit", unit.unitId(), box)));
         doc.body().tables().stream()
                 .filter(table -> table.pageNumber() == page.pageNumber())
                 .forEach(table -> {

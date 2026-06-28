@@ -1,9 +1,9 @@
 package ai.doctruth.cli;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -267,7 +267,8 @@ final class DoctorCommand {
         }
     }
 
-    private record ParserDoctor(String backend, boolean available, List<String> outputProfiles, JsonNode runtimeDoctor) {
+    private record ParserDoctor(
+            String backend, boolean available, List<String> outputProfiles, JsonNode runtimeDoctor) {
         static ParserDoctor from(Map<String, String> env) {
             var runtime = DocTruthRuntime.configuredCommand(env);
             if (runtime.isEmpty()) {
@@ -279,7 +280,8 @@ final class DoctorCommand {
             var backend = new SidecarParserBackend(runtime.get());
             var capabilities = backend.capabilities();
             var health = backend.doctor();
-            return new ParserDoctor("sidecar", health.available(), capabilities.outputProfiles(), runtimeDoctor(runtime.get(), env));
+            return new ParserDoctor(
+                    "sidecar", health.available(), capabilities.outputProfiles(), runtimeDoctor(runtime.get(), env));
         }
 
         private static ParserDoctor unavailable() {

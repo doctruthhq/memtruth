@@ -80,7 +80,8 @@ class TrustDocumentParserApiContractTest {
             var doc = TrustDocumentParser.parse(pdf);
 
             assertThat(doc.parserRun().backend()).isEqualTo("sidecar");
-            assertThat(doc.toMarkdownClean()).contains("Rust default parser core.")
+            assertThat(doc.toMarkdownClean())
+                    .contains("Rust default parser core.")
                     .doesNotContain("PDFBox text that should not win.");
         });
     }
@@ -100,7 +101,8 @@ class TrustDocumentParserApiContractTest {
                     var doc = TrustDocumentParser.parse(pdf, ParserPreset.OCR);
 
                     assertThat(doc.parserRun().backend()).isEqualTo("sidecar");
-                    assertThat(doc.toMarkdownClean()).contains("Rust OCR parser core.")
+                    assertThat(doc.toMarkdownClean())
+                            .contains("Rust OCR parser core.")
                             .doesNotContain("Java OCR fallback should not win");
                 });
     }
@@ -112,24 +114,28 @@ class TrustDocumentParserApiContractTest {
         Path worker = fakeModelWorker();
         Path runtime = fakeModelWorkerRuntime(worker, null, 0.97);
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.model.command", worker.toString()), () -> {
-            var doc = TrustDocumentParser.parse(pdf, ParserPreset.TABLE_LITE);
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.model.command", worker.toString()),
+                () -> {
+                    var doc = TrustDocumentParser.parse(pdf, ParserPreset.TABLE_LITE);
 
-            assertThat(doc.parserRun().preset()).isEqualTo("table-lite");
-            assertThat(doc.parserRun().backend()).isEqualTo("rust-sidecar+model-worker");
-            assertThat(doc.parserRun().models()).containsExactly("slanet-plus:v1");
-            assertThat(doc.parserRun().warnings())
-                    .extracting(ParserWarning::code)
-                    .doesNotContain("model_unavailable_fallback");
-            assertThat(doc.auditGradeStatus()).isEqualTo(AuditGradeStatus.AUDIT_GRADE);
-            assertThat(doc.body().tables()).singleElement().satisfies(table -> {
-                assertThat(table.tableId()).isEqualTo("model-table-1");
-                assertThat(table.cells()).extracting(TrustTableCell::text).containsExactly("Name", "Score", "Alex", "98");
-            });
-            assertThat(doc.body().units())
-                    .filteredOn(unit -> unit.kind() == TrustUnitKind.TABLE_CELL)
-                    .hasSize(4);
-        });
+                    assertThat(doc.parserRun().preset()).isEqualTo("table-lite");
+                    assertThat(doc.parserRun().backend()).isEqualTo("rust-sidecar+model-worker");
+                    assertThat(doc.parserRun().models()).containsExactly("slanet-plus:v1");
+                    assertThat(doc.parserRun().warnings())
+                            .extracting(ParserWarning::code)
+                            .doesNotContain("model_unavailable_fallback");
+                    assertThat(doc.auditGradeStatus()).isEqualTo(AuditGradeStatus.AUDIT_GRADE);
+                    assertThat(doc.body().tables()).singleElement().satisfies(table -> {
+                        assertThat(table.tableId()).isEqualTo("model-table-1");
+                        assertThat(table.cells())
+                                .extracting(TrustTableCell::text)
+                                .containsExactly("Name", "Score", "Alex", "98");
+                    });
+                    assertThat(doc.body().units())
+                            .filteredOn(unit -> unit.kind() == TrustUnitKind.TABLE_CELL)
+                            .hasSize(4);
+                });
     }
 
     @Test
@@ -145,7 +151,8 @@ class TrustDocumentParserApiContractTest {
                 Map.of(
                         "doctruth.runtime.command", runtime.toString(),
                         "doctruth.model.command", worker.toString(),
-                        "doctruth.model.cache", cache.toString()), () -> {
+                        "doctruth.model.cache", cache.toString()),
+                () -> {
                     var doc = TrustDocumentParser.parse(pdf, ParserPreset.TABLE_LITE);
 
                     assertThat(doc.parserRun().backend()).isEqualTo("rust-sidecar+model-worker");
@@ -162,21 +169,23 @@ class TrustDocumentParserApiContractTest {
                 """);
         Path runtime = fakeOcrRuntime(worker, 0.91, "OCR recovered v1 trust text");
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            var doc = TrustDocumentParser.parse(pdf, ParserPreset.OCR);
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    var doc = TrustDocumentParser.parse(pdf, ParserPreset.OCR);
 
-            assertThat(doc.parserRun().preset()).isEqualTo("ocr");
-            assertThat(doc.parserRun().backend()).isEqualTo("rust-sidecar+model-worker");
-            assertThat(doc.parserRun().models()).contains("ocr-router:v1");
-            assertThat(doc.parserRun().warnings())
-                    .extracting(ParserWarning::code)
-                    .doesNotContain("model_unavailable_fallback");
-            assertThat(doc.toMarkdownClean()).contains("OCR recovered v1 trust text");
-            assertThat(doc.body().units()).singleElement().satisfies(unit -> {
-                assertThat(unit.kind()).isEqualTo(TrustUnitKind.OCR_REGION);
-                assertThat(unit.location().boundingBox()).isPresent();
-            });
-        });
+                    assertThat(doc.parserRun().preset()).isEqualTo("ocr");
+                    assertThat(doc.parserRun().backend()).isEqualTo("rust-sidecar+model-worker");
+                    assertThat(doc.parserRun().models()).contains("ocr-router:v1");
+                    assertThat(doc.parserRun().warnings())
+                            .extracting(ParserWarning::code)
+                            .doesNotContain("model_unavailable_fallback");
+                    assertThat(doc.toMarkdownClean()).contains("OCR recovered v1 trust text");
+                    assertThat(doc.body().units()).singleElement().satisfies(unit -> {
+                        assertThat(unit.kind()).isEqualTo(TrustUnitKind.OCR_REGION);
+                        assertThat(unit.location().boundingBox()).isPresent();
+                    });
+                });
     }
 
     @Test
@@ -188,22 +197,24 @@ class TrustDocumentParserApiContractTest {
                 """);
         Path runtime = fakeOcrRuntime(worker, 0.42, "uncertain OCR text");
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            var doc = TrustDocumentParser.parse(pdf, ParserPreset.OCR);
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    var doc = TrustDocumentParser.parse(pdf, ParserPreset.OCR);
 
-            assertThat(doc.auditGradeStatus()).isEqualTo(AuditGradeStatus.NOT_AUDIT_GRADE);
-            assertThat(doc.body().units()).singleElement().satisfies(unit -> {
-                assertThat(unit.kind()).isEqualTo(TrustUnitKind.OCR_REGION);
-                assertThat(unit.evidence().confidence().score()).isEqualTo(0.42);
-                assertThat(unit.evidence().confidence().rationale()).contains("OCR");
-                assertThat(unit.evidence().warnings())
-                        .extracting(ParserWarning::code)
-                        .containsExactly("ocr_low_confidence");
-                assertThat(unit.evidence().warnings())
-                        .extracting(ParserWarning::severity)
-                        .containsExactly(ParserWarningSeverity.SEVERE);
-            });
-        });
+                    assertThat(doc.auditGradeStatus()).isEqualTo(AuditGradeStatus.NOT_AUDIT_GRADE);
+                    assertThat(doc.body().units()).singleElement().satisfies(unit -> {
+                        assertThat(unit.kind()).isEqualTo(TrustUnitKind.OCR_REGION);
+                        assertThat(unit.evidence().confidence().score()).isEqualTo(0.42);
+                        assertThat(unit.evidence().confidence().rationale()).contains("OCR");
+                        assertThat(unit.evidence().warnings())
+                                .extracting(ParserWarning::code)
+                                .containsExactly("ocr_low_confidence");
+                        assertThat(unit.evidence().warnings())
+                                .extracting(ParserWarning::severity)
+                                .containsExactly(ParserWarningSeverity.SEVERE);
+                    });
+                });
     }
 
     @Test
@@ -276,7 +287,8 @@ class TrustDocumentParserApiContractTest {
         assertThatThrownBy(() -> TrustDocumentParser.sha256SourceFile(directory))
                 .isInstanceOf(ParseException.class)
                 .hasMessageContaining("failed to hash source document")
-                .satisfies(error -> assertThat(((ParseException) error).errorCode()).isEqualTo("SOURCE_HASH_FAILED"));
+                .satisfies(error ->
+                        assertThat(((ParseException) error).errorCode()).isEqualTo("SOURCE_HASH_FAILED"));
     }
 
     @Test
@@ -292,7 +304,8 @@ class TrustDocumentParserApiContractTest {
         assertThatThrownBy(() -> TrustDocumentParser.parse(broken, "broken-stream.pdf"))
                 .isInstanceOf(ParseException.class)
                 .hasMessageContaining("synthetic stream failure")
-                .satisfies(error -> assertThat(((ParseException) error).errorCode()).isEqualTo("PDF_STREAM_READ_FAILED"));
+                .satisfies(error ->
+                        assertThat(((ParseException) error).errorCode()).isEqualTo("PDF_STREAM_READ_FAILED"));
     }
 
     @Test
@@ -390,9 +403,7 @@ class TrustDocumentParserApiContractTest {
 
     private Path fakeRustRuntime(String text) throws IOException {
         Path runtime = tempDir.resolve("fake-doctruth-runtime");
-        Files.writeString(
-                runtime,
-                """
+        Files.writeString(runtime, """
                 #!/usr/bin/env sh
                 cat >/dev/null
                 cat <<'JSON'
@@ -415,13 +426,13 @@ class TrustDocumentParserApiContractTest {
                 {"docId":"sha256:rust-ocr","source":{"sourceFilename":"runtime.pdf","sourceHash":"sha256:rust-ocr","metadata":{"sourceFilename":"runtime.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":false,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"OCR_REGION","page":1,"text":"%s","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1,"boundingBox":{"x0":10,"y0":20,"x1":200,"y1":80}},"sourceObjectId":"ocr-0001","confidence":{"score":%s,"rationale":"OCR page confidence"},"warnings":[%s]}],"tables":[]},"parserRun":{"parserVersion":"runtime-test","preset":"ocr","backend":"rust-sidecar+model-worker","models":["ocr-router:v1"],"warnings":[]},"auditGradeStatus":"%s"}
                 JSON
                 """.formatted(
-                        worker.toString(),
-                        text,
-                        Double.toString(confidence),
-                        confidence < 0.85
-                                ? "{\"code\":\"ocr_low_confidence\",\"severity\":\"SEVERE\",\"message\":\"OCR confidence below audit threshold\"}"
-                                : "",
-                        confidence < 0.85 ? "NOT_AUDIT_GRADE" : "AUDIT_GRADE"),
+                                worker.toString(),
+                                text,
+                                Double.toString(confidence),
+                                confidence < 0.85
+                                        ? "{\"code\":\"ocr_low_confidence\",\"severity\":\"SEVERE\",\"message\":\"OCR confidence below audit threshold\"}"
+                                        : "",
+                                confidence < 0.85 ? "NOT_AUDIT_GRADE" : "AUDIT_GRADE"),
                 StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
@@ -429,9 +440,7 @@ class TrustDocumentParserApiContractTest {
 
     private Path fakeModelWorkerRuntime(Path worker, Path expectedCache, double confidence) throws IOException {
         Path runtime = tempDir.resolve("fake-model-runtime" + (expectedCache == null ? "" : "-cache"));
-        String cacheCheck = expectedCache == null
-                ? ""
-                : "\ntest \"$DOCTRUTH_MODEL_CACHE\" = \"" + expectedCache + "\"";
+        String cacheCheck = expectedCache == null ? "" : "\ntest \"$DOCTRUTH_MODEL_CACHE\" = \"" + expectedCache + "\"";
         Files.writeString(
                 runtime,
                 """
@@ -442,13 +451,13 @@ class TrustDocumentParserApiContractTest {
                 {"docId":"sha256:rust-model","source":{"sourceFilename":"runtime.pdf","sourceHash":"sha256:rust-model","metadata":{"sourceFilename":"runtime.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":612,"height":792,"textLayerAvailable":true,"imageHash":"sha256:model-page"}],"units":[{"unitId":"unit-1","kind":"TABLE_CELL","page":1,"text":"Name","evidenceSpanIds":["unit-1-span"],"location":{"page":1,"readingOrder":11,"boundingBox":{"x0":100,"y0":100,"x1":220,"y1":150}},"sourceObjectId":"model-table-1","confidence":{"score":%s,"rationale":"fake model worker"},"warnings":[]},{"unitId":"unit-2","kind":"TABLE_CELL","page":1,"text":"Score","evidenceSpanIds":["unit-2-span"],"location":{"page":1,"readingOrder":12,"boundingBox":{"x0":220,"y0":100,"x1":340,"y1":150}},"sourceObjectId":"model-table-1","confidence":{"score":%s,"rationale":"fake model worker"},"warnings":[]},{"unitId":"unit-3","kind":"TABLE_CELL","page":1,"text":"Alex","evidenceSpanIds":["unit-3-span"],"location":{"page":1,"readingOrder":21,"boundingBox":{"x0":100,"y0":150,"x1":220,"y1":200}},"sourceObjectId":"model-table-1","confidence":{"score":%s,"rationale":"fake model worker"},"warnings":[]},{"unitId":"unit-4","kind":"TABLE_CELL","page":1,"text":"98","evidenceSpanIds":["unit-4-span"],"location":{"page":1,"readingOrder":22,"boundingBox":{"x0":220,"y0":150,"x1":340,"y1":200}},"sourceObjectId":"model-table-1","confidence":{"score":%s,"rationale":"fake model worker"},"warnings":[]}],"tables":[{"tableId":"model-table-1","pageNumber":1,"boundingBox":{"x0":100,"y0":100,"x1":340,"y1":200},"confidence":{"score":%s,"rationale":"fake model worker"},"cells":[{"cellId":"cell-1","rowRange":{"start":1,"end":1},"columnRange":{"start":1,"end":1},"boundingBox":{"x0":100,"y0":100,"x1":220,"y1":150},"text":"Name"},{"cellId":"cell-2","rowRange":{"start":1,"end":1},"columnRange":{"start":2,"end":2},"boundingBox":{"x0":220,"y0":100,"x1":340,"y1":150},"text":"Score"},{"cellId":"cell-3","rowRange":{"start":2,"end":2},"columnRange":{"start":1,"end":1},"boundingBox":{"x0":100,"y0":150,"x1":220,"y1":200},"text":"Alex"},{"cellId":"cell-4","rowRange":{"start":2,"end":2},"columnRange":{"start":2,"end":2},"boundingBox":{"x0":220,"y0":150,"x1":340,"y1":200},"text":"98"}]}]},"parserRun":{"parserVersion":"runtime-test","preset":"table-lite","backend":"rust-sidecar+model-worker","models":["slanet-plus:v1"],"warnings":[]},"auditGradeStatus":"AUDIT_GRADE"}
                 JSON
                 """.formatted(
-                        worker.toString(),
-                        cacheCheck,
-                        Double.toString(confidence),
-                        Double.toString(confidence),
-                        Double.toString(confidence),
-                        Double.toString(confidence),
-                        Double.toString(confidence)),
+                                worker.toString(),
+                                cacheCheck,
+                                Double.toString(confidence),
+                                Double.toString(confidence),
+                                Double.toString(confidence),
+                                Double.toString(confidence),
+                                Double.toString(confidence)),
                 StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
@@ -469,9 +478,7 @@ class TrustDocumentParserApiContractTest {
                 assert request["models"][0]["cacheStatus"] == "MISSING"
                 assert request["models"][0]["actualSha256"] == ""
                 """.formatted(pythonLiteral(expectedCache.toString()), pythonLiteral(expectedCache.toString()));
-        Files.writeString(
-                worker,
-                """
+        Files.writeString(worker, """
                 #!/usr/bin/env python3
                 import json
                 import pathlib
@@ -479,9 +486,7 @@ class TrustDocumentParserApiContractTest {
 
                 request = json.loads(sys.stdin.read())
                 assert request["preset"] == "table-lite"
-                """
-                        + cacheAssertions
-                        + """
+                """ + cacheAssertions + """
                 source = pathlib.Path(request["sourcePath"]).name
 
                 def bbox(x0, y0, x1, y1):
@@ -559,16 +564,13 @@ class TrustDocumentParserApiContractTest {
                     }
                 }
                 print(json.dumps(payload))
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(worker.toFile().setExecutable(true)).isTrue();
         return worker;
     }
 
     private static String pythonLiteral(String value) {
-        return "'''"
-                + value.replace("\\", "\\\\").replace("'''", "'\"'\"'")
-                + "'''";
+        return "'''" + value.replace("\\", "\\\\").replace("'''", "'\"'\"'") + "'''";
     }
 
     private static void withSystemProperty(String key, String value, ThrowingRunnable runnable) throws Exception {

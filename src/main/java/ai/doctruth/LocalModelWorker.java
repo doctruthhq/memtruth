@@ -35,7 +35,8 @@ final class LocalModelWorker {
             var process = new ProcessBuilder(command)
                     .redirectError(ProcessBuilder.Redirect.PIPE)
                     .start();
-            process.getOutputStream().write(requestJson(source, sourceHash, preset).getBytes(StandardCharsets.UTF_8));
+            process.getOutputStream()
+                    .write(requestJson(source, sourceHash, preset).getBytes(StandardCharsets.UTF_8));
             process.getOutputStream().close();
             if (!process.waitFor(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
@@ -46,21 +47,32 @@ final class LocalModelWorker {
             var stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             var root = MAPPER.readTree(extractJsonObject(stdout));
             if (!root.path("ok").asBoolean(false)) {
-                LOG.warn("local model worker failed command={} preset={} message={} stderr={}",
-                        command, preset.id(), root.path("message").asText("unknown"), stderr.strip());
+                LOG.warn(
+                        "local model worker failed command={} preset={} message={} stderr={}",
+                        command,
+                        preset.id(),
+                        root.path("message").asText("unknown"),
+                        stderr.strip());
                 return Optional.empty();
             }
             return Optional.of(TrustDocumentJson.fromJsonFull(MAPPER.writeValueAsString(root.path("document"))));
         } catch (IOException e) {
-            LOG.warn("local model worker unavailable command={} preset={} message={}", command, preset.id(), e.getMessage());
+            LOG.warn(
+                    "local model worker unavailable command={} preset={} message={}",
+                    command,
+                    preset.id(),
+                    e.getMessage());
             return Optional.empty();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("local model worker interrupted command={} preset={}", command, preset.id());
             return Optional.empty();
         } catch (RuntimeException e) {
-            LOG.warn("local model worker returned unusable output command={} preset={} message={}",
-                    command, preset.id(), e.getMessage());
+            LOG.warn(
+                    "local model worker returned unusable output command={} preset={} message={}",
+                    command,
+                    preset.id(),
+                    e.getMessage());
             return Optional.empty();
         }
     }
@@ -74,13 +86,13 @@ final class LocalModelWorker {
         request.put("sourceFilename", source.getFileName().toString());
         var models = ModelManifestResolver.requiredArtifacts(preset);
         var cacheDir = modelCacheDirectory();
-        var cacheReport = ModelCacheVerifier.verify(cacheDir, models.stream()
-                .map(ModelManifestArtifact::descriptor)
-                .toList());
+        var cacheReport = ModelCacheVerifier.verify(
+                cacheDir, models.stream().map(ModelManifestArtifact::descriptor).toList());
         request.put("modelCacheDirectory", cacheDir.toAbsolutePath().toString());
-        request.putArray("models").addAll(models.stream()
-                .map(artifact -> modelJson(cacheDir, artifact, cacheReport))
-                .toList());
+        request.putArray("models")
+                .addAll(models.stream()
+                        .map(artifact -> modelJson(cacheDir, artifact, cacheReport))
+                        .toList());
         request.put("bytesBase64", Base64.getEncoder().encodeToString(Files.readAllBytes(source)));
         return MAPPER.writeValueAsString(request);
     }
@@ -98,7 +110,9 @@ final class LocalModelWorker {
                 .put("sha256", model.sha256())
                 .put("sizeBytes", model.sizeBytes())
                 .put("required", model.required())
-                .put("cachePath", cacheDir.resolve(model.cacheFilename()).toAbsolutePath().toString())
+                .put(
+                        "cachePath",
+                        cacheDir.resolve(model.cacheFilename()).toAbsolutePath().toString())
                 .put("cacheStatus", artifact.status().name())
                 .put("actualSha256", artifact.actualSha256())
                 .put("actualSizeBytes", artifact.actualSizeBytes());

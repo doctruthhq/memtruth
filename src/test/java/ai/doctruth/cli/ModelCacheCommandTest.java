@@ -12,9 +12,9 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Map;
 
-import com.sun.net.httpserver.HttpServer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -37,7 +37,7 @@ class ModelCacheCommandTest {
         var cli = cli();
 
         int code = cli.run(new String[] {
-                "cache", "warm", manifest.toString(), "--preset", "table-lite", "--cache", cache.toString(), "--json"
+            "cache", "warm", manifest.toString(), "--preset", "table-lite", "--cache", cache.toString(), "--json"
         });
 
         assertThat(code).isZero();
@@ -62,8 +62,14 @@ class ModelCacheCommandTest {
         var cli = cli();
 
         int code = cli.run(new String[] {
-                "cache", "warm", manifest.toString(), "--preset", "table-lite", "--cache",
-                tempDir.resolve("cache").toString(), "--offline"
+            "cache",
+            "warm",
+            manifest.toString(),
+            "--preset",
+            "table-lite",
+            "--cache",
+            tempDir.resolve("cache").toString(),
+            "--offline"
         });
 
         assertThat(code).isEqualTo(1);
@@ -90,14 +96,15 @@ class ModelCacheCommandTest {
             var cli = cli();
 
             int code = cli.run(new String[] {
-                    "cache", "warm", manifest.toString(), "--preset", "table-lite", "--cache", cache.toString(), "--json"
+                "cache", "warm", manifest.toString(), "--preset", "table-lite", "--cache", cache.toString(), "--json"
             });
 
             assertThat(code).isZero();
             assertThat(Files.readString(cache.resolve("slanet-plus-local.bin"))).isEqualTo("tiny remote model");
             JsonNode root = MAPPER.readTree(cli.out());
             assertThat(root.path("allReady").asBoolean()).isTrue();
-            assertThat(root.path("artifacts").get(0).path("actualSha256").asText()).isEqualTo(sha);
+            assertThat(root.path("artifacts").get(0).path("actualSha256").asText())
+                    .isEqualTo(sha);
         } finally {
             server.stop(0);
         }
@@ -120,13 +127,13 @@ class ModelCacheCommandTest {
         assertThat(cache.resolve("slanet-plus-local.bin")).hasContent("tiny default cache model");
 
         var missingPreset = cli();
-        assertThat(missingPreset.run(new String[] {"cache", "warm", manifest.toString()})).isEqualTo(2);
+        assertThat(missingPreset.run(new String[] {"cache", "warm", manifest.toString()}))
+                .isEqualTo(2);
         assertThat(missingPreset.err()).contains("--preset is required");
 
         var unknownOption = cli();
-        assertThat(unknownOption.run(new String[] {
-                    "cache", "warm", manifest.toString(), "--preset", "table-lite", "--wat"
-                }))
+        assertThat(unknownOption.run(
+                        new String[] {"cache", "warm", manifest.toString(), "--preset", "table-lite", "--wat"}))
                 .isEqualTo(2);
         assertThat(unknownOption.err()).contains("unknown cache option");
     }
@@ -138,7 +145,12 @@ class ModelCacheCommandTest {
         var cli = cli();
 
         int missingPresetCode = cli.run(new String[] {
-            "cache", "warm", missingPresetManifest.toString(), "--preset", "table-lite", "--cache",
+            "cache",
+            "warm",
+            missingPresetManifest.toString(),
+            "--preset",
+            "table-lite",
+            "--cache",
             tempDir.resolve("missing-preset-cache").toString()
         });
 
@@ -148,7 +160,12 @@ class ModelCacheCommandTest {
         var noSourceManifest = manifest("", "sha256:" + "b".repeat(64));
         var noSource = cli();
         int noSourceCode = noSource.run(new String[] {
-            "cache", "warm", noSourceManifest.toString(), "--preset", "table-lite", "--cache",
+            "cache",
+            "warm",
+            noSourceManifest.toString(),
+            "--preset",
+            "table-lite",
+            "--cache",
             tempDir.resolve("no-source-cache").toString()
         });
 
@@ -158,9 +175,7 @@ class ModelCacheCommandTest {
 
     private Path manifest(String sourceLine, String sha) throws Exception {
         var manifest = tempDir.resolve("models.json");
-        Files.writeString(
-                manifest,
-                """
+        Files.writeString(manifest, """
                 {
                   "presets": {
                     "table-lite": [
@@ -180,8 +195,7 @@ class ModelCacheCommandTest {
                     ]
                   }
                 }
-                """.formatted(sourceLine, sha),
-                StandardCharsets.UTF_8);
+                """.formatted(sourceLine, sha), StandardCharsets.UTF_8);
         return manifest;
     }
 

@@ -85,10 +85,11 @@ final class McpCommand {
             case McpToolSchemas.PARSE_DOCUMENT -> parseDocument(arguments);
             case McpToolSchemas.GET_LAYOUT_REGIONS -> McpToolResults.layoutRegions(parse(arguments));
             case McpToolSchemas.GET_TABLE_CELLS -> McpToolResults.tableCells(parse(arguments));
-            case McpToolSchemas.GET_EVIDENCE_SPAN -> McpToolResults.evidenceSpan(
-                    parse(arguments), requiredText(arguments, "evidenceSpanId"));
-            case McpToolSchemas.VERIFY_CITATION -> McpToolResults.verifyCitation(
-                    parse(arguments), requiredText(arguments, "evidenceSpanId"), requiredText(arguments, "quote"));
+            case McpToolSchemas.GET_EVIDENCE_SPAN ->
+                McpToolResults.evidenceSpan(parse(arguments), requiredText(arguments, "evidenceSpanId"));
+            case McpToolSchemas.VERIFY_CITATION ->
+                McpToolResults.verifyCitation(
+                        parse(arguments), requiredText(arguments, "evidenceSpanId"), requiredText(arguments, "quote"));
             case McpToolSchemas.WARM_MODEL_CACHE -> McpToolResults.warmModelCache(arguments);
             default -> throw new UsageException("unknown MCP tool: " + name);
         };

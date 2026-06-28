@@ -67,12 +67,16 @@ final class TrustDocumentJson {
                 TrustUnitKind.valueOf(text(node, "kind")),
                 unitLocation(node.path("location")),
                 new TrustUnitContent(text(node, "text"), text(node, "sourceObjectId")),
-                new TrustUnitEvidence(strings(node.path("evidenceSpanIds")), confidence(node.path("confidence")), warnings(node.path("warnings"))))));
+                new TrustUnitEvidence(
+                        strings(node.path("evidenceSpanIds")),
+                        confidence(node.path("confidence")),
+                        warnings(node.path("warnings"))))));
         return List.copyOf(units);
     }
 
     private static TrustUnitLocation unitLocation(JsonNode node) {
-        return new TrustUnitLocation(integer(node, "page"), bbox(node.path("boundingBox")), integer(node, "readingOrder"));
+        return new TrustUnitLocation(
+                integer(node, "page"), bbox(node.path("boundingBox")), integer(node, "readingOrder"));
     }
 
     private static List<TrustTable> tables(JsonNode nodes) {
@@ -118,7 +122,9 @@ final class TrustDocumentJson {
             return java.util.Map.of();
         }
         var values = new java.util.LinkedHashMap<String, String>();
-        node.fields().forEachRemaining(entry -> values.put(entry.getKey(), entry.getValue().asText()));
+        node.fields()
+                .forEachRemaining(
+                        entry -> values.put(entry.getKey(), entry.getValue().asText()));
         return java.util.Map.copyOf(values);
     }
 
@@ -130,9 +136,7 @@ final class TrustDocumentJson {
     private static List<ParserWarning> warnings(JsonNode nodes) {
         var warnings = new ArrayList<ParserWarning>();
         nodes.forEach(node -> warnings.add(new ParserWarning(
-                text(node, "code"),
-                ParserWarningSeverity.valueOf(text(node, "severity")),
-                text(node, "message"))));
+                text(node, "code"), ParserWarningSeverity.valueOf(text(node, "severity")), text(node, "message"))));
         return List.copyOf(warnings);
     }
 

@@ -26,9 +26,10 @@ class TableExtractionContractTest {
         var doc = TrustDocument.fromParsed(parsed, "sha256:source", PARSER_RUN);
 
         var table = doc.body().tables().getFirst();
-        assertThat(table.cells()).extracting(TrustTableCell::cellId)
-                .containsExactly("cell-0001-0000-0000", "cell-0001-0000-0001", "cell-0001-0001-0000",
-                        "cell-0001-0001-0001");
+        assertThat(table.cells())
+                .extracting(TrustTableCell::cellId)
+                .containsExactly(
+                        "cell-0001-0000-0000", "cell-0001-0000-0001", "cell-0001-0001-0000", "cell-0001-0001-0001");
         assertThat(table.cells().get(3).rowRange()).isEqualTo(new TrustCellRange(1, 1));
         assertThat(table.cells().get(3).columnRange()).isEqualTo(new TrustCellRange(1, 1));
         assertThat(doc.body().units().get(3).content().sourceObjectId()).isEqualTo("cell-0001-0001-0001");

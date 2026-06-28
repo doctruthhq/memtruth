@@ -18,4 +18,3 @@ public record TrustCellRange(int start, int end) {
         }
     }
 }
-

@@ -131,4 +131,3 @@ class TrustUnitTest {
         return new TrustUnitEvidence(evidenceSpanIds, CONFIDENCE, List.of());
     }
 }
-

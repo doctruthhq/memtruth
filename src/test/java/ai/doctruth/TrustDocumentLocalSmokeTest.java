@@ -54,4 +54,3 @@ class TrustDocumentLocalSmokeTest {
         return path;
     }
 }
-

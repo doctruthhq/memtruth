@@ -38,12 +38,13 @@ class PdfGeometryReadingOrderTest {
 
         var text = renderedText(pdfPath);
 
-        assertThat(text).containsSubsequence(
-                "LEFT ABOVE",
-                "RIGHT ABOVE",
-                "FULL WIDTH NEXT SECTION SPANS BOTH COLUMNS",
-                "LEFT BELOW",
-                "RIGHT BELOW");
+        assertThat(text)
+                .containsSubsequence(
+                        "LEFT ABOVE",
+                        "RIGHT ABOVE",
+                        "FULL WIDTH NEXT SECTION SPANS BOTH COLUMNS",
+                        "LEFT BELOW",
+                        "RIGHT BELOW");
     }
 
     @Test
@@ -63,12 +64,13 @@ class PdfGeometryReadingOrderTest {
 
         var text = renderedText(pdfPath);
 
-        assertThat(text).containsSubsequence(
-                "DENSE HEADER BRIDGES BOTH COLUMNS",
-                "LEFT COLUMN FIRST DETAIL",
-                "LEFT COLUMN SECOND DETAIL",
-                "RIGHT COLUMN FIRST DETAIL",
-                "RIGHT COLUMN SECOND DETAIL");
+        assertThat(text)
+                .containsSubsequence(
+                        "DENSE HEADER BRIDGES BOTH COLUMNS",
+                        "LEFT COLUMN FIRST DETAIL",
+                        "LEFT COLUMN SECOND DETAIL",
+                        "RIGHT COLUMN FIRST DETAIL",
+                        "RIGHT COLUMN SECOND DETAIL");
     }
 
     @Test
@@ -83,12 +85,9 @@ class PdfGeometryReadingOrderTest {
 
         var text = renderedText(pdfPath);
 
-        assertThat(text.lines().filter(line -> !line.isBlank()).toList()).containsExactly(
-                "Left alpha detail",
-                "Left beta detail",
-                "||||",
-                "Right alpha detail",
-                "Right beta detail");
+        assertThat(text.lines().filter(line -> !line.isBlank()).toList())
+                .containsExactly(
+                        "Left alpha detail", "Left beta detail", "||||", "Right alpha detail", "Right beta detail");
     }
 
     private String renderedText(Path pdfPath) throws IOException {
@@ -122,8 +121,7 @@ class PdfGeometryReadingOrderTest {
         return run(text, x, y, 10f, Standard14Fonts.FontName.HELVETICA);
     }
 
-    private static PositionedRun run(
-            String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {
+    private static PositionedRun run(String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {
         return new PositionedRun(text, x, y, fontSize, fontName);
     }
 

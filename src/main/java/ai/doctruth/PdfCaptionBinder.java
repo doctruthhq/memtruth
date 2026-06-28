@@ -7,15 +7,14 @@ import java.util.regex.Pattern;
 final class PdfCaptionBinder {
 
     private static final double MAX_CAPTION_TABLE_GAP = 80.0;
-    private static final Pattern CAPTION_PREFIX = Pattern.compile(
-            "^(?i)(?:table|fig\\.?|figure)\\s+\\d+(?:[.-]\\d+)*\\s*[.:\\-]?\\s+\\S.*$");
+    private static final Pattern CAPTION_PREFIX =
+            Pattern.compile("^(?i)(?:table|fig\\.?|figure)\\s+\\d+(?:[.-]\\d+)*\\s*[.:\\-]?\\s+\\S.*$");
 
     private PdfCaptionBinder() {
         throw new AssertionError("no instances");
     }
 
-    static Optional<FigureSection> bindCaption(
-            PdfTextBlock block, List<PdfPageTableExtractor.TableBlock> tables) {
+    static Optional<FigureSection> bindCaption(PdfTextBlock block, List<PdfPageTableExtractor.TableBlock> tables) {
         if (!isStandaloneCaption(block) || block.boundingBox().isEmpty()) {
             return Optional.empty();
         }

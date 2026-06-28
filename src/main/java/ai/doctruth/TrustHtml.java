@@ -83,14 +83,16 @@ public final class TrustHtml {
 
     private static String cleanInline(String html) {
         String withoutTags = TAG.matcher(html).replaceAll("");
-        return StringEscapeUtils.unescapeHtml4(withoutTags).replaceAll("\\s+", " ").strip();
+        return StringEscapeUtils.unescapeHtml4(withoutTags)
+                .replaceAll("\\s+", " ")
+                .strip();
     }
 
     private static String normalize(String markdown) {
         return markdown.replace("\r\n", "\n")
-                .replaceAll("[ \\t]+\\n", "\n")
-                .replaceAll("\\n{3,}", "\n\n")
-                .strip()
+                        .replaceAll("[ \\t]+\\n", "\n")
+                        .replaceAll("\\n{3,}", "\n\n")
+                        .strip()
                 + "\n";
     }
 

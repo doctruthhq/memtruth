@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 
 import ai.doctruth.ParserPreset;
+
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -37,11 +38,10 @@ class OpenDataLoaderJavaBackendContractTest {
         assertThat(response.blocks().getFirst().kind()).isEqualTo("heading");
         assertThat(response.blocks().getFirst().bbox()).isPresent();
         assertThat(response.tables()).isNotNull();
-        assertThat(response.headings())
-                .extracting(OpenDataLoaderBlock::text)
-                .contains("OpenDataLoader Java Core");
+        assertThat(response.headings()).extracting(OpenDataLoaderBlock::text).contains("OpenDataLoader Java Core");
         assertThat(response.sourceMap()).isNotEmpty();
-        assertThat(response.sourceMap().getFirst().unitId()).isEqualTo(response.blocks().getFirst().sourceUnitId());
+        assertThat(response.sourceMap().getFirst().unitId())
+                .isEqualTo(response.blocks().getFirst().sourceUnitId());
         assertThat(response.warnings()).isNotNull();
         assertThat(response.metrics()).containsKey("elapsedMs");
         assertThat(response.trustDocument().parserRun().backend()).isEqualTo("opendataloader-java-core");
@@ -50,11 +50,11 @@ class OpenDataLoaderJavaBackendContractTest {
     @Test
     void responseCanRoundTripThroughTrustDocumentWithoutLosingSourceRefs() throws Exception {
         var pdf = writePdf("TrustDocument source refs", "The source map must survive adaptation.");
-        var response = new OpenDataLoaderJavaBackend()
-                .parse(new OpenDataLoaderBackendRequest(pdf, ParserPreset.LITE));
+        var response = new OpenDataLoaderJavaBackend().parse(new OpenDataLoaderBackendRequest(pdf, ParserPreset.LITE));
 
         assertThat(response.trustDocument().body().units()).isNotEmpty();
-        assertThat(response.trustDocument().body().units().getFirst().evidence().evidenceSpanIds()).isNotEmpty();
+        assertThat(response.trustDocument().body().units().getFirst().evidence().evidenceSpanIds())
+                .isNotEmpty();
         assertThat(response.sourceMap()).allSatisfy(ref -> {
             assertThat(ref.unitId()).isNotBlank();
             assertThat(ref.pageIndex()).isGreaterThanOrEqualTo(0);

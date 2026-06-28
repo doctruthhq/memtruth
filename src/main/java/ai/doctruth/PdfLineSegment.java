@@ -54,7 +54,8 @@ final class PdfLineSegment {
                 .mapToDouble(p -> p.getXDirAdj() + p.getWidthDirAdj())
                 .max()
                 .orElse(x0);
-        double baseline = copy.stream().mapToDouble(TextPosition::getYDirAdj).max().orElse(0.0);
+        double baseline =
+                copy.stream().mapToDouble(TextPosition::getYDirAdj).max().orElse(0.0);
         double height = copy.stream()
                 .mapToDouble(TextPosition::getHeightDir)
                 .max()
@@ -77,7 +78,9 @@ final class PdfLineSegment {
 
     boolean isBoldResponsibilityHeading() {
         String stripped = text.strip();
-        return stripped.length() >= 8 && stripped.endsWith(":") && (bold || RESPONSIBILITY_SUBHEADING.matcher(stripped).matches());
+        return stripped.length() >= 8
+                && stripped.endsWith(":")
+                && (bold || RESPONSIBILITY_SUBHEADING.matcher(stripped).matches());
     }
 
     boolean isResumeSectionHeading() {

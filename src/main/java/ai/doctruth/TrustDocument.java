@@ -329,8 +329,7 @@ public record TrustDocument(
                 String text = tableCellText(section, row, column);
                 String cellId = "cell-%04d-%04d-%04d".formatted(tableIndex, row, column);
                 var cellBox = region.map(TableCellRegion::boundingBox);
-                var cellLocation = region
-                        .map(value -> new SourceLocation(
+                var cellLocation = region.map(value -> new SourceLocation(
                                 value.page(),
                                 value.page(),
                                 section.location().lineStart(),
@@ -339,8 +338,10 @@ public record TrustDocument(
                         .orElse(section.location());
                 cells.add(new TrustTableCell(
                         cellId,
-                        new TrustCellRange(row, region.map(TableCellRegion::rowEnd).orElse(row)),
-                        new TrustCellRange(column, region.map(TableCellRegion::columnEnd).orElse(column)),
+                        new TrustCellRange(
+                                row, region.map(TableCellRegion::rowEnd).orElse(row)),
+                        new TrustCellRange(
+                                column, region.map(TableCellRegion::columnEnd).orElse(column)),
                         cellBox,
                         text));
                 if (!text.isBlank()) {
@@ -394,7 +395,8 @@ public record TrustDocument(
     }
 
     private static TrustUnitEvidence evidenceFrom(int index) {
-        return new TrustUnitEvidence(List.of("span-%04d".formatted(index)), new Confidence(1.0, "parsed source"), List.of());
+        return new TrustUnitEvidence(
+                List.of("span-%04d".formatted(index)), new Confidence(1.0, "parsed source"), List.of());
     }
 
     private static String unitId(int index) {

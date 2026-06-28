@@ -17,7 +17,9 @@ public final class OpenDataLoaderTrustDocumentAdapter {
     }
 
     public static List<OpenDataLoaderBlock> blocks(TrustDocument document) {
-        return sortedUnits(document).stream().map(OpenDataLoaderTrustDocumentAdapter::blockFrom).toList();
+        return sortedUnits(document).stream()
+                .map(OpenDataLoaderTrustDocumentAdapter::blockFrom)
+                .toList();
     }
 
     public static List<OpenDataLoaderBlock> headings(TrustDocument document) {
@@ -27,11 +29,15 @@ public final class OpenDataLoaderTrustDocumentAdapter {
     }
 
     public static List<OpenDataLoaderSourceRef> sourceMap(TrustDocument document) {
-        return sortedUnits(document).stream().map(OpenDataLoaderTrustDocumentAdapter::sourceRefFrom).toList();
+        return sortedUnits(document).stream()
+                .map(OpenDataLoaderTrustDocumentAdapter::sourceRefFrom)
+                .toList();
     }
 
     public static List<OpenDataLoaderTable> tables(TrustDocument document) {
-        return document.body().tables().stream().map(OpenDataLoaderTrustDocumentAdapter::tableFrom).toList();
+        return document.body().tables().stream()
+                .map(OpenDataLoaderTrustDocumentAdapter::tableFrom)
+                .toList();
     }
 
     private static List<TrustUnit> sortedUnits(TrustDocument document) {
@@ -69,7 +75,10 @@ public final class OpenDataLoaderTrustDocumentAdapter {
 
     private static OpenDataLoaderSourceRef sourceRefFrom(TrustUnit unit) {
         return new OpenDataLoaderSourceRef(
-                unit.unitId(), unit.location().page() - 1, unit.location().boundingBox(), unit.content().text());
+                unit.unitId(),
+                unit.location().page() - 1,
+                unit.location().boundingBox(),
+                unit.content().text());
     }
 
     private static OpenDataLoaderTable tableFrom(TrustTable table) {
@@ -77,7 +86,9 @@ public final class OpenDataLoaderTrustDocumentAdapter {
                 table.tableId(),
                 table.pageNumber() - 1,
                 table.boundingBox(),
-                table.cells().stream().map(OpenDataLoaderTrustDocumentAdapter::cellFrom).toList());
+                table.cells().stream()
+                        .map(OpenDataLoaderTrustDocumentAdapter::cellFrom)
+                        .toList());
     }
 
     private static OpenDataLoaderTableCell cellFrom(TrustTableCell cell) {

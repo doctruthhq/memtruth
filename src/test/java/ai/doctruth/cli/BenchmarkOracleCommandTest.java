@@ -34,7 +34,8 @@ class BenchmarkOracleCommandTest {
         Path pdf = samplePdf();
         var cli = cli(Map.of());
 
-        int code = cli.run(new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
+        int code = cli.run(
+                new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
 
         assertThat(code).isEqualTo(1);
         assertThat(cli.err())
@@ -49,15 +50,24 @@ class BenchmarkOracleCommandTest {
         Path oracle = fakeHybridOracle();
         var cli = cli(Map.of("DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND", oracle.toString()));
 
-        int code = cli.run(new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
+        int code = cli.run(
+                new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
         assertThat(tree.path("parserRun").path("backend").asText()).isEqualTo("opendataloader-hybrid-oracle");
         assertThat(tree.path("parserRun").path("externalBackend").path("name").asText())
                 .isEqualTo("opendataloader-pdf");
-        assertThat(tree.path("parserRun").path("externalBackend").path("version").asText()).isEqualTo("2.2.1");
-        assertThat(tree.path("parserRun").path("externalBackend").path("doclingVersion").asText()).isEqualTo("2.84.0");
+        assertThat(tree.path("parserRun")
+                        .path("externalBackend")
+                        .path("version")
+                        .asText())
+                .isEqualTo("2.2.1");
+        assertThat(tree.path("parserRun")
+                        .path("externalBackend")
+                        .path("doclingVersion")
+                        .asText())
+                .isEqualTo("2.84.0");
         assertThat(tree.path("parserRun").path("elapsedMs").asLong()).isEqualTo(1234);
         assertThat(tree.path("auditGradeStatus").asText()).isEqualTo("NOT_AUDIT_GRADE");
         assertThat(tree.path("parserRun").path("warnings").get(0).path("code").asText())
@@ -71,16 +81,16 @@ class BenchmarkOracleCommandTest {
         Path interpreter = fakeInterpreterOracle();
         Path script = tempDir.resolve("oracle-script.py");
         Files.writeString(script, "# marker\n", StandardCharsets.UTF_8);
-        var cli = cli(Map.of(
-                "DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND",
-                interpreter + " " + script));
+        var cli = cli(Map.of("DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND", interpreter + " " + script));
 
-        int code = cli.run(new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
+        int code = cli.run(
+                new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
         assertThat(tree.path("body").path("units").get(0).path("text").asText()).isEqualTo("Interpreter Oracle Title");
-        assertThat(tree.path("parserRun").path("externalBackend").path("mode").asText()).isEqualTo("docling-fast");
+        assertThat(tree.path("parserRun").path("externalBackend").path("mode").asText())
+                .isEqualTo("docling-fast");
     }
 
     @Test
@@ -89,7 +99,8 @@ class BenchmarkOracleCommandTest {
         Path oracle = fakeStructuredHybridOracle();
         var cli = cli(Map.of("DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND", oracle.toString()));
 
-        int code = cli.run(new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
+        int code = cli.run(
+                new String[] {"benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--json"});
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
@@ -110,12 +121,7 @@ class BenchmarkOracleCommandTest {
         var cli = cli(Map.of("DOCTRUTH_OPENDATALOADER_HYBRID_ORACLE_COMMAND", oracle.toString()));
 
         int code = cli.run(new String[] {
-            "benchmark-oracle",
-            "--engine",
-            "opendataloader-hybrid",
-            pdf.toString(),
-            "--format",
-            "content_blocks"
+            "benchmark-oracle", "--engine", "opendataloader-hybrid", pdf.toString(), "--format", "content_blocks"
         });
 
         assertThat(code).isZero();
@@ -152,9 +158,7 @@ class BenchmarkOracleCommandTest {
 
     private Path fakeHybridOracle() throws IOException {
         Path oracle = tempDir.resolve("fake-opendataloader-hybrid-oracle");
-        Files.writeString(
-                oracle,
-                """
+        Files.writeString(oracle, """
                 #!/usr/bin/env sh
                 cat <<'JSON'
                 {
@@ -170,17 +174,14 @@ class BenchmarkOracleCommandTest {
                   }
                 }
                 JSON
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(oracle.toFile().setExecutable(true)).isTrue();
         return oracle;
     }
 
     private Path fakeStructuredHybridOracle() throws IOException {
         Path oracle = tempDir.resolve("fake-structured-opendataloader-hybrid-oracle");
-        Files.writeString(
-                oracle,
-                """
+        Files.writeString(oracle, """
                 #!/usr/bin/env sh
                 cat <<'JSON'
                 {
@@ -222,17 +223,14 @@ class BenchmarkOracleCommandTest {
                   ]
                 }
                 JSON
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(oracle.toFile().setExecutable(true)).isTrue();
         return oracle;
     }
 
     private Path fakeInterpreterOracle() throws IOException {
         Path oracle = tempDir.resolve("fake-oracle-interpreter");
-        Files.writeString(
-                oracle,
-                """
+        Files.writeString(oracle, """
                 #!/usr/bin/env sh
                 test -f "$1"
                 test -f "$2"
@@ -248,8 +246,7 @@ class BenchmarkOracleCommandTest {
                   }
                 }
                 JSON
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(oracle.toFile().setExecutable(true)).isTrue();
         return oracle;
     }

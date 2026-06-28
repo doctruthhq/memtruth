@@ -41,12 +41,14 @@ class DocTruthCliMcpTest {
                 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"doctruth.parse_document","arguments":{"path":"%s","format":"compact_llm","sourceMap":true}}}
                 """.formatted(jsonEscape(pdf.toString())));
 
-        int code = withSystemProperty("doctruth.runtime.command", runtime.toString(), () -> cli.run(new String[] {"mcp"}));
+        int code =
+                withSystemProperty("doctruth.runtime.command", runtime.toString(), () -> cli.run(new String[] {"mcp"}));
 
         assertThat(code).isZero();
         var lines = cli.out().lines().map(DocTruthCliMcpTest::readJson).toList();
         assertThat(lines).hasSize(3);
-        assertThat(lines.get(0).path("result").path("serverInfo").path("name").asText()).isEqualTo("doctruth");
+        assertThat(lines.get(0).path("result").path("serverInfo").path("name").asText())
+                .isEqualTo("doctruth");
         assertThat(lines.get(1).path("result").path("tools").get(0).path("name").asText())
                 .isEqualTo("doctruth.parse_document");
 
@@ -58,11 +60,28 @@ class DocTruthCliMcpTest {
         assertThat(structured.path("format").asText()).isEqualTo("compact_llm");
         assertThat(structured.path("compact").asText()).contains("MCP Rust Runtime Evidence Contract");
         assertThat(structured.path("jsonEvidence").path("units")).isNotEmpty();
-        assertThat(structured.path("jsonEvidence").path("units").get(0).path("evidenceSpanIds").get(0).asText())
+        assertThat(structured
+                        .path("jsonEvidence")
+                        .path("units")
+                        .get(0)
+                        .path("evidenceSpanIds")
+                        .get(0)
+                        .asText())
                 .startsWith("span-");
-        assertThat(structured.path("jsonEvidence").path("units").get(0).path("location").path("boundingBox").isObject())
+        assertThat(structured
+                        .path("jsonEvidence")
+                        .path("units")
+                        .get(0)
+                        .path("location")
+                        .path("boundingBox")
+                        .isObject())
                 .isTrue();
-        assertThat(structured.path("sourceMap").path("sourceMap").get(0).path("unitId").asText())
+        assertThat(structured
+                        .path("sourceMap")
+                        .path("sourceMap")
+                        .get(0)
+                        .path("unitId")
+                        .asText())
                 .startsWith("unit-");
     }
 
@@ -112,12 +131,13 @@ class DocTruthCliMcpTest {
                 {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"doctruth.get_evidence_span","arguments":{"path":"%s","evidenceSpanId":"span-0001"}}}
                 {"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"doctruth.verify_citation","arguments":{"path":"%s","quote":"MCP Rust Runtime Evidence Contract","evidenceSpanId":"span-0001"}}}
                 """.formatted(
-                jsonEscape(textPdf.toString()),
-                jsonEscape(tablePdf.toString()),
-                jsonEscape(textPdf.toString()),
-                jsonEscape(textPdf.toString())));
+                        jsonEscape(textPdf.toString()),
+                        jsonEscape(tablePdf.toString()),
+                        jsonEscape(textPdf.toString()),
+                        jsonEscape(textPdf.toString())));
 
-        int code = withSystemProperty("doctruth.runtime.command", runtime.toString(), () -> cli.run(new String[] {"mcp"}));
+        int code =
+                withSystemProperty("doctruth.runtime.command", runtime.toString(), () -> cli.run(new String[] {"mcp"}));
 
         assertThat(code).isZero();
         var lines = cli.out().lines().map(DocTruthCliMcpTest::readJson).toList();
@@ -127,7 +147,12 @@ class DocTruthCliMcpTest {
         assertThat(regions.get(0).path("unitId").asText()).startsWith("unit-");
         assertThat(regions.get(0).path("boundingBox").isObject()).isTrue();
 
-        JsonNode cells = lines.get(1).path("result").path("structuredContent").path("tables").get(0).path("cells");
+        JsonNode cells = lines.get(1)
+                .path("result")
+                .path("structuredContent")
+                .path("tables")
+                .get(0)
+                .path("cells");
         assertThat(cells).isNotEmpty();
         assertThat(cells.findValuesAsText("text")).contains("Name", "Score", "Alex", "98");
         assertThat(cells.get(0).path("boundingBox").isObject()).isTrue();
@@ -137,7 +162,8 @@ class DocTruthCliMcpTest {
         assertThat(span.path("text").asText()).contains("MCP Rust Runtime Evidence Contract");
         assertThat(span.path("boundingBox").isObject()).isTrue();
 
-        JsonNode verification = lines.get(3).path("result").path("structuredContent").path("verification");
+        JsonNode verification =
+                lines.get(3).path("result").path("structuredContent").path("verification");
         assertThat(verification.path("verified").asBoolean()).isTrue();
         assertThat(verification.path("matchScore").asDouble()).isEqualTo(1.0);
         assertThat(verification.path("evidenceSpanId").asText()).isEqualTo("span-0001");
@@ -162,7 +188,8 @@ class DocTruthCliMcpTest {
         assertThat(structured.path("allReady").asBoolean()).isTrue();
         assertThat(structured.path("networkAccessRequired").asBoolean()).isFalse();
         assertThat(structured.path("artifacts").get(0).path("status").asText()).isEqualTo("READY");
-        assertThat(structured.path("artifacts").get(0).path("actualSha256").asText()).isEqualTo(sha);
+        assertThat(structured.path("artifacts").get(0).path("actualSha256").asText())
+                .isEqualTo(sha);
     }
 
     private TestCli cli(String stdin) {
@@ -230,16 +257,13 @@ class DocTruthCliMcpTest {
 
     private Path fakeMcpRuntime() throws IOException {
         Path runtime = tempDir.resolve("fake-mcp-runtime");
-        Files.writeString(
-                runtime,
-                """
+        Files.writeString(runtime, """
                 #!/usr/bin/env sh
                 cat >/dev/null
                 cat <<'JSON'
                 {"docId":"sha256:mcp-runtime","source":{"sourceFilename":"runtime.pdf","sourceHash":"sha256:mcp-runtime","metadata":{"sourceFilename":"runtime.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":true,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"LINE_SPAN","page":1,"text":"MCP Rust Runtime Evidence Contract","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1,"boundingBox":{"x0":10,"y0":20,"x1":300,"y1":80}},"sourceObjectId":"runtime-line-1","confidence":{"score":1.0,"rationale":"rust runtime"},"warnings":[]},{"unitId":"unit-0002","kind":"TABLE_CELL","page":1,"text":"Name","evidenceSpanIds":["span-0002"],"location":{"page":1,"readingOrder":2,"boundingBox":{"x0":100,"y0":100,"x1":220,"y1":150}},"sourceObjectId":"runtime-table-1","confidence":{"score":1.0,"rationale":"rust runtime"},"warnings":[]},{"unitId":"unit-0003","kind":"TABLE_CELL","page":1,"text":"Score","evidenceSpanIds":["span-0003"],"location":{"page":1,"readingOrder":3,"boundingBox":{"x0":220,"y0":100,"x1":340,"y1":150}},"sourceObjectId":"runtime-table-1","confidence":{"score":1.0,"rationale":"rust runtime"},"warnings":[]},{"unitId":"unit-0004","kind":"TABLE_CELL","page":1,"text":"Alex","evidenceSpanIds":["span-0004"],"location":{"page":1,"readingOrder":4,"boundingBox":{"x0":100,"y0":150,"x1":220,"y1":200}},"sourceObjectId":"runtime-table-1","confidence":{"score":1.0,"rationale":"rust runtime"},"warnings":[]},{"unitId":"unit-0005","kind":"TABLE_CELL","page":1,"text":"98","evidenceSpanIds":["span-0005"],"location":{"page":1,"readingOrder":5,"boundingBox":{"x0":220,"y0":150,"x1":340,"y1":200}},"sourceObjectId":"runtime-table-1","confidence":{"score":1.0,"rationale":"rust runtime"},"warnings":[]}],"tables":[{"tableId":"runtime-table-1","pageNumber":1,"boundingBox":{"x0":100,"y0":100,"x1":340,"y1":200},"confidence":{"score":1.0,"rationale":"rust runtime"},"cells":[{"cellId":"cell-1","rowRange":{"start":1,"end":1},"columnRange":{"start":1,"end":1},"boundingBox":{"x0":100,"y0":100,"x1":220,"y1":150},"text":"Name"},{"cellId":"cell-2","rowRange":{"start":1,"end":1},"columnRange":{"start":2,"end":2},"boundingBox":{"x0":220,"y0":100,"x1":340,"y1":150},"text":"Score"},{"cellId":"cell-3","rowRange":{"start":2,"end":2},"columnRange":{"start":1,"end":1},"boundingBox":{"x0":100,"y0":150,"x1":220,"y1":200},"text":"Alex"},{"cellId":"cell-4","rowRange":{"start":2,"end":2},"columnRange":{"start":2,"end":2},"boundingBox":{"x0":220,"y0":150,"x1":340,"y1":200},"text":"98"}]}]},"parserRun":{"parserVersion":"runtime-test","preset":"lite","backend":"sidecar","models":[],"warnings":[]},"auditGradeStatus":"AUDIT_GRADE"}
                 JSON
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
     }

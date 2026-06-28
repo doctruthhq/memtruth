@@ -76,11 +76,19 @@ class ParserBenchmarkCorpusCliTest {
                 .isGreaterThanOrEqualTo(0.0);
         assertThat(tree.path("cases")).hasSize(1);
         assertThat(tree.path("cases").get(0).path("name").asText()).isEqualTo("single-column-generated");
-        assertThat(tree.path("cases").get(0).path("metrics").path("reading_order_f1").asDouble())
+        assertThat(tree.path("cases")
+                        .get(0)
+                        .path("metrics")
+                        .path("reading_order_f1")
+                        .asDouble())
                 .isEqualTo(1.0);
         assertThat(tree.path("cases").get(0).path("metrics").path("rss_peak_mb").asDouble())
                 .isGreaterThanOrEqualTo(0.0);
-        assertThat(tree.path("cases").get(0).path("metrics").path("model_cache_size_mb").asDouble())
+        assertThat(tree.path("cases")
+                        .get(0)
+                        .path("metrics")
+                        .path("model_cache_size_mb")
+                        .asDouble())
                 .isGreaterThanOrEqualTo(0.0);
     }
 
@@ -88,10 +96,10 @@ class ParserBenchmarkCorpusCliTest {
     void benchmarkCorpusJsonPrintsHumanLabeledMetadata() throws Exception {
         Path source = writePdf("PROFILE", "Experienced operator");
         Files.writeString(tempDir.resolve("expected.md"), "PROFILE\nExperienced operator\n");
-        Files.writeString(tempDir.resolve("expected.json"), expectedDocument("PROFILE\nExperienced operator").toJsonFull());
         Files.writeString(
-                tempDir.resolve("human-corpus.json"),
-                """
+                tempDir.resolve("expected.json"),
+                expectedDocument("PROFILE\nExperienced operator").toJsonFull());
+        Files.writeString(tempDir.resolve("human-corpus.json"), """
                 {
                   "name": "human-labeled-cli-corpus",
                   "kind": "human-labeled",
@@ -118,7 +126,9 @@ class ParserBenchmarkCorpusCliTest {
                 """.formatted(tempDir.relativize(source)));
         var cli = cli();
 
-        int code = cli.run(new String[] {"benchmark-corpus", tempDir.resolve("human-corpus.json").toString(), "--json"});
+        int code = cli.run(new String[] {
+            "benchmark-corpus", tempDir.resolve("human-corpus.json").toString(), "--json"
+        });
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
@@ -133,10 +143,10 @@ class ParserBenchmarkCorpusCliTest {
     void benchmarkCorpusJsonPrintsParserAccuracyCoverageMetadata() throws Exception {
         Path source = writePdf("PROFILE", "Experienced operator");
         Files.writeString(tempDir.resolve("expected.md"), "PROFILE\nExperienced operator\n");
-        Files.writeString(tempDir.resolve("expected.json"), expectedDocument("PROFILE\nExperienced operator").toJsonFull());
         Files.writeString(
-                tempDir.resolve("parser-accuracy-corpus.json"),
-                """
+                tempDir.resolve("expected.json"),
+                expectedDocument("PROFILE\nExperienced operator").toJsonFull());
+        Files.writeString(tempDir.resolve("parser-accuracy-corpus.json"), """
                 {
                   "name": "parser-accuracy-cli-corpus",
                   "kind": "human-labeled",
@@ -180,11 +190,12 @@ class ParserBenchmarkCorpusCliTest {
                     }
                   ]
                 }
-                """.formatted(tempDir.relativize(source), sha256(source)));
+                """.formatted(
+                        tempDir.relativize(source), sha256(source)));
         var cli = cli();
 
         int code = cli.run(new String[] {
-                "benchmark-corpus", tempDir.resolve("parser-accuracy-corpus.json").toString(), "--json"
+            "benchmark-corpus", tempDir.resolve("parser-accuracy-corpus.json").toString(), "--json"
         });
 
         assertThat(code).isZero();
@@ -203,7 +214,7 @@ class ParserBenchmarkCorpusCliTest {
 
         var readableCli = cli();
         int readableCode = readableCli.run(new String[] {
-                "benchmark-corpus", tempDir.resolve("parser-accuracy-corpus.json").toString()
+            "benchmark-corpus", tempDir.resolve("parser-accuracy-corpus.json").toString()
         });
 
         assertThat(readableCode).isZero();
@@ -227,48 +238,74 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var cli = cli();
 
-        int code = cli.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        });
+        int code = cli.run(
+                new String[] {"benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()});
 
         assertThat(code).isZero();
         assertThat(report).exists();
         var stdout = MAPPER.readTree(cli.out());
         var recorded = MAPPER.readTree(Files.readString(report));
-        assertThat(recorded.path("reportFormat").asText())
-                .isEqualTo("doctruth.parser-benchmark.report.v1");
+        assertThat(recorded.path("reportFormat").asText()).isEqualTo("doctruth.parser-benchmark.report.v1");
         assertThat(recorded.path("manifest").asText()).endsWith("parser-accuracy-report-corpus.json");
         assertThat(recorded.path("manifestSha256").asText()).startsWith("sha256:");
         assertThat(recorded.path("caseCount").asInt()).isEqualTo(1);
         assertThat(recorded.path("casesPerTag").path("multi-layout").asInt()).isEqualTo(1);
         assertThat(recorded.path("casesPerTag").path("source-map").asInt()).isEqualTo(1);
         assertThat(recorded.path("coverageRequired").path("source-map").asInt()).isEqualTo(1);
-        assertThat(recorded.path("coverageSatisfied").path("source-map").asBoolean()).isTrue();
-        assertThat(recorded.path("casesPerFixtureType").path("two-column").asInt()).isEqualTo(1);
-        assertThat(recorded.path("fixtureCoverageRequired").path("scanned-ocr").asInt()).isEqualTo(1);
-        assertThat(recorded.path("fixtureCoverageSatisfied").path("invoice").asBoolean()).isTrue();
-        assertThat(recorded.path("casesPerBehavior").path("xy-cut-edge").asInt()).isEqualTo(1);
-        assertThat(recorded.path("behaviorCoverageRequired").path("structure-tree-preference").asInt()).isEqualTo(1);
-        assertThat(recorded.path("behaviorCoverageSatisfied").path("table-cluster-heuristics").asBoolean()).isTrue();
-        assertThat(recorded.path("validityInputs").path("sourceHashes").asBoolean()).isTrue();
-        assertThat(recorded.path("validityInputs").path("manifestHash").asBoolean()).isTrue();
-        assertThat(recorded.path("validityInputs").path("parserConfig").asText()).isEqualTo("TrustDocument");
-        assertThat(recorded.path("validityInputs").path("modelCacheManifest").asText()).isEqualTo("not-required");
-        assertThat(recorded.path("validityInputs").path("thresholds").asBoolean()).isTrue();
-        assertThat(recorded.path("validityInputs").path("expectedLabels").asBoolean()).isTrue();
-        assertThat(recorded.path("validityInputs").path("actualTrustDocument").asBoolean()).isTrue();
-        assertThat(recorded.path("minimums").path("reading_order_f1").asDouble()).isEqualTo(1.0);
+        assertThat(recorded.path("coverageSatisfied").path("source-map").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("casesPerFixtureType").path("two-column").asInt())
+                .isEqualTo(1);
+        assertThat(recorded.path("fixtureCoverageRequired").path("scanned-ocr").asInt())
+                .isEqualTo(1);
+        assertThat(recorded.path("fixtureCoverageSatisfied").path("invoice").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("casesPerBehavior").path("xy-cut-edge").asInt())
+                .isEqualTo(1);
+        assertThat(recorded.path("behaviorCoverageRequired")
+                        .path("structure-tree-preference")
+                        .asInt())
+                .isEqualTo(1);
+        assertThat(recorded.path("behaviorCoverageSatisfied")
+                        .path("table-cluster-heuristics")
+                        .asBoolean())
+                .isTrue();
+        assertThat(recorded.path("validityInputs").path("sourceHashes").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("validityInputs").path("manifestHash").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("validityInputs").path("parserConfig").asText())
+                .isEqualTo("TrustDocument");
+        assertThat(recorded.path("validityInputs").path("modelCacheManifest").asText())
+                .isEqualTo("not-required");
+        assertThat(recorded.path("validityInputs").path("thresholds").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("validityInputs").path("expectedLabels").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("validityInputs").path("actualTrustDocument").asBoolean())
+                .isTrue();
+        assertThat(recorded.path("minimums").path("reading_order_f1").asDouble())
+                .isEqualTo(1.0);
         assertThat(recorded.path("maximums").isObject()).isTrue();
-        assertThat(recorded.path("corpus").asText()).isEqualTo(stdout.path("corpus").asText());
+        assertThat(recorded.path("corpus").asText())
+                .isEqualTo(stdout.path("corpus").asText());
         assertThat(recorded.path("qualityProfile").asText()).isEqualTo("parser-accuracy");
         assertThat(recorded.path("reviewType").asText()).isEqualTo("human-reviewed");
         assertThat(recorded.path("passed").asBoolean()).isTrue();
-        assertThat(recorded.path("metrics").path("parser_latency_p95").asDouble()).isGreaterThanOrEqualTo(0.0);
-        assertThat(recorded.path("metrics").path("opendataloader_nid").asDouble()).isEqualTo(0.91);
-        assertThat(recorded.path("metrics").path("opendataloader_teds").asDouble()).isEqualTo(0.52);
-        assertThat(recorded.path("metrics").path("opendataloader_mhs").asDouble()).isEqualTo(0.76);
-        assertThat(recorded.path("metrics").path("opendataloader_speed").asDouble()).isEqualTo(0.015);
-        assertThat(recorded.path("externalMetrics").path("opendataloader").path("evaluationSha256").asText())
+        assertThat(recorded.path("metrics").path("parser_latency_p95").asDouble())
+                .isGreaterThanOrEqualTo(0.0);
+        assertThat(recorded.path("metrics").path("opendataloader_nid").asDouble())
+                .isEqualTo(0.91);
+        assertThat(recorded.path("metrics").path("opendataloader_teds").asDouble())
+                .isEqualTo(0.52);
+        assertThat(recorded.path("metrics").path("opendataloader_mhs").asDouble())
+                .isEqualTo(0.76);
+        assertThat(recorded.path("metrics").path("opendataloader_speed").asDouble())
+                .isEqualTo(0.015);
+        assertThat(recorded.path("externalMetrics")
+                        .path("opendataloader")
+                        .path("evaluationSha256")
+                        .asText())
                 .startsWith("sha256:");
         assertThat(recorded.path("cases").get(0).path("labelId").asText()).isEqualTo("layout-v1-report-0001");
         assertThat(recorded.path("cases").get(0).path("sourceSha256").asText()).startsWith("sha256:");
@@ -278,9 +315,24 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(recorded.path("cases").get(0).path("behaviors"))
                 .extracting(node -> node.asText())
                 .contains("xy-cut-edge", "safety-filter", "structure-tree-preference", "table-cluster-heuristics");
-        assertThat(recorded.path("cases").get(0).path("replay").path("sourceRefReplayable").asBoolean()).isTrue();
-        assertThat(recorded.path("cases").get(0).path("replay").path("quoteReplayable").asBoolean()).isTrue();
-        assertThat(recorded.path("cases").get(0).path("replay").path("evidenceSpanReplayable").asBoolean()).isTrue();
+        assertThat(recorded.path("cases")
+                        .get(0)
+                        .path("replay")
+                        .path("sourceRefReplayable")
+                        .asBoolean())
+                .isTrue();
+        assertThat(recorded.path("cases")
+                        .get(0)
+                        .path("replay")
+                        .path("quoteReplayable")
+                        .asBoolean())
+                .isTrue();
+        assertThat(recorded.path("cases")
+                        .get(0)
+                        .path("replay")
+                        .path("evidenceSpanReplayable")
+                        .asBoolean())
+                .isTrue();
         assertThat(recorded.path("cases").get(0).path("tags"))
                 .extracting(node -> node.asText())
                 .contains("multi-layout", "table", "ocr", "bbox", "source-map");
@@ -292,8 +344,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         var verifier = cli();
 
         int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
@@ -318,8 +371,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
         recorded.put("caseCount", 999);
         MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
@@ -337,8 +391,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
         var casesPerTag = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("casesPerTag");
         casesPerTag.put("forged-tag", 1);
@@ -357,8 +412,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
         var minCasesPerTag = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("minCasesPerTag");
         minCasesPerTag.put("source-map", 2);
@@ -435,7 +491,8 @@ class ParserBenchmarkCorpusCliTest {
     void verifyBenchmarkReportRejectsTamperedCaseReplayEvidence() throws Exception {
         Path report = writeRecordedBenchmarkReport();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
-        var replay = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("cases").get(0).path("replay");
+        var replay = (com.fasterxml.jackson.databind.node.ObjectNode)
+                recorded.path("cases").get(0).path("replay");
         replay.put("evidenceSpanReplayable", false);
         MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
         var verifier = cli();
@@ -452,8 +509,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
         var metrics = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("metrics");
         metrics.put("reading_order_f1", 0.0);
@@ -472,8 +530,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
         var metrics = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("metrics");
         metrics.put("parser_latency_p95", 999999.0);
@@ -508,11 +567,7 @@ class ParserBenchmarkCorpusCliTest {
         var cli = cli();
 
         int code = cli.run(new String[] {
-                "benchmark-corpus",
-                manifest.toString(),
-                "--json",
-                "--opendataloader-prediction-out",
-                prediction.toString()
+            "benchmark-corpus", manifest.toString(), "--json", "--opendataloader-prediction-out", prediction.toString()
         });
 
         assertThat(code).isZero();
@@ -524,7 +579,10 @@ class ParserBenchmarkCorpusCliTest {
         assertThat(summary.path("engine_name").asText()).isEqualTo("doctruth");
         assertThat(summary.path("document_count").asInt()).isEqualTo(1);
         var stdout = MAPPER.readTree(cli.out());
-        assertThat(stdout.path("externalArtifacts").path("opendataloaderPrediction").path("engine").asText())
+        assertThat(stdout.path("externalArtifacts")
+                        .path("opendataloaderPrediction")
+                        .path("engine")
+                        .asText())
                 .isEqualTo("doctruth");
     }
 
@@ -582,7 +640,9 @@ class ParserBenchmarkCorpusCliTest {
         int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
 
         assertThat(code).isEqualTo(1);
-        assertThat(verifier.err()).contains("casesPerTag mismatch for multi-layout").contains("expected integer");
+        assertThat(verifier.err())
+                .contains("casesPerTag mismatch for multi-layout")
+                .contains("expected integer");
     }
 
     @Test
@@ -619,7 +679,8 @@ class ParserBenchmarkCorpusCliTest {
     void verifyBenchmarkReportRejectsSourceHashMismatch() throws Exception {
         Path report = writeRecordedBenchmarkReport();
         var recorded = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(Files.readString(report));
-        var firstCase = (com.fasterxml.jackson.databind.node.ObjectNode) recorded.path("cases").get(0);
+        var firstCase = (com.fasterxml.jackson.databind.node.ObjectNode)
+                recorded.path("cases").get(0);
         firstCase.put("sourceSha256", "sha256:" + "0".repeat(64));
         MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(), recorded);
         var verifier = cli();
@@ -666,9 +727,11 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
-        Files.writeString(manifest, Files.readString(manifest).replace("parser-accuracy-report-corpus", "changed-corpus"));
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
+        Files.writeString(
+                manifest, Files.readString(manifest).replace("parser-accuracy-report-corpus", "changed-corpus"));
         var verifier = cli();
 
         int code = verifier.run(new String[] {"verify-benchmark-report", report.toString()});
@@ -680,10 +743,10 @@ class ParserBenchmarkCorpusCliTest {
     @Test
     void benchmarkCorpusOfflineRejectsUncachedRemoteFixtures() throws Exception {
         Files.writeString(tempDir.resolve("expected.md"), "Remote Fixture\n");
-        Files.writeString(tempDir.resolve("expected.json"), expectedDocument("Remote Fixture").toJsonFull());
         Files.writeString(
-                tempDir.resolve("remote-corpus.json"),
-                """
+                tempDir.resolve("expected.json"),
+                expectedDocument("Remote Fixture").toJsonFull());
+        Files.writeString(tempDir.resolve("remote-corpus.json"), """
                 {
                   "name": "offline-remote-corpus",
                   "minimums": {"reading_order_f1": 1.0},
@@ -700,12 +763,12 @@ class ParserBenchmarkCorpusCliTest {
                 """.formatted("a".repeat(64)));
         var cli = cli();
 
-        int code = cli.run(new String[] {"benchmark-corpus", tempDir.resolve("remote-corpus.json").toString(), "--offline"});
+        int code = cli.run(new String[] {
+            "benchmark-corpus", tempDir.resolve("remote-corpus.json").toString(), "--offline"
+        });
 
         assertThat(code).isEqualTo(1);
-        assertThat(cli.err())
-                .contains("offline-remote-pdf")
-                .contains("offline mode refuses remote benchmark source");
+        assertThat(cli.err()).contains("offline-remote-pdf").contains("offline mode refuses remote benchmark source");
     }
 
     @Test
@@ -728,10 +791,10 @@ class ParserBenchmarkCorpusCliTest {
         Path worker = writeFakeOcrWorker("OCR benchmark text", 0.96);
         Path runtime = writeFakeOcrRuntime(worker, "OCR benchmark text", 0.96);
         Files.writeString(tempDir.resolve("expected-ocr.md"), "Different OCR label\n");
-        Files.writeString(tempDir.resolve("expected-ocr.json"), expectedDocument("Different OCR label").toJsonFull());
         Files.writeString(
-                tempDir.resolve("ocr-corpus.json"),
-                """
+                tempDir.resolve("expected-ocr.json"),
+                expectedDocument("Different OCR label").toJsonFull());
+        Files.writeString(tempDir.resolve("ocr-corpus.json"), """
                 {
                   "name": "ocr-corpus",
                   "minimums": {"ocr_text_accuracy": 1.0},
@@ -750,7 +813,9 @@ class ParserBenchmarkCorpusCliTest {
 
         int code = withSystemProperties(
                 Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
-                () -> cli.run(new String[] {"benchmark-corpus", tempDir.resolve("ocr-corpus.json").toString()}));
+                () -> cli.run(new String[] {
+                    "benchmark-corpus", tempDir.resolve("ocr-corpus.json").toString()
+                }));
 
         assertThat(code).isEqualTo(1);
         assertThat(cli.err())
@@ -766,10 +831,9 @@ class ParserBenchmarkCorpusCliTest {
         Files.writeString(tempDir.resolve("expected.md"), "Warning Fixture\n");
         Files.writeString(
                 tempDir.resolve("expected.json"),
-                expectedDocumentWithParserWarning("Warning Fixture", "layout_low_confidence").toJsonFull());
-        Files.writeString(
-                tempDir.resolve("warning-corpus.json"),
-                """
+                expectedDocumentWithParserWarning("Warning Fixture", "layout_low_confidence")
+                        .toJsonFull());
+        Files.writeString(tempDir.resolve("warning-corpus.json"), """
                 {
                   "name": "warning-corpus",
                   "minimums": {"reading_order_f1": 1.0},
@@ -786,7 +850,9 @@ class ParserBenchmarkCorpusCliTest {
                 """.formatted(tempDir.relativize(source)));
         var cli = cli();
 
-        int code = cli.run(new String[] {"benchmark-corpus", tempDir.resolve("warning-corpus.json").toString()});
+        int code = cli.run(new String[] {
+            "benchmark-corpus", tempDir.resolve("warning-corpus.json").toString()
+        });
 
         assertThat(code).isEqualTo(1);
         assertThat(cli.err())
@@ -800,10 +866,10 @@ class ParserBenchmarkCorpusCliTest {
     void benchmarkCorpusLatencyMaximumFailureUsesAggregateMetrics() throws Exception {
         Path source = writePdf("Work Experience", "Java Engineer");
         Files.writeString(tempDir.resolve("expected.md"), "Work Experience\nJava Engineer\n");
-        Files.writeString(tempDir.resolve("expected.json"), expectedDocument("Work Experience\nJava Engineer").toJsonFull());
         Files.writeString(
-                tempDir.resolve("latency-corpus.json"),
-                """
+                tempDir.resolve("expected.json"),
+                expectedDocument("Work Experience\nJava Engineer").toJsonFull());
+        Files.writeString(tempDir.resolve("latency-corpus.json"), """
                 {
                   "name": "latency-corpus",
                   "minimums": {"reading_order_f1": 1.0},
@@ -820,7 +886,9 @@ class ParserBenchmarkCorpusCliTest {
                 """.formatted(tempDir.relativize(source)));
         var cli = cli();
 
-        int code = cli.run(new String[] {"benchmark-corpus", tempDir.resolve("latency-corpus.json").toString()});
+        int code = cli.run(new String[] {
+            "benchmark-corpus", tempDir.resolve("latency-corpus.json").toString()
+        });
 
         assertThat(code).isEqualTo(1);
         assertThat(cli.err())
@@ -844,7 +912,6 @@ class ParserBenchmarkCorpusCliTest {
                 .contains("corpus compact_llm_size_reduction_min")
                 .contains("minimum=1.0");
     }
-
 
     @Test
     void benchmarkCorpusRejectsUnknownOption() throws Exception {
@@ -870,10 +937,10 @@ class ParserBenchmarkCorpusCliTest {
     private Path writePassingManifest(Map<String, Double> minimums) throws IOException {
         Path source = writePdf("Work Experience", "Java Engineer");
         Files.writeString(tempDir.resolve("expected.md"), "Work Experience\nJava Engineer\n");
-        Files.writeString(tempDir.resolve("expected.json"), expectedDocument("Work Experience\nJava Engineer").toJsonFull());
         Files.writeString(
-                tempDir.resolve("corpus.json"),
-                """
+                tempDir.resolve("expected.json"),
+                expectedDocument("Work Experience\nJava Engineer").toJsonFull());
+        Files.writeString(tempDir.resolve("corpus.json"), """
                 {
                   "name": "generated-parser-corpus",
                   "minimums": %s,
@@ -886,18 +953,18 @@ class ParserBenchmarkCorpusCliTest {
                     }
                   ]
                 }
-                """
-                        .formatted(MAPPER.writeValueAsString(minimums), tempDir.relativize(source)));
+                """.formatted(
+                        MAPPER.writeValueAsString(minimums), tempDir.relativize(source)));
         return tempDir.resolve("corpus.json");
     }
 
     private Path writeParserAccuracyManifest() throws IOException {
         Path source = writePdf("PROFILE", "Experienced operator");
         Files.writeString(tempDir.resolve("expected.md"), "PROFILE\nExperienced operator\n");
-        Files.writeString(tempDir.resolve("expected.json"), expectedDocument("PROFILE\nExperienced operator").toJsonFull());
         Files.writeString(
-                tempDir.resolve("opendataloader-evaluation.json"),
-                """
+                tempDir.resolve("expected.json"),
+                expectedDocument("PROFILE\nExperienced operator").toJsonFull());
+        Files.writeString(tempDir.resolve("opendataloader-evaluation.json"), """
                 {
                   "summary": {
                     "engine_name": "doctruth-runtime",
@@ -914,9 +981,7 @@ class ParserBenchmarkCorpusCliTest {
                   }
                 }
                 """);
-        Files.writeString(
-                tempDir.resolve("parser-accuracy-report-corpus.json"),
-                """
+        Files.writeString(tempDir.resolve("parser-accuracy-report-corpus.json"), """
                 {
                   "name": "parser-accuracy-report-corpus",
                   "kind": "human-labeled",
@@ -1003,7 +1068,8 @@ class ParserBenchmarkCorpusCliTest {
                     }
                   ]
                 }
-                """.formatted(tempDir.relativize(source), sha256(source)));
+                """.formatted(
+                        tempDir.relativize(source), sha256(source)));
         return tempDir.resolve("parser-accuracy-report-corpus.json");
     }
 
@@ -1012,8 +1078,9 @@ class ParserBenchmarkCorpusCliTest {
         Path report = tempDir.resolve("reports/parser-accuracy-report.json");
         var writer = cli();
         assertThat(writer.run(new String[] {
-                "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
-        })).isZero();
+                    "benchmark-corpus", manifest.toString(), "--json", "--report-out", report.toString()
+                }))
+                .isZero();
         return report;
     }
 
@@ -1040,9 +1107,7 @@ class ParserBenchmarkCorpusCliTest {
 
     private Path writeFakeOcrRuntime(Path worker, String text, double confidence) throws IOException {
         var path = tempDir.resolve("fake-ocr-runtime-" + Math.round(confidence * 100));
-        Files.writeString(
-                path,
-                """
+        Files.writeString(path, """
                 #!/usr/bin/env sh
                 cat >/dev/null
                 test "$DOCTRUTH_RUNTIME_MODEL_COMMAND" = "%s"
@@ -1065,9 +1130,7 @@ class ParserBenchmarkCorpusCliTest {
 
     private Path writeFakeOcrWorker(String text, double confidence) throws IOException {
         var path = tempDir.resolve("fake-ocr-worker");
-        Files.writeString(
-                path,
-                """
+        Files.writeString(path, """
                 #!/usr/bin/env sh
                 python3 -c '
                 import json
@@ -1093,7 +1156,8 @@ class ParserBenchmarkCorpusCliTest {
                 "expected-doc",
                 List.of(new TextSection(
                         text,
-                        new SourceLocation(1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
+                        new SourceLocation(
+                                1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
                         BlockKind.BODY,
                         Optional.of(new BoundingBox(100, 100, 500, 200)))),
                 new DocumentMetadata("expected.pdf", 1, Optional.empty()));
@@ -1119,7 +1183,8 @@ class ParserBenchmarkCorpusCliTest {
                 "expected-doc",
                 List.of(new TextSection(
                         text,
-                        new SourceLocation(1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
+                        new SourceLocation(
+                                1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
                         BlockKind.BODY,
                         Optional.of(new BoundingBox(100, 100, 500, 200)))),
                 new DocumentMetadata("expected.pdf", 1, Optional.empty()));

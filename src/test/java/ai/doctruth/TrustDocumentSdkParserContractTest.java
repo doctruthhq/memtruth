@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -51,9 +51,7 @@ class TrustDocumentSdkParserContractTest {
 
         assertThat(doc.parserRun().preset()).isEqualTo("standard");
         assertThat(doc.parserRun().models()).contains("layout-rtdetr:v2", "tatr:v1");
-        assertThat(doc.parserRun().warnings())
-                .extracting(ParserWarning::code)
-                .contains("model_unavailable_fallback");
+        assertThat(doc.parserRun().warnings()).extracting(ParserWarning::code).contains("model_unavailable_fallback");
         assertThat(doc.auditGradeStatus()).isEqualTo(AuditGradeStatus.NOT_AUDIT_GRADE);
     }
 
@@ -71,7 +69,8 @@ class TrustDocumentSdkParserContractTest {
                     .parse();
 
             assertThat(doc.parserRun().backend()).isEqualTo("sidecar");
-            assertThat(doc.toMarkdownClean()).contains("Rust SDK parser text.")
+            assertThat(doc.toMarkdownClean())
+                    .contains("Rust SDK parser text.")
                     .doesNotContain("PDFBox SDK parser text should not win.");
         });
     }
@@ -90,7 +89,8 @@ class TrustDocumentSdkParserContractTest {
                     .parse();
 
             assertThat(doc.parserRun().backend()).isEqualTo("pdfbox");
-            assertThat(doc.toMarkdownClean()).contains("Explicit SDK PDFBox fallback.")
+            assertThat(doc.toMarkdownClean())
+                    .contains("Explicit SDK PDFBox fallback.")
                     .doesNotContain("Rust should not win explicit fallback.");
         });
     }
@@ -102,18 +102,18 @@ class TrustDocumentSdkParserContractTest {
 
         withSystemProperty("doctruth.runtime.disableSourceDiscovery", "true", () -> {
             assertThatThrownBy(() -> DocTruth.withProvider(provider())
-                    .parsePdf(pdf)
-                    .withParser(ParserPreset.LITE)
-                    .backend(ParserBackendMode.AUTO)
-                    .parse())
+                            .parsePdf(pdf)
+                            .withParser(ParserPreset.LITE)
+                            .backend(ParserBackendMode.AUTO)
+                            .parse())
                     .isInstanceOf(ParseException.class)
                     .hasMessageContaining("Rust runtime is required");
 
             assertThatThrownBy(() -> DocTruth.withProvider(provider())
-                    .parsePdf(pdf)
-                    .withParser(ParserPreset.LITE)
-                    .backend(ParserBackendMode.SIDECAR)
-                    .parse())
+                            .parsePdf(pdf)
+                            .withParser(ParserPreset.LITE)
+                            .backend(ParserBackendMode.SIDECAR)
+                            .parse())
                     .isInstanceOf(ParseException.class)
                     .hasMessageContaining("Rust runtime is required");
         });
@@ -147,16 +147,13 @@ class TrustDocumentSdkParserContractTest {
 
     private Path fakeRustRuntime(String text) throws IOException {
         Path runtime = tempDir.resolve("fake-doctruth-runtime");
-        Files.writeString(
-                runtime,
-                """
+        Files.writeString(runtime, """
                 #!/usr/bin/env sh
                 cat >/dev/null
                 cat <<'JSON'
                 {"docId":"sha256:rust-sdk","source":{"sourceFilename":"runtime.pdf","sourceHash":"sha256:rust-sdk","metadata":{"sourceFilename":"runtime.pdf","pageCount":1}},"body":{"pages":[{"pageNumber":1,"width":1000,"height":1000,"textLayerAvailable":true,"imageHash":"sha256:image"}],"units":[{"unitId":"unit-0001","kind":"LINE_SPAN","page":1,"text":"%s","evidenceSpanIds":["span-0001"],"location":{"page":1,"readingOrder":1},"sourceObjectId":"runtime-line-1","confidence":{"score":1.0,"rationale":"rust runtime"},"warnings":[]}],"tables":[]},"parserRun":{"parserVersion":"runtime-test","preset":"lite","backend":"sidecar","models":[],"warnings":[]},"auditGradeStatus":"AUDIT_GRADE"}
                 JSON
-                """.formatted(text),
-                StandardCharsets.UTF_8);
+                """.formatted(text), StandardCharsets.UTF_8);
         assertThat(runtime.toFile().setExecutable(true)).isTrue();
         return runtime;
     }

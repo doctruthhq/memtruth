@@ -14,10 +14,7 @@ import java.util.Objects;
  * @since 1.0.0
  */
 public record ParserRunDetails(
-        List<String> models,
-        List<ParserWarning> warnings,
-        Map<String, String> externalBackend,
-        Long elapsedMs) {
+        List<String> models, List<ParserWarning> warnings, Map<String, String> externalBackend, Long elapsedMs) {
 
     public ParserRunDetails(List<String> models, List<ParserWarning> warnings) {
         this(models, warnings, Map.of(), null);

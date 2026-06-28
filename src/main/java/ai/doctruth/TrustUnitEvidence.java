@@ -31,4 +31,3 @@ public record TrustUnitEvidence(List<String> evidenceSpanIds, Confidence confide
         return List.copyOf(values);
     }
 }
-

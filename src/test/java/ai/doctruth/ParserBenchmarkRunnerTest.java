@@ -6,10 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.nio.file.Path;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -145,8 +145,8 @@ class ParserBenchmarkRunnerTest {
     void benchmarkReportsOcrTextAccuracy() {
         var doc = ocrDocument("Invoice Total 123");
 
-        var result = ParserBenchmarkRunner.evaluate(List.of(
-                        new ParserBenchmarkCase("ocr-smoke", doc, "Invoice Total 123")))
+        var result = ParserBenchmarkRunner.evaluate(
+                        List.of(new ParserBenchmarkCase("ocr-smoke", doc, "Invoice Total 123")))
                 .getFirst();
 
         assertThat(result.metric("ocr_text_accuracy")).isEqualTo(1.0);
@@ -158,13 +158,13 @@ class ParserBenchmarkRunnerTest {
     void benchmarkLowersOcrTextAccuracyForMissingText() {
         var doc = ocrDocument("Invoice 123");
 
-        var result = ParserBenchmarkRunner.evaluate(List.of(
-                        new ParserBenchmarkCase("ocr-missing-token", doc, "Invoice Total 123")))
+        var result = ParserBenchmarkRunner.evaluate(
+                        List.of(new ParserBenchmarkCase("ocr-missing-token", doc, "Invoice Total 123")))
                 .getFirst();
 
         assertThat(result.metric("ocr_text_accuracy")).isLessThan(1.0);
-        assertThatThrownBy(() ->
-                        ParserBenchmarkRunner.requireMinimums(List.of(result), Map.of("ocr_text_accuracy", 0.95)))
+        assertThatThrownBy(
+                        () -> ParserBenchmarkRunner.requireMinimums(List.of(result), Map.of("ocr_text_accuracy", 0.95)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("ocr-missing-token")
                 .hasMessageContaining("ocr_text_accuracy");
@@ -226,13 +226,7 @@ class ParserBenchmarkRunnerTest {
         var doc = document("Work Experience\nJava Engineer");
 
         var result = ParserBenchmarkRunner.evaluate(List.of(new ParserBenchmarkCase(
-                        "resource-case",
-                        doc,
-                        "Work Experience\nJava Engineer",
-                        Optional.empty(),
-                        123.0,
-                        256.5,
-                        30.25)))
+                        "resource-case", doc, "Work Experience\nJava Engineer", Optional.empty(), 123.0, 256.5, 30.25)))
                 .getFirst();
 
         assertThat(result.metric("rss_peak_mb")).isEqualTo(256.5);
@@ -250,8 +244,9 @@ class ParserBenchmarkRunnerTest {
         Path pdf = writePositionedPdf(List.of(run("Work Experience", 72f, 720f), run("Java Engineer", 72f, 700f)));
 
         ParserBenchmarkCase benchmarkCase = withSystemProperty(
-                "doctruth.model.cache", cache.toString(), () -> ParserBenchmarkCase.fromPdf(
-                        "cached-model-case", pdf, "Work Experience\nJava Engineer\n"));
+                "doctruth.model.cache",
+                cache.toString(),
+                () -> ParserBenchmarkCase.fromPdf("cached-model-case", pdf, "Work Experience\nJava Engineer\n"));
 
         assertThat(benchmarkCase.modelCacheSizeMb()).isGreaterThan(0.0);
         assertThat(benchmarkCase.rssPeakMb()).isGreaterThanOrEqualTo(0.0);
@@ -325,16 +320,17 @@ class ParserBenchmarkRunnerTest {
     @Test
     @DisplayName("benchmark warning metric matches parserRun and unit-local severe warnings")
     void benchmarkStrictWarningMetricMatchesParserAndUnitWarnings() {
-        var expected = documentWithWarnings(List.of(severe("layout_low_confidence")), List.of(severe("ocr_low_confidence")));
-        var actual = documentWithWarnings(List.of(severe("layout_low_confidence")), List.of(severe("ocr_low_confidence")));
+        var expected =
+                documentWithWarnings(List.of(severe("layout_low_confidence")), List.of(severe("ocr_low_confidence")));
+        var actual =
+                documentWithWarnings(List.of(severe("layout_low_confidence")), List.of(severe("ocr_low_confidence")));
 
         var result = ParserBenchmarkRunner.evaluate(List.of(new ParserBenchmarkCase(
                         "matched-strict-warning", actual, actual.toMarkdownClean(), Optional.of(expected))))
                 .getFirst();
 
         assertThat(result.metric("strict_warning_false_negative_rate")).isEqualTo(0.0);
-        ParserBenchmarkRunner.requireMaximums(
-                List.of(result), Map.of("strict_warning_false_negative_rate", 0.02));
+        ParserBenchmarkRunner.requireMaximums(List.of(result), Map.of("strict_warning_false_negative_rate", 0.02));
     }
 
     @Test
@@ -346,10 +342,7 @@ class ParserBenchmarkRunnerTest {
                 run("PROFILE", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                 run("Experienced business development executive.", 320f, 700f)));
 
-        var benchmark = ParserBenchmarkCase.fromPdf(
-                "two-column-real-pdf",
-                pdf,
-                """
+        var benchmark = ParserBenchmarkCase.fromPdf("two-column-real-pdf", pdf, """
                 CONTACT
                 +6011-19822183
                 PROFILE
@@ -378,16 +371,12 @@ class ParserBenchmarkRunnerTest {
                 run("Experienced business development executive.", 320f, 700f)));
         var expected = expectedTwoColumnDocument();
 
-        var benchmark = ParserBenchmarkCase.fromPdf(
-                "two-column-real-pdf-bbox",
-                pdf,
-                """
+        var benchmark = ParserBenchmarkCase.fromPdf("two-column-real-pdf-bbox", pdf, """
                 CONTACT
                 +6011-19822183
                 PROFILE
                 Experienced business development executive.
-                """,
-                expected);
+                """, expected);
         var result = ParserBenchmarkRunner.evaluate(List.of(benchmark)).getFirst();
 
         assertThat(result.metric("bbox_iou")).isGreaterThanOrEqualTo(0.20);
@@ -400,16 +389,12 @@ class ParserBenchmarkRunnerTest {
         var pdf = writeBorderedTablePdf();
         var expected = expectedBorderedTableDocument();
 
-        var benchmark = ParserBenchmarkCase.fromPdf(
-                "bordered-table-real-pdf",
-                pdf,
-                """
+        var benchmark = ParserBenchmarkCase.fromPdf("bordered-table-real-pdf", pdf, """
                 Name
                 Score
                 Alex
                 98
-                """,
-                expected);
+                """, expected);
         var result = ParserBenchmarkRunner.evaluate(List.of(benchmark)).getFirst();
 
         assertThat(result.metric("table_cell_f1")).isEqualTo(1.0);
@@ -420,7 +405,8 @@ class ParserBenchmarkRunnerTest {
     @DisplayName("real PDF table extraction suppresses duplicate text blocks for table cell content")
     void realPdfTableExtractionSuppressesDuplicateTextBlocks() throws Exception {
         var pdf = writeBorderedTablePdf();
-        var document = ParserBenchmarkCase.fromPdf("bordered-table-no-duplicates", pdf, "").document();
+        var document = ParserBenchmarkCase.fromPdf("bordered-table-no-duplicates", pdf, "")
+                .document();
 
         var textBlocks = document.body().units().stream()
                 .filter(unit -> unit.kind() == TrustUnitKind.TEXT_BLOCK)
@@ -450,7 +436,8 @@ class ParserBenchmarkRunnerTest {
     @DisplayName("real PDF bordered table extraction preserves cell-level bounding boxes")
     void realPdfBorderedTableExtractionPreservesCellBoundingBoxes() throws Exception {
         var pdf = writeBorderedTablePdf();
-        var document = ParserBenchmarkCase.fromPdf("bordered-table-cell-bboxes", pdf, "").document();
+        var document = ParserBenchmarkCase.fromPdf("bordered-table-cell-bboxes", pdf, "")
+                .document();
 
         var table = document.body().tables().getFirst();
         var tableCellUnits = document.body().units().stream()
@@ -460,7 +447,8 @@ class ParserBenchmarkRunnerTest {
         assertThat(table.cells()).hasSize(4);
         assertThat(table.cells()).allMatch(cell -> cell.boundingBox().isPresent());
         assertThat(tableCellUnits).hasSize(4);
-        assertThat(tableCellUnits).allMatch(unit -> unit.location().boundingBox().isPresent());
+        assertThat(tableCellUnits)
+                .allMatch(unit -> unit.location().boundingBox().isPresent());
     }
 
     private static TrustDocument document(String text) {
@@ -468,7 +456,8 @@ class ParserBenchmarkRunnerTest {
                 "doc-fixture",
                 List.of(new TextSection(
                         text,
-                        new SourceLocation(1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
+                        new SourceLocation(
+                                1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
                         BlockKind.BODY,
                         Optional.of(new BoundingBox(0, 0, 1000, 1000)))),
                 new DocumentMetadata("fixture.pdf", 1, Optional.empty()));
@@ -505,7 +494,10 @@ class ParserBenchmarkRunnerTest {
                                 "Score")));
         return new TrustDocument(
                         docId,
-                        new TrustDocumentSource(docId + ".pdf", "sha256:" + docId, new DocumentMetadata(docId + ".pdf", 1, Optional.empty())),
+                        new TrustDocumentSource(
+                                docId + ".pdf",
+                                "sha256:" + docId,
+                                new DocumentMetadata(docId + ".pdf", 1, Optional.empty())),
                         new TrustDocumentBody(List.of(page), List.of(unit), List.of(table)),
                         new ParserRun("1.0.0", "table-lite", "fixture", List.of(), List.of()),
                         AuditGradeStatus.UNKNOWN)
@@ -582,21 +574,9 @@ class ParserBenchmarkRunnerTest {
 
     private static TrustDocument expectedTwoColumnDocument() {
         var page = new TrustPage(1, 1000, 1000, true, "sha256:expected-page");
-        var contact = expectedUnit(
-                "unit-contact",
-                "CONTACT",
-                new BoundingBox(81.69, 75.75, 177.55, 90.91),
-                1);
-        var phone = expectedUnit(
-                "unit-phone",
-                "+6011-19822183",
-                new BoundingBox(81.69, 101.01, 229.84, 116.17),
-                2);
-        var profile = expectedUnit(
-                "unit-profile",
-                "PROFILE",
-                new BoundingBox(522.87, 75.75, 607.87, 90.91),
-                3);
+        var contact = expectedUnit("unit-contact", "CONTACT", new BoundingBox(81.69, 75.75, 177.55, 90.91), 1);
+        var phone = expectedUnit("unit-phone", "+6011-19822183", new BoundingBox(81.69, 101.01, 229.84, 116.17), 2);
+        var profile = expectedUnit("unit-profile", "PROFILE", new BoundingBox(522.87, 75.75, 607.87, 90.91), 3);
         var summary = expectedUnit(
                 "unit-summary",
                 "Experienced business development executive.",
@@ -632,7 +612,8 @@ class ParserBenchmarkRunnerTest {
                                 "expected-table.pdf",
                                 "sha256:expected-table",
                                 new DocumentMetadata("expected-table.pdf", 1, Optional.empty())),
-                        new TrustDocumentBody(List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")), List.of(), List.of(table)),
+                        new TrustDocumentBody(
+                                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")), List.of(), List.of(table)),
                         new ParserRun("1.0.0", "table-lite", "fixture", List.of(), List.of()),
                         AuditGradeStatus.UNKNOWN)
                 .withEvaluatedAuditGrade();
@@ -703,7 +684,8 @@ class ParserBenchmarkRunnerTest {
         return path;
     }
 
-    private static void drawLine(PDPageContentStream stream, float x0, float y0, float x1, float y1) throws IOException {
+    private static void drawLine(PDPageContentStream stream, float x0, float y0, float x1, float y1)
+            throws IOException {
         stream.moveTo(x0, y0);
         stream.lineTo(x1, y1);
         stream.stroke();
@@ -721,13 +703,12 @@ class ParserBenchmarkRunnerTest {
         return run(text, x, y, 10f, Standard14Fonts.FontName.HELVETICA);
     }
 
-    private static PositionedRun run(
-            String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {
+    private static PositionedRun run(String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {
         return new PositionedRun(text, x, y, fontSize, fontName);
     }
 
-    private static ParserBenchmarkCase withSystemProperty(
-            String key, String value, ThrowingBenchmarkSupplier supplier) throws Exception {
+    private static ParserBenchmarkCase withSystemProperty(String key, String value, ThrowingBenchmarkSupplier supplier)
+            throws Exception {
         String previous = System.getProperty(key);
         System.setProperty(key, value);
         try {

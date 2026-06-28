@@ -22,4 +22,3 @@ public record TrustUnitContent(String text, String sourceObjectId) {
         }
     }
 }
-

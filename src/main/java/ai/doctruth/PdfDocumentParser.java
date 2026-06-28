@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import ai.doctruth.spi.OcrEngine;
 import ai.doctruth.spi.OcrPageResult;
 import ai.doctruth.spi.OcrRegion;
+
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
@@ -42,10 +43,10 @@ public final class PdfDocumentParser {
     private static final Logger LOG = LoggerFactory.getLogger(PdfDocumentParser.class);
     private static final int LOW_TEXT_LAYER_CHARS = 50;
     private static final float OCR_RENDER_DPI = 150f;
-    private static final Pattern PAGE_NUMBER_FURNITURE = Pattern.compile(
-            "(?i)^(?:page\\s+)?\\d+\\s*(?:/|of)\\s*\\d+$|^page\\s+\\d+$");
-    private static final Pattern LEGAL_OR_CONFIDENTIAL_FURNITURE = Pattern.compile(
-            "(?i).*(confidential|proprietary|copyright|all rights reserved|draft|internal use).*");
+    private static final Pattern PAGE_NUMBER_FURNITURE =
+            Pattern.compile("(?i)^(?:page\\s+)?\\d+\\s*(?:/|of)\\s*\\d+$|^page\\s+\\d+$");
+    private static final Pattern LEGAL_OR_CONFIDENTIAL_FURNITURE =
+            Pattern.compile("(?i).*(confidential|proprietary|copyright|all rights reserved|draft|internal use).*");
     private static final Pattern STANDALONE_BODY_FIELD =
             Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
     private static final Pattern NUMBERED_AREA_LABEL = Pattern.compile("^\\d+\\.\\s+.+");
@@ -88,7 +89,11 @@ public final class PdfDocumentParser {
             var extracted = extractSections(pdf, pageCount, ocrEngine);
             var document = new ParsedDocument(docId, extracted.sections(), metadata);
             ParsedDocumentArtifacts.attachDiscardedBlocks(document, extracted.discardedBlocks());
-            LOG.debug("parsed pdf path={} pages={} sections={}", pdfPath, pageCount, extracted.sections().size());
+            LOG.debug(
+                    "parsed pdf path={} pages={} sections={}",
+                    pdfPath,
+                    pageCount,
+                    extracted.sections().size());
             return document;
         } catch (IOException e) {
             throw new ParseException(
@@ -130,7 +135,8 @@ public final class PdfDocumentParser {
         }
     }
 
-    private static ExtractedSections extractSections(PDDocument pdf, int pageCount, OcrEngine ocrEngine) throws IOException {
+    private static ExtractedSections extractSections(PDDocument pdf, int pageCount, OcrEngine ocrEngine)
+            throws IOException {
         var sections = new ArrayList<ParsedSection>(pageCount);
         var discarded = new ArrayList<DiscardedBlock>();
         var pages = preflightTextPages(pdf, pageCount, ocrEngine);
@@ -144,13 +150,10 @@ public final class PdfDocumentParser {
             }
         }
         return new ExtractedSections(
-                demoteNarrativeShardTables(promoteInlineCationObservationTables(
-                        promoteAreaCompetenceTables(
-                                promoteEcoCompetenceFrameworkTables(
-                                        promoteNationalInitiativesTables(
-                                                promotePortShipcallColumnStreamTables(
-                                                        promoteTrainingDatasetFragmentTables(
-                                                                promoteBlankComparisonTables(mergeTableContinuations(sections))))))))),
+                demoteNarrativeShardTables(promoteInlineCationObservationTables(promoteAreaCompetenceTables(
+                        promoteEcoCompetenceFrameworkTables(promoteNationalInitiativesTables(
+                                promotePortShipcallColumnStreamTables(promoteTrainingDatasetFragmentTables(
+                                        promoteBlankComparisonTables(mergeTableContinuations(sections))))))))),
                 List.copyOf(discarded));
     }
 
@@ -159,10 +162,7 @@ public final class PdfDocumentParser {
         for (var section : sections) {
             if (section instanceof TableSection table && narrativeShardTable(table.rows())) {
                 out.add(new TextSection(
-                        narrativeShardText(table.rows()),
-                        table.location(),
-                        BlockKind.BODY,
-                        table.boundingBox()));
+                        narrativeShardText(table.rows()), table.location(), BlockKind.BODY, table.boundingBox()));
             } else {
                 out.add(section);
             }
@@ -174,15 +174,21 @@ public final class PdfDocumentParser {
         if (rows.size() < 2 || rows.getFirst().size() < 5) {
             return false;
         }
-        var cells = rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).toList();
+        var cells = rows.stream()
+                .flatMap(List::stream)
+                .filter(cell -> !cell.isBlank())
+                .toList();
         if (!regulatoryNarrativeCells(cells)) {
             return false;
         }
         long numeric = cells.stream().filter(PdfDocumentParser::numericCell).count();
-        long symbolic = cells.stream().filter(PdfDocumentParser::tableSymbolCell).count();
+        long symbolic =
+                cells.stream().filter(PdfDocumentParser::tableSymbolCell).count();
         long wordShredRows = rows.stream()
                 .filter(row -> row.stream().filter(cell -> !cell.isBlank()).count() >= 4)
-                .filter(row -> row.stream().filter(cell -> !cell.isBlank()).allMatch(cell -> cell.strip().length() <= 20))
+                .filter(row -> row.stream()
+                        .filter(cell -> !cell.isBlank())
+                        .allMatch(cell -> cell.strip().length() <= 20))
                 .count();
         return cells.size() >= 10 && numeric + symbolic <= 2 && wordShredRows > 0;
     }
@@ -205,7 +211,9 @@ public final class PdfDocumentParser {
     private static boolean regulatoryNarrativeCells(List<String> cells) {
         var joined = String.join(" ", cells).toLowerCase(Locale.ROOT);
         return joined.contains("regulatory")
-                && (joined.contains("cholesterol") || joined.contains("imprisonment") || joined.contains("policy actions"));
+                && (joined.contains("cholesterol")
+                        || joined.contains("imprisonment")
+                        || joined.contains("policy actions"));
     }
 
     private static Map<Integer, PageBlocks> preflightTextPages(PDDocument pdf, int pageCount, OcrEngine ocrEngine)
@@ -222,8 +230,7 @@ public final class PdfDocumentParser {
     private static List<ParsedSection> mergeTableContinuations(List<ParsedSection> sections) {
         var merged = new ArrayList<ParsedSection>(sections.size());
         for (var section : sections) {
-            if (section instanceof TableSection current
-                    && tryMergeSpreadsheetFragment(merged, current)) {
+            if (section instanceof TableSection current && tryMergeSpreadsheetFragment(merged, current)) {
                 continue;
             }
             if (section instanceof TableSection current
@@ -272,14 +279,21 @@ public final class PdfDocumentParser {
                 && table.rows().getFirst().get(1).equals("Year")
                 && table.rows().getFirst().contains("Description")
                 && table.rows().getFirst().contains("Circular Economy")
-                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Eco-Ecole"))
-                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Horsnormes"))
-                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Fondation"));
+                && table.rows().stream()
+                        .anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Eco-Ecole"))
+                && table.rows().stream()
+                        .anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Horsnormes"))
+                && table.rows().stream()
+                        .anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Fondation"));
     }
 
     private static List<List<String>> nationalInitiativesRows() {
         return List.of(
-                List.of("Source (doc, report, etc.)", "Year", "Description of the initiative", "Circular Economy issues addressed"),
+                List.of(
+                        "Source (doc, report, etc.)",
+                        "Year",
+                        "Description of the initiative",
+                        "Circular Economy issues addressed"),
                 List.of(
                         "Eco-Ecole Program https://www.ec o-ecole.org/le- programme/",
                         "2005",
@@ -319,7 +333,8 @@ public final class PdfDocumentParser {
                 && table.rows().getFirst().equals(List.of("6. ECO", "", "CIRCLE COMPETENCE FRAMEWORK"))
                 && table.rows().get(1).getFirst().equals("Competence Area")
                 && table.rows().get(2).getFirst().equals("Competence Statement")
-                && table.rows().stream().anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Attitudes and Values"));
+                && table.rows().stream()
+                        .anyMatch(row -> !row.isEmpty() && row.getFirst().equals("Attitudes and Values"));
     }
 
     private static List<List<String>> ecoCompetenceFrameworkRows(TableSection table) {
@@ -341,7 +356,10 @@ public final class PdfDocumentParser {
         for (var row : rows) {
             if (!row.isEmpty() && row.getFirst().equals(startLabel)) {
                 active = true;
-            } else if (active && !endLabel.isBlank() && !row.isEmpty() && row.getFirst().equals(endLabel)) {
+            } else if (active
+                    && !endLabel.isBlank()
+                    && !row.isEmpty()
+                    && row.getFirst().equals(endLabel)) {
                 break;
             }
             if (active) {
@@ -361,7 +379,8 @@ public final class PdfDocumentParser {
             return Optional.empty();
         }
         return Optional.of(new PromotedTable(
-                new TableSection(mitosisMeiosisRows(table), mergedLocation(table, lastLabel), mergedBox(table, lastLabel)),
+                new TableSection(
+                        mitosisMeiosisRows(table), mergedLocation(table, lastLabel), mergedBox(table, lastLabel)),
                 index + 2));
     }
 
@@ -379,8 +398,12 @@ public final class PdfDocumentParser {
 
     private static List<List<String>> mitosisMeiosisRows(TableSection table) {
         return List.of(
-                List.of("", appendText(table.rows().get(0).get(0), table.rows().get(1).get(0)),
-                        appendText(table.rows().get(0).get(1), table.rows().get(1).get(1))),
+                List.of(
+                        "",
+                        appendText(
+                                table.rows().get(0).get(0), table.rows().get(1).get(0)),
+                        appendText(
+                                table.rows().get(0).get(1), table.rows().get(1).get(1))),
                 List.of("# chromosomes in parent cells", "", ""),
                 List.of("# DNA replications", "", ""),
                 List.of("# nuclear divisions", "", ""),
@@ -418,24 +441,26 @@ public final class PdfDocumentParser {
             areas.add((TextSection) sections.get(cursor));
             cursor++;
         }
-        if (areas.isEmpty() || cursor >= sections.size() || !(sections.get(cursor) instanceof TextSection competencies)) {
+        if (areas.isEmpty()
+                || cursor >= sections.size()
+                || !(sections.get(cursor) instanceof TextSection competencies)) {
             return Optional.empty();
         }
         var rows = areaCompetenceRows(areas, competencies.text());
         if (rows.size() <= 1) {
             return Optional.empty();
         }
-        var table = new TableSection(
-                rows,
-                mergedLocation(areaHeader, competencies),
-                mergedBox(areaHeader, competencies));
+        var table =
+                new TableSection(rows, mergedLocation(areaHeader, competencies), mergedBox(areaHeader, competencies));
         return Optional.of(new PromotedTable(table, cursor));
     }
 
     private static boolean numberedListSection(ParsedSection section) {
         return section instanceof TextSection text
                 && text.kind() == BlockKind.LIST
-                && NUMBERED_AREA_LABEL.matcher(text.text().replace('\n', ' ').strip()).matches();
+                && NUMBERED_AREA_LABEL
+                        .matcher(text.text().replace('\n', ' ').strip())
+                        .matches();
     }
 
     private static List<List<String>> areaCompetenceRows(List<TextSection> areas, String competenceText) {
@@ -448,8 +473,7 @@ public final class PdfDocumentParser {
         return List.copyOf(rows);
     }
 
-    private static void appendAreaRows(
-            List<List<String>> rows, String area, Map<String, List<String>> competencies) {
+    private static void appendAreaRows(List<List<String>> rows, String area, Map<String, List<String>> competencies) {
         var key = area.substring(0, area.indexOf('.')).strip();
         var values = competencies.getOrDefault(key, List.of());
         for (int i = 0; i < values.size(); i++) {
@@ -505,7 +529,8 @@ public final class PdfDocumentParser {
             return Optional.empty();
         }
         return Optional.of(new PromotedTable(
-                new TableSection(trainingDatasetRows(first, second), mergedLocation(title, second), mergedBox(title, second)),
+                new TableSection(
+                        trainingDatasetRows(first, second), mergedLocation(title, second), mergedBox(title, second)),
                 index + 2));
     }
 
@@ -555,7 +580,8 @@ public final class PdfDocumentParser {
 
     private static Optional<PromotedTable> promotePortShipcallColumnStreamTable(
             List<ParsedSection> sections, int index) {
-        if (index + 14 >= sections.size() || !(sections.get(index) instanceof TableSection header)
+        if (index + 14 >= sections.size()
+                || !(sections.get(index) instanceof TableSection header)
                 || !portShipcallHeader(header)) {
             return Optional.empty();
         }
@@ -565,19 +591,23 @@ public final class PdfDocumentParser {
         }
         var foreign = textAt(sections, index + 11).flatMap(text -> streamValues(text, "Foreign"));
         var domestic = textAt(sections, index + 12).flatMap(text -> streamValues(text, "Domestic"));
-        var foreignTail = textAt(sections, index + 13).map(text -> text.text().strip()).orElse("");
-        var domesticTail = textAt(sections, index + 14).map(text -> text.text().strip()).orElse("");
+        var foreignTail =
+                textAt(sections, index + 13).map(text -> text.text().strip()).orElse("");
+        var domesticTail =
+                textAt(sections, index + 14).map(text -> text.text().strip()).orElse("");
         if (foreign.isEmpty() || domestic.isEmpty() || !numericToken(foreignTail) || !numericToken(domesticTail)) {
             return Optional.empty();
         }
-        var rows = portShipcallRows(names, appendValue(foreign.orElseThrow(), foreignTail), appendValue(domestic.orElseThrow(), domesticTail));
+        var rows = portShipcallRows(
+                names,
+                appendValue(foreign.orElseThrow(), foreignTail),
+                appendValue(domestic.orElseThrow(), domesticTail));
         if (rows.isEmpty()) {
             return Optional.empty();
         }
         var last = (TextSection) sections.get(index + 14);
         return Optional.of(new PromotedTable(
-                new TableSection(rows, mergedLocation(header, last), mergedBox(header, last)),
-                index + 14));
+                new TableSection(rows, mergedLocation(header, last), mergedBox(header, last)), index + 14));
     }
 
     private static boolean portShipcallHeader(TableSection table) {
@@ -598,9 +628,20 @@ public final class PdfDocumentParser {
     }
 
     private static boolean portNames(List<TextSection> sections) {
-        return sections.stream().map(text -> text.text().strip()).toList().equals(List.of(
-                "MANILA", "CEBU", "BATANGAS", "SUBIC", "CAGAYAN DE ORO",
-                "DAVAO", "ILOILO", "GENERAL SANTOS", "ZAMBOANGA", "LUCENA"));
+        return sections.stream()
+                .map(text -> text.text().strip())
+                .toList()
+                .equals(List.of(
+                        "MANILA",
+                        "CEBU",
+                        "BATANGAS",
+                        "SUBIC",
+                        "CAGAYAN DE ORO",
+                        "DAVAO",
+                        "ILOILO",
+                        "GENERAL SANTOS",
+                        "ZAMBOANGA",
+                        "LUCENA"));
     }
 
     private static Optional<TextSection> textAt(List<ParsedSection> sections, int index) {
@@ -615,7 +656,8 @@ public final class PdfDocumentParser {
         if (!text.startsWith(label + " ")) {
             return Optional.empty();
         }
-        var values = new ArrayList<String>(List.of(text.substring(label.length()).strip().split("\\s+")));
+        var values = new ArrayList<String>(
+                List.of(text.substring(label.length()).strip().split("\\s+")));
         return Optional.of(List.copyOf(values));
     }
 
@@ -659,7 +701,8 @@ public final class PdfDocumentParser {
     }
 
     private static Optional<List<ParsedSection>> promoteInlineCationObservationTable(TextSection section) {
-        var normalized = section.text().replace('\n', ' ').replaceAll("\\s+", " ").strip();
+        var normalized =
+                section.text().replace('\n', ' ').replaceAll("\\s+", " ").strip();
         int headerStart = normalized.indexOf(CATION_TABLE_HEADER);
         if (headerStart <= 0 || !containsCationRows(normalized.substring(headerStart))) {
             return Optional.empty();
@@ -674,8 +717,11 @@ public final class PdfDocumentParser {
     }
 
     private static boolean containsCationRows(String text) {
-        return text.contains("K+") && text.contains("Na+") && text.contains("Ca2+")
-                && text.contains("Al3+") && text.contains("Check");
+        return text.contains("K+")
+                && text.contains("Na+")
+                && text.contains("Ca2+")
+                && text.contains("Al3+")
+                && text.contains("Check");
     }
 
     private static List<List<String>> cationObservationRows() {
@@ -701,7 +747,9 @@ public final class PdfDocumentParser {
     }
 
     private static Optional<TableSection> mergeSpreadsheetFragments(TableSection previous, TableSection current) {
-        if (!samePage(previous, current) || previous.rows().isEmpty() || current.rows().isEmpty()) {
+        if (!samePage(previous, current)
+                || previous.rows().isEmpty()
+                || current.rows().isEmpty()) {
             return Optional.empty();
         }
         var previousRows = previous.rows();
@@ -771,7 +819,8 @@ public final class PdfDocumentParser {
         return List.copyOf(out);
     }
 
-    private static boolean isSpreadsheetLabelContinuation(List<List<String>> previousRows, List<List<String>> currentRows) {
+    private static boolean isSpreadsheetLabelContinuation(
+            List<List<String>> previousRows, List<List<String>> currentRows) {
         return previousRows.size() >= 2
                 && previousRows.getFirst().size() >= 5
                 && isSpreadsheetRowNumber(currentRows.getFirst().getFirst())
@@ -781,7 +830,8 @@ public final class PdfDocumentParser {
     private static TableSection mergeSpreadsheetLabelRows(TableSection previous, TableSection current) {
         var rows = mutableRows(previous.rows());
         var existing = rows.size() > 1 ? rows.get(1) : blankRow(rows.getFirst().size());
-        var label = spreadsheetLabelRow(current.rows(), existing, rows.getFirst().size());
+        var label =
+                spreadsheetLabelRow(current.rows(), existing, rows.getFirst().size());
         if (rows.size() == 1) {
             rows.add(label);
         } else {
@@ -842,7 +892,8 @@ public final class PdfDocumentParser {
         out.append(value.strip());
     }
 
-    private static boolean isSpreadsheetDataContinuation(List<List<String>> previousRows, List<List<String>> currentRows) {
+    private static boolean isSpreadsheetDataContinuation(
+            List<List<String>> previousRows, List<List<String>> currentRows) {
         return previousRows.size() >= 2
                 && previousRows.getFirst().size() >= 6
                 && currentRows.getFirst().size() >= 6
@@ -1009,8 +1060,10 @@ public final class PdfDocumentParser {
         return previous.location().pageEnd() + 1 == current.location().pageStart()
                 && !previous.rows().isEmpty()
                 && !current.rows().isEmpty()
-                && previous.rows().getFirst().size() == current.rows().getFirst().size()
-                && normalizedRow(previous.rows().getFirst()).equals(normalizedRow(current.rows().getFirst()))
+                && previous.rows().getFirst().size()
+                        == current.rows().getFirst().size()
+                && normalizedRow(previous.rows().getFirst())
+                        .equals(normalizedRow(current.rows().getFirst()))
                 && alignedTableBoxes(previous, current);
     }
 
@@ -1046,7 +1099,9 @@ public final class PdfDocumentParser {
 
     private static String normalizedRow(List<String> row) {
         return row.stream()
-                .map(value -> value == null ? "" : value.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT))
+                .map(value -> value == null
+                        ? ""
+                        : value.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT))
                 .toList()
                 .toString();
     }
@@ -1057,8 +1112,7 @@ public final class PdfDocumentParser {
         }
         var left = previous.boundingBox().get();
         var right = current.boundingBox().get();
-        return Math.abs(left.x0() - right.x0()) <= 20.0
-                && Math.abs(left.x1() - right.x1()) <= 20.0;
+        return Math.abs(left.x0() - right.x0()) <= 20.0 && Math.abs(left.x1() - right.x1()) <= 20.0;
     }
 
     private static boolean shouldRouteToOcr(List<PdfTextBlock> blocks, OcrEngine ocrEngine) {
@@ -1081,11 +1135,16 @@ public final class PdfDocumentParser {
             return;
         }
         if (appendOcrRegionSections(result, page, image.getWidth(), image.getHeight(), sections)) {
-            LOG.debug("page={} routed=ocr regions={} confidence={}", page, result.regions().size(), result.confidence());
+            LOG.debug(
+                    "page={} routed=ocr regions={} confidence={}",
+                    page,
+                    result.regions().size(),
+                    result.confidence());
             return;
         }
         appendAggregateOcrSection(result, page, image.getWidth(), image.getHeight(), sections);
-        LOG.debug("page={} routed=ocr chars={} confidence={}", page, result.text().length(), result.confidence());
+        LOG.debug(
+                "page={} routed=ocr chars={} confidence={}", page, result.text().length(), result.confidence());
     }
 
     private static boolean appendOcrRegionSections(
@@ -1127,8 +1186,14 @@ public final class PdfDocumentParser {
         }
         int x0 = result.regions().stream().mapToInt(OcrRegion::x).min().orElse(0);
         int y0 = result.regions().stream().mapToInt(OcrRegion::y).min().orElse(0);
-        int x1 = result.regions().stream().mapToInt(region -> region.x() + region.width()).max().orElse(imageWidth);
-        int y1 = result.regions().stream().mapToInt(region -> region.y() + region.height()).max().orElse(imageHeight);
+        int x1 = result.regions().stream()
+                .mapToInt(region -> region.x() + region.width())
+                .max()
+                .orElse(imageWidth);
+        int y1 = result.regions().stream()
+                .mapToInt(region -> region.y() + region.height())
+                .max()
+                .orElse(imageHeight);
         return Optional.of(new BoundingBox(
                 clamp1000(x0 * 1000.0 / imageWidth),
                 clamp1000(y0 * 1000.0 / imageHeight),
@@ -1157,7 +1222,8 @@ public final class PdfDocumentParser {
             PageBlocks pageBlocks,
             Set<FurnitureKey> furniture,
             List<ParsedSection> sections,
-            List<DiscardedBlock> discarded) throws IOException {
+            List<DiscardedBlock> discarded)
+            throws IOException {
         var blocks = pageBlocks.blocks();
         if (blocks.isEmpty()) {
             LOG.debug("skipping blank page page={}", page);
@@ -1165,9 +1231,8 @@ public final class PdfDocumentParser {
         }
         var counts = new EnumMap<BlockKind, Integer>(BlockKind.class);
         var tables = PdfPageTableExtractor.detectTableBlocksOnPage(pdf, page);
-        var pendingTables = new ArrayList<>(tables.stream()
-                .sorted(PdfDocumentParser::compareTableBlocks)
-                .toList());
+        var pendingTables = new ArrayList<>(
+                tables.stream().sorted(PdfDocumentParser::compareTableBlocks).toList());
         var pendingParagraph = new ArrayList<PdfTextBlock>();
         for (var block : blocks) {
             if (insideAnyTable(block, tables)) {
@@ -1180,11 +1245,7 @@ public final class PdfDocumentParser {
             var furnitureKey = furnitureKey(block);
             if (furnitureKey.isPresent() && furniture.contains(furnitureKey.get())) {
                 flushParagraph(sections, pendingParagraph);
-                discarded.add(new DiscardedBlock(
-                        page,
-                        furnitureKey.get().reason(),
-                        block.text(),
-                        block.boundingBox()));
+                discarded.add(new DiscardedBlock(page, furnitureKey.get().reason(), block.text(), block.boundingBox()));
                 continue;
             }
             var caption = PdfCaptionBinder.bindCaption(block, tables);
@@ -1234,17 +1295,17 @@ public final class PdfDocumentParser {
                 Math.max(first.location().lineEnd(), last.location().lineEnd()),
                 first.location().charOffset());
         return new TextSection(
-                blocks.stream().map(PdfTextBlock::text).map(PdfDocumentParser::paragraphText).collect(Collectors.joining(" ")),
+                blocks.stream()
+                        .map(PdfTextBlock::text)
+                        .map(PdfDocumentParser::paragraphText)
+                        .collect(Collectors.joining(" ")),
                 location,
                 BlockKind.BODY,
                 paragraphBox(blocks));
     }
 
     private static String paragraphText(String text) {
-        return text.lines()
-                .map(String::strip)
-                .filter(line -> !line.isEmpty())
-                .collect(Collectors.joining(" "));
+        return text.lines().map(String::strip).filter(line -> !line.isEmpty()).collect(Collectors.joining(" "));
     }
 
     private static Optional<BoundingBox> paragraphBox(List<PdfTextBlock> blocks) {
@@ -1353,9 +1414,7 @@ public final class PdfDocumentParser {
     }
 
     private static String normalizeFurnitureText(String text) {
-        return text.strip()
-                .replaceAll("\\s+", " ")
-                .toLowerCase(Locale.ROOT);
+        return text.strip().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private static String normalizePageNumberFurniture(String text) {
@@ -1370,7 +1429,8 @@ public final class PdfDocumentParser {
         var iterator = pendingTables.iterator();
         while (iterator.hasNext()) {
             var table = iterator.next();
-            if (isBeforeOrSameReadingPosition(table.boundingBox(), block.boundingBox().get())) {
+            if (isBeforeOrSameReadingPosition(
+                    table.boundingBox(), block.boundingBox().get())) {
                 sections.add(table.section());
                 iterator.remove();
             }
@@ -1381,16 +1441,20 @@ public final class PdfDocumentParser {
             List<PdfPageTableExtractor.TableBlock> pendingTables, PdfTextBlock block) {
         return block.boundingBox().isPresent()
                 && pendingTables.stream()
-                        .anyMatch(table -> isBeforeOrSameReadingPosition(table.boundingBox(), block.boundingBox().get()));
+                        .anyMatch(table -> isBeforeOrSameReadingPosition(
+                                table.boundingBox(), block.boundingBox().get()));
     }
 
     private static boolean insideAnyTable(PdfTextBlock block, List<PdfPageTableExtractor.TableBlock> tables) {
         return tables.stream().anyMatch(table -> table.contains(block));
     }
 
-    private static int compareTableBlocks(PdfPageTableExtractor.TableBlock left, PdfPageTableExtractor.TableBlock right) {
+    private static int compareTableBlocks(
+            PdfPageTableExtractor.TableBlock left, PdfPageTableExtractor.TableBlock right) {
         int y = Double.compare(left.boundingBox().y0(), right.boundingBox().y0());
-        return y != 0 ? y : Double.compare(left.boundingBox().x0(), right.boundingBox().x0());
+        return y != 0
+                ? y
+                : Double.compare(left.boundingBox().x0(), right.boundingBox().x0());
     }
 
     private static boolean isBeforeOrSameReadingPosition(BoundingBox table, BoundingBox block) {

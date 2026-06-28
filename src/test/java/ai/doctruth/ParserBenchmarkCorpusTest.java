@@ -105,8 +105,8 @@ class ParserBenchmarkCorpusTest {
 
         assertThat(corpus.kind()).isEqualTo("human-labeled");
         assertThat(corpus.labelSetVersion()).contains("layout-v1");
-        assertThat(corpus.requiredMetrics()).containsExactly(
-                "reading_order_f1", "bbox_coverage", "evidence_span_accuracy");
+        assertThat(corpus.requiredMetrics())
+                .containsExactly("reading_order_f1", "bbox_coverage", "evidence_span_accuracy");
         corpus.requireThresholds();
     }
 
@@ -655,7 +655,8 @@ class ParserBenchmarkCorpusTest {
 
         var corpus = ParserBenchmarkCorpus.load(manifest);
 
-        assertThat(corpus.evaluate().getFirst().metric("evidence_span_accuracy")).isEqualTo(1.0);
+        assertThat(corpus.evaluate().getFirst().metric("evidence_span_accuracy"))
+                .isEqualTo(1.0);
         corpus.requireThresholds();
     }
 
@@ -744,7 +745,8 @@ class ParserBenchmarkCorpusTest {
         var corpus = ParserBenchmarkCorpus.load(manifest);
 
         assertThat(corpus.maximums()).containsEntry("strict_warning_false_negative_rate", 0.02);
-        assertThat(corpus.evaluate().getFirst().metric("strict_warning_false_negative_rate")).isEqualTo(1.0);
+        assertThat(corpus.evaluate().getFirst().metric("strict_warning_false_negative_rate"))
+                .isEqualTo(1.0);
         assertThatThrownBy(corpus::requireThresholds)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("missing-warning-case")
@@ -777,15 +779,18 @@ class ParserBenchmarkCorpusTest {
                 }
                 """.formatted(tempDir.relativize(source)));
 
-        withSystemProperties(Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()), () -> {
-            var corpus = ParserBenchmarkCorpus.load(manifest);
+        withSystemProperties(
+                Map.of("doctruth.runtime.command", runtime.toString(), "doctruth.ocr.command", worker.toString()),
+                () -> {
+                    var corpus = ParserBenchmarkCorpus.load(manifest);
 
-            var document = corpus.cases().getFirst().document();
-            assertThat(document.parserRun().preset()).isEqualTo("ocr");
-            assertThat(document.body().units().getFirst().kind()).isEqualTo(TrustUnitKind.OCR_REGION);
-            assertThat(corpus.evaluate().getFirst().metric("ocr_text_accuracy")).isEqualTo(1.0);
-            corpus.requireMinimums();
-        });
+                    var document = corpus.cases().getFirst().document();
+                    assertThat(document.parserRun().preset()).isEqualTo("ocr");
+                    assertThat(document.body().units().getFirst().kind()).isEqualTo(TrustUnitKind.OCR_REGION);
+                    assertThat(corpus.evaluate().getFirst().metric("ocr_text_accuracy"))
+                            .isEqualTo(1.0);
+                    corpus.requireMinimums();
+                });
     }
 
     @Test
@@ -961,9 +966,7 @@ class ParserBenchmarkCorpusTest {
 
     private Path writeFakeOcrRuntime(Path worker, String text, double confidence) throws IOException {
         var path = tempDir.resolve("fake-ocr-runtime-" + Math.round(confidence * 100));
-        Files.writeString(
-                path,
-                """
+        Files.writeString(path, """
                 #!/usr/bin/env sh
                 cat >/dev/null
                 test "$DOCTRUTH_RUNTIME_MODEL_COMMAND" = "%s"
@@ -1007,9 +1010,7 @@ class ParserBenchmarkCorpusTest {
 
     private Path writeFakeOcrWorker(String text, double confidence) throws IOException {
         var path = tempDir.resolve("fake-ocr-worker");
-        Files.writeString(
-                path,
-                """
+        Files.writeString(path, """
                 #!/usr/bin/env sh
                 python3 -c '
                 import json
@@ -1069,7 +1070,8 @@ class ParserBenchmarkCorpusTest {
                 "expected-doc",
                 List.of(new TextSection(
                         text,
-                        new SourceLocation(1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
+                        new SourceLocation(
+                                1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
                         BlockKind.BODY,
                         Optional.of(new BoundingBox(100, 100, 500, 200)))),
                 new DocumentMetadata("expected.pdf", 1, Optional.empty()));
@@ -1082,7 +1084,8 @@ class ParserBenchmarkCorpusTest {
                 "expected-doc",
                 List.of(new TextSection(
                         text,
-                        new SourceLocation(1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
+                        new SourceLocation(
+                                1, 1, 1, Math.max(1, (int) text.lines().count()), 0),
                         BlockKind.BODY,
                         Optional.of(new BoundingBox(100, 100, 500, 200)))),
                 new DocumentMetadata("expected.pdf", 1, Optional.empty()));

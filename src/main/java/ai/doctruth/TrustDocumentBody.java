@@ -22,4 +22,3 @@ public record TrustDocumentBody(List<TrustPage> pages, List<TrustUnit> units, Li
         tables = List.copyOf(tables);
     }
 }
-

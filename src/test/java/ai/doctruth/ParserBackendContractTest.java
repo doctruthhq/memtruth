@@ -99,8 +99,9 @@ class ParserBackendContractTest {
             var image = new PDFRenderer(doc).renderImageWithDPI(pageIndex, 72);
             var bytes = new ByteArrayOutputStream();
             ImageIO.write(image, "png", bytes);
-            return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(bytes.toByteArray()));
+            return "sha256:"
+                    + HexFormat.of()
+                            .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
         }
     }
 }

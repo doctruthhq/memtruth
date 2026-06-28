@@ -84,7 +84,9 @@ class PdfPageImageRendererTest {
         assertThat(Files.exists(image)).isTrue();
         byte[] bytes = Files.readAllBytes(image);
         assertThat(bytes).startsWith(new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47});
-        assertThat("sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)))
+        assertThat("sha256:"
+                        + HexFormat.of()
+                                .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)))
                 .isEqualTo(expectedHash);
     }
 }

@@ -38,7 +38,9 @@ class PdfTextRenderingNormalizationTest {
         var pdfPath = writePositionedPdf("  Invoice   total    due  ");
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).containsExactly("Invoice total due");
     }

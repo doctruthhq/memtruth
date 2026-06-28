@@ -11,7 +11,6 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +20,8 @@ class TrustDocumentStreamingRenderContractTest {
     private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     @Test
-    @DisplayName("TrustDocument can stream clean Markdown, JSONL, compact, source maps, JSON full/evidence, and audit JSON")
+    @DisplayName(
+            "TrustDocument can stream clean Markdown, JSONL, compact, source maps, JSON full/evidence, and audit JSON")
     void streamingWritersProduceExpectedOutput() throws Exception {
         var doc = document();
         var markdown = new StringWriter();
@@ -147,7 +147,8 @@ class TrustDocumentStreamingRenderContractTest {
     void htmlReviewRendersOneOverlayLayerPerPage() {
         var html = document().toHtmlReview();
 
-        assertThat(html.split("data-trust-overlay-layer=\\\"bbox\\\"", -1).length - 1).isEqualTo(1);
+        assertThat(html.split("data-trust-overlay-layer=\\\"bbox\\\"", -1).length - 1)
+                .isEqualTo(1);
     }
 
     private static TrustDocument document() {
@@ -174,9 +175,7 @@ class TrustDocumentStreamingRenderContractTest {
                     Optional.of(new BoundingBox(0, i, 900, i + 8))));
         }
         var parsed = new ParsedDocument(
-                "doc-stream-large",
-                sections,
-                new DocumentMetadata("stream-large.pdf", 1, Optional.empty()));
+                "doc-stream-large", sections, new DocumentMetadata("stream-large.pdf", 1, Optional.empty()));
         return TrustDocument.fromParsed(
                         parsed, "sha256:stream-large", new ParserRun("1.0.0", "lite", "pdfbox", List.of(), List.of()))
                 .withEvaluatedAuditGrade();

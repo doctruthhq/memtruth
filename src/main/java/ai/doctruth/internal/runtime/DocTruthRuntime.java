@@ -29,12 +29,13 @@ public final class DocTruthRuntime {
     }
 
     public static Path requireConfiguredCommand(Path sourcePath) throws ParseException {
-        return configuredCommand().orElseThrow(() -> new ParseException(
-                "RUST_RUNTIME_NOT_CONFIGURED",
-                "Rust runtime is required. Set DOCTRUTH_RUNTIME_COMMAND or use an installed DocTruth CLI bundle. "
-                        + "Select ParserBackendMode.PDFBOX only for explicit Java/PDFBox legacy/oracle mode.",
-                sourcePath.toString(),
-                java.util.OptionalInt.empty()));
+        return configuredCommand()
+                .orElseThrow(() -> new ParseException(
+                        "RUST_RUNTIME_NOT_CONFIGURED",
+                        "Rust runtime is required. Set DOCTRUTH_RUNTIME_COMMAND or use an installed DocTruth CLI bundle. "
+                                + "Select ParserBackendMode.PDFBOX only for explicit Java/PDFBox legacy/oracle mode.",
+                        sourcePath.toString(),
+                        java.util.OptionalInt.empty()));
     }
 
     private static Optional<Path> fromProperty() {

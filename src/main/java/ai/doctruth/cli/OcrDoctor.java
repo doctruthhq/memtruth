@@ -36,7 +36,8 @@ record OcrDoctor(
                 readiness.ready(),
                 disabled,
                 setting(env, "DOCTRUTH_OCR_ENGINE", "LOCAL_OCR_ENGINE").orElse("mnn"),
-                setting(env, "DOCTRUTH_OCR_FALLBACK_ENGINE", "LOCAL_OCR_FALLBACK_ENGINE").orElse("onnxruntime"),
+                setting(env, "DOCTRUTH_OCR_FALLBACK_ENGINE", "LOCAL_OCR_FALLBACK_ENGINE")
+                        .orElse("onnxruntime"),
                 timeoutMs(env),
                 readiness.code(),
                 readiness.message());

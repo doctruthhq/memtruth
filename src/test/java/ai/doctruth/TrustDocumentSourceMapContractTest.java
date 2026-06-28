@@ -23,9 +23,7 @@ class TrustDocumentSourceMapContractTest {
     void markdownWithSourceMapPreservesRenderedOffsets() {
         var doc = TrustDocument.fromParsed(
                 new ParsedDocument(
-                        "doc-1",
-                        List.of(section("Work Experience", 1), section("Acme Logistics Supervisor", 2)),
-                        META),
+                        "doc-1", List.of(section("Work Experience", 1), section("Acme Logistics Supervisor", 2)), META),
                 "sha256:source",
                 PARSER_RUN);
 
@@ -38,8 +36,10 @@ class TrustDocumentSourceMapContractTest {
         assertThat(rendered.sourceMap()).hasSize(2);
         assertThat(rendered.sourceMap().getFirst().unitId()).isEqualTo("unit-0001");
         assertThat(rendered.sourceMap().getFirst().evidenceSpanIds()).containsExactly("span-0001");
-        assertThat(rendered.text().substring(
-                        rendered.sourceMap().get(1).startOffset(), rendered.sourceMap().get(1).endOffset()))
+        assertThat(rendered.text()
+                        .substring(
+                                rendered.sourceMap().get(1).startOffset(),
+                                rendered.sourceMap().get(1).endOffset()))
                 .isEqualTo("Acme Logistics Supervisor");
     }
 
@@ -48,20 +48,19 @@ class TrustDocumentSourceMapContractTest {
     void markdownWithSourceMapRendersTablesAsGfmAndMapsCells() {
         var table = new TableSection(List.of(List.of("Company", "Role"), List.of("Acme", "Engineer")), loc(1));
         var doc = TrustDocument.fromParsed(
-                new ParsedDocument("doc-1", List.of(table), META),
-                "sha256:source",
-                PARSER_RUN);
+                new ParsedDocument("doc-1", List.of(table), META), "sha256:source", PARSER_RUN);
 
         TrustRenderedDocument rendered = doc.toMarkdownWithSourceMap();
 
         assertThat(rendered.text()).isEqualTo("| Company | Role |\n| --- | --- |\n| Acme | Engineer |\n");
         assertThat(rendered.sourceMap()).hasSize(4);
-        assertThat(rendered.sourceMap()).extracting(TrustSourceMapEntry::unitId)
+        assertThat(rendered.sourceMap())
+                .extracting(TrustSourceMapEntry::unitId)
                 .containsExactly("unit-0001", "unit-0002", "unit-0003", "unit-0004");
-        assertThat(rendered.sourceMap()).allSatisfy(entry -> assertThat(rendered.text()
-                        .substring(entry.startOffset(), entry.endOffset()))
-                .isNotBlank()
-                .doesNotContain("|"));
+        assertThat(rendered.sourceMap())
+                .allSatisfy(entry -> assertThat(rendered.text().substring(entry.startOffset(), entry.endOffset()))
+                        .isNotBlank()
+                        .doesNotContain("|"));
     }
 
     @Test
@@ -82,9 +81,10 @@ class TrustDocumentSourceMapContractTest {
         assertThat(rendered.contentHash()).isEqualTo(sha256(rendered.text()));
         assertThat(rendered.sourceMap()).hasSize(2);
         assertThat(rendered.sourceMap().getFirst().unitId()).isEqualTo("unit-0001");
-        assertThat(rendered.text().substring(
-                        rendered.sourceMap().getFirst().startOffset(),
-                        rendered.sourceMap().getFirst().endOffset()))
+        assertThat(rendered.text()
+                        .substring(
+                                rendered.sourceMap().getFirst().startOffset(),
+                                rendered.sourceMap().getFirst().endOffset()))
                 .isEqualTo("Work Experience");
         assertThat(rendered.sourceMap().getFirst().evidenceSpanIds()).containsExactly("span-0001");
     }
@@ -119,9 +119,7 @@ class TrustDocumentSourceMapContractTest {
                         new TableCellRegion(1, 0, new BoundingBox(80, 300, 400, 420)),
                         new TableCellRegion(1, 1, new BoundingBox(400, 300, 720, 420))));
         var doc = TrustDocument.fromParsed(
-                new ParsedDocument("doc-1", List.of(table), META),
-                "sha256:source",
-                PARSER_RUN);
+                new ParsedDocument("doc-1", List.of(table), META), "sha256:source", PARSER_RUN);
 
         String html = doc.toHtmlReview();
 
@@ -144,7 +142,8 @@ class TrustDocumentSourceMapContractTest {
                 new TrustUnitEvidence(List.of("span-0001"), new Confidence(0.98, "fixture"), List.of()));
         var doc = new TrustDocument(
                 "doc-1",
-                new TrustDocumentSource("resume.pdf", "sha256:source", new DocumentMetadata("resume.pdf", 2, Optional.empty())),
+                new TrustDocumentSource(
+                        "resume.pdf", "sha256:source", new DocumentMetadata("resume.pdf", 2, Optional.empty())),
                 new TrustDocumentBody(
                         List.of(
                                 new TrustPage(1, 1000, 1000, true, "sha256:page1"),
@@ -194,19 +193,11 @@ class TrustDocumentSourceMapContractTest {
     }
 
     private static TextSection section(String text, int line) {
-        return new TextSection(
-                text,
-                loc(line),
-                BlockKind.BODY,
-                Optional.empty());
+        return new TextSection(text, loc(line), BlockKind.BODY, Optional.empty());
     }
 
     private static TextSection sectionWithBbox(String text, int line) {
-        return new TextSection(
-                text,
-                loc(line),
-                BlockKind.BODY,
-                Optional.of(new BoundingBox(100, 120, 500, 240)));
+        return new TextSection(text, loc(line), BlockKind.BODY, Optional.of(new BoundingBox(100, 120, 500, 240)));
     }
 
     private static SourceLocation loc(int line) {

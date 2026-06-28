@@ -46,8 +46,10 @@ class CliPackagingContractTest {
         String runtimeRealSlanextArtifactSmoke =
                 Files.readString(Path.of("scripts/smoke-doctruth-runtime-real-slanext-artifact.sh"));
         String runtimeOcrWorkerSmoke = Files.readString(Path.of("scripts/smoke-doctruth-runtime-ocr-worker.sh"));
-        String runtimeSlanextWorkerSmoke = Files.readString(Path.of("scripts/smoke-doctruth-runtime-slanext-worker.sh"));
-        String parserAccuracySeedSmoke = Files.readString(Path.of("scripts/smoke-doctruth-parser-accuracy-seed-corpus.sh"));
+        String runtimeSlanextWorkerSmoke =
+                Files.readString(Path.of("scripts/smoke-doctruth-runtime-slanext-worker.sh"));
+        String parserAccuracySeedSmoke =
+                Files.readString(Path.of("scripts/smoke-doctruth-parser-accuracy-seed-corpus.sh"));
 
         assertThat(install)
                 .contains("doctruth-runtime")

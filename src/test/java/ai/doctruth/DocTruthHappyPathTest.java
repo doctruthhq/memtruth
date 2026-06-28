@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import ai.doctruth.spi.OcrEngine;
 import ai.doctruth.spi.OcrPageResult;
+
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -83,8 +84,7 @@ class DocTruthHappyPathTest {
             return new OcrPageResult("Name: Alex Chen", 0.9, List.of(), page);
         };
 
-        var document = DocTruth.withProvider(provider(new AtomicInteger()))
-                .fromPdf(blankPdf(), ocr);
+        var document = DocTruth.withProvider(provider(new AtomicInteger())).fromPdf(blankPdf(), ocr);
 
         assertThat(calls).hasValue(1);
         assertThat(document).isNotNull();

@@ -24,21 +24,20 @@ class PdfTwoColumnSemanticSectionTest {
     @Test
     @DisplayName("wide resume title does not make sidebar contact rows share a main-column profile block")
     void wideResumeTitleDoesNotCollapseSidebarAndMainColumnRows() throws Exception {
-        var pdfPath = writePositionedPdf(
-                List.of(
-                        run("AMIRUL IZZAT BIN RAMDZAN", 50f, 760f, 18f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("CONTACT", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("PROFILE", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("+6011-19822183", 50f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        run("Experienced business development executive with insurance clients.", 320f, 700f),
-                        run("izzatramdzan216@gmail.com", 50f, 684f),
-                        run("Builds key account relationships and market analysis.", 320f, 684f)));
+        var pdfPath = writePositionedPdf(List.of(
+                run("AMIRUL IZZAT BIN RAMDZAN", 50f, 760f, 18f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("CONTACT", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("PROFILE", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("+6011-19822183", 50f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
+                run("Experienced business development executive with insurance clients.", 320f, 700f),
+                run("izzatramdzan216@gmail.com", 50f, 684f),
+                run("Builds key account relationships and market analysis.", 320f, 684f)));
 
         var texts = parsedTexts(pdfPath);
 
-        assertThat(texts).noneSatisfy(text -> assertThat(text)
-                .contains("+6011-19822183")
-                .contains("Experienced business development"));
+        assertThat(texts)
+                .noneSatisfy(text ->
+                        assertThat(text).contains("+6011-19822183").contains("Experienced business development"));
         assertThat(texts).noneSatisfy(text -> assertThat(text)
                 .contains("izzatramdzan216@gmail.com")
                 .contains("Builds key account relationships"));
@@ -47,23 +46,19 @@ class PdfTwoColumnSemanticSectionTest {
     @Test
     @DisplayName("wide header rows do not pollute later two-column section grouping")
     void wideHeaderRowsDoNotPolluteTwoColumnSectionGrouping() throws Exception {
-        var pdfPath = writePositionedPdf(
-                List.of(
-                        run("MOHD SYAFIQ IZUAN BIN MOHD AZMI", 90f, 760f, 16f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run(
-                                "E-4-29 APARTMENT KENANGA TAMAN BUNGA RAYA, 48300 BUKIT BERUNTUNG",
-                                50f,
-                                735f),
-                        run("BUTIRAN DIRI", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Nombor I/C: 900502-08-5555", 50f, 684f),
-                        run("Umur: 34 Tahun", 50f, 672f),
-                        run("PENGALAMAN PEKERJAAN", 320f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("9/2023 - sekarang: Logistic Supervisor", 320f, 684f),
-                        run("TLS Transport Sdn Bhd", 360f, 672f),
-                        run("PENDIDIKAN", 50f, 640f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("SIJIL PELAJARAN MALAYSIA (SPM), 2007", 50f, 624f),
-                        run("LAIN-LAIN", 320f, 640f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Lesen Memandu Malaysia: D & B2", 320f, 624f)));
+        var pdfPath = writePositionedPdf(List.of(
+                run("MOHD SYAFIQ IZUAN BIN MOHD AZMI", 90f, 760f, 16f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("E-4-29 APARTMENT KENANGA TAMAN BUNGA RAYA, 48300 BUKIT BERUNTUNG", 50f, 735f),
+                run("BUTIRAN DIRI", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Nombor I/C: 900502-08-5555", 50f, 684f),
+                run("Umur: 34 Tahun", 50f, 672f),
+                run("PENGALAMAN PEKERJAAN", 320f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("9/2023 - sekarang: Logistic Supervisor", 320f, 684f),
+                run("TLS Transport Sdn Bhd", 360f, 672f),
+                run("PENDIDIKAN", 50f, 640f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("SIJIL PELAJARAN MALAYSIA (SPM), 2007", 50f, 624f),
+                run("LAIN-LAIN", 320f, 640f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Lesen Memandu Malaysia: D & B2", 320f, 624f)));
 
         var texts = parsedTexts(pdfPath);
 
@@ -75,27 +70,25 @@ class PdfTwoColumnSemanticSectionTest {
                 .contains("PENGALAMAN PEKERJAAN")
                 .contains("TLS Transport")
                 .doesNotContain("BUTIRAN DIRI"));
-        assertThat(texts).anySatisfy(text -> assertThat(text)
-                .contains("PENDIDIKAN")
-                .doesNotContain("Lesen Memandu"));
+        assertThat(texts)
+                .anySatisfy(text -> assertThat(text).contains("PENDIDIKAN").doesNotContain("Lesen Memandu"));
     }
 
     @Test
     @DisplayName("sidebar language section stops before returning to the top of the main column")
     void sidebarLanguageSectionDoesNotSwallowMainColumnAfterColumnReset() throws Exception {
-        var pdfPath = writePositionedPdf(
-                List.of(
-                        run("CONTACT", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("+6011-19822183", 50f, 700f),
-                        run("SKILLS", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Customer Relationship", 50f, 640f),
-                        run("LANGUAGES", 50f, 600f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Bahasa Melayu", 50f, 580f),
-                        run("ASALLINA DAYA ANAK CHARLIE", 320f, 740f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("PROFILE", 320f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Detail-oriented HR and administrative professional.", 320f, 680f),
-                        run("WORK EXPERIENCE", 320f, 640f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Executive, Quality Assurance", 320f, 620f)));
+        var pdfPath = writePositionedPdf(List.of(
+                run("CONTACT", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("+6011-19822183", 50f, 700f),
+                run("SKILLS", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Customer Relationship", 50f, 640f),
+                run("LANGUAGES", 50f, 600f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Bahasa Melayu", 50f, 580f),
+                run("ASALLINA DAYA ANAK CHARLIE", 320f, 740f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("PROFILE", 320f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Detail-oriented HR and administrative professional.", 320f, 680f),
+                run("WORK EXPERIENCE", 320f, 640f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Executive, Quality Assurance", 320f, 620f)));
 
         var texts = parsedTexts(pdfPath);
 
@@ -104,22 +97,20 @@ class PdfTwoColumnSemanticSectionTest {
                 .contains("Bahasa Melayu")
                 .doesNotContain("PROFILE")
                 .doesNotContain("WORK EXPERIENCE"));
-        assertThat(texts).noneSatisfy(text -> assertThat(text)
-                .contains("LANGUAGES")
-                .contains("Detail-oriented HR"));
+        assertThat(texts)
+                .noneSatisfy(text -> assertThat(text).contains("LANGUAGES").contains("Detail-oriented HR"));
     }
 
     @Test
     @DisplayName("broken-letter section headings still stop sidebar semantic coalescing")
     void brokenLetterSectionHeadingsStopSidebarCoalescing() throws Exception {
-        var pdfPath = writePositionedPdf(
-                List.of(
-                        run("CONTACT", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("+6011-19822183", 50f, 700f),
-                        run("EDUCATI ON", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("2006-2007", 50f, 640f),
-                        run("SKI LLS", 50f, 600f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Customer Relationship", 50f, 580f)));
+        var pdfPath = writePositionedPdf(List.of(
+                run("CONTACT", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("+6011-19822183", 50f, 700f),
+                run("EDUCATI ON", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("2006-2007", 50f, 640f),
+                run("SKI LLS", 50f, 600f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Customer Relationship", 50f, 580f)));
 
         var texts = parsedTexts(pdfPath);
 
@@ -141,14 +132,13 @@ class PdfTwoColumnSemanticSectionTest {
     @Test
     @DisplayName("same-row left profile text does not absorb right-column work text")
     void sameRowProfileTextDoesNotAbsorbRightColumnWorkText() throws Exception {
-        var pdfPath = writePositionedPdf(
-                List.of(
-                        run("MENGENAI SAYA", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("PENGALAMAN KERJA", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        run("Seorang yang teliti dalam melaksanakan tugasan", 50f, 700f),
-                        run("LTC Photostat Service", 380f, 700f),
-                        run("pentadbiran harian.", 50f, 684f),
-                        run("Pembantu Jualan", 380f, 684f)));
+        var pdfPath = writePositionedPdf(List.of(
+                run("MENGENAI SAYA", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("PENGALAMAN KERJA", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                run("Seorang yang teliti dalam melaksanakan tugasan", 50f, 700f),
+                run("LTC Photostat Service", 380f, 700f),
+                run("pentadbiran harian.", 50f, 684f),
+                run("Pembantu Jualan", 380f, 684f)));
 
         var texts = parsedTexts(pdfPath);
 
@@ -174,16 +164,17 @@ class PdfTwoColumnSemanticSectionTest {
                 block("PROFILE", BlockKind.HEADING, 320, 140, 410, 158),
                 block("Detail-oriented HR professional.", BlockKind.BODY, 320, 170, 560, 184));
 
-        var texts = PdfSemanticSectionCoalescer.coalesce(blocks).stream().map(PdfTextBlock::text).toList();
+        var texts = PdfSemanticSectionCoalescer.coalesce(blocks).stream()
+                .map(PdfTextBlock::text)
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("LANGUAGES")
                 .contains("Bahasa Melayu")
                 .doesNotContain("ASALLINA")
                 .doesNotContain("PROFILE"));
-        assertThat(texts).noneSatisfy(text -> assertThat(text)
-                .contains("LANGUAGES")
-                .contains("Detail-oriented HR"));
+        assertThat(texts)
+                .noneSatisfy(text -> assertThat(text).contains("LANGUAGES").contains("Detail-oriented HR"));
     }
 
     @Test
@@ -208,7 +199,9 @@ class PdfTwoColumnSemanticSectionTest {
                 block("Executive", BlockKind.BODY, 50, 80, 122, 98),
                 block("Summary", BlockKind.HEADING, 220, 100, 290, 118));
 
-        var texts = PdfSemanticSectionCoalescer.coalesce(blocks).stream().map(PdfTextBlock::text).toList();
+        var texts = PdfSemanticSectionCoalescer.coalesce(blocks).stream()
+                .map(PdfTextBlock::text)
+                .toList();
 
         assertThat(texts).containsExactly("Executive", "Summary");
     }
@@ -242,8 +235,7 @@ class PdfTwoColumnSemanticSectionTest {
         return run(text, x, y, 10f, Standard14Fonts.FontName.HELVETICA);
     }
 
-    private static PositionedRun run(
-            String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {
+    private static PositionedRun run(String text, float x, float y, float fontSize, Standard14Fonts.FontName fontName) {
         return new PositionedRun(text, x, y, fontSize, fontName);
     }
 

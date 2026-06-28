@@ -11,11 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-record ModelWorkerDoctor(
-        String command,
-        boolean available,
-        long timeoutMs,
-        Readiness readiness) {
+record ModelWorkerDoctor(String command, boolean available, long timeoutMs, Readiness readiness) {
 
     private static final long DEFAULT_TIMEOUT_MS = 60_000;
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -24,11 +20,7 @@ record ModelWorkerDoctor(
         Optional<String> command = setting(env, "DOCTRUTH_MODEL_COMMAND", "LOCAL_MODEL_COMMAND")
                 .flatMap(value -> resolveExecutable(value, env));
         var readiness = command.map(value -> doctor(value, timeoutMs(env))).orElse(Readiness.missing());
-        return new ModelWorkerDoctor(
-                command.orElse(""),
-                command.isPresent(),
-                timeoutMs(env),
-                readiness);
+        return new ModelWorkerDoctor(command.orElse(""), command.isPresent(), timeoutMs(env), readiness);
     }
 
     String summary() {
@@ -83,8 +75,9 @@ record ModelWorkerDoctor(
             var models = json.path("loadedModels").isArray()
                     ? MAPPER.convertValue(json.path("loadedModels"), StringListType.VALUE)
                     : List.<String>of();
-            var resources = new ResourceUsage(positiveLong(json.path("rssMb").asLong(0)), positiveLong(
-                    json.path("peakMemoryMb").asLong(0)));
+            var resources = new ResourceUsage(
+                    positiveLong(json.path("rssMb").asLong(0)),
+                    positiveLong(json.path("peakMemoryMb").asLong(0)));
             return new Readiness(ok, code, message, models, resources);
         } catch (IOException e) {
             return Readiness.notReady("worker_doctor_unavailable", e.getMessage());

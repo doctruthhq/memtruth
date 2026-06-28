@@ -60,7 +60,8 @@ public final class OcrEngines {
     public static OcrEngine worker(String command) {
         return new LocalOcrWorkerEngine(
                 command,
-                setting("doctruth.ocr.engine", "DOCTRUTH_OCR_ENGINE", "LOCAL_OCR_ENGINE").orElse("mnn"),
+                setting("doctruth.ocr.engine", "DOCTRUTH_OCR_ENGINE", "LOCAL_OCR_ENGINE")
+                        .orElse("mnn"),
                 setting("doctruth.ocr.fallbackEngine", "DOCTRUTH_OCR_FALLBACK_ENGINE", "LOCAL_OCR_FALLBACK_ENGINE")
                         .orElse("onnxruntime"),
                 timeoutMs());
@@ -74,7 +75,8 @@ public final class OcrEngines {
 
     private static List<String> commandCandidates() {
         var out = new ArrayList<String>();
-        setting("doctruth.ocr.command", "DOCTRUTH_OCR_COMMAND", "LOCAL_OCR_COMMAND").ifPresent(out::add);
+        setting("doctruth.ocr.command", "DOCTRUTH_OCR_COMMAND", "LOCAL_OCR_COMMAND")
+                .ifPresent(out::add);
         out.add("doctruth-rapidocr-mnn-worker");
         out.add("tradebot-ocr-worker-rs");
         out.add("tradebot-ocr-worker");

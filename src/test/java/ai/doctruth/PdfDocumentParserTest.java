@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.StringWriter;
-import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import ai.doctruth.spi.OcrEngine;
 import ai.doctruth.spi.OcrPageResult;
 import ai.doctruth.spi.OcrRegion;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -206,11 +207,8 @@ class PdfDocumentParserTest {
         @DisplayName("OCR page routing falls back to one aggregate section when no regions are returned")
         void lowTextPageRoutesOcrTextWithoutRegionsAsAggregateSection() throws Exception {
             var pdfPath = writeBlankPagePdf(tempDir);
-            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> new OcrPageResult(
-                    "OCR recovered page text",
-                    0.91,
-                    List.of(),
-                    pageNumber);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) ->
+                    new OcrPageResult("OCR recovered page text", 0.91, List.of(), pageNumber);
 
             var doc = PdfDocumentParser.parse(pdfPath, ocr);
 
@@ -226,8 +224,7 @@ class PdfDocumentParserTest {
         @DisplayName("usable text-layer PDF pages do not call OCR")
         void usableTextLayerPagesDoNotCallOcr() throws Exception {
             var pdfPath = writeSinglePagePdf(
-                    tempDir,
-                    "This PDF has enough selectable text for DocTruth parsing without OCR routing.");
+                    tempDir, "This PDF has enough selectable text for DocTruth parsing without OCR routing.");
             var calls = new AtomicInteger();
             OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> {
                 calls.incrementAndGet();
@@ -284,7 +281,8 @@ class PdfDocumentParserTest {
             var out = new StringWriter();
             trust.writeParseTrace(out);
             var tree = MAPPER.readTree(out.toString());
-            var firstPageDiscarded = tree.path("parseTrace").path("pages").get(0).path("discardedBlocks");
+            var firstPageDiscarded =
+                    tree.path("parseTrace").path("pages").get(0).path("discardedBlocks");
 
             assertThat(firstPageDiscarded).hasSize(2);
             assertThat(firstPageDiscarded.get(0).path("reason").asText()).isEqualTo("repeated_header");
@@ -351,20 +349,24 @@ class PdfDocumentParserTest {
             var parsed = PdfDocumentParser.parse(pdfPath);
             var first = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
             var equalSecond = new TrustDocument(
-                    first.docId(),
-                    first.source(),
-                    first.body(),
-                    first.parserRun(),
-                    first.auditGradeStatus());
+                    first.docId(), first.source(), first.body(), first.parserRun(), first.auditGradeStatus());
 
             var firstTrace = new StringWriter();
             var secondTrace = new StringWriter();
             first.writeParseTrace(firstTrace);
             equalSecond.writeParseTrace(secondTrace);
 
-            assertThat(MAPPER.readTree(firstTrace.toString()).path("parseTrace").path("pages").get(0).path("discardedBlocks"))
+            assertThat(MAPPER.readTree(firstTrace.toString())
+                            .path("parseTrace")
+                            .path("pages")
+                            .get(0)
+                            .path("discardedBlocks"))
                     .hasSize(2);
-            assertThat(MAPPER.readTree(secondTrace.toString()).path("parseTrace").path("pages").get(0).path("discardedBlocks"))
+            assertThat(MAPPER.readTree(secondTrace.toString())
+                            .path("parseTrace")
+                            .path("pages")
+                            .get(0)
+                            .path("discardedBlocks"))
                     .isEmpty();
         }
 
@@ -392,8 +394,7 @@ class PdfDocumentParserTest {
 
             assertThat(doc.sections()).hasSize(1);
             assertThat(doc.sections().getFirst()).isInstanceOf(TextSection.class);
-            assertThat(((TextSection) doc.sections().getFirst()).text())
-                    .contains("Figure 4.3 illustrates the process");
+            assertThat(((TextSection) doc.sections().getFirst()).text()).contains("Figure 4.3 illustrates the process");
         }
     }
 
@@ -562,7 +563,8 @@ class PdfDocumentParserTest {
             var section = (TextSection) doc.sections().getFirst();
             assertThat(section.kind()).isEqualTo(BlockKind.BODY);
             assertThat(section.text())
-                    .isEqualTo("The buyer requires audit-ready extraction with stable citations across wrapped paragraph lines in the source PDF.");
+                    .isEqualTo(
+                            "The buyer requires audit-ready extraction with stable citations across wrapped paragraph lines in the source PDF.");
             assertThat(section.location().lineStart()).isEqualTo(1);
             assertThat(section.location().lineEnd()).isEqualTo(3);
             assertThat(section.boundingBox()).hasValueSatisfying(box -> {
@@ -591,7 +593,8 @@ class PdfDocumentParserTest {
             var blocks = MAPPER.readTree(out.toString()).path("contentBlocks");
             assertThat(blocks).hasSize(1);
             assertThat(blocks.get(0).path("text").asText())
-                    .isEqualTo("Clean Markdown should not keep each wrapped paragraph line as a separate document block.");
+                    .isEqualTo(
+                            "Clean Markdown should not keep each wrapped paragraph line as a separate document block.");
             assertThat(blocks.get(0).path("sourceUnitIds")).hasSize(1);
         }
 
@@ -631,15 +634,13 @@ class PdfDocumentParserTest {
         void separateListItemsAreNotParagraphMerged() throws Exception {
             var pdfPath = writeStructuredPdf(
                     tempDir,
-                    List.of(
-                            new Run("- first requirement", 12f, 32f),
-                            new Run("- second requirement", 12f, 32f)));
+                    List.of(new Run("- first requirement", 12f, 32f), new Run("- second requirement", 12f, 32f)));
 
             var doc = PdfDocumentParser.parse(pdfPath);
 
             assertThat(doc.sections()).hasSize(2);
-            assertThat(doc.sections())
-                    .allSatisfy(section -> assertThat(((TextSection) section).kind()).isEqualTo(BlockKind.LIST));
+            assertThat(doc.sections()).allSatisfy(section -> assertThat(((TextSection) section).kind())
+                    .isEqualTo(BlockKind.LIST));
         }
 
         @Test

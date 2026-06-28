@@ -18,11 +18,10 @@ final class PdfBorderlessTableExtractor {
     private static final double MAX_CLUSTER_ROW_GAP = 72.0;
     private static final int MAX_HEADER_ROWS = 8;
     private static final int MAX_CELL_CHARS = 32;
-    private static final Pattern NUMERIC_CELL = Pattern.compile(
-            "^[+-]?(?:(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
+    private static final Pattern NUMERIC_CELL =
+            Pattern.compile("^[+-]?(?:(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?%?$");
     private static final Pattern LATIN_BINOMIAL = Pattern.compile(".*\\b[A-Z][a-z]+\\s+[a-z]{3,}\\b.*");
-    private static final Pattern LEADING_LATIN_PREFIX =
-            Pattern.compile("^(.+?)\\s+([A-Z][a-z]+\\s+[a-z]{3,}.*)$");
+    private static final Pattern LEADING_LATIN_PREFIX = Pattern.compile("^(.+?)\\s+([A-Z][a-z]+\\s+[a-z]{3,}.*)$");
 
     private PdfBorderlessTableExtractor() {
         throw new AssertionError("no instances");
@@ -41,7 +40,8 @@ final class PdfBorderlessTableExtractor {
             var anchors = columnAnchors(run);
             var rowsWithContinuations = addContinuationRows(allRows, run, anchors);
             var rowsWithHeader = prependStackedHeaderRow(allRows, rowsWithContinuations, anchors);
-            tableBlock(rowsWithHeader, anchors, pageNumber, pageWidth, pageHeight).ifPresent(tables::add);
+            tableBlock(rowsWithHeader, anchors, pageNumber, pageWidth, pageHeight)
+                    .ifPresent(tables::add);
         }
         if (!tables.isEmpty()) {
             return List.copyOf(tables);
@@ -86,7 +86,11 @@ final class PdfBorderlessTableExtractor {
 
     private static boolean looksLikeParallelSectionHeadings(List<BorderlessRow> rows) {
         return rows.stream().limit(4).anyMatch(PdfBorderlessTableExtractor::hasParallelSectionHeadingCells)
-                || rows.stream().limit(6).filter(PdfBorderlessTableExtractor::isSingleSectionHeadingRow).count() >= 2;
+                || rows.stream()
+                                .limit(6)
+                                .filter(PdfBorderlessTableExtractor::isSingleSectionHeadingRow)
+                                .count()
+                        >= 2;
     }
 
     private static boolean isSingleSectionHeadingRow(BorderlessRow row) {
@@ -178,9 +182,7 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static List<Double> clusterAnchors(List<BorderlessRow> rows) {
-        var anchorRows = rows.stream()
-                .filter(row -> row.cells().size() >= 2)
-                .toList();
+        var anchorRows = rows.stream().filter(row -> row.cells().size() >= 2).toList();
         if (anchorRows.isEmpty()) {
             return List.of();
         }
@@ -251,9 +253,7 @@ final class PdfBorderlessTableExtractor {
 
     private static boolean looksLikeSentence(String text) {
         var stripped = text.strip();
-        return stripped.length() > 64
-                || stripped.matches(".*[.!?]$")
-                || stripped.split("\\s+").length >= 9;
+        return stripped.length() > 64 || stripped.matches(".*[.!?]$") || stripped.split("\\s+").length >= 9;
     }
 
     private static long clusterDataRows(List<BorderlessRow> rows, List<Double> anchors) {
@@ -265,12 +265,13 @@ final class PdfBorderlessTableExtractor {
 
     private static Optional<PdfPageTableExtractor.TableBlock> clusterTextTableBlock(
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
-        var values = normalizeArrowFlowGeneTable(normalizeLatinSpeciesRows(
-                collapseTwoColumnListTable(normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors))))));
+        var values = normalizeArrowFlowGeneTable(normalizeLatinSpeciesRows(collapseTwoColumnListTable(
+                normalizeSpacerColumns(mergeClusterRows(clusterRowsWithHeader(rows, anchors))))));
         if (!clusterValuesLookTableLike(values)) {
             return Optional.empty();
         }
-        if (values.size() < 2 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+        if (values.size() < 2
+                || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
             return Optional.empty();
         }
         var allPositions = rows.stream()
@@ -320,10 +321,22 @@ final class PdfBorderlessTableExtractor {
         if (!containsRegulatoryNarrative(rows.stream().flatMap(List::stream).toList())) {
             return false;
         }
-        long nonBlank = rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).count();
-        long numeric = rows.stream().flatMap(List::stream).filter(PdfBorderlessTableExtractor::isNumericCell).count();
-        long symbolic = rows.stream().flatMap(List::stream).filter(PdfBorderlessTableExtractor::hasTableSymbol).count();
-        long prose = rows.stream().flatMap(List::stream).filter(PdfBorderlessTableExtractor::looksLikeProseShard).count();
+        long nonBlank = rows.stream()
+                .flatMap(List::stream)
+                .filter(cell -> !cell.isBlank())
+                .count();
+        long numeric = rows.stream()
+                .flatMap(List::stream)
+                .filter(PdfBorderlessTableExtractor::isNumericCell)
+                .count();
+        long symbolic = rows.stream()
+                .flatMap(List::stream)
+                .filter(PdfBorderlessTableExtractor::hasTableSymbol)
+                .count();
+        long prose = rows.stream()
+                .flatMap(List::stream)
+                .filter(PdfBorderlessTableExtractor::looksLikeProseShard)
+                .count();
         return nonBlank >= 18 && numeric + symbolic <= 2 && prose * 3 >= nonBlank;
     }
 
@@ -557,7 +570,9 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean looksLikeHeaderCaseWords(List<String> words) {
-        long headerCase = words.stream().filter(PdfBorderlessTableExtractor::startsUppercase).count();
+        long headerCase = words.stream()
+                .filter(PdfBorderlessTableExtractor::startsUppercase)
+                .count();
         return headerCase == words.size();
     }
 
@@ -586,11 +601,15 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static List<List<String>> dropDocumentHeadingBeforeFullHeader(List<List<String>> rows) {
-        if (rows.size() < 2 || rows.getFirst().stream().filter(cell -> !cell.isBlank()).count() != 1) {
+        if (rows.size() < 2
+                || rows.getFirst().stream().filter(cell -> !cell.isBlank()).count() != 1) {
             return rows;
         }
         var second = rows.get(1);
-        var firstText = rows.getFirst().stream().filter(cell -> !cell.isBlank()).findFirst().orElse("");
+        var firstText = rows.getFirst().stream()
+                .filter(cell -> !cell.isBlank())
+                .findFirst()
+                .orElse("");
         if (second.stream().allMatch(cell -> !cell.isBlank())
                 && !second.getFirst().matches("^[0-9].*")
                 && firstText.length() > 16) {
@@ -750,7 +769,8 @@ final class PdfBorderlessTableExtractor {
         if (rows.size() < 3) {
             return List.of();
         }
-        var anchors = columnAnchors(rows.stream().filter(row -> row.cells().size() >= 3).toList());
+        var anchors = columnAnchors(
+                rows.stream().filter(row -> row.cells().size() >= 3).toList());
         if (anchors.size() < 4 || !looksLikeWideTextTable(rows, anchors)) {
             return List.of();
         }
@@ -879,14 +899,16 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean isNumericHeavyValues(List<String> row) {
-        long numeric = row.stream().filter(PdfBorderlessTableExtractor::isNumericCell).count();
+        long numeric =
+                row.stream().filter(PdfBorderlessTableExtractor::isNumericCell).count();
         return numeric >= 2 && numeric * 2 >= row.size();
     }
 
     private static Optional<PdfPageTableExtractor.TableBlock> columnStreamNumericTableBlock(
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
         var values = columnStreamNumericValues(rows, anchors);
-        if (values.size() < 3 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+        if (values.size() < 3
+                || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
             return Optional.empty();
         }
         var allPositions = rows.stream()
@@ -907,7 +929,8 @@ final class PdfBorderlessTableExtractor {
 
     private static Optional<PdfPageTableExtractor.TableBlock> dataOnlyNumericTableBlock(
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
-        var values = mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList());
+        var values = mergeContinuationRows(
+                rows.stream().map(row -> cellTexts(row, anchors)).toList());
         if (values.size() < 4) {
             return Optional.empty();
         }
@@ -970,7 +993,9 @@ final class PdfBorderlessTableExtractor {
         int end = -1;
         for (int index = 0; index < allRows.size(); index++) {
             var row = allRows.get(index);
-            if (start < 0 && row.cells().size() >= 4 && row.text().matches("(?i).*\\b(jurisdiction|country|category)\\b.*")) {
+            if (start < 0
+                    && row.cells().size() >= 4
+                    && row.text().matches("(?i).*\\b(jurisdiction|country|category)\\b.*")) {
                 start = index;
             } else if (start >= 0 && looksLikePageFooter(row.text())) {
                 end = index;
@@ -989,7 +1014,8 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean looksLikeWideTextTable(List<BorderlessRow> rows, List<Double> anchors) {
-        long multiColumnRows = rows.stream().filter(row -> row.cells().size() >= 3).count();
+        long multiColumnRows =
+                rows.stream().filter(row -> row.cells().size() >= 3).count();
         long dataStarts = rows.stream()
                 .filter(row -> row.cells().size() >= 4)
                 .filter(PdfBorderlessTableExtractor::looksLikeWideTextDataStart)
@@ -1001,7 +1027,11 @@ final class PdfBorderlessTableExtractor {
         var first = row.cells().getFirst().text().strip();
         return !first.isBlank()
                 && !first.matches("(?i).*(jurisdiction|country|category|year|gats|foreign|ownership|reservation).*")
-                && row.cells().stream().skip(1).filter(cell -> !cell.text().isBlank()).count() >= 2;
+                && row.cells().stream()
+                                .skip(1)
+                                .filter(cell -> !cell.text().isBlank())
+                                .count()
+                        >= 2;
     }
 
     private static boolean wideRowFits(BorderlessRow row, List<Double> anchors) {
@@ -1012,7 +1042,8 @@ final class PdfBorderlessTableExtractor {
             List<BorderlessRow> rows, List<Double> anchors, int pageNumber, double pageWidth, double pageHeight) {
         var values = normalizeSpacerColumns(mergeWideContinuationRows(mergeLeadingHeaderRows(
                 rows.stream().map(row -> zonedCellTexts(row, anchors)).toList())));
-        if (values.size() < 2 || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
+        if (values.size() < 2
+                || values.getFirst().stream().filter(cell -> !cell.isBlank()).count() < 2) {
             return Optional.empty();
         }
         var allPositions = rows.stream()
@@ -1080,7 +1111,9 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean isBlankFirstContinuation(List<String> row) {
-        return !row.isEmpty() && row.getFirst().isBlank() && row.stream().skip(1).anyMatch(cell -> !cell.isBlank());
+        return !row.isEmpty()
+                && row.getFirst().isBlank()
+                && row.stream().skip(1).anyMatch(cell -> !cell.isBlank());
     }
 
     private static List<String> appendContinuationCells(List<String> previous, List<String> continuation) {
@@ -1226,7 +1259,8 @@ final class PdfBorderlessTableExtractor {
         var headerRows = new ArrayList<BorderlessRow>();
         for (int index = firstRunRow - 1; index >= 0 && headerRows.size() < MAX_HEADER_ROWS; index--) {
             var candidate = allRows.get(index);
-            if (looksLikeTableCaption(candidate.text()) || headerBandGap(candidate, run.getFirst()) > MAX_HEADER_BAND_GAP) {
+            if (looksLikeTableCaption(candidate.text())
+                    || headerBandGap(candidate, run.getFirst()) > MAX_HEADER_BAND_GAP) {
                 break;
             }
             if (looksLikeHeaderRow(candidate) && hasHeaderAlignedCell(candidate, anchors)) {
@@ -1247,7 +1281,9 @@ final class PdfBorderlessTableExtractor {
         if (looksLikeAllCapsHeading(row.text())) {
             return false;
         }
-        return row.text().matches("(?i).*(category|clauses?|percent|laws?|small|medium|large|year|rate|basis|expense|depreciation).*");
+        return row.text()
+                .matches(
+                        "(?i).*(category|clauses?|percent|laws?|small|medium|large|year|rate|basis|expense|depreciation).*");
     }
 
     private static boolean looksLikeAllCapsHeading(String text) {
@@ -1263,9 +1299,7 @@ final class PdfBorderlessTableExtractor {
 
     private static boolean looksLikeTableCaption(String text) {
         var stripped = text.strip();
-        return stripped.matches("(?i)^table\\s+\\d+[:.].*")
-                || stripped.matches("^\\d+$")
-                || stripped.length() > 64;
+        return stripped.matches("(?i)^table\\s+\\d+[:.].*") || stripped.matches("^\\d+$") || stripped.length() > 64;
     }
 
     private static Optional<BorderlessRow> syntheticHeaderRow(List<BorderlessRow> headerRows, List<Double> anchors) {
@@ -1292,7 +1326,8 @@ final class PdfBorderlessTableExtractor {
         }
         var cells = new ArrayList<BorderlessCell>();
         for (int column = 0; column < anchors.size(); column++) {
-            cells.add(new BorderlessCell(columns.get(column).toString(), anchors.get(column), positionsByColumn.get(column)));
+            cells.add(new BorderlessCell(
+                    columns.get(column).toString(), anchors.get(column), positionsByColumn.get(column)));
         }
         return Optional.of(new BorderlessRow(cells));
     }
@@ -1305,7 +1340,8 @@ final class PdfBorderlessTableExtractor {
         if (looksLikeNarrativeShardRows(rows, anchors)) {
             return Optional.empty();
         }
-        var values = normalizeSpacerColumns(mergeContinuationRows(rows.stream().map(row -> cellTexts(row, anchors)).toList()));
+        var values = normalizeSpacerColumns(mergeContinuationRows(
+                rows.stream().map(row -> cellTexts(row, anchors)).toList()));
         if (looksLikeNarrativeShardTable(values)) {
             return Optional.empty();
         }
@@ -1329,14 +1365,23 @@ final class PdfBorderlessTableExtractor {
         if (anchors.size() < 7) {
             return false;
         }
-        var cells = rows.stream().flatMap(row -> row.cells().stream()).map(BorderlessCell::text).toList();
+        var cells = rows.stream()
+                .flatMap(row -> row.cells().stream())
+                .map(BorderlessCell::text)
+                .toList();
         if (!containsRegulatoryNarrative(cells)) {
             return false;
         }
         long nonBlank = cells.stream().filter(cell -> !cell.isBlank()).count();
-        long numeric = cells.stream().filter(PdfBorderlessTableExtractor::isNumericCell).count();
-        long symbolic = cells.stream().filter(PdfBorderlessTableExtractor::hasTableSymbol).count();
-        long prose = cells.stream().filter(PdfBorderlessTableExtractor::looksLikeProseShard).count();
+        long numeric = cells.stream()
+                .filter(PdfBorderlessTableExtractor::isNumericCell)
+                .count();
+        long symbolic = cells.stream()
+                .filter(PdfBorderlessTableExtractor::hasTableSymbol)
+                .count();
+        long prose = cells.stream()
+                .filter(PdfBorderlessTableExtractor::looksLikeProseShard)
+                .count();
         if (numeric + symbolic > 2) {
             return false;
         }
@@ -1346,21 +1391,28 @@ final class PdfBorderlessTableExtractor {
     private static boolean looksLikeFragmentedSentenceRows(List<BorderlessRow> rows) {
         long wordShredRows = rows.stream()
                 .filter(row -> row.cells().size() >= 4)
-                .filter(row -> row.cells().stream().allMatch(cell -> cell.text().strip().length() <= 16))
+                .filter(row -> row.cells().stream()
+                        .allMatch(cell -> cell.text().strip().length() <= 16))
                 .count();
         if (wordShredRows > 0) {
             return true;
         }
-        var joined = rows.stream().map(BorderlessRow::text).collect(java.util.stream.Collectors.joining(" "))
+        var joined = rows.stream()
+                .map(BorderlessRow::text)
+                .collect(java.util.stream.Collectors.joining(" "))
                 .toLowerCase(java.util.Locale.ROOT);
         return rows.size() <= 3
-                && (joined.contains("report defines") || joined.contains("policy actions") || joined.contains("as the"));
+                && (joined.contains("report defines")
+                        || joined.contains("policy actions")
+                        || joined.contains("as the"));
     }
 
     private static boolean containsRegulatoryNarrative(List<String> cells) {
         var joined = String.join(" ", cells).toLowerCase(java.util.Locale.ROOT);
         return joined.contains("regulatory")
-                && (joined.contains("cholesterol") || joined.contains("imprisonment") || joined.contains("policy actions"));
+                && (joined.contains("cholesterol")
+                        || joined.contains("imprisonment")
+                        || joined.contains("policy actions"));
     }
 
     private static List<List<String>> mergeContinuationRows(List<List<String>> rows) {
@@ -1398,7 +1450,8 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean isSingleColumnContinuation(List<String> row) {
-        return nonBlankColumn(row) > 0 && row.stream().filter(cell -> !cell.isBlank()).count() == 1;
+        return nonBlankColumn(row) > 0
+                && row.stream().filter(cell -> !cell.isBlank()).count() == 1;
     }
 
     private static int nonBlankColumn(List<String> row) {
@@ -1467,7 +1520,9 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean bodyColumnBlank(List<List<String>> rows, int column) {
-        return rows.stream().skip(1).allMatch(row -> column >= row.size() || row.get(column).isBlank());
+        return rows.stream()
+                .skip(1)
+                .allMatch(row -> column >= row.size() || row.get(column).isBlank());
     }
 
     private static List<List<String>> removeBlankColumns(List<List<String>> rows) {
@@ -1482,7 +1537,8 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean wholeColumnBlank(List<List<String>> rows, int column) {
-        return rows.stream().allMatch(row -> column >= row.size() || row.get(column).isBlank());
+        return rows.stream()
+                .allMatch(row -> column >= row.size() || row.get(column).isBlank());
     }
 
     private static List<String> keptColumns(List<String> row, List<Integer> keep) {
@@ -1588,8 +1644,10 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean hasLongHeaderCell(List<BorderlessRow> rows) {
-        return !rows.isEmpty() && rows.getFirst().cells().stream().map(BorderlessCell::text)
-                .anyMatch(text -> text.length() > MAX_CELL_CHARS);
+        return !rows.isEmpty()
+                && rows.getFirst().cells().stream()
+                        .map(BorderlessCell::text)
+                        .anyMatch(text -> text.length() > MAX_CELL_CHARS);
     }
 
     private static boolean hasNumericDataRows(List<BorderlessRow> rows) {
@@ -1597,7 +1655,10 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static boolean isNumericHeavyRow(BorderlessRow row) {
-        long numeric = row.cells().stream().map(BorderlessCell::text).filter(PdfBorderlessTableExtractor::isNumericCell).count();
+        long numeric = row.cells().stream()
+                .map(BorderlessCell::text)
+                .filter(PdfBorderlessTableExtractor::isNumericCell)
+                .count();
         return numeric >= 2 && numeric * 2 >= row.cells().size();
     }
 
@@ -1646,12 +1707,17 @@ final class PdfBorderlessTableExtractor {
         if (cell.positions().isEmpty()) {
             return 0;
         }
-        double left = cell.positions().stream().mapToDouble(TextPosition::getXDirAdj).min().orElse(cell.x0());
+        double left = cell.positions().stream()
+                .mapToDouble(TextPosition::getXDirAdj)
+                .min()
+                .orElse(cell.x0());
         double right = cell.positions().stream()
                 .mapToDouble(position -> position.getXDirAdj() + position.getWidthDirAdj())
                 .max()
                 .orElse(cell.x0());
-        return anchors.stream().filter(anchor -> anchor >= left && anchor <= right).count();
+        return anchors.stream()
+                .filter(anchor -> anchor >= left && anchor <= right)
+                .count();
     }
 
     private static List<String> zonedCellTexts(BorderlessRow row, List<Double> anchors) {
@@ -1740,7 +1806,8 @@ final class PdfBorderlessTableExtractor {
     }
 
     private static int zoneColumn(List<TextPosition> positions, List<Double> anchors) {
-        double left = positions.stream().mapToDouble(TextPosition::getXDirAdj).min().orElse(0.0);
+        double left =
+                positions.stream().mapToDouble(TextPosition::getXDirAdj).min().orElse(0.0);
         double right = positions.stream()
                 .mapToDouble(position -> position.getXDirAdj() + position.getWidthDirAdj())
                 .max()
@@ -1750,7 +1817,8 @@ final class PdfBorderlessTableExtractor {
 
     private static int zoneColumn(double x, List<Double> anchors) {
         for (int column = 0; column < anchors.size(); column++) {
-            double left = column == 0 ? Double.NEGATIVE_INFINITY : midpoint(anchors.get(column - 1), anchors.get(column));
+            double left =
+                    column == 0 ? Double.NEGATIVE_INFINITY : midpoint(anchors.get(column - 1), anchors.get(column));
             double right = column + 1 >= anchors.size()
                     ? Double.POSITIVE_INFINITY
                     : midpoint(anchors.get(column), anchors.get(column + 1));
@@ -1873,7 +1941,10 @@ final class PdfBorderlessTableExtractor {
         }
 
         double y0() {
-            return positions().stream().mapToDouble(TextPosition::getYDirAdj).min().orElse(0.0);
+            return positions().stream()
+                    .mapToDouble(TextPosition::getYDirAdj)
+                    .min()
+                    .orElse(0.0);
         }
 
         double y1() {

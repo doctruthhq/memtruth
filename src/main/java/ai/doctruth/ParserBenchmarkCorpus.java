@@ -1,14 +1,14 @@
 package ai.doctruth;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.util.ArrayList;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -312,10 +312,24 @@ public final class ParserBenchmarkCorpus {
             JsonNode root = MAPPER.readTree(Files.readString(path));
             var metrics = new LinkedHashMap<String, Object>();
             var values = new LinkedHashMap<String, Double>();
-            putMetric(metrics, values, "nid", "opendataloader_nid", root.path("metrics").path("score").path("nid_mean"));
             putMetric(
-                    metrics, values, "teds", "opendataloader_teds", root.path("metrics").path("score").path("teds_mean"));
-            putMetric(metrics, values, "mhs", "opendataloader_mhs", root.path("metrics").path("score").path("mhs_mean"));
+                    metrics,
+                    values,
+                    "nid",
+                    "opendataloader_nid",
+                    root.path("metrics").path("score").path("nid_mean"));
+            putMetric(
+                    metrics,
+                    values,
+                    "teds",
+                    "opendataloader_teds",
+                    root.path("metrics").path("score").path("teds_mean"));
+            putMetric(
+                    metrics,
+                    values,
+                    "mhs",
+                    "opendataloader_mhs",
+                    root.path("metrics").path("score").path("mhs_mean"));
             putMetric(metrics, values, "speed", "opendataloader_speed", openDataLoaderSpeed(root));
             metrics.put("evaluationSha256", sha256(path));
             return new ExternalMetricSet(metrics, values);
@@ -443,8 +457,7 @@ public final class ParserBenchmarkCorpus {
                 .toList();
         if (!missing.isEmpty()) {
             throw new IllegalArgumentException(
-                    "parser-accuracy human-reviewed corpus requiredTags missing: "
-                            + String.join(", ", missing));
+                    "parser-accuracy human-reviewed corpus requiredTags missing: " + String.join(", ", missing));
         }
     }
 
@@ -459,8 +472,7 @@ public final class ParserBenchmarkCorpus {
                 .toList();
         if (!missing.isEmpty()) {
             throw new IllegalArgumentException(
-                    "parser-accuracy human-reviewed corpus requiredMetrics missing: "
-                            + String.join(", ", missing));
+                    "parser-accuracy human-reviewed corpus requiredMetrics missing: " + String.join(", ", missing));
         }
     }
 
@@ -495,11 +507,10 @@ public final class ParserBenchmarkCorpus {
         }
         int actual = caseNodes.isArray() ? caseNodes.size() : 0;
         if (actual < minimum) {
-            throw new IllegalArgumentException(
-                    "parser-accuracy human-reviewed corpus minTotalCases failed: minimum="
-                            + minimum
-                            + " actual="
-                            + actual);
+            throw new IllegalArgumentException("parser-accuracy human-reviewed corpus minTotalCases failed: minimum="
+                    + minimum
+                    + " actual="
+                    + actual);
         }
         return Optional.of(minimum);
     }
@@ -522,8 +533,7 @@ public final class ParserBenchmarkCorpus {
         }
         String type = labeling.path("reviewType").asText();
         if (type.isBlank()) {
-            throw new IllegalArgumentException(
-                    "parser-accuracy human-labeled corpus requires labeling.reviewType");
+            throw new IllegalArgumentException("parser-accuracy human-labeled corpus requires labeling.reviewType");
         }
         if (!type.equals("human-reviewed") && !type.equals("generated-seed")) {
             throw new IllegalArgumentException(
@@ -555,8 +565,7 @@ public final class ParserBenchmarkCorpus {
         }
         JsonNode tags = labeling.path("requiredTags");
         if (!tags.isArray() || tags.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "parser-accuracy human-labeled corpus requires labeling.requiredTags");
+            throw new IllegalArgumentException("parser-accuracy human-labeled corpus requires labeling.requiredTags");
         }
         var values = new ArrayList<String>();
         tags.forEach(tag -> {
@@ -592,7 +601,8 @@ public final class ParserBenchmarkCorpus {
             List<String> requiredTags,
             Map<String, Integer> minimums,
             Optional<String> qualityProfile) {
-        if (requiredTags.isEmpty() || !qualityProfile.filter("parser-accuracy"::equals).isPresent()) {
+        if (requiredTags.isEmpty()
+                || !qualityProfile.filter("parser-accuracy"::equals).isPresent()) {
             return;
         }
         var counts = tagCounts(caseNodes);
@@ -634,7 +644,8 @@ public final class ParserBenchmarkCorpus {
         }
         int minimum = labeling.path(field).asInt(0);
         if (minimum < 1) {
-            throw new IllegalArgumentException("parser-accuracy human-labeled corpus requires labeling." + field + " >= 1");
+            throw new IllegalArgumentException(
+                    "parser-accuracy human-labeled corpus requires labeling." + field + " >= 1");
         }
         var coverage = new LinkedHashMap<String, Integer>();
         required.forEach(value -> coverage.put(value, minimum));
@@ -656,8 +667,8 @@ public final class ParserBenchmarkCorpus {
             }
         });
         if (!failures.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "parser-accuracy human-labeled corpus " + field + " coverage failed: " + String.join("; ", failures));
+            throw new IllegalArgumentException("parser-accuracy human-labeled corpus " + field + " coverage failed: "
+                    + String.join("; ", failures));
         }
     }
 
@@ -726,11 +737,11 @@ public final class ParserBenchmarkCorpus {
             var target = cache.resolve(name + "-" + expectedSha.replace("sha256:", "") + ".pdf");
             if (!Files.exists(target)) {
                 if (offline) {
-                    throw new IllegalArgumentException(
-                            "parser benchmark case '" + name
-                                    + "' offline mode refuses remote benchmark source: " + sourceUrl);
+                    throw new IllegalArgumentException("parser benchmark case '" + name
+                            + "' offline mode refuses remote benchmark source: " + sourceUrl);
                 }
-                var request = HttpRequest.newBuilder(URI.create(sourceUrl)).GET().build();
+                var request =
+                        HttpRequest.newBuilder(URI.create(sourceUrl)).GET().build();
                 var response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     throw new IllegalArgumentException("HTTP " + response.statusCode());
@@ -806,7 +817,10 @@ public final class ParserBenchmarkCorpus {
 
     private static Map<String, Double> thresholds(JsonNode root, String field) {
         var thresholds = new LinkedHashMap<String, Double>();
-        root.path(field).fields().forEachRemaining(entry -> thresholds.put(entry.getKey(), entry.getValue().asDouble()));
+        root.path(field)
+                .fields()
+                .forEachRemaining(
+                        entry -> thresholds.put(entry.getKey(), entry.getValue().asDouble()));
         return thresholds;
     }
 

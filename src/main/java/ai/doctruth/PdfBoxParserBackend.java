@@ -20,9 +20,12 @@ public final class PdfBoxParserBackend implements ParserBackend {
         return withRenderedPages(TrustDocument.fromParsed(parsed, request.sourceHash(), request.parserRun()), request);
     }
 
-    private static TrustDocument withRenderedPages(TrustDocument document, ParserRequest request) throws ParseException {
+    private static TrustDocument withRenderedPages(TrustDocument document, ParserRequest request)
+            throws ParseException {
         var body = new TrustDocumentBody(
-                PdfPageImages.renderedPages(request.sourcePath()), document.body().units(), document.body().tables());
+                PdfPageImages.renderedPages(request.sourcePath()),
+                document.body().units(),
+                document.body().tables());
         return new TrustDocument(
                 document.docId(), document.source(), body, document.parserRun(), document.auditGradeStatus());
     }

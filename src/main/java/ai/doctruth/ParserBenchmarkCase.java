@@ -97,16 +97,13 @@ public record ParserBenchmarkCase(
     }
 
     public static ParserBenchmarkCase fromPdf(
-            String name, Path sourcePath, String expectedMarkdown, TrustDocument expectedDocument) throws ParseException {
+            String name, Path sourcePath, String expectedMarkdown, TrustDocument expectedDocument)
+            throws ParseException {
         return fromPdf(name, sourcePath, expectedMarkdown, ParserPreset.LITE, expectedDocument);
     }
 
     public static ParserBenchmarkCase fromPdf(
-            String name,
-            Path sourcePath,
-            String expectedMarkdown,
-            ParserPreset preset,
-            TrustDocument expectedDocument)
+            String name, Path sourcePath, String expectedMarkdown, ParserPreset preset, TrustDocument expectedDocument)
             throws ParseException {
         return fromPdf(name, Optional.empty(), List.of(), sourcePath, expectedMarkdown, preset, expectedDocument);
     }
@@ -234,7 +231,9 @@ public record ParserBenchmarkCase(
             return 0.0;
         }
         try (Stream<Path> paths = Files.walk(cache)) {
-            long bytes = paths.filter(Files::isRegularFile).mapToLong(ParserBenchmarkCase::size).sum();
+            long bytes = paths.filter(Files::isRegularFile)
+                    .mapToLong(ParserBenchmarkCase::size)
+                    .sum();
             return bytesToMb(bytes);
         } catch (IOException e) {
             return 0.0;

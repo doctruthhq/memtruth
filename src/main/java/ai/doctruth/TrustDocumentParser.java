@@ -55,7 +55,8 @@ public final class TrustDocumentParser {
         return parse(input, sourceFilename, ParserPreset.LITE);
     }
 
-    public static TrustDocument parse(InputStream input, String sourceFilename, ParserPreset preset) throws ParseException {
+    public static TrustDocument parse(InputStream input, String sourceFilename, ParserPreset preset)
+            throws ParseException {
         Objects.requireNonNull(input, "input");
         requireSourceFilename(sourceFilename);
         Objects.requireNonNull(preset, "preset");
@@ -136,7 +137,8 @@ public final class TrustDocumentParser {
                 document.source().metadata().pageCount(),
                 document.source().metadata().sourcePublishedAt());
         var source = new TrustDocumentSource(sourceFilename, document.source().sourceHash(), metadata);
-        return new TrustDocument(document.docId(), source, document.body(), document.parserRun(), document.auditGradeStatus());
+        return new TrustDocument(
+                document.docId(), source, document.body(), document.parserRun(), document.auditGradeStatus());
     }
 
     private static void requireSourceFilename(String sourceFilename) {

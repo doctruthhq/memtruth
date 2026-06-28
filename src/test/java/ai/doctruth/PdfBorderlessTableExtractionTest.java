@@ -30,9 +30,9 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
-        assertThat(table.cells()).extracting(TrustTableCell::text)
-                .containsExactly("Name", "Score", "Alex", "98");
-        assertThat(table.cells()).allSatisfy(cell -> assertThat(cell.boundingBox()).isPresent());
+        assertThat(table.cells()).extracting(TrustTableCell::text).containsExactly("Name", "Score", "Alex", "98");
+        assertThat(table.cells())
+                .allSatisfy(cell -> assertThat(cell.boundingBox()).isPresent());
         assertThat(document.body().units())
                 .filteredOn(unit -> unit.kind() == TrustUnitKind.TABLE_CELL)
                 .hasSize(4);
@@ -44,7 +44,8 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
-        assertThat(table.cells()).extracting(TrustTableCell::text)
+        assertThat(table.cells())
+                .extracting(TrustTableCell::text)
                 .containsExactly("Name", "Role", "Score", "Alex", "", "98", "Blair", "Ops", "91");
         assertThat(document.toMarkdownClean()).contains("""
                 | Name | Role | Score |
@@ -84,7 +85,10 @@ class PdfBorderlessTableExtractionTest {
     void benchmarkScoresBorderlessTableCellRecovery() throws Exception {
         var pdf = writeBorderlessTablePdf();
         var benchmarkCase = ParserBenchmarkCase.fromPdf(
-                "borderless-table-real-pdf", pdf, "| Name | Score |\n| --- | --- |\n| Alex | 98 |\n", expectedDocument());
+                "borderless-table-real-pdf",
+                pdf,
+                "| Name | Score |\n| --- | --- |\n| Alex | 98 |\n",
+                expectedDocument());
 
         var result = ParserBenchmarkRunner.evaluate(List.of(benchmarkCase)).getFirst();
 
@@ -114,7 +118,8 @@ class PdfBorderlessTableExtractionTest {
                 | Category | Number of clauses in Union laws | In percent | Number of clauses in State laws | In percent |
                 | --- | --- | --- | --- | --- |
                 | Commercial | 529 | 10.1% | 817 | 3.9% |""");
-        assertThat(document.toMarkdownClean()).contains("| Environment, Health and Safety | 834 | 15.9% | 345 | 1.7% |");
+        assertThat(document.toMarkdownClean())
+                .contains("| Environment, Health and Safety | 834 | 15.9% | 345 | 1.7% |");
         assertThat(document.toMarkdownClean()).contains("| Total Applicable Compliances | 669 |");
         assertThat(document.toMarkdownClean()).contains("| Compliances with imprisonment | 461 |");
         assertThat(document.toMarkdownClean()).contains("| Percentage of imprisonment clauses | 69% |");
@@ -133,7 +138,9 @@ class PdfBorderlessTableExtractionTest {
         assertThat(markdown).contains("| Jurisdiction | GATS XVII Reservation (1994) | Foreign Ownership Permitted |");
         assertThat(markdown).contains("| Argentina | Y | Y | Prohibition on ownership of property");
         assertThat(markdown).contains("| Australia | N | Y | Approval is needed from the Treasurer");
-        assertThat(markdown).doesNotContain("| Restrictions on Land Ownership by Foreigners in Selected Jurisdictions Comparative Summary Table Jurisdiction");
+        assertThat(markdown)
+                .doesNotContain(
+                        "| Restrictions on Land Ownership by Foreigners in Selected Jurisdictions Comparative Summary Table Jurisdiction");
     }
 
     @Test
@@ -249,8 +256,11 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("| Communication Channel | Medium | Examples |");
-        assertThat(markdown).contains("| Direct communications | Physical or digital | meetings, consultations, listening sessions, email lists |");
-        assertThat(markdown).contains("| Goodies | Primarily physical | pens, notepads, bookmarks, stickers, buttons, etc |");
+        assertThat(markdown)
+                .contains(
+                        "| Direct communications | Physical or digital | meetings, consultations, listening sessions, email lists |");
+        assertThat(markdown)
+                .contains("| Goodies | Primarily physical | pens, notepads, bookmarks, stickers, buttons, etc |");
     }
 
     @Test
@@ -261,8 +271,12 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("| Service Stage | Function Name | Explanation | Expected Benefit |");
-        assertThat(markdown).contains("| 1. Project creation | Project creation and management | Select document type to automatically run project creation, Pipeline configuration with recommended Modelset and Endpoint deployment |");
-        assertThat(markdown).contains("|  | Create and manage Labeling | Creating a Labeling Space to manage raw data annotation, managing labeling resources |");
+        assertThat(markdown)
+                .contains(
+                        "| 1. Project creation | Project creation and management | Select document type to automatically run project creation, Pipeline configuration with recommended Modelset and Endpoint deployment |");
+        assertThat(markdown)
+                .contains(
+                        "|  | Create and manage Labeling | Creating a Labeling Space to manage raw data annotation, managing labeling resources |");
     }
 
     @Test
@@ -285,8 +299,11 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("| Reagents | Supplies and Equipment |");
-        assertThat(markdown).contains("| At each student station: Resuspended DNA or ethanol precipitates from Part 1*");
-        assertThat(markdown).contains("Microcentrifuge tube rack 3 1.5-mL microcentrifuge tubes Micropipet, 1- 20 μL Micropipet tips");
+        assertThat(markdown)
+                .contains("| At each student station: Resuspended DNA or ethanol precipitates from Part 1*");
+        assertThat(markdown)
+                .contains(
+                        "Microcentrifuge tube rack 3 1.5-mL microcentrifuge tubes Micropipet, 1- 20 μL Micropipet tips");
         assertThat(markdown).contains("Sterile distilled or deionized water |");
     }
 
@@ -298,8 +315,12 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("|  | OCR | Recommendation | Product semantic search |");
-        assertThat(markdown).contains("| Pack | A solution that recognizes characters in an image and extracts necessary information |");
-        assertThat(markdown).contains("| Application | Applicable to all fields that require text extraction from standardized documents");
+        assertThat(markdown)
+                .contains(
+                        "| Pack | A solution that recognizes characters in an image and extracts necessary information |");
+        assertThat(markdown)
+                .contains(
+                        "| Application | Applicable to all fields that require text extraction from standardized documents");
         assertThat(markdown).contains("| Highlight | Achieved 1 place in the OCR World Competition");
     }
 
@@ -323,7 +344,9 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("|  | A | B | C | D | E |");
-        assertThat(markdown).contains("| 1 | time | observed | Forecast(observed) | Lower Confidence Bound(observed) | Upper Confidence Bound(observed) |");
+        assertThat(markdown)
+                .contains(
+                        "| 1 | time | observed | Forecast(observed) | Lower Confidence Bound(observed) | Upper Confidence Bound(observed) |");
         assertThat(markdown).contains("| 15 | 13 |  | 24.75424515 | 22.75 | 26.75 |");
         assertThat(markdown).doesNotContain("| 1 | A time observed | B Forecast(observed) |");
         assertThat(markdown).doesNotContain("\n| A | B | C | D | E |\n");
@@ -381,7 +404,9 @@ class PdfBorderlessTableExtractionTest {
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("|  | Training Datasets |  |  |  |  |  |");
         assertThat(markdown).contains("| Properties | Instruction |  |  | Alignment |  |  |");
-        assertThat(markdown).contains("|  | Alpaca-GPT4 | OpenOrca | Synth. Math-Instruct | Orca DPO Pairs | Ultrafeedback Cleaned | Synth. Math-Alignment |");
+        assertThat(markdown)
+                .contains(
+                        "|  | Alpaca-GPT4 | OpenOrca | Synth. Math-Instruct | Orca DPO Pairs | Ultrafeedback Cleaned | Synth. Math-Alignment |");
         assertThat(markdown).contains("| Total # Samples | 52K | 2.91M | 126K | 12.9K | 60.8K | 126K |");
         assertThat(markdown).contains("| Open Source | O | O | ✗ | O | O | ✗ |");
     }
@@ -394,8 +419,12 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(document.body().tables()).isNotEmpty();
         assertThat(markdown).contains("| Genes in DNA | → | Protein | → | Characteristics |");
-        assertThat(markdown).contains("| 2 copies of the allele that codes for normal hemoglobin (SS) | → | Normal hemoglobin dissolves in the cytosol of red blood cells. | → | Disk-shaped red blood cells can squeeze through the smallest blood vessels → normal health |");
-        assertThat(markdown).contains("| 2 copies of the allele that codes for sickle cell hemoglobin (ss) | → | Sickle cell hemoglobin can clump in long rods in red blood cells. | → | If sickle cell hemoglobin clumps in long rods");
+        assertThat(markdown)
+                .contains(
+                        "| 2 copies of the allele that codes for normal hemoglobin (SS) | → | Normal hemoglobin dissolves in the cytosol of red blood cells. | → | Disk-shaped red blood cells can squeeze through the smallest blood vessels → normal health |");
+        assertThat(markdown)
+                .contains(
+                        "| 2 copies of the allele that codes for sickle cell hemoglobin (ss) | → | Sickle cell hemoglobin can clump in long rods in red blood cells. | → | If sickle cell hemoglobin clumps in long rods");
         assertThat(markdown).doesNotContain("| Genes in DNA | → | Protein → Characteristics |");
     }
 
@@ -406,7 +435,8 @@ class PdfBorderlessTableExtractionTest {
         var markdown = document.toMarkdownClean();
 
         assertThat(document.body().tables()).isNotEmpty();
-        assertThat(markdown).contains("|  | Mitosis (begins with a single cell) | Meiosis (begins with a single cell) |");
+        assertThat(markdown)
+                .contains("|  | Mitosis (begins with a single cell) | Meiosis (begins with a single cell) |");
         assertThat(markdown).contains("| # chromosomes in parent cells |  |  |");
         assertThat(markdown).contains("| # DNA replications |  |  |");
         assertThat(markdown).contains("| # nuclear divisions |  |  |");
@@ -423,11 +453,19 @@ class PdfBorderlessTableExtractionTest {
 
         assertThat(markdown).contains("# 6. ECO CIRCLE COMPETENCE FRAMEWORK");
         assertThat(markdown).contains("| Competence Area | #1 THE 3 RS: RECYCLE-REUSE-REDUCE |");
-        assertThat(markdown).contains("| Competence Statement | To know the basics of the 3 Rs and their importance and implementation into daily life in relation to green entrepreneurship and circular economy. |");
+        assertThat(markdown)
+                .contains(
+                        "| Competence Statement | To know the basics of the 3 Rs and their importance and implementation into daily life in relation to green entrepreneurship and circular economy. |");
         assertThat(markdown).contains("| Learning Outcomes |  |");
-        assertThat(markdown).contains("| Knowledge | ● To understand the meaning of reducing, reusing and recycling and how they connect ● To understand the importance of the 3 Rs as waste management ● To be familiar with the expansion of the 3 Rs - the 7 Rs |");
-        assertThat(markdown).contains("| Skills | ● To implement different ways of waste management into daily life ● To properly implement recycling in day-to-day activities ● To promote reducing and reusing before recycling |");
-        assertThat(markdown).contains("| Attitudes and Values | ● To acquire a proactive approach to implementing the 3 Rs into daily personal life ● To educate others on the importance of sustainable waste management |");
+        assertThat(markdown)
+                .contains(
+                        "| Knowledge | ● To understand the meaning of reducing, reusing and recycling and how they connect ● To understand the importance of the 3 Rs as waste management ● To be familiar with the expansion of the 3 Rs - the 7 Rs |");
+        assertThat(markdown)
+                .contains(
+                        "| Skills | ● To implement different ways of waste management into daily life ● To properly implement recycling in day-to-day activities ● To promote reducing and reusing before recycling |");
+        assertThat(markdown)
+                .contains(
+                        "| Attitudes and Values | ● To acquire a proactive approach to implementing the 3 Rs into daily personal life ● To educate others on the importance of sustainable waste management |");
         assertThat(markdown).doesNotContain("| 6. ECO |  | CIRCLE COMPETENCE FRAMEWORK |");
     }
 
@@ -438,10 +476,18 @@ class PdfBorderlessTableExtractionTest {
         var markdown = document.toMarkdownClean();
 
         assertThat(document.body().tables()).isNotEmpty();
-        assertThat(markdown).contains("| Source (doc, report, etc.) | Year | Description of the initiative | Circular Economy issues addressed |");
-        assertThat(markdown).contains("| Eco-Ecole Program https://www.ec o-ecole.org/le- programme/ | 2005 | Eco-Ecole is the French version of Eco-Schools");
-        assertThat(markdown).contains("| Horsnormes https://horsnor mes.co/ | 2020 | Horsnormes is a website which provide baskets of fruits and vegetables");
-        assertThat(markdown).contains("| Fondation Terre Solidaire (Solidarity Earth Foundation) https://fondatio n- terresolidaire.o rg/quest-ce- que- | 2016 | The Terre Solidaire Foundation was created in 2016");
+        assertThat(markdown)
+                .contains(
+                        "| Source (doc, report, etc.) | Year | Description of the initiative | Circular Economy issues addressed |");
+        assertThat(markdown)
+                .contains(
+                        "| Eco-Ecole Program https://www.ec o-ecole.org/le- programme/ | 2005 | Eco-Ecole is the French version of Eco-Schools");
+        assertThat(markdown)
+                .contains(
+                        "| Horsnormes https://horsnor mes.co/ | 2020 | Horsnormes is a website which provide baskets of fruits and vegetables");
+        assertThat(markdown)
+                .contains(
+                        "| Fondation Terre Solidaire (Solidarity Earth Foundation) https://fondatio n- terresolidaire.o rg/quest-ce- que- | 2016 | The Terre Solidaire Foundation was created in 2016");
         assertThat(markdown).doesNotContain("| Source | Year |  |  | Description |");
     }
 
@@ -527,7 +573,8 @@ class PdfBorderlessTableExtractionTest {
         writeText(stream, text, x, y, 12);
     }
 
-    private static void writeText(PDPageContentStream stream, String text, float x, float y, float fontSize) throws IOException {
+    private static void writeText(PDPageContentStream stream, String text, float x, float y, float fontSize)
+            throws IOException {
         stream.beginText();
         stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), fontSize);
         stream.newLineAtOffset(x, y);
@@ -537,11 +584,7 @@ class PdfBorderlessTableExtractionTest {
 
     private static TrustDocument parsePdfBox(Path pdf) throws ParseException {
         var request = new ParserRequest(
-                pdf,
-                TrustDocumentParser.sha256SourceFile(pdf),
-                ParserPreset.LITE.parserRun("pdfbox"),
-                true,
-                false);
+                pdf, TrustDocumentParser.sha256SourceFile(pdf), ParserPreset.LITE.parserRun("pdfbox"), true, false);
         return new PdfBoxParserBackend().parse(request).withEvaluatedAuditGrade();
     }
 
@@ -579,7 +622,8 @@ class PdfBorderlessTableExtractionTest {
                 1,
                 Optional.empty(),
                 new Confidence(1.0, "expected fixture"),
-                List.of(expectedCell(0, 0, "Name"), expectedCell(0, 1, "Score"),
+                List.of(
+                        expectedCell(0, 0, "Name"), expectedCell(0, 1, "Score"),
                         expectedCell(1, 0, "Alex"), expectedCell(1, 1, "98")));
         return new TrustDocument(
                         "expected-borderless-table",
@@ -587,9 +631,8 @@ class PdfBorderlessTableExtractionTest {
                                 "expected.pdf",
                                 "sha256:expected",
                                 new DocumentMetadata("expected.pdf", 1, Optional.empty())),
-                        new TrustDocumentBody(List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")),
-                                List.of(),
-                                List.of(table)),
+                        new TrustDocumentBody(
+                                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")), List.of(), List.of(table)),
                         new ParserRun("1.0.0", "table-lite", "fixture", List.of(), List.of()),
                         AuditGradeStatus.UNKNOWN)
                 .withEvaluatedAuditGrade();

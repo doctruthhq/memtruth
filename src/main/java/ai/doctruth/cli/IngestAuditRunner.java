@@ -14,8 +14,8 @@ import java.util.stream.Stream;
 
 import ai.doctruth.BlockKind;
 import ai.doctruth.ParseException;
-import ai.doctruth.PdfDocumentParser;
 import ai.doctruth.ParsedDocument;
+import ai.doctruth.PdfDocumentParser;
 import ai.doctruth.TextSection;
 
 final class IngestAuditRunner {
@@ -87,12 +87,25 @@ final class IngestAuditRunner {
     }
 
     private static IngestAuditFileResult parsedFile(Path file, ParsedDocument doc) {
-        var textSections = doc.sections().stream().filter(TextSection.class::isInstance).map(TextSection.class::cast).toList();
+        var textSections = doc.sections().stream()
+                .filter(TextSection.class::isInstance)
+                .map(TextSection.class::cast)
+                .toList();
         var findings = new ArrayList<IngestAuditFinding>();
-        int textChars = textSections.stream().mapToInt(section -> section.text().length()).sum();
-        int textWithBbox = (int) textSections.stream().filter(section -> section.boundingBox().isPresent()).count();
-        int maxBlockChars = textSections.stream().mapToInt(section -> section.text().length()).max().orElse(0);
-        int maxBlockLines = textSections.stream().mapToInt(section -> (int) section.text().lines().count()).max().orElse(0);
+        int textChars = textSections.stream()
+                .mapToInt(section -> section.text().length())
+                .sum();
+        int textWithBbox = (int) textSections.stream()
+                .filter(section -> section.boundingBox().isPresent())
+                .count();
+        int maxBlockChars = textSections.stream()
+                .mapToInt(section -> section.text().length())
+                .max()
+                .orElse(0);
+        int maxBlockLines = textSections.stream()
+                .mapToInt(section -> (int) section.text().lines().count())
+                .max()
+                .orElse(0);
         var kindCounts = kindCounts(textSections);
         addFindings(findings, textSections, textChars, textWithBbox, kindCounts);
         return new IngestAuditFileResult(
@@ -132,7 +145,8 @@ final class IngestAuditRunner {
             out.add(new IngestAuditFinding("doctruth_text", "ocr_route_required", textChars, LOW_TEXT_CHARS));
         }
         if (textWithBbox < textSections.size()) {
-            out.add(new IngestAuditFinding("evidence_mapping", "missing_text_bboxes", textWithBbox, textSections.size()));
+            out.add(new IngestAuditFinding(
+                    "evidence_mapping", "missing_text_bboxes", textWithBbox, textSections.size()));
         }
         addOversizedBlockFindings(out, textSections);
         if (!textSections.isEmpty() && kindCounts.getOrDefault(BlockKind.HEADING.name(), 0) == 0) {
@@ -161,15 +175,23 @@ final class IngestAuditRunner {
             }
         }
         if (maxChars > 0) {
-            out.add(new IngestAuditFinding("doctruth_segmentation", "oversized_text_block_chars", maxChars, maxCharThreshold));
+            out.add(new IngestAuditFinding(
+                    "doctruth_segmentation", "oversized_text_block_chars", maxChars, maxCharThreshold));
         }
         if (maxLines > 0) {
-            out.add(new IngestAuditFinding("doctruth_segmentation", "oversized_text_block_lines", maxLines, maxLineThreshold));
+            out.add(new IngestAuditFinding(
+                    "doctruth_segmentation", "oversized_text_block_lines", maxLines, maxLineThreshold));
         }
     }
 
     private static void seedIssueSummary(Map<String, Integer> summary) {
-        for (var key : List.of("doctruth_text", "doctruth_segmentation", "block_labeling", "context_pack", "evidence_mapping", "doctruth_parse")) {
+        for (var key : List.of(
+                "doctruth_text",
+                "doctruth_segmentation",
+                "block_labeling",
+                "context_pack",
+                "evidence_mapping",
+                "doctruth_parse")) {
             summary.putIfAbsent(key, 0);
         }
     }

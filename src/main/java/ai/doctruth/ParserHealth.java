@@ -22,4 +22,3 @@ public record ParserHealth(String backend, boolean available, List<ParserWarning
         warnings = List.copyOf(warnings);
     }
 }
-

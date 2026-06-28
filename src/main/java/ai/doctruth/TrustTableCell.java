@@ -14,7 +14,11 @@ import java.util.Optional;
  * @since 1.0.0
  */
 public record TrustTableCell(
-        String cellId, TrustCellRange rowRange, TrustCellRange columnRange, Optional<BoundingBox> boundingBox, String text) {
+        String cellId,
+        TrustCellRange rowRange,
+        TrustCellRange columnRange,
+        Optional<BoundingBox> boundingBox,
+        String text) {
 
     public TrustTableCell {
         Objects.requireNonNull(cellId, "cellId");
@@ -27,4 +31,3 @@ public record TrustTableCell(
         }
     }
 }
-

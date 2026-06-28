@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-import ai.doctruth.BoundingBox;
 import ai.doctruth.BlockKind;
+import ai.doctruth.BoundingBox;
 import ai.doctruth.FigureSection;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.ParsedSection;
@@ -21,8 +21,8 @@ final class ParsedDocumentMarkdown {
             "(?i)^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|"
                     + "sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|\\d{1,2}[/-]\\d{1,2})"
                     + "\\b.*\\b(?:to|-|present|current|now|\\d{4})\\b.*$");
-    private static final Pattern BULLET_PREFIX = Pattern.compile(
-            "^\\s*(?:[-*+\\u2022]\\s+|\\d+[.)]\\s+|[a-zA-Z][.)]\\s+).+");
+    private static final Pattern BULLET_PREFIX =
+            Pattern.compile("^\\s*(?:[-*+\\u2022]\\s+|\\d+[.)]\\s+|[a-zA-Z][.)]\\s+).+");
 
     private ParsedDocumentMarkdown() {
         throw new AssertionError("no instances");
@@ -42,8 +42,8 @@ final class ParsedDocumentMarkdown {
         for (int i = 0; i < sections.size(); i++) {
             blocks.add(MarkdownBlock.from(sections.get(i), i));
         }
-        blocks.sort(Comparator
-                .comparingInt((MarkdownBlock block) -> block.location().pageStart())
+        blocks.sort(Comparator.comparingInt(
+                        (MarkdownBlock block) -> block.location().pageStart())
                 .thenComparingDouble(ParsedDocumentMarkdown::visualTop)
                 .thenComparingDouble(ParsedDocumentMarkdown::visualLeft)
                 .thenComparingInt(block -> block.location().lineStart())
@@ -100,13 +100,16 @@ final class ParsedDocumentMarkdown {
         if (trimmed.endsWith("-") || trimmed.endsWith(",") || trimmed.endsWith("&")) {
             return true;
         }
-        String lastLine = trimmed.lines().reduce((left, right) -> right).orElse(trimmed).stripTrailing();
+        String lastLine =
+                trimmed.lines().reduce((left, right) -> right).orElse(trimmed).stripTrailing();
         String lower = lastLine.toLowerCase(java.util.Locale.ROOT);
         return lower.endsWith(" and") || lower.endsWith(" while") || lower.endsWith(" of") || lower.endsWith(" for");
     }
 
     private static double visualTop(MarkdownBlock block) {
-        return block.boundingBox().map(BoundingBox::y0).orElse((double) block.location().lineStart() * 1000.0);
+        return block.boundingBox()
+                .map(BoundingBox::y0)
+                .orElse((double) block.location().lineStart() * 1000.0);
     }
 
     private static double visualLeft(MarkdownBlock block) {
@@ -243,18 +246,24 @@ final class ParsedDocumentMarkdown {
 
         static MarkdownBlock from(ParsedSection section, int originalIndex) {
             return switch (section) {
-                case TextSection text -> new MarkdownBlock(
-                        section, text.text(), text.kind(), text.location(), text.boundingBox(), originalIndex);
-                case TableSection table -> new MarkdownBlock(
-                        section, "", BlockKind.OTHER, table.location(), Optional.empty(), originalIndex);
-                case FigureSection figure -> new MarkdownBlock(
-                        section, figure.caption(), BlockKind.OTHER, figure.location(), figure.boundingBox(), originalIndex);
+                case TextSection text ->
+                    new MarkdownBlock(
+                            section, text.text(), text.kind(), text.location(), text.boundingBox(), originalIndex);
+                case TableSection table ->
+                    new MarkdownBlock(section, "", BlockKind.OTHER, table.location(), Optional.empty(), originalIndex);
+                case FigureSection figure ->
+                    new MarkdownBlock(
+                            section,
+                            figure.caption(),
+                            BlockKind.OTHER,
+                            figure.location(),
+                            figure.boundingBox(),
+                            originalIndex);
             };
         }
 
         MarkdownBlock append(String continuation) {
-            return new MarkdownBlock(
-                    section, text + "\n" + continuation, kind, location, boundingBox, originalIndex);
+            return new MarkdownBlock(section, text + "\n" + continuation, kind, location, boundingBox, originalIndex);
         }
     }
 }

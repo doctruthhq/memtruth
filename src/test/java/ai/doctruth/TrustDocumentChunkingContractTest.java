@@ -34,9 +34,7 @@ class TrustDocumentChunkingContractTest {
         assertThat(chunks).hasSize(2);
         assertThat(chunks.getFirst().unitIds()).containsExactly("unit-0001", "unit-0002");
         assertThat(chunks.getFirst().evidenceSpanIds()).containsExactly("span-0001", "span-0002");
-        assertThat(chunks.getFirst().text())
-                .contains("Professional summary")
-                .contains("Perodua transport");
+        assertThat(chunks.getFirst().text()).contains("Professional summary").contains("Perodua transport");
         assertThat(chunks.get(1).unitIds()).containsExactly("unit-0003");
         assertThat(chunks.get(1).evidenceSpanIds()).containsExactly("span-0003");
     }
@@ -56,9 +54,6 @@ class TrustDocumentChunkingContractTest {
 
     private static TextSection section(String text, int line) {
         return new TextSection(
-                text,
-                new SourceLocation(1, 1, line, line, line * 100),
-                BlockKind.BODY,
-                Optional.empty());
+                text, new SourceLocation(1, 1, line, line, line * 100), BlockKind.BODY, Optional.empty());
     }
 }

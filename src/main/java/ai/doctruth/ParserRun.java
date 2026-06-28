@@ -15,11 +15,7 @@ import java.util.Objects;
  * @since 1.0.0
  */
 public record ParserRun(
-        String parserRunId,
-        String parserVersion,
-        String preset,
-        String backend,
-        ParserRunDetails details) {
+        String parserRunId, String parserVersion, String preset, String backend, ParserRunDetails details) {
 
     private static final String DEFAULT_PARSER_RUN_ID = "parser-run-0001";
 

@@ -37,16 +37,18 @@ class LocalModelWorkerManifestContractTest {
         var manifest = writeManifest(sha256, modelBytes.length);
         var worker = fakeModelWorker(cache, sha256, modelBytes.length);
 
-        withSystemProperties(Map.of(
-                "doctruth.model.cache", cache.toString(),
-                "doctruth.model.manifest", manifest.toString()), () -> {
-            var doc = new LocalModelWorker(worker.toString())
-                    .parse(pdf, "sha256:" + sha256Hex(Files.readAllBytes(pdf)), ParserPreset.TABLE_LITE)
-                    .orElseThrow();
+        withSystemProperties(
+                Map.of(
+                        "doctruth.model.cache", cache.toString(),
+                        "doctruth.model.manifest", manifest.toString()),
+                () -> {
+                    var doc = new LocalModelWorker(worker.toString())
+                            .parse(pdf, "sha256:" + sha256Hex(Files.readAllBytes(pdf)), ParserPreset.TABLE_LITE)
+                            .orElseThrow();
 
-            assertThat(doc.parserRun().backend()).isEqualTo("pdfbox+model-worker");
-            assertThat(doc.parserRun().models()).containsExactly("slanet-plus:local-test");
-        });
+                    assertThat(doc.parserRun().backend()).isEqualTo("pdfbox+model-worker");
+                    assertThat(doc.parserRun().models()).containsExactly("slanet-plus:local-test");
+                });
     }
 
     @Test
@@ -56,28 +58,26 @@ class LocalModelWorkerManifestContractTest {
         var nonPresetManifest = tempDir.resolve("non-preset-models.json");
         Files.writeString(nonPresetManifest, "{\"presets\":{\"table-lite\":{\"name\":\"not-an-array\"}}}");
 
-        withSystemProperties(Map.of("doctruth.model.manifest", missingManifest.toString()), () ->
-                assertThat(ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE))
-                        .extracting(artifact -> artifact.descriptor().identity())
-                        .containsExactlyElementsOf(ParserPreset.TABLE_LITE.runtimePolicy().requiredModels().stream()
-                                .map(ModelDescriptor::identity)
-                                .toList()));
+        withSystemProperties(Map.of("doctruth.model.manifest", missingManifest.toString()), () -> assertThat(
+                        ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE))
+                .extracting(artifact -> artifact.descriptor().identity())
+                .containsExactlyElementsOf(ParserPreset.TABLE_LITE.runtimePolicy().requiredModels().stream()
+                        .map(ModelDescriptor::identity)
+                        .toList()));
 
-        withSystemProperties(Map.of("doctruth.model.manifest", nonPresetManifest.toString()), () ->
-                assertThat(ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE))
-                        .extracting(artifact -> artifact.descriptor().identity())
-                        .containsExactlyElementsOf(ParserPreset.TABLE_LITE.runtimePolicy().requiredModels().stream()
-                                .map(ModelDescriptor::identity)
-                                .toList()));
+        withSystemProperties(Map.of("doctruth.model.manifest", nonPresetManifest.toString()), () -> assertThat(
+                        ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE))
+                .extracting(artifact -> artifact.descriptor().identity())
+                .containsExactlyElementsOf(ParserPreset.TABLE_LITE.runtimePolicy().requiredModels().stream()
+                        .map(ModelDescriptor::identity)
+                        .toList()));
     }
 
     @Test
     @DisplayName("model manifest resolver rejects artifacts missing required identity fields")
     void manifestResolverRejectsMissingRequiredFields() throws Exception {
         var manifest = tempDir.resolve("bad-models.json");
-        Files.writeString(
-                manifest,
-                """
+        Files.writeString(manifest, """
                 {
                   "presets": {
                     "table-lite": [
@@ -85,13 +85,12 @@ class LocalModelWorkerManifestContractTest {
                     ]
                   }
                 }
-                """,
-                StandardCharsets.UTF_8);
+                """, StandardCharsets.UTF_8);
 
-        withSystemProperties(Map.of("doctruth.model.manifest", manifest.toString()), () ->
-                assertThatThrownBy(() -> ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE))
-                        .isInstanceOf(IllegalArgumentException.class)
-                        .hasMessageContaining("version"));
+        withSystemProperties(Map.of("doctruth.model.manifest", manifest.toString()), () -> assertThatThrownBy(
+                        () -> ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("version"));
     }
 
     @Test
@@ -100,7 +99,8 @@ class LocalModelWorkerManifestContractTest {
         var manifest = writeManifest("sha256:" + "a".repeat(64), 10);
 
         withSystemProperties(Map.of("doctruth.model.manifest", manifest.toString()), () -> {
-            var artifact = ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE).getFirst();
+            var artifact = ModelManifestResolver.requiredArtifacts(ParserPreset.TABLE_LITE)
+                    .getFirst();
 
             assertThat(artifact.descriptor().identity()).isEqualTo("slanet-plus:local-test");
             assertThat(artifact.runtime().task()).contains("table-structure");
@@ -114,9 +114,7 @@ class LocalModelWorkerManifestContractTest {
 
     private Path writeManifest(String sha256, int sizeBytes) throws IOException {
         var manifest = tempDir.resolve("models.json");
-        Files.writeString(
-                manifest,
-                """
+        Files.writeString(manifest, """
                 {
                   "presets": {
                     "table-lite": [
@@ -135,8 +133,7 @@ class LocalModelWorkerManifestContractTest {
                     ]
                   }
                 }
-                """.formatted(sha256, sizeBytes),
-                StandardCharsets.UTF_8);
+                """.formatted(sha256, sizeBytes), StandardCharsets.UTF_8);
         return manifest;
     }
 
@@ -246,9 +243,7 @@ class LocalModelWorkerManifestContractTest {
     }
 
     private static String pythonLiteral(String value) {
-        return "'''"
-                + value.replace("\\", "\\\\").replace("'''", "'\"'\"'")
-                + "'''";
+        return "'''" + value.replace("\\", "\\\\").replace("'''", "'\"'\"'") + "'''";
     }
 
     @FunctionalInterface

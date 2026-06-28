@@ -17,11 +17,7 @@ record ModelRuntimeHints(String task, String backend, String format, String prec
     }
 
     boolean hasAny() {
-        return !task.isBlank()
-                || !backend.isBlank()
-                || !format.isBlank()
-                || !precision.isBlank()
-                || !license.isBlank();
+        return !task.isBlank() || !backend.isBlank() || !format.isBlank() || !precision.isBlank() || !license.isBlank();
     }
 
     private static String normalize(String value) {

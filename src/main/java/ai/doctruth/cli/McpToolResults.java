@@ -99,10 +99,16 @@ final class McpToolResults {
     private static TrustRenderedDocument rendered(TrustDocument doc, String format, boolean sourceMap) {
         return switch (format) {
             case "compact_llm", "compact" -> sourceMap ? doc.toCompactLlmWithSourceMap() : compactOnly(doc);
-            case "json_evidence" -> new TrustRenderedDocument(
-                    "json_evidence", doc.toJsonEvidence(), doc.source().sourceHash(), doc.canonicalHash(), List.of());
-            case "json_full" -> new TrustRenderedDocument(
-                    "json_full", doc.toJsonFull(), doc.source().sourceHash(), doc.canonicalHash(), List.of());
+            case "json_evidence" ->
+                new TrustRenderedDocument(
+                        "json_evidence",
+                        doc.toJsonEvidence(),
+                        doc.source().sourceHash(),
+                        doc.canonicalHash(),
+                        List.of());
+            case "json_full" ->
+                new TrustRenderedDocument(
+                        "json_full", doc.toJsonFull(), doc.source().sourceHash(), doc.canonicalHash(), List.of());
             default -> throw new UsageException("unknown MCP parse_document format: " + format);
         };
     }

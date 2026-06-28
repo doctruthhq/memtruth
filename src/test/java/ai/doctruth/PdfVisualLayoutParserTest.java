@@ -42,16 +42,23 @@ class PdfVisualLayoutParserTest {
                         new PositionedRun("Contact", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("WORK EXPERIENCE", 320f, 720f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("+601127640924", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Process Assistant Engineer", 320f, 700f, 12f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Process Assistant Engineer", 320f, 700f, 12f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("Address", 50f, 680f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("SPI and FPY Management", 320f, 680f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD)));
+                        new PositionedRun(
+                                "SPI and FPY Management", 320f, 680f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
-        assertThat(texts).anySatisfy(text -> assertThat(text).contains("Contact").doesNotContain("WORK EXPERIENCE"));
-        assertThat(texts).anySatisfy(text -> assertThat(text).contains("WORK EXPERIENCE").doesNotContain("Contact"));
-        assertThat(texts).noneSatisfy(text -> assertThat(text).contains("Contact").contains("WORK EXPERIENCE"));
+        assertThat(texts)
+                .anySatisfy(text -> assertThat(text).contains("Contact").doesNotContain("WORK EXPERIENCE"));
+        assertThat(texts)
+                .anySatisfy(text -> assertThat(text).contains("WORK EXPERIENCE").doesNotContain("Contact"));
+        assertThat(texts)
+                .noneSatisfy(text -> assertThat(text).contains("Contact").contains("WORK EXPERIENCE"));
     }
 
     @Test
@@ -61,9 +68,11 @@ class PdfVisualLayoutParserTest {
                 tempDir,
                 List.of(
                         new PositionedRun("EDUCATION", 50f, 720f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Foundation in Management", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun(
+                                "Foundation in Management", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("2018 - 2019", 455f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("UNITAR International University", 50f, 684f, 12f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "UNITAR International University", 50f, 684f, 12f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun(
                                 "- Relevant coursework in Principles of Management, Communication Skills",
                                 65f,
@@ -72,15 +81,17 @@ class PdfVisualLayoutParserTest {
                                 Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("Foundation in Management")
                 .contains("2018 - 2019")
                 .contains("UNITAR International University"));
-        assertThat(texts).noneSatisfy(text -> assertThat(text)
-                .contains("2018 - 2019")
-                .doesNotContain("Foundation in Management"));
+        assertThat(texts)
+                .noneSatisfy(
+                        text -> assertThat(text).contains("2018 - 2019").doesNotContain("Foundation in Management"));
     }
 
     @Test
@@ -89,14 +100,28 @@ class PdfVisualLayoutParserTest {
         var pdfPath = writePositionedPdfWithHorizontalRules(
                 tempDir,
                 List.of(
-                        new PositionedRun("Process assistant summary line one", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Process assistant summary line two", 50f, 712f, 12f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Education entry line one", 50f, 704f, 12f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Education entry line two", 50f, 696f, 12f, Standard14Fonts.FontName.HELVETICA)),
+                        new PositionedRun(
+                                "Process assistant summary line one",
+                                50f,
+                                720f,
+                                12f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Process assistant summary line two",
+                                50f,
+                                712f,
+                                12f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Education entry line one", 50f, 704f, 12f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Education entry line two", 50f, 696f, 12f, Standard14Fonts.FontName.HELVETICA)),
                 List.of(new HorizontalRule(45f, 708f, 540f, 708f)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("Process assistant summary line one")
@@ -133,9 +158,24 @@ class PdfVisualLayoutParserTest {
                                 664f,
                                 10f,
                                 Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Analyzed and improved FPY rates to reduce defects.", 65f, 650f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Stencil & Printer Parameter Optimization:", 50f, 632f, 11f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("- Modified stencil openings and printer parameters.", 65f, 616f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "- Analyzed and improved FPY rates to reduce defects.",
+                                65f,
+                                650f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Stencil & Printer Parameter Optimization:",
+                                50f,
+                                632f,
+                                11f,
+                                Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun(
+                                "- Modified stencil openings and printer parameters.",
+                                65f,
+                                616f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun(
                                 "- Implemented best practices to improve process variation.",
                                 65f,
@@ -144,7 +184,9 @@ class PdfVisualLayoutParserTest {
                                 Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("WORK EXPERIENCE")
@@ -161,15 +203,38 @@ class PdfVisualLayoutParserTest {
                 tempDir,
                 List.of(
                         new PositionedRun("WORK EXPERIENCE", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Process Assistant Engineer at Kaifa Technology", 50f, 708f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("- Developed SPI programs for manufacturing quality.", 65f, 696f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Reduced process defects with FPY analysis.", 65f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Process Assistant Engineer at Kaifa Technology",
+                                50f,
+                                708f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun(
+                                "- Developed SPI programs for manufacturing quality.",
+                                65f,
+                                696f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "- Reduced process defects with FPY analysis.",
+                                65f,
+                                684f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("EDUCATION", 50f, 672f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("B.Sc in Applied Science (Electronic and Instrumentation)", 50f, 660f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("University Malaysia Terengganu", 50f, 648f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "B.Sc in Applied Science (Electronic and Instrumentation)",
+                                50f,
+                                660f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "University Malaysia Terengganu", 50f, 648f, 10f, Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("WORK EXPERIENCE")
@@ -193,10 +258,13 @@ class PdfVisualLayoutParserTest {
                         new PositionedRun("Fluent", 205f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("English", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Fluent", 205f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("SKILL & EDUCATION", 50f, 650f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD)));
+                        new PositionedRun(
+                                "SKILL & EDUCATION", 50f, 650f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("LANGUAGE")
@@ -212,14 +280,37 @@ class PdfVisualLayoutParserTest {
         var pdfPath = writePositionedPdf(
                 tempDir,
                 List.of(
-                        new PositionedRun("PROJECT EXPERIENCE", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("1. Planned supplier qualification and tender preparation.", 50f, 708f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Continued contract approval and award follow-up.", 65f, 696f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("2. Reviewed supplier quotations and negotiated delivery terms.", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Continued procurement reporting for project stakeholders.", 65f, 672f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "PROJECT EXPERIENCE", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun(
+                                "1. Planned supplier qualification and tender preparation.",
+                                50f,
+                                708f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Continued contract approval and award follow-up.",
+                                65f,
+                                696f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "2. Reviewed supplier quotations and negotiated delivery terms.",
+                                50f,
+                                684f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Continued procurement reporting for project stakeholders.",
+                                65f,
+                                672f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("PROJECT EXPERIENCE")
@@ -236,16 +327,45 @@ class PdfVisualLayoutParserTest {
                 tempDir,
                 List.of(
                         new PositionedRun("WORK EXPERIENCE", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Process Assistant Engineer at Kaifa Technology", 50f, 708f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("SPI (Solder Paste Inspection) & FPY Management:", 50f, 696f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Developed and managed SPI programs.", 65f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Improved FPY rates to reduce defects.", 65f, 672f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Stencil & Printer Parameter Optimization:", 50f, 660f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Modified printer parameters.", 65f, 648f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Reduced process variation.", 65f, 636f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "Process Assistant Engineer at Kaifa Technology",
+                                50f,
+                                708f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "SPI (Solder Paste Inspection) & FPY Management:",
+                                50f,
+                                696f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "- Developed and managed SPI programs.",
+                                65f,
+                                684f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "- Improved FPY rates to reduce defects.",
+                                65f,
+                                672f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Stencil & Printer Parameter Optimization:",
+                                50f,
+                                660f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "- Modified printer parameters.", 65f, 648f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "- Reduced process variation.", 65f, 636f, 10f, Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("WORK EXPERIENCE")
@@ -266,10 +386,13 @@ class PdfVisualLayoutParserTest {
                         new PositionedRun("Fluent", 285f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("English", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Fluent", 285f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("SKILL & EDUCATION", 50f, 650f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD)));
+                        new PositionedRun(
+                                "SKILL & EDUCATION", 50f, 650f, 14f, Standard14Fonts.FontName.HELVETICA_BOLD)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("LANGUAGE")
@@ -287,8 +410,18 @@ class PdfVisualLayoutParserTest {
                 tempDir,
                 List.of(
                         new PositionedRun("PENDIDIKAN", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("SIJIL PELAJARAN MALAYSIA (SPM), 2007", 50f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("SMK Khir Johari, Tanjung Malim, Perak", 50f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "SIJIL PELAJARAN MALAYSIA (SPM), 2007",
+                                50f,
+                                704f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "SMK Khir Johari, Tanjung Malim, Perak",
+                                50f,
+                                692f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("BAHASA", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Bahasa Melayu", 320f, 704f, 10f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Fluent", 470f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
@@ -297,15 +430,21 @@ class PdfVisualLayoutParserTest {
                         new PositionedRun("KEMAHIRAN", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Microsoft Office", 50f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("LAIN-LAIN", 320f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Lesen Memandu Malaysia: D & B2", 320f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("PENGALAMAN PEKERJAAN", 50f, 620f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun(
+                                "Lesen Memandu Malaysia: D & B2", 320f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "PENGALAMAN PEKERJAAN", 50f, 620f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("1) Logistic Supervisor", 50f, 604f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("TLS Transport Sdn Bhd", 65f, 592f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("2) Production Supervisor", 50f, 576f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Exterminex Malaysia Sdn Bhd", 65f, 564f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "2) Production Supervisor", 50f, 576f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Exterminex Malaysia Sdn Bhd", 65f, 564f, 10f, Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("PENDIDIKAN")
@@ -338,18 +477,37 @@ class PdfVisualLayoutParserTest {
                 tempDir,
                 List.of(
                         new PositionedRun("BUTIRAN DIRI", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Nombor I/C: 900502-08-5555", 50f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Nombor I/C: 900502-08-5555", 50f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("Umur: 34 Tahun", 50f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("PENGALAMAN PEKERJAAN", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("9/2023 - sekarang: Logistic Supervisor", 320f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "PENGALAMAN PEKERJAAN", 320f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
+                        new PositionedRun(
+                                "9/2023 - sekarang: Logistic Supervisor",
+                                320f,
+                                704f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("TLS Transport Sdn Bhd", 320f, 692f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("PENDIDIKAN", 50f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("SIJIL PELAJARAN MALAYSIA (SPM), 2007", 50f, 644f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "SIJIL PELAJARAN MALAYSIA (SPM), 2007",
+                                50f,
+                                644f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("LAIN-LAIN", 320f, 660f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Lesen Memandu Malaysia: D & B2", 320f, 644f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "Lesen Memandu Malaysia: D & B2",
+                                320f,
+                                644f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).anySatisfy(text -> assertThat(text)
                 .contains("BUTIRAN DIRI")
@@ -379,15 +537,29 @@ class PdfVisualLayoutParserTest {
                 List.of(
                         new PositionedRun("WORK EXPERIENCE", 205f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Email", 50f, 700f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
-                        new PositionedRun("Internal Audits & Quality Management System:", 205f, 704f, 10f, Standard14Fonts.FontName.HELVETICA),
+                        new PositionedRun(
+                                "Internal Audits & Quality Management System:",
+                                205f,
+                                704f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("candidate@example.com", 50f, 684f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("Conduct internal audits to verify implementation.", 205f, 688f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "Conduct internal audits to verify implementation.",
+                                205f,
+                                688f,
+                                10f,
+                                Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
         assertThat(texts).noneSatisfy(text -> assertThat(text).contains("Email").contains("Internal Audits"));
-        assertThat(texts).noneSatisfy(text -> assertThat(text).contains("candidate@example.com").contains("Conduct internal audits"));
+        assertThat(texts)
+                .noneSatisfy(text ->
+                        assertThat(text).contains("candidate@example.com").contains("Conduct internal audits"));
     }
 
     @Test
@@ -407,11 +579,12 @@ class PdfVisualLayoutParserTest {
                                 Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
-        var texts = doc.sections().stream().map(section -> ((TextSection) section).text()).toList();
+        var texts = doc.sections().stream()
+                .map(section -> ((TextSection) section).text())
+                .toList();
 
-        assertThat(texts).noneSatisfy(text -> assertThat(text)
-                .contains("+601127640924")
-                .contains("Establish and document"));
+        assertThat(texts)
+                .noneSatisfy(text -> assertThat(text).contains("+601127640924").contains("Establish and document"));
     }
 
     @Test
@@ -423,7 +596,8 @@ class PdfVisualLayoutParserTest {
                         new PositionedRun("WORK EXPERIENCE", 50f, 720f, 12f, Standard14Fonts.FontName.HELVETICA_BOLD),
                         new PositionedRun("Quality Engineer", 50f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
                         new PositionedRun("Quality Engineer", 50f, 700f, 10f, Standard14Fonts.FontName.HELVETICA),
-                        new PositionedRun("- Managed inspection reports.", 65f, 684f, 10f, Standard14Fonts.FontName.HELVETICA)));
+                        new PositionedRun(
+                                "- Managed inspection reports.", 65f, 684f, 10f, Standard14Fonts.FontName.HELVETICA)));
 
         var doc = PdfDocumentParser.parse(pdfPath);
         var text = doc.sections().stream()

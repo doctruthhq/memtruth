@@ -142,10 +142,7 @@ final class PdfSemanticSectionCoalescer {
                 Math.max(first.location().lineEnd(), second.location().lineEnd()),
                 first.location().charOffset());
         return new PdfTextBlock(
-                first.text().strip() + " " + second.text().strip(),
-                BlockKind.HEADING,
-                loc,
-                union(first, second));
+                first.text().strip() + " " + second.text().strip(), BlockKind.HEADING, loc, union(first, second));
     }
 
     private static void attachSameRowSectionValues(
@@ -163,14 +160,16 @@ final class PdfSemanticSectionCoalescer {
         unassigned.removeAll(attached);
     }
 
-    private static Optional<SectionAnchor> sameRowOwner(
-            PdfTextBlock block, Map<PdfTextBlock, SectionAnchor> assigned) {
+    private static Optional<SectionAnchor> sameRowOwner(PdfTextBlock block, Map<PdfTextBlock, SectionAnchor> assigned) {
         SectionAnchor best = null;
         double bestGap = Double.POSITIVE_INFINITY;
         for (var entry : assigned.entrySet()) {
             var peer = entry.getKey();
-            if (!PdfResumeSectionNames.isRowValueSection(firstLine(entry.getValue().block())) || !sameRowValuePeer(peer, block)
-                    || !isRightSideValue(peer, block) || !PdfResumeSectionNames.isCompactRowValue(block.text())) {
+            if (!PdfResumeSectionNames.isRowValueSection(
+                            firstLine(entry.getValue().block()))
+                    || !sameRowValuePeer(peer, block)
+                    || !isRightSideValue(peer, block)
+                    || !PdfResumeSectionNames.isCompactRowValue(block.text())) {
                 continue;
             }
             double gap = PdfTextBlockGeometry.horizontalGap(peer, block);
@@ -201,7 +200,8 @@ final class PdfSemanticSectionCoalescer {
                     continue;
                 }
                 var candidate = blocks.get(j);
-                if (startsSemanticSection(candidate) || !candidate.boundingBox().isPresent()
+                if (startsSemanticSection(candidate)
+                        || !candidate.boundingBox().isPresent()
                         || !PdfResumeSectionNames.isCompactRowValue(candidate.text())) {
                     continue;
                 }
@@ -234,7 +234,9 @@ final class PdfSemanticSectionCoalescer {
         }
         SectionAnchor best = null;
         for (var anchor : anchors) {
-            if (!isBelow(anchor, block) || !belongsToAnchorLane(anchor.block(), block) || hasLowerSameColumnAnchor(anchor, block, anchors)) {
+            if (!isBelow(anchor, block)
+                    || !belongsToAnchorLane(anchor.block(), block)
+                    || hasLowerSameColumnAnchor(anchor, block, anchors)) {
                 continue;
             }
             if (best == null || anchor.top() > best.top()) {
@@ -329,7 +331,9 @@ final class PdfSemanticSectionCoalescer {
         var b = right.boundingBox().orElseThrow();
         double verticalOverlap = Math.max(0.0, Math.min(a.y1(), b.y1()) - Math.max(a.y0(), b.y0()));
         double minHeight = Math.max(1.0, Math.min(a.y1() - a.y0(), b.y1() - b.y0()));
-        return verticalOverlap / minHeight >= 0.20 || Math.abs(a.y0() - b.y0()) <= 32.0 || Math.abs(a.y1() - b.y1()) <= 32.0;
+        return verticalOverlap / minHeight >= 0.20
+                || Math.abs(a.y0() - b.y0()) <= 32.0
+                || Math.abs(a.y1() - b.y1()) <= 32.0;
     }
 
     private static boolean isRightSideValue(PdfTextBlock left, PdfTextBlock right) {

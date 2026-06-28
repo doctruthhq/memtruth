@@ -52,17 +52,15 @@ class TrustAuditVerifierTest {
 
         var loaded = TrustDocument.fromJsonFull(doc.toJsonFull());
 
-        assertThatCode(() -> TrustAuditVerifier.verify(loaded, doc.toAuditJson())).doesNotThrowAnyException();
+        assertThatCode(() -> TrustAuditVerifier.verify(loaded, doc.toAuditJson()))
+                .doesNotThrowAnyException();
     }
 
     private static TrustDocument document() {
         var parsed = new ParsedDocument(
                 "doc-audit",
                 List.of(new TextSection(
-                        "Work Experience",
-                        LOC,
-                        BlockKind.HEADING,
-                        Optional.of(new BoundingBox(100, 100, 500, 200)))),
+                        "Work Experience", LOC, BlockKind.HEADING, Optional.of(new BoundingBox(100, 100, 500, 200)))),
                 new DocumentMetadata("resume.pdf", 1, Optional.empty()));
         return TrustDocument.fromParsed(parsed, "sha256:source", PARSER_RUN).withEvaluatedAuditGrade();
     }

@@ -22,7 +22,8 @@ final class PdfPageBlockExtractor {
     private static final double DIGIT_HEAVY_RATIO = 0.30;
     private static final Pattern NUMBERED_LIST = Pattern.compile("^\\s*\\d+[.)]\\s+");
     private static final Pattern YEAR_LEADING_FRAGMENT = Pattern.compile("^\\s*(?:19|20)\\d{2}[.)]\\s+(.+)$");
-    private static final Pattern KEY_VALUE_FIELD = Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
+    private static final Pattern KEY_VALUE_FIELD =
+            Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
     private static final Pattern PAGE_LABEL = Pattern.compile("(?i)^(?:chapter|page)\\s+\\d+[\\p{L}\\p{N}.-]*$");
     private static final String LIST_BULLETS = "•▪*-·";
 

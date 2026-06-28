@@ -27,8 +27,8 @@ class TrustDocumentContractTest {
         @Test
         @DisplayName("carries source, units, parser run, and audit status")
         void carriesCanonicalTrustShape() {
-            var warning = new ParserWarning(
-                    "reading_order_uncertain", ParserWarningSeverity.SEVERE, "two columns overlap");
+            var warning =
+                    new ParserWarning("reading_order_uncertain", ParserWarningSeverity.SEVERE, "two columns overlap");
             var unit = sampleUnit(warning);
             var doc = sampleDocument(List.of(unit), List.of(warning), AuditGradeStatus.NOT_AUDIT_GRADE);
 
@@ -53,12 +53,16 @@ class TrustDocumentContractTest {
         void parserRunIdRoundTripsThroughFullJson() throws Exception {
             var parserRun = new ParserRun(
                     "parser-run-rust-42", "1.0.0", "standard", "rust-sidecar", List.of("layout:v2"), List.of());
-            var doc = new TrustDocument("doc-1", sampleSource(), sampleBody(List.of()), parserRun, AuditGradeStatus.UNKNOWN);
+            var doc = new TrustDocument(
+                    "doc-1", sampleSource(), sampleBody(List.of()), parserRun, AuditGradeStatus.UNKNOWN);
 
             String json = doc.toJsonFull();
             var loaded = TrustDocument.fromJsonFull(json);
 
-            assertThat(MAPPER.readTree(json).path("parserRun").path("parserRunId").asText())
+            assertThat(MAPPER.readTree(json)
+                            .path("parserRun")
+                            .path("parserRunId")
+                            .asText())
                     .isEqualTo("parser-run-rust-42");
             assertThat(loaded.parserRun().parserRunId()).isEqualTo("parser-run-rust-42");
             assertThat(loaded.parserRun()).isEqualTo(parserRun);
@@ -73,7 +77,11 @@ class TrustDocumentContractTest {
         @DisplayName("rejects blank document id and null grouped records")
         void rejectsInvalidDocumentShell() {
             assertThatThrownBy(() -> new TrustDocument(
-                            " ", sampleSource(), sampleBody(List.of()), sampleParserRun(List.of()), AuditGradeStatus.UNKNOWN))
+                            " ",
+                            sampleSource(),
+                            sampleBody(List.of()),
+                            sampleParserRun(List.of()),
+                            AuditGradeStatus.UNKNOWN))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("docId");
             assertThatThrownBy(() -> new TrustDocument(
@@ -146,7 +154,8 @@ class TrustDocumentContractTest {
         void rejectsInvalidRenderedDocument() {
             var sourceMap = List.of(new TrustSourceMapEntry(0, 1, "unit-1", List.of("span-1")));
 
-            assertThatThrownBy(() -> new TrustRenderedDocument(" ", "text", "sha256:source", "sha256:content", sourceMap))
+            assertThatThrownBy(
+                            () -> new TrustRenderedDocument(" ", "text", "sha256:source", "sha256:content", sourceMap))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("format");
             assertThatThrownBy(() -> new TrustRenderedDocument("markdown", "text", " ", "sha256:content", sourceMap))
@@ -168,7 +177,8 @@ class TrustDocumentContractTest {
             var units = new ArrayList<TrustUnit>();
             units.add(sampleUnit());
             var warnings = new ArrayList<ParserWarning>();
-            warnings.add(new ParserWarning("section_boundary_uncertain", ParserWarningSeverity.WARNING, "weak heading"));
+            warnings.add(
+                    new ParserWarning("section_boundary_uncertain", ParserWarningSeverity.WARNING, "weak heading"));
 
             var doc = sampleDocument(units, warnings, AuditGradeStatus.UNKNOWN);
             units.clear();
@@ -178,8 +188,8 @@ class TrustDocumentContractTest {
             assertThat(doc.parserRun().warnings()).hasSize(1);
             assertThatThrownBy(() -> doc.body().units().add(sampleUnit()))
                     .isInstanceOf(UnsupportedOperationException.class);
-            assertThatThrownBy(() -> doc.parserRun().warnings().add(
-                            new ParserWarning("x", ParserWarningSeverity.INFO, "")))
+            assertThatThrownBy(() ->
+                            doc.parserRun().warnings().add(new ParserWarning("x", ParserWarningSeverity.INFO, "")))
                     .isInstanceOf(UnsupportedOperationException.class);
         }
 
@@ -191,16 +201,16 @@ class TrustDocumentContractTest {
             var entry = new TrustSourceMapEntry(0, 5, "unit-1", evidence);
             var sourceMap = new ArrayList<TrustSourceMapEntry>();
             sourceMap.add(entry);
-            var rendered = new TrustRenderedDocument(
-                    "markdown_clean", "hello", "sha256:source", "sha256:content", sourceMap);
+            var rendered =
+                    new TrustRenderedDocument("markdown_clean", "hello", "sha256:source", "sha256:content", sourceMap);
             evidence.clear();
             sourceMap.clear();
 
             assertThat(rendered.sourceMap()).containsExactly(entry);
             assertThat(rendered.sourceMap().getFirst().evidenceSpanIds()).containsExactly("span-1");
-            assertThatThrownBy(() -> rendered.sourceMap().add(entry))
-                    .isInstanceOf(UnsupportedOperationException.class);
-            assertThatThrownBy(() -> rendered.sourceMap().getFirst().evidenceSpanIds().add("span-2"))
+            assertThatThrownBy(() -> rendered.sourceMap().add(entry)).isInstanceOf(UnsupportedOperationException.class);
+            assertThatThrownBy(() ->
+                            rendered.sourceMap().getFirst().evidenceSpanIds().add("span-2"))
                     .isInstanceOf(UnsupportedOperationException.class);
         }
     }
@@ -215,8 +225,7 @@ class TrustDocumentContractTest {
     }
 
     private static TrustDocumentBody sampleBody(List<TrustUnit> units) {
-        return new TrustDocumentBody(
-                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page-1")), units, List.of());
+        return new TrustDocumentBody(List.of(new TrustPage(1, 1000, 1000, true, "sha256:page-1")), units, List.of());
     }
 
     private static ParserRun sampleParserRun(List<ParserWarning> warnings) {

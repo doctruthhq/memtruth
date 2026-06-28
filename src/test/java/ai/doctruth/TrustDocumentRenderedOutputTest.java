@@ -3,7 +3,6 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +11,7 @@ import java.util.Optional;
 
 import ai.doctruth.spi.SignatureProvider;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -73,15 +73,11 @@ class TrustDocumentRenderedOutputTest {
         var parsed = new ParsedDocument(
                 "doc-gfm",
                 List.of(
-                        new TextSection(
-                                """
+                        new TextSection("""
                                 ```java
                                 System.out.println("ok");
                                 ```
-                                """,
-                                LOC,
-                                BlockKind.BODY,
-                                Optional.of(BOX)),
+                                """, LOC, BlockKind.BODY, Optional.of(BOX)),
                         new TextSection("[Spec](https://example.com/spec)", LOC, BlockKind.BODY, Optional.of(BOX)),
                         new TableSection(
                                 List.of(List.of("Skill [A]", "Notes"), List.of("Uses a | b", "Backslash \\\\ ok")),
@@ -198,10 +194,8 @@ class TrustDocumentRenderedOutputTest {
     @Test
     @DisplayName("content_blocks renders figure caption units as caption blocks")
     void contentBlocksRenderFigureCaptionsAsCaptionBlocks() throws Exception {
-        var parsed = new ParsedDocument(
-                "doc-caption",
-                List.of(new FigureSection("Figure 1. Revenue trend", LOC)),
-                META);
+        var parsed =
+                new ParsedDocument("doc-caption", List.of(new FigureSection("Figure 1. Revenue trend", LOC)), META);
         var doc = TrustDocument.fromParsed(parsed, "sha256:caption", PARSER_RUN);
         var out = new java.io.StringWriter();
 
@@ -255,10 +249,11 @@ class TrustDocumentRenderedOutputTest {
 
         String compact = doc.toCompactLlm();
 
-        assertThat(compact.lines()).contains(
-                "t|table-0001|p1|rows=2|cols=2",
-                "w|parser|WARNING|layout_fallback|layout model unavailable",
-                "w|unit-0001|WARNING|low_confidence_anchor|bbox was estimated");
+        assertThat(compact.lines())
+                .contains(
+                        "t|table-0001|p1|rows=2|cols=2",
+                        "w|parser|WARNING|layout_fallback|layout model unavailable",
+                        "w|unit-0001|WARNING|low_confidence_anchor|bbox was estimated");
         assertThat(compact).contains("u|unit-0002|TABLE_CELL|p1|span-0002|Company");
         assertThat(compact).contains("u|unit-0005|TABLE_CELL|p1|span-0005|Engineer");
     }
@@ -341,9 +336,7 @@ class TrustDocumentRenderedOutputTest {
                 new TrustUnitLocation(1, Optional.of(BOX), index),
                 new TrustUnitContent(text, sourceObjectId),
                 new TrustUnitEvidence(
-                        List.of("span-%04d".formatted(index)),
-                        new Confidence(1.0, "test unit"),
-                        List.of()));
+                        List.of("span-%04d".formatted(index)), new Confidence(1.0, "test unit"), List.of()));
     }
 
     private static TrustDocument documentWithWarnings() {

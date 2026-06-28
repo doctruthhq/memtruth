@@ -31,8 +31,10 @@ final class PdfLineSegmentSplitPolicy {
         if (gap > splitGap) {
             return true;
         }
-        String currentText = PdfTextPositionMetrics.renderWithInferredSpaces(current).strip();
-        return gap > CONTACT_DATUM_SPLIT_GAP && CONTACT_DATUM.matcher(currentText).matches();
+        String currentText =
+                PdfTextPositionMetrics.renderWithInferredSpaces(current).strip();
+        return gap > CONTACT_DATUM_SPLIT_GAP
+                && CONTACT_DATUM.matcher(currentText).matches();
     }
 
     static boolean isUnrelatedLateralJump(
@@ -80,7 +82,9 @@ final class PdfLineSegmentSplitPolicy {
             List<TextPosition> current, PdfLineSegment lastLine, PdfLineSegment line) {
         return isSidebarBoundary(lastLine.text)
                 || isSidebarBoundary(line.text)
-                || PdfVisualTextLayout.renderGroup(current).lines().anyMatch(PdfLineSegmentSplitPolicy::isSidebarBoundary);
+                || PdfVisualTextLayout.renderGroup(current)
+                        .lines()
+                        .anyMatch(PdfLineSegmentSplitPolicy::isSidebarBoundary);
     }
 
     private static boolean isSidebarBoundary(String text) {

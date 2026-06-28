@@ -10,4 +10,3 @@ public enum ParserWarningSeverity {
     WARNING,
     SEVERE
 }
-

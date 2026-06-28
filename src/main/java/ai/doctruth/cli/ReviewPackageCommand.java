@@ -56,16 +56,21 @@ final class ReviewPackageCommand {
 
     private static void writeLayeredArtifacts(Options options, TrustDocument document) throws CliException {
         TrustDocumentCliWriters.writeToFile(
-                options.out().resolve("content_blocks.json"), writer -> TrustDocumentCliWriters.writeContentBlocks(document, writer));
+                options.out().resolve("content_blocks.json"),
+                writer -> TrustDocumentCliWriters.writeContentBlocks(document, writer));
         TrustDocumentCliWriters.writeToFile(
-                options.out().resolve("parse_trace.json"), writer -> TrustDocumentCliWriters.writeParseTrace(document, writer));
+                options.out().resolve("parse_trace.json"),
+                writer -> TrustDocumentCliWriters.writeParseTrace(document, writer));
         TrustDocumentCliWriters.writeToFile(
-                options.out().resolve("layout-debug.html"), writer -> TrustDocumentCliWriters.writeLayoutDebugHtml(document, writer));
+                options.out().resolve("layout-debug.html"),
+                writer -> TrustDocumentCliWriters.writeLayoutDebugHtml(document, writer));
         TrustDocumentCliWriters.writeToFile(
-                options.out().resolve("span-debug.html"), writer -> TrustDocumentCliWriters.writeSpanDebugHtml(document, writer));
+                options.out().resolve("span-debug.html"),
+                writer -> TrustDocumentCliWriters.writeSpanDebugHtml(document, writer));
     }
 
-    private static TrustDocument withRenderedPageHashes(TrustDocument document, java.util.List<TrustPage> renderedPages) {
+    private static TrustDocument withRenderedPageHashes(
+            TrustDocument document, java.util.List<TrustPage> renderedPages) {
         Map<Integer, TrustPage> renderedByPage =
                 renderedPages.stream().collect(Collectors.toMap(TrustPage::pageNumber, page -> page));
         var pages = new ArrayList<TrustPage>();
@@ -73,7 +78,8 @@ final class ReviewPackageCommand {
             var rendered = renderedByPage.get(page.pageNumber());
             pages.add(rendered == null ? page : rendered);
         }
-        var body = new TrustDocumentBody(pages, document.body().units(), document.body().tables());
+        var body = new TrustDocumentBody(
+                pages, document.body().units(), document.body().tables());
         return new TrustDocument(
                 document.docId(), document.source(), body, document.parserRun(), document.auditGradeStatus());
     }
@@ -105,8 +111,8 @@ final class ReviewPackageCommand {
         writeJson(options.pagesDir().resolve("page-images.json"), root);
     }
 
-    private static void writeReviewHtml(
-            Options options, TrustDocument document, java.util.List<TrustPage> pages) throws CliException {
+    private static void writeReviewHtml(Options options, TrustDocument document, java.util.List<TrustPage> pages)
+            throws CliException {
         try {
             Files.createDirectories(options.out());
             try (var writer = Files.newBufferedWriter(options.out().resolve("review.html"))) {

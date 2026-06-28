@@ -35,4 +35,3 @@ public record TrustTable(
         cells = List.copyOf(cells);
     }
 }
-

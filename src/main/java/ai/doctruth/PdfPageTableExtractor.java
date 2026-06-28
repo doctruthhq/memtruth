@@ -17,7 +17,9 @@ final class PdfPageTableExtractor {
     }
 
     static List<TableSection> detectTablesOnPage(PDDocument pdf, int pageNumber) throws IOException {
-        return detectTableBlocksOnPage(pdf, pageNumber).stream().map(TableBlock::section).toList();
+        return detectTableBlocksOnPage(pdf, pageNumber).stream()
+                .map(TableBlock::section)
+                .toList();
     }
 
     static List<TableBlock> detectTableBlocksOnPage(PDDocument pdf, int pageNumber) throws IOException {
@@ -27,8 +29,12 @@ final class PdfPageTableExtractor {
         }
         var page = pdf.getPage(pageNumber - 1).getMediaBox();
         var lines = PdfPageGraphicsExtractor.extractGridLines(pdf.getPage(pageNumber - 1));
-        var xs = clustered(lines.vertical().stream().map(PdfPageGraphicsExtractor.VerticalSeparator::x).toList());
-        var ys = clustered(lines.horizontal().stream().map(PdfPageGraphicsExtractor.HorizontalSeparator::y).toList());
+        var xs = clustered(lines.vertical().stream()
+                .map(PdfPageGraphicsExtractor.VerticalSeparator::x)
+                .toList());
+        var ys = clustered(lines.horizontal().stream()
+                .map(PdfPageGraphicsExtractor.HorizontalSeparator::y)
+                .toList());
         if (xs.size() < 2 || ys.size() < 2 || !looksLikeTableGrid(lines, xs, ys)) {
             return PdfBorderlessTableExtractor.detect(positions, pageNumber, page.getWidth(), page.getHeight());
         }
@@ -64,10 +70,7 @@ final class PdfPageTableExtractor {
         private boolean contains(BoundingBox box) {
             double x = (box.x0() + box.x1()) / 2.0;
             double y = (box.y0() + box.y1()) / 2.0;
-            return x >= boundingBox.x0()
-                    && x <= boundingBox.x1()
-                    && y >= boundingBox.y0()
-                    && y <= boundingBox.y1();
+            return x >= boundingBox.x0() && x <= boundingBox.x1() && y >= boundingBox.y0() && y <= boundingBox.y1();
         }
     }
 
@@ -119,7 +122,12 @@ final class PdfPageTableExtractor {
     }
 
     private static int mergedRowEnd(
-            PdfPageGraphicsExtractor.GridLines lines, List<Double> xs, List<Double> ys, int row, int column, int endColumn) {
+            PdfPageGraphicsExtractor.GridLines lines,
+            List<Double> xs,
+            List<Double> ys,
+            int row,
+            int column,
+            int endColumn) {
         int end = row;
         double x0 = xs.get(column);
         double x1 = xs.get(endColumn + 1);
@@ -141,16 +149,14 @@ final class PdfPageTableExtractor {
             PdfPageGraphicsExtractor.GridLines lines, double y, double x0, double x1) {
         return lines.horizontal().stream()
                 .filter(line -> Math.abs(line.y() - y) <= LINE_CLUSTER_EPSILON)
-                .anyMatch(line -> line.x0() <= x0 + LINE_CLUSTER_EPSILON
-                        && line.x1() >= x1 - LINE_CLUSTER_EPSILON);
+                .anyMatch(line -> line.x0() <= x0 + LINE_CLUSTER_EPSILON && line.x1() >= x1 - LINE_CLUSTER_EPSILON);
     }
 
     private static boolean verticalBoundaryCovers(
             PdfPageGraphicsExtractor.GridLines lines, double x, double y0, double y1) {
         return lines.vertical().stream()
                 .filter(line -> Math.abs(line.x() - x) <= LINE_CLUSTER_EPSILON)
-                .anyMatch(line -> line.y0() <= y0 + LINE_CLUSTER_EPSILON
-                        && line.y1() >= y1 - LINE_CLUSTER_EPSILON);
+                .anyMatch(line -> line.y0() <= y0 + LINE_CLUSTER_EPSILON && line.y1() >= y1 - LINE_CLUSTER_EPSILON);
     }
 
     private static List<List<String>> rowsFromGrid(
@@ -160,7 +166,14 @@ final class PdfPageTableExtractor {
             var cells = new ArrayList<String>(java.util.Collections.nCopies(columnCount, ""));
             for (var cell : detectedCells) {
                 if (cell.range().row() == row) {
-                    cells.set(cell.range().column(), cellText(positions, cell.box().x0(), cell.box().x1(), cell.box().y0(), cell.box().y1()));
+                    cells.set(
+                            cell.range().column(),
+                            cellText(
+                                    positions,
+                                    cell.box().x0(),
+                                    cell.box().x1(),
+                                    cell.box().y0(),
+                                    cell.box().y1()));
                 }
             }
             rows.add(List.copyOf(cells));
@@ -212,9 +225,18 @@ final class PdfPageTableExtractor {
         if (columns < 7) {
             return false;
         }
-        long nonBlank = rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).count();
-        long numeric = rows.stream().flatMap(List::stream).filter(PdfPageTableExtractor::isNumericCell).count();
-        long prose = rows.stream().flatMap(List::stream).filter(PdfPageTableExtractor::looksLikeProseShard).count();
+        long nonBlank = rows.stream()
+                .flatMap(List::stream)
+                .filter(cell -> !cell.isBlank())
+                .count();
+        long numeric = rows.stream()
+                .flatMap(List::stream)
+                .filter(PdfPageTableExtractor::isNumericCell)
+                .count();
+        long prose = rows.stream()
+                .flatMap(List::stream)
+                .filter(PdfPageTableExtractor::looksLikeProseShard)
+                .count();
         return nonBlank >= 18 && numeric <= 2 && prose * 3 >= nonBlank;
     }
 
@@ -223,7 +245,8 @@ final class PdfPageTableExtractor {
     }
 
     private static boolean looksLikeProseShard(String text) {
-        return text.strip().toLowerCase(java.util.Locale.ROOT)
+        return text.strip()
+                .toLowerCase(java.util.Locale.ROOT)
                 .matches(".*\\b(the|and|of|to|in|as|by|for|with|from|that|this)\\b.*");
     }
 
@@ -237,7 +260,10 @@ final class PdfPageTableExtractor {
     }
 
     private static long nonBlankCellCount(List<List<String>> rows) {
-        return rows.stream().flatMap(List::stream).filter(cell -> !cell.isBlank()).count();
+        return rows.stream()
+                .flatMap(List::stream)
+                .filter(cell -> !cell.isBlank())
+                .count();
     }
 
     private static BoundingBox normalizedBox(List<Double> xs, List<Double> ys, double pageWidth, double pageHeight) {
@@ -252,13 +278,14 @@ final class PdfPageTableExtractor {
             List<DetectedCell> detectedCells, int pageNumber, double pageWidth, double pageHeight) {
         var regions = new ArrayList<TableCellRegion>(detectedCells.size());
         for (var cell : detectedCells) {
-            normalizedCellBox(cell.box(), pageWidth, pageHeight).ifPresent(box -> regions.add(new TableCellRegion(
-                    pageNumber,
-                    cell.range().row(),
-                    cell.range().column(),
-                    cell.range().rowEnd(),
-                    cell.range().columnEnd(),
-                    box)));
+            normalizedCellBox(cell.box(), pageWidth, pageHeight)
+                    .ifPresent(box -> regions.add(new TableCellRegion(
+                            pageNumber,
+                            cell.range().row(),
+                            cell.range().column(),
+                            cell.range().rowEnd(),
+                            cell.range().columnEnd(),
+                            box)));
         }
         return List.copyOf(regions);
     }

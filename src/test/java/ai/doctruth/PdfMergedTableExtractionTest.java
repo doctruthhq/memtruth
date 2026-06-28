@@ -28,13 +28,13 @@ class PdfMergedTableExtractionTest {
 
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
-        assertThat(table.cells()).extracting(TrustTableCell::text)
-                .containsExactly("Header", "A", "B");
+        assertThat(table.cells()).extracting(TrustTableCell::text).containsExactly("Header", "A", "B");
         assertThat(table.cells().get(0).rowRange()).isEqualTo(new TrustCellRange(0, 0));
         assertThat(table.cells().get(0).columnRange()).isEqualTo(new TrustCellRange(0, 1));
         assertThat(table.cells().get(1).columnRange()).isEqualTo(new TrustCellRange(0, 0));
         assertThat(table.cells().get(2).columnRange()).isEqualTo(new TrustCellRange(1, 1));
-        assertThat(table.cells()).allSatisfy(cell -> assertThat(cell.boundingBox()).isPresent());
+        assertThat(table.cells())
+                .allSatisfy(cell -> assertThat(cell.boundingBox()).isPresent());
         assertThat(document.body().units())
                 .filteredOn(unit -> unit.kind() == TrustUnitKind.TABLE_CELL)
                 .hasSize(3);
@@ -46,15 +46,15 @@ class PdfMergedTableExtractionTest {
 
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
-        assertThat(table.cells()).extracting(TrustTableCell::text)
-                .containsExactly("Role", "Top", "Bottom");
+        assertThat(table.cells()).extracting(TrustTableCell::text).containsExactly("Role", "Top", "Bottom");
         assertThat(table.cells().get(0).rowRange()).isEqualTo(new TrustCellRange(0, 1));
         assertThat(table.cells().get(0).columnRange()).isEqualTo(new TrustCellRange(0, 0));
         assertThat(table.cells().get(1).rowRange()).isEqualTo(new TrustCellRange(0, 0));
         assertThat(table.cells().get(1).columnRange()).isEqualTo(new TrustCellRange(1, 1));
         assertThat(table.cells().get(2).rowRange()).isEqualTo(new TrustCellRange(1, 1));
         assertThat(table.cells().get(2).columnRange()).isEqualTo(new TrustCellRange(1, 1));
-        assertThat(table.cells()).allSatisfy(cell -> assertThat(cell.boundingBox()).isPresent());
+        assertThat(table.cells())
+                .allSatisfy(cell -> assertThat(cell.boundingBox()).isPresent());
         assertThat(document.body().units())
                 .filteredOn(unit -> unit.kind() == TrustUnitKind.TABLE_CELL)
                 .hasSize(3);
@@ -67,7 +67,8 @@ class PdfMergedTableExtractionTest {
         assertThat(document.body().tables()).hasSize(1);
         var table = document.body().tables().getFirst();
         assertThat(table.pageNumber()).isEqualTo(1);
-        assertThat(table.cells()).extracting(TrustTableCell::text)
+        assertThat(table.cells())
+                .extracting(TrustTableCell::text)
                 .containsExactly("Name", "Score", "Alex", "98", "Bea", "97");
         assertThat(table.cells().get(0).rowRange()).isEqualTo(new TrustCellRange(0, 0));
         assertThat(table.cells().get(2).rowRange()).isEqualTo(new TrustCellRange(1, 1));
@@ -77,7 +78,8 @@ class PdfMergedTableExtractionTest {
                 .filter(unit -> unit.kind() == TrustUnitKind.TABLE_CELL)
                 .toList();
         assertThat(tableCellUnits).hasSize(6);
-        assertThat(tableCellUnits).extracting(unit -> unit.content().text())
+        assertThat(tableCellUnits)
+                .extracting(unit -> unit.content().text())
                 .containsExactly("Name", "Score", "Alex", "98", "Bea", "97");
         assertThat(tableCellUnits.get(0).location().page()).isEqualTo(1);
         assertThat(tableCellUnits.get(4).location().page()).isEqualTo(2);
@@ -95,10 +97,7 @@ class PdfMergedTableExtractionTest {
     void benchmarkScoresMergedTableCellSpanRecovery() throws Exception {
         var pdf = writeMergedCellTablePdf();
         var benchmarkCase = ParserBenchmarkCase.fromPdf(
-                "merged-table-real-pdf",
-                pdf,
-                "| Header |  |\n| --- | --- |\n| A | B |\n",
-                expectedDocument());
+                "merged-table-real-pdf", pdf, "| Header |  |\n| --- | --- |\n| A | B |\n", expectedDocument());
 
         var result = ParserBenchmarkRunner.evaluate(List.of(benchmarkCase)).getFirst();
 
@@ -244,11 +243,7 @@ class PdfMergedTableExtractionTest {
 
     private static TrustDocument parsePdfBox(Path pdf) throws ParseException {
         var request = new ParserRequest(
-                pdf,
-                TrustDocumentParser.sha256SourceFile(pdf),
-                ParserPreset.LITE.parserRun("pdfbox"),
-                true,
-                false);
+                pdf, TrustDocumentParser.sha256SourceFile(pdf), ParserPreset.LITE.parserRun("pdfbox"), true, false);
         return new PdfBoxParserBackend().parse(request).withEvaluatedAuditGrade();
     }
 
@@ -269,9 +264,7 @@ class PdfMergedTableExtractionTest {
                                 "sha256:expected",
                                 new DocumentMetadata("expected.pdf", 1, Optional.empty())),
                         new TrustDocumentBody(
-                                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")),
-                                List.of(),
-                                List.of(table)),
+                                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")), List.of(), List.of(table)),
                         new ParserRun("1.0.0", "table-lite", "fixture", List.of(), List.of()),
                         AuditGradeStatus.UNKNOWN)
                 .withEvaluatedAuditGrade();
@@ -294,9 +287,7 @@ class PdfMergedTableExtractionTest {
                                 "sha256:expected",
                                 new DocumentMetadata("expected.pdf", 1, Optional.empty())),
                         new TrustDocumentBody(
-                                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")),
-                                List.of(),
-                                List.of(table)),
+                                List.of(new TrustPage(1, 1000, 1000, true, "sha256:page")), List.of(), List.of(table)),
                         new ParserRun("1.0.0", "table-lite", "fixture", List.of(), List.of()),
                         AuditGradeStatus.UNKNOWN)
                 .withEvaluatedAuditGrade();

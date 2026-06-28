@@ -12,18 +12,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ai.doctruth.BlockKind;
 import ai.doctruth.BoundingBox;
 import ai.doctruth.DocumentMetadata;
-import ai.doctruth.ParserRun;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.ParsedSection;
+import ai.doctruth.ParserRun;
 import ai.doctruth.SourceLocation;
 import ai.doctruth.TextSection;
 import ai.doctruth.TrustDocument;
 import ai.doctruth.TrustRenderedDocument;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 /** CLI file-output contracts for large TrustDocument render paths. */
@@ -101,13 +101,16 @@ class TrustDocumentCliWritersTest {
 
     @Test
     void parseTraceUsesDocumentParserRunId() throws Exception {
-        var doc = largeDocument(new ParserRun(
-                "parser-run-rust-42", "1.0.0", "lite", "rust-sidecar", List.of("layout:v2"), List.of()));
+        var doc = largeDocument(
+                new ParserRun("parser-run-rust-42", "1.0.0", "lite", "rust-sidecar", List.of("layout:v2"), List.of()));
         var writer = new StringWriter();
 
         TrustDocumentCliWriters.writeParseTrace(doc, writer);
 
-        assertThat(MAPPER.readTree(writer.toString()).path("parseTrace").path("parserRunId").asText())
+        assertThat(MAPPER.readTree(writer.toString())
+                        .path("parseTrace")
+                        .path("parserRunId")
+                        .asText())
                 .isEqualTo("parser-run-rust-42");
     }
 
@@ -125,11 +128,8 @@ class TrustDocumentCliWritersTest {
                     Optional.of(new BoundingBox(0, i, 900, i + 8))));
         }
         var parsed = new ParsedDocument(
-                "doc-cli-large",
-                sections,
-                new DocumentMetadata("cli-large.pdf", 1, Optional.empty()));
-        return TrustDocument.fromParsed(parsed, "sha256:cli-large", parserRun)
-                .withEvaluatedAuditGrade();
+                "doc-cli-large", sections, new DocumentMetadata("cli-large.pdf", 1, Optional.empty()));
+        return TrustDocument.fromParsed(parsed, "sha256:cli-large", parserRun).withEvaluatedAuditGrade();
     }
 
     private static final class MaxWriteSizeWriter extends Writer {

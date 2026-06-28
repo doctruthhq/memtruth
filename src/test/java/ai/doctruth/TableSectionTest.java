@@ -80,10 +80,7 @@ class TableSectionTest {
             var region = new TableCellRegion(0, 0, new BoundingBox(10, 20, 100, 120));
 
             var section = new TableSection(
-                    List.of(List.of("x")),
-                    LOC,
-                    Optional.of(new BoundingBox(0, 0, 200, 200)),
-                    List.of(region));
+                    List.of(List.of("x")), LOC, Optional.of(new BoundingBox(0, 0, 200, 200)), List.of(region));
 
             assertThat(section.cellRegions()).containsExactly(region);
         }

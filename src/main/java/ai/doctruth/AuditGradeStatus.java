@@ -10,4 +10,3 @@ public enum AuditGradeStatus {
     AUDIT_GRADE,
     NOT_AUDIT_GRADE
 }
-

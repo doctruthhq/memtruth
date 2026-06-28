@@ -77,17 +77,20 @@ public final class ParserBenchmarkRunner {
                 .filter(result -> result.metrics().containsKey("compact_llm_size_reduction"))
                 .map(result -> result.metric("compact_llm_size_reduction"))
                 .toList();
-        compactReductions.stream().min(Double::compareTo).ifPresent(value ->
-                aggregate.put("compact_llm_size_reduction_min", value));
+        compactReductions.stream()
+                .min(Double::compareTo)
+                .ifPresent(value -> aggregate.put("compact_llm_size_reduction_min", value));
         return Map.copyOf(aggregate);
     }
 
     private static ParserBenchmarkResult evaluateOne(ParserBenchmarkCase benchmarkCase) {
         var metrics = new LinkedHashMap<String, Double>();
-        metrics.put("reading_order_f1", readingOrderScore(
-                benchmarkCase.document().toMarkdownClean(), benchmarkCase.expectedMarkdown()));
-        metrics.put("section_boundary_f1", sectionBoundaryF1(
-                benchmarkCase.document().toMarkdownClean(), benchmarkCase.expectedMarkdown()));
+        metrics.put(
+                "reading_order_f1",
+                readingOrderScore(benchmarkCase.document().toMarkdownClean(), benchmarkCase.expectedMarkdown()));
+        metrics.put(
+                "section_boundary_f1",
+                sectionBoundaryF1(benchmarkCase.document().toMarkdownClean(), benchmarkCase.expectedMarkdown()));
         metrics.put("quote_anchor_accuracy", quoteAnchorAccuracy(benchmarkCase.document()));
         metrics.put("bbox_coverage", bboxCoverage(benchmarkCase.document()));
         metrics.put("compact_llm_size_reduction", compactLlmSizeReduction(benchmarkCase.document()));
@@ -413,7 +416,8 @@ public final class ParserBenchmarkRunner {
         if (expectedCells.isEmpty()) {
             return actualCells.isEmpty() ? 1.0 : 0.0;
         }
-        long truePositives = actualCells.stream().filter(expectedCells::contains).count();
+        long truePositives =
+                actualCells.stream().filter(expectedCells::contains).count();
         if (truePositives == 0) {
             return 0.0;
         }
@@ -463,7 +467,9 @@ public final class ParserBenchmarkRunner {
             return 0.0;
         }
         var actualWarnings = severeWarningCodes(actual);
-        long missed = expectedWarnings.stream().filter(code -> !actualWarnings.contains(code)).count();
+        long missed = expectedWarnings.stream()
+                .filter(code -> !actualWarnings.contains(code))
+                .count();
         return missed / (double) expectedWarnings.size();
     }
 

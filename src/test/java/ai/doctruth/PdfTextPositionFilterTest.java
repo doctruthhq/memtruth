@@ -127,11 +127,7 @@ class PdfTextPositionFilterTest {
 
         var filtered = PdfTextPositionFilter.filterBoxes(List.of(first, differentSize, separated), 600, 800);
 
-        assertThat(filtered)
-                .containsExactly(
-                        position("Total due", 100, 200, 40, 12),
-                        differentSize,
-                        separated);
+        assertThat(filtered).containsExactly(position("Total due", 100, 200, 40, 12), differentSize, separated);
     }
 
     @Test
@@ -139,7 +135,8 @@ class PdfTextPositionFilterTest {
         var boxes = List.of(position("A \uFFFD", 10, 20, 30, 12), position(" \uFFFD  B ", 40, 20, 30, 12));
 
         assertThat(PdfTextPositionFilter.replacementCharacterRatio(boxes)).isEqualTo(2.0 / 6.0);
-        assertThat(PdfTextPositionFilter.hasHighReplacementCharacterRatio(boxes)).isTrue();
+        assertThat(PdfTextPositionFilter.hasHighReplacementCharacterRatio(boxes))
+                .isTrue();
     }
 
     private static PdfTextPositionFilter.TextBox position(

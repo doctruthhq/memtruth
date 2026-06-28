@@ -435,7 +435,11 @@ class TrustDocumentCliOutputProfileTest {
         int code = withSystemProperty(
                 "doctruth.runtime.disableSourceDiscovery",
                 "true",
-                () -> auto.run(new String[] {"parse", pdf.toString(), "--backend", "auto", "--format", "json"}));
+                () -> withSystemProperty(
+                        "doctruth.runtime.disableEnvironmentDiscovery",
+                        "true",
+                        () -> auto.run(
+                                new String[] {"parse", pdf.toString(), "--backend", "auto", "--format", "json"})));
 
         assertThat(code).isEqualTo(1);
         assertThat(auto.err()).contains("RUST_RUNTIME_NOT_CONFIGURED").contains("Rust runtime is required");
@@ -527,8 +531,12 @@ class TrustDocumentCliOutputProfileTest {
         int missingRuntimeCode = withSystemProperty(
                 "doctruth.runtime.disableSourceDiscovery",
                 "true",
-                () -> missingRuntime.run(
-                        new String[] {"parse", pdf.toString(), "--backend", "sidecar", "--format", "markdown"}));
+                () -> withSystemProperty(
+                        "doctruth.runtime.disableEnvironmentDiscovery",
+                        "true",
+                        () -> missingRuntime.run(new String[] {
+                            "parse", pdf.toString(), "--backend", "sidecar", "--format", "markdown"
+                        })));
         int summaryCode = missingFormat.run(
                 new String[] {"parse", pdf.toString(), "--backend", "sidecar", "--runtime", runtime.toString()});
         int runtimeAsDefaultCode = runtimeAsDefault.run(

@@ -52,8 +52,13 @@ jobs:
             'paddleocr==3.7.0' \
             'paddlepaddle==3.3.1'
 
+      - name: Build Rust runtime
+        run: cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --bins
+
       - name: Verify release commit
         run: mvn -B -ntp spotless:check checkstyle:check verify -P recorded
+        env:
+          DOCTRUTH_RUNTIME_COMMAND: ${{ github.workspace }}/runtime/doctruth-runtime/target/debug/doctruth-runtime
 
       - name: Package CLI release artifacts
         run: scripts/package-cli-release.sh --version "${GITHUB_REF_NAME#v}"

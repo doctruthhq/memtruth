@@ -35,8 +35,13 @@ jobs:
       - name: Style and static checks
         run: mvn -B -ntp spotless:check checkstyle:check
 
+      - name: Build Rust runtime
+        run: cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --bins
+
       - name: Verify (unit + integration + recorded LLM + coverage)
         run: mvn -B -ntp verify -P recorded
+        env:
+          DOCTRUTH_RUNTIME_COMMAND: ${{ github.workspace }}/runtime/doctruth-runtime/target/debug/doctruth-runtime
 
       - name: Resolve project version
         run: echo "PROJECT_VERSION=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"

@@ -101,21 +101,23 @@ class TrustDocumentSdkParserContractTest {
         var pdf = writePdf("Missing sidecar runtime.");
 
         withSystemProperty("doctruth.runtime.disableSourceDiscovery", "true", () -> {
-            assertThatThrownBy(() -> DocTruth.withProvider(provider())
-                            .parsePdf(pdf)
-                            .withParser(ParserPreset.LITE)
-                            .backend(ParserBackendMode.AUTO)
-                            .parse())
-                    .isInstanceOf(ParseException.class)
-                    .hasMessageContaining("Rust runtime is required");
+            withSystemProperty("doctruth.runtime.disableEnvironmentDiscovery", "true", () -> {
+                assertThatThrownBy(() -> DocTruth.withProvider(provider())
+                                .parsePdf(pdf)
+                                .withParser(ParserPreset.LITE)
+                                .backend(ParserBackendMode.AUTO)
+                                .parse())
+                        .isInstanceOf(ParseException.class)
+                        .hasMessageContaining("Rust runtime is required");
 
-            assertThatThrownBy(() -> DocTruth.withProvider(provider())
-                            .parsePdf(pdf)
-                            .withParser(ParserPreset.LITE)
-                            .backend(ParserBackendMode.SIDECAR)
-                            .parse())
-                    .isInstanceOf(ParseException.class)
-                    .hasMessageContaining("Rust runtime is required");
+                assertThatThrownBy(() -> DocTruth.withProvider(provider())
+                                .parsePdf(pdf)
+                                .withParser(ParserPreset.LITE)
+                                .backend(ParserBackendMode.SIDECAR)
+                                .parse())
+                        .isInstanceOf(ParseException.class)
+                        .hasMessageContaining("Rust runtime is required");
+            });
         });
     }
 

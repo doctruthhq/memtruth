@@ -14,6 +14,7 @@ public final class DocTruthRuntime {
 
     public static final String PROPERTY = "doctruth.runtime.command";
     public static final String DISABLE_SOURCE_DISCOVERY_PROPERTY = "doctruth.runtime.disableSourceDiscovery";
+    public static final String DISABLE_ENVIRONMENT_DISCOVERY_PROPERTY = "doctruth.runtime.disableEnvironmentDiscovery";
     public static final String ENV = "DOCTRUTH_RUNTIME_COMMAND";
 
     private DocTruthRuntime() {
@@ -43,10 +44,16 @@ public final class DocTruthRuntime {
     }
 
     private static Optional<Path> fromProcessEnv() {
+        if (Boolean.getBoolean(DISABLE_ENVIRONMENT_DISCOVERY_PROPERTY)) {
+            return Optional.empty();
+        }
         return pathFrom(System.getenv(ENV));
     }
 
     private static Optional<Path> fromEnvMap(Map<String, String> env) {
+        if (Boolean.getBoolean(DISABLE_ENVIRONMENT_DISCOVERY_PROPERTY)) {
+            return Optional.empty();
+        }
         return pathFrom(env.get(ENV));
     }
 

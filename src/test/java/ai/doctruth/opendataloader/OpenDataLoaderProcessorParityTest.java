@@ -20,6 +20,7 @@ class OpenDataLoaderProcessorParityTest {
             "Duplicate text suppression",
             "XY-Cut geometry reading order",
             "Paragraph and line merging",
+            "List grouping",
             "Heading promotion and hierarchy",
             "Header/footer furniture",
             "Table detection",

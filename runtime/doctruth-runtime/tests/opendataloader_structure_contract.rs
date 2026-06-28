@@ -65,6 +65,36 @@ fn structure_probe_assigns_numbered_heading_levels() {
 }
 
 #[test]
+fn structure_probe_merges_bare_numbered_heading_markers() {
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+    let output = cmd
+        .write_stdin(
+            json!({
+                "command": "opendataloader_structure_probe",
+                "lines": [
+                    {"text": "8", "fontSize": 18.0},
+                    {"text": "Choosing between Observer Models and Rejecting Participants", "fontSize": 18.0},
+                    {"text": "Two further reasonable questions one might ask are:", "fontSize": 10.0}
+                ]
+            })
+            .to_string(),
+        )
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["blocks"][0]["type"], "heading");
+    assert_eq!(
+        value["blocks"][0]["text"],
+        "8 Choosing between Observer Models and Rejecting Participants"
+    );
+    assert_eq!(value["blocks"][0]["level"], 1);
+    assert_eq!(value["blocks"][1]["type"], "paragraph");
+}
+
+#[test]
 fn structure_probe_rejects_empty_numbered_heading_segments() {
     let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
     let output = cmd

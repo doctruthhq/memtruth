@@ -36,22 +36,24 @@ replacement boundary. Python/OpenDataLoader original runners are oracle-only.
 - Report:
   `docs/parser/opendataloader-processor-gap-report.md`
 - Artifacts:
-  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T153359Z/full200/`
-- DocTruth revision used for run: `f68a220`
+  `third_party/opendataloader-bench/prediction/doctruth-java-core-20260628T193415Z/full200/`
+- DocTruth revision used for run: local `feat/opendataloader-parity-coverage`
+  worktree with HeadingProcessor bare numbered/activity split repair
 - Runtime profile: `edge-model`
 - Corpus: 200 OpenDataLoader Bench PDFs
 - Prediction: 200 parsed, 0 failed
-- Overall mean: `0.795795`
-- NID mean: `0.913532`
+- Overall mean: `0.804256`
+- NID mean: `0.913530`
 - TEDS mean: `0.781018`
-- MHS mean: `0.495476`
-- Resource: mean `103.1292` ms/doc, one OCR model route
+- MHS mean: `0.526551`
+- Resource: mean `143.490506` ms/doc, one OCR model route
   (`01030000000141`), no Python/Torch/Docling production residency
 - Interpretation: current Java/OpenDataLoader-compatible quality core clears
   the initial local acceptance baseline, but it is still not OpenDataLoader
-  hybrid parity. The next gaps are OCR/model-backed tables, multi-segment
-  rowspans, remaining heading hierarchy misses, and broader paragraph/list
-  parity.
+  hybrid parity. This run improves heading hierarchy by promoting bare numbered
+  chapter headings and activity headings in the Java parser core. The next gaps
+  are OCR/model-backed tables, multi-segment rowspans, remaining heading
+  hierarchy misses, and broader paragraph/list parity.
 
 ## Next Processor Work
 
@@ -60,11 +62,11 @@ new sample repairs are accepted.
 
 | Processor | Metric bucket | Behavior buckets | Current cases | Current metric | Next action |
 | --- | --- | --- | --- | --- | --- |
-| HeadingProcessor | heading_hierarchy | heading_hierarchy | 57 | mhs | port generalized heading hierarchy reconstruction before additional case repairs |
+| HeadingProcessor | heading_hierarchy | heading_hierarchy | 54 | mhs | continue generalized heading hierarchy reconstruction for remaining non-numbered and complex section tree misses |
 | TaggedDocumentProcessor | reading_order | two_column_reading_order; sidebar_reading_order | 15 | nid | port generalized tagged reading-order reconstruction for two-column and sidebar layouts |
 | TableStructureNormalizer | table_structure | bordered_tables; borderless_tables | 5 | teds | port generalized table structure normalization before adding more table case repairs |
-| SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 18 | overall/teds | port generalized false-table and text-noise overlap rejection gates |
-| ContentFilterProcessor | overall_quality | text_noise_filtering | 18 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |
+| SpecialTableProcessor | overall_quality | table_false_positive_rejection; text_noise_filtering | 12 | overall/teds | port generalized false-table and text-noise overlap rejection gates |
+| ContentFilterProcessor | overall_quality | text_noise_filtering | 12 | overall | port generalized text-noise filtering for latest full200 noisy-content failures |
 
 ## Processor Matrix
 

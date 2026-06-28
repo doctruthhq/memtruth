@@ -7300,6 +7300,7 @@ fn opendataloader_normalize_markdown_lines(lines: Vec<String>) -> Vec<String> {
     let normalized = opendataloader_repair_spaced_heading_lines(normalized);
     let normalized =
         opendataloader_merge_stacked_heading_words(opendataloader_merge_split_headings(normalized));
+    let normalized = opendataloader_merge_bare_numbered_heading_markers(normalized);
     let normalized = opendataloader_merge_trailing_section_marker_headings(normalized);
     let normalized = opendataloader_promote_standalone_question_headings(normalized);
     opendataloader_drop_report_title_before_executive_summary(normalized)
@@ -8568,6 +8569,56 @@ fn opendataloader_merge_split_headings(lines: Vec<String>) -> Vec<String> {
         index += 1;
     }
     merged
+}
+
+fn opendataloader_merge_bare_numbered_heading_markers(lines: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let current = normalize_text(&lines[index]);
+        if bare_heading_marker(&current) {
+            if let Some(next) = lines.get(index + 1) {
+                let next_heading = strip_markdown_heading_marker(next);
+                if opendataloader_bare_marker_heading_title(&next_heading) {
+                    out.push(format!("# {current} {next_heading}"));
+                    index += 2;
+                    continue;
+                }
+            }
+        }
+        out.push(lines[index].clone());
+        index += 1;
+    }
+    out
+}
+
+fn bare_heading_marker(text: &str) -> bool {
+    let trimmed = text.trim();
+    !trimmed.is_empty()
+        && trimmed.len() <= 3
+        && trimmed.chars().all(|ch| ch.is_ascii_digit())
+        && trimmed
+            .parse::<u16>()
+            .is_ok_and(|value| (1..=99).contains(&value))
+}
+
+fn opendataloader_bare_marker_heading_title(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.len() > 120 || trimmed.ends_with('.') {
+        return false;
+    }
+    if list_item(trimmed) || is_numeric_value_line(trimmed) {
+        return false;
+    }
+    if activity_markdown_heading(trimmed) {
+        return true;
+    }
+    if math_fragment_heading(trimmed) || trimmed.contains('(') || trimmed.contains(')') {
+        return false;
+    }
+    let word_count = trimmed.split_whitespace().count();
+    (word_count >= 2 || trimmed.chars().filter(|ch| ch.is_alphabetic()).count() >= 6)
+        && (title_case_markdown_heading(trimmed) || short_title_markdown_heading(trimmed))
 }
 
 fn opendataloader_split_heading_prefix_from_body(text: &str) -> Option<(String, String)> {

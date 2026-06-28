@@ -27,6 +27,36 @@ fn opendataloader_parity_formats_section_heading_like_reference() {
 }
 
 #[test]
+fn opendataloader_parity_splits_bare_numbered_chapter_heading_from_body() {
+    for (doc_id, expected) in [
+        (
+            "01030000000002",
+            "# 8 Choosing between Observer Models and Rejecting Participants",
+        ),
+        ("01030000000004", "# 12 Conclusion"),
+    ] {
+        let output_dir = temp_dir(&format!(
+            "doctruth-runtime-opendataloader-bare-heading-{doc_id}"
+        ));
+        let report = run_opendataloader_prediction(doc_id, &output_dir);
+
+        assert_eq!(report["prediction"]["parsedCount"], 1);
+        let markdown =
+            fs::read_to_string(output_dir.join(format!("markdown/{doc_id}.md"))).unwrap();
+        assert!(
+            markdown.contains(expected),
+            "bare numbered chapter heading should be split and promoted for {doc_id}:\n{markdown}"
+        );
+        assert!(
+            !markdown
+                .lines()
+                .any(|line| line == expected.trim_start_matches("# ")),
+            "heading text should not remain as a plain full line for {doc_id}:\n{markdown}"
+        );
+    }
+}
+
+#[test]
 fn opendataloader_parity_reconstructs_regular_tables_like_reference() {
     let output_dir = temp_dir("doctruth-runtime-opendataloader-table-parity");
     let report = run_opendataloader_prediction("01030000000083", &output_dir);

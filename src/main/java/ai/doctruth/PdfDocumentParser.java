@@ -52,7 +52,12 @@ public final class PdfDocumentParser {
     private static final Pattern NUMBERED_AREA_LABEL = Pattern.compile("^\\d+\\.\\s+.+");
     private static final Pattern NUMBERED_COMPETENCE =
             Pattern.compile("(\\d+)\\.\\d+\\s+(.+?)(?=\\s+\\d+\\.\\d+\\s+|$)");
+    private static final Pattern BARE_NUMBERED_HEADING_PREFIX = Pattern.compile("^(\\d{1,2})\\s+(.+)$");
     private static final String CATION_TABLE_HEADER = "Added cation Relative Size & Settling Rates of Floccules";
+    private static final Set<String> CHAPTER_BODY_STARTERS =
+            Set.of("in", "of", "the", "this", "these", "those", "two", "using", "laboratory", "record", "with");
+    private static final Set<String> HEADING_CONNECTORS =
+            Set.of("of", "the", "and", "in", "for", "to", "by", "with", "between", "a", "an");
     private static final double PARAGRAPH_VERTICAL_GAP = 32.0;
     private static final double PARAGRAPH_LEFT_TOLERANCE = 24.0;
     private static final double PARAGRAPH_MIN_HORIZONTAL_OVERLAP = 0.50;
@@ -153,8 +158,143 @@ public final class PdfDocumentParser {
         var tableFalsePositiveFiltered = applySpecialTableProcessorRepairs(merged);
         var tableStructureNormalized = applyTableStructureNormalizerRepairs(tableFalsePositiveFiltered);
         var finalTableFalsePositiveFiltered = demoteNarrativeShardTables(tableStructureNormalized);
-        return new ExtractedSections(finalTableFalsePositiveFiltered, List.copyOf(discarded));
+        var headingNormalized = applyHeadingProcessorRepairs(finalTableFalsePositiveFiltered);
+        return new ExtractedSections(headingNormalized, List.copyOf(discarded));
     }
+
+    private static List<ParsedSection> applyHeadingProcessorRepairs(List<ParsedSection> sections) {
+        var out = new ArrayList<ParsedSection>(sections.size());
+        for (var section : sections) {
+            if (section instanceof TextSection text) {
+                out.addAll(repairHeadingSection(text));
+            } else {
+                out.add(section);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<ParsedSection> repairHeadingSection(TextSection section) {
+        if (section.kind() != BlockKind.BODY) {
+            return List.of(section);
+        }
+        var paragraphs = section.text().split("\\R\\s*\\R");
+        var repaired = new ArrayList<TextSection>();
+        boolean changed = false;
+        for (var paragraph : paragraphs) {
+            var text = paragraphText(paragraph);
+            if (text.isBlank()) {
+                continue;
+            }
+            var split = headingSplit(text);
+            if (split.isPresent()) {
+                changed = true;
+                appendSplitHeading(repaired, section, split.get());
+            } else {
+                repaired.add(new TextSection(text, section.location(), BlockKind.BODY, section.boundingBox()));
+            }
+        }
+        return changed ? List.copyOf(repaired) : List.of(section);
+    }
+
+    private static Optional<HeadingSplit> headingSplit(String text) {
+        return splitActivityHeading(text).or(() -> splitBareNumberedHeading(text));
+    }
+
+    private static Optional<HeadingSplit> splitActivityHeading(String text) {
+        var trimmed = text.strip();
+        if (!trimmed.startsWith("Activity ")) {
+            return Optional.empty();
+        }
+        int paren = trimmed.indexOf(')');
+        if (paren > 0 && paren + 1 < trimmed.length()) {
+            var heading = trimmed.substring(0, paren + 1).strip();
+            var body = trimmed.substring(paren + 1).strip();
+            if (activityHeading(heading) && !body.isBlank()) {
+                return Optional.of(new HeadingSplit(heading, body));
+            }
+        }
+        if (activityHeading(trimmed)) {
+            return Optional.of(new HeadingSplit(trimmed, ""));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<HeadingSplit> splitBareNumberedHeading(String text) {
+        var matcher = BARE_NUMBERED_HEADING_PREFIX.matcher(text.strip());
+        if (!matcher.matches()) {
+            return Optional.empty();
+        }
+        int marker = Integer.parseInt(matcher.group(1));
+        if (marker < 1 || marker > 99) {
+            return Optional.empty();
+        }
+        var words = matcher.group(2).strip().split("\\s+");
+        int maxHeadingWords = Math.min(12, words.length);
+        for (int end = 1; end <= maxHeadingWords; end++) {
+            var title = String.join(" ", List.of(words).subList(0, end));
+            var body = String.join(" ", List.of(words).subList(end, words.length));
+            if (bareNumberedHeadingTitle(title) && chapterBodyStarts(body)) {
+                return Optional.of(new HeadingSplit(marker + " " + title, body));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean activityHeading(String text) {
+        var trimmed = text.strip();
+        return trimmed.length() <= 140
+                && trimmed.startsWith("Activity ")
+                && trimmed.contains(":")
+                && !trimmed.endsWith(".");
+    }
+
+    private static boolean bareNumberedHeadingTitle(String text) {
+        var trimmed = text.strip();
+        if (trimmed.isBlank() || trimmed.length() > 120 || trimmed.endsWith(".")) {
+            return false;
+        }
+        if (trimmed.contains("=") || trimmed.contains("+") || trimmed.contains("(") || trimmed.contains(")")) {
+            return false;
+        }
+        var words = List.of(trimmed.split("\\s+"));
+        if (words.size() > 12) {
+            return false;
+        }
+        long titleish =
+                words.stream().filter(PdfDocumentParser::titleishHeadingWord).count();
+        return words.size() == 1 ? titleish == 1 : titleish >= Math.max(1, (words.size() + 1) / 2);
+    }
+
+    private static boolean titleishHeadingWord(String word) {
+        var cleaned = word.replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
+        if (cleaned.isBlank() || HEADING_CONNECTORS.contains(cleaned.toLowerCase(Locale.ROOT))) {
+            return false;
+        }
+        return Character.isUpperCase(cleaned.codePointAt(0)) || cleaned.chars().allMatch(Character::isUpperCase);
+    }
+
+    private static boolean chapterBodyStarts(String body) {
+        var trimmed = body.strip();
+        if (trimmed.isBlank()) {
+            return true;
+        }
+        var words = trimmed.split("\\s+");
+        var first = words[0].replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
+        if (first.isBlank()) {
+            return false;
+        }
+        return CHAPTER_BODY_STARTERS.contains(first.toLowerCase(Locale.ROOT));
+    }
+
+    private static void appendSplitHeading(List<TextSection> out, TextSection source, HeadingSplit split) {
+        out.add(new TextSection(split.heading(), source.location(), BlockKind.HEADING, source.boundingBox()));
+        if (!split.body().isBlank()) {
+            out.add(new TextSection(split.body(), source.location(), BlockKind.BODY, source.boundingBox()));
+        }
+    }
+
+    private record HeadingSplit(String heading, String body) {}
 
     private static List<ParsedSection> applySpecialTableProcessorRepairs(List<ParsedSection> sections) {
         return demoteChartAxisTables(sections);

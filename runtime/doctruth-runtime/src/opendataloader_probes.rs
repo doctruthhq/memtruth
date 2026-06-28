@@ -918,6 +918,7 @@ pub(crate) fn opendataloader_structure_probe_json(request: &Value) -> Result<Val
     }))
 }
 
+#[derive(Clone)]
 struct OpendataloaderStructureLine {
     text: String,
     font_size: f64,
@@ -977,6 +978,7 @@ fn opendataloader_probe_structure_line(
 }
 
 fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>) -> Vec<Value> {
+    let lines = opendataloader_probe_merge_bare_heading_markers(lines);
     let mut blocks = Vec::new();
     let mut pending_list = Vec::new();
     for line in lines {
@@ -1005,6 +1007,88 @@ fn opendataloader_probe_structure_blocks(lines: Vec<OpendataloaderStructureLine>
     }
     opendataloader_probe_flush_list_block(&mut blocks, &mut pending_list);
     blocks
+}
+
+fn opendataloader_probe_merge_bare_heading_markers(
+    lines: Vec<OpendataloaderStructureLine>,
+) -> Vec<OpendataloaderStructureLine> {
+    let mut merged = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let current = &lines[index];
+        if opendataloader_probe_bare_heading_marker(&current.text) {
+            if let Some(next) = lines.get(index + 1) {
+                if opendataloader_probe_bare_marker_heading_title(next) {
+                    merged.push(OpendataloaderStructureLine {
+                        text: normalize_text(&format!("{} {}", current.text, next.text)),
+                        font_size: current.font_size.max(next.font_size),
+                        x0: current.x0.or(next.x0),
+                    });
+                    index += 2;
+                    continue;
+                }
+            }
+        }
+        merged.push(current.clone());
+        index += 1;
+    }
+    merged
+}
+
+fn opendataloader_probe_bare_heading_marker(text: &str) -> bool {
+    let trimmed = text.trim();
+    !trimmed.is_empty()
+        && trimmed.len() <= 3
+        && trimmed.chars().all(|ch| ch.is_ascii_digit())
+        && trimmed
+            .parse::<u16>()
+            .is_ok_and(|value| (1..=99).contains(&value))
+}
+
+fn opendataloader_probe_bare_marker_heading_title(line: &OpendataloaderStructureLine) -> bool {
+    line.font_size >= 14.0
+        && !opendataloader_probe_math_heading_fragment(&line.text)
+        && opendataloader_probe_title_case_heading(&line.text)
+        && !opendataloader_probe_caption(&line.text)
+}
+
+fn opendataloader_probe_math_heading_fragment(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.contains('(')
+        || trimmed.contains(')')
+        || trimmed.contains('=')
+        || trimmed.contains('−')
+        || trimmed.contains('+')
+}
+
+fn opendataloader_probe_title_case_heading(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.len() > 120 || trimmed.ends_with('.') {
+        return false;
+    }
+    let words = trimmed.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() || words.len() > 12 {
+        return false;
+    }
+    let titleish = words
+        .iter()
+        .filter(|word| {
+            let cleaned = word.trim_matches(|ch: char| !ch.is_alphanumeric());
+            if cleaned.is_empty()
+                || matches!(
+                    cleaned.to_ascii_lowercase().as_str(),
+                    "of" | "the" | "and" | "in" | "for" | "to" | "by" | "with" | "between"
+                )
+            {
+                return false;
+            }
+            cleaned
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_uppercase() || cleaned.chars().all(|c| c.is_uppercase()))
+        })
+        .count();
+    titleish >= words.len().div_ceil(2).max(1)
 }
 
 fn opendataloader_probe_next_list_item(

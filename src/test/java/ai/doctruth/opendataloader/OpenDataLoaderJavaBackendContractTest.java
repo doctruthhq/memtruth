@@ -2,6 +2,7 @@ package ai.doctruth.opendataloader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import ai.doctruth.ParserPreset;
@@ -83,6 +84,47 @@ class OpenDataLoaderJavaBackendContractTest {
                 .extracting(OpenDataLoaderBlock::text)
                 .containsExactly("Opening Context", "Main Result", "Proof Sketch")
                 .doesNotContain("Probability, Combinatorics and Control");
+    }
+
+    @Test
+    void bareNumberedChapterHeadingsProjectAsHeadingBlocks() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        assertOpenDataLoaderHeading(
+                backend, "01030000000002", "8 Choosing between Observer Models and Rejecting Participants");
+        assertOpenDataLoaderHeading(backend, "01030000000004", "12 Conclusion");
+    }
+
+    @Test
+    void joinedActivityHeadingsAreSplitFromBodyText() throws Exception {
+        var response = new OpenDataLoaderJavaBackend()
+                .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000168"), ParserPreset.LITE));
+
+        assertThat(response.markdown()).contains("# Activity 1: Determining pH With Indicator Strips (Field Method)");
+        assertThat(response.markdown()).contains("# Activity 2: Determining Soil pH with a pH Meter");
+        assertThat(response.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains(
+                        "Activity 1: Determining pH With Indicator Strips (Field Method)",
+                        "Activity 2: Determining Soil pH with a pH Meter");
+    }
+
+    private static void assertOpenDataLoaderHeading(
+            OpenDataLoaderJavaBackend backend, String documentId, String expectedHeading) throws Exception {
+        var response =
+                backend.parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf(documentId), ParserPreset.LITE));
+
+        assertThat(response.markdown()).contains("# " + expectedHeading);
+        assertThat(response.markdown()).doesNotContain("\n" + expectedHeading + "\n");
+        assertThat(response.headings()).extracting(OpenDataLoaderBlock::text).contains(expectedHeading);
+    }
+
+    private static Path openDataLoaderBenchPdf(String documentId) {
+        var path = Path.of("third_party/opendataloader-bench/pdfs").resolve(documentId + ".pdf");
+        assertThat(Files.isRegularFile(path))
+                .as("OpenDataLoader bench fixture exists: %s", path)
+                .isTrue();
+        return path;
     }
 
     private Path writePdf(String firstLine, String secondLine) throws Exception {

@@ -172,6 +172,26 @@ class OpenDataLoaderJavaBackendContractTest {
     }
 
     @Test
+    void singleWordAndInlineColonHeadingsSplitFromBodyText() throws Exception {
+        var backend = new OpenDataLoaderJavaBackend();
+
+        var stopResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000157"), ParserPreset.LITE));
+        assertThat(stopResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("Stop")
+                .doesNotContain("SIFTing Information | 69");
+        assertThat(stopResponse.markdown()).startsWith("# Stop");
+
+        var referenceFrameworksResponse = backend.parse(
+                new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000146"), ParserPreset.LITE));
+        assertThat(referenceFrameworksResponse.headings())
+                .extracting(OpenDataLoaderBlock::text)
+                .contains("Reference frameworks:");
+        assertThat(referenceFrameworksResponse.markdown()).contains("# Reference frameworks:");
+    }
+
+    @Test
     void procedureStepsDoNotProjectAsHeadingBlocks() throws Exception {
         var response = new OpenDataLoaderJavaBackend()
                 .parse(new OpenDataLoaderBackendRequest(openDataLoaderBenchPdf("01030000000115"), ParserPreset.LITE));

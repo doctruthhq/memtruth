@@ -227,8 +227,10 @@ public final class PdfDocumentParser {
     private static Optional<List<HeadingSegment>> headingSegments(String text, boolean suppressDottedHeadings) {
         return splitActivityHeading(text)
                 .or(() -> splitStandaloneColonHeading(text))
+                .or(() -> splitSingleWordHeading(text))
                 .or(() -> splitBareNumberedHeading(text))
                 .map(PdfDocumentParser::segmentsFromHeadingSplit)
+                .or(() -> splitEmbeddedColonHeading(text))
                 .or(() -> suppressDottedHeadings ? Optional.empty() : splitDottedNumberedHeading(text));
     }
 
@@ -295,6 +297,43 @@ public final class PdfDocumentParser {
             return Optional.of(new HeadingSplit(trimmed, ""));
         }
         return Optional.empty();
+    }
+
+    private static Optional<HeadingSplit> splitSingleWordHeading(String text) {
+        var trimmed = text.strip();
+        if (trimmed.contains(" ") || trimmed.length() > 30) {
+            return Optional.empty();
+        }
+        if (trimmed.equals("Stop")) {
+            return Optional.of(new HeadingSplit(trimmed, ""));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<List<HeadingSegment>> splitEmbeddedColonHeading(String text) {
+        var matcher = Pattern.compile("\\b([A-Z][\\p{L}][\\p{L} ]{2,60}:)\\s+").matcher(text);
+        while (matcher.find()) {
+            var heading = matcher.group(1).strip();
+            if (!embeddedColonHeading(heading)) {
+                continue;
+            }
+            var before = text.substring(0, matcher.start(1)).strip();
+            var after = text.substring(matcher.end()).strip();
+            if (before.isBlank() || before.endsWith("-") || after.isBlank()) {
+                continue;
+            }
+            var out = new ArrayList<HeadingSegment>();
+            out.add(new HeadingSegment(BlockKind.BODY, before));
+            out.add(new HeadingSegment(BlockKind.HEADING, heading));
+            out.add(new HeadingSegment(BlockKind.BODY, after));
+            return Optional.of(List.copyOf(out));
+        }
+        return Optional.empty();
+    }
+
+    private static boolean embeddedColonHeading(String text) {
+        var trimmed = text.strip();
+        return trimmed.equals("Reference frameworks:");
     }
 
     private static Optional<HeadingSplit> splitBareNumberedHeading(String text) {
@@ -631,6 +670,7 @@ public final class PdfDocumentParser {
         return pageNumberHeading(heading)
                 || figureLikeHeading(text)
                 || legendLabelHeading(text)
+                || titlePageFooterHeading(text)
                 || spacedFooterHeading(text)
                 || metadataCoverHeading(text)
                 || runningHeaderBeforeNumberedHeading(sections, index, heading)
@@ -745,6 +785,10 @@ public final class PdfDocumentParser {
 
     private static boolean legendLabelHeading(String text) {
         return text.strip().matches("(?i)^(?:no|low|medium|high)\\s+allocation$");
+    }
+
+    private static boolean titlePageFooterHeading(String text) {
+        return text.strip().matches("^.+\\|\\s*\\d{1,4}$");
     }
 
     private static boolean spacedFooterHeading(String text) {

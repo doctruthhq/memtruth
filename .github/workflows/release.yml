@@ -34,14 +34,43 @@ jobs:
           gpg-private-key: ${{ secrets.OSSRH_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
+      - name: Set up Python 3.10 for real model smoke
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install real model smoke runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install \
+            'onnxruntime==1.26.0' \
+            'pillow>=12,<13' \
+            'numpy<2.4' \
+            'paddleocr==3.7.0' \
+            'paddlepaddle==3.3.1'
+
+      - name: Build Rust runtime
+        run: cargo build --manifest-path runtime/doctruth-runtime/Cargo.toml --bins
+
       - name: Verify release commit
         run: mvn -B -ntp spotless:check checkstyle:check verify -P recorded
+        env:
+          DOCTRUTH_RUNTIME_COMMAND: ${{ github.workspace }}/runtime/doctruth-runtime/target/debug/doctruth-runtime
 
       - name: Package CLI release artifacts
         run: scripts/package-cli-release.sh --version "${GITHUB_REF_NAME#v}"
 
       - name: Smoke CLI release tarball
         run: scripts/smoke-cli-release.sh --version "${GITHUB_REF_NAME#v}"
+
+      - name: Smoke real model suite
+        run: scripts/smoke-doctruth-real-model-suite.sh
+        env:
+          DOCTRUTH_REAL_MODEL_SUITE: '1'
+          DOCTRUTH_SLANEXT_PYTHON: ${{ env.pythonLocation }}/bin/python
 
       - name: Generate CycloneDX SBOM
         run: |

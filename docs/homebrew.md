@@ -52,6 +52,7 @@ Smoke the generated tarball:
 mkdir -p /tmp/doctruth-release-smoke
 tar -xzf dist/doctruth-0.2.0-alpha.tar.gz -C /tmp/doctruth-release-smoke
 JAVA=/path/to/java /tmp/doctruth-release-smoke/doctruth-0.2.0-alpha/bin/doctruth version
+JAVA=/path/to/java /tmp/doctruth-release-smoke/doctruth-0.2.0-alpha/bin/doctruth-runtime --doctor
 ```
 
 ## Why The Formula Is Not Committed As A Live Formula Here

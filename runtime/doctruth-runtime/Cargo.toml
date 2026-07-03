@@ -1,0 +1,26 @@
+[package]
+name = "doctruth-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = []
+mnn-preprocess = ["dep:image"]
+mnn-native = ["dep:mnn_rs", "dep:mnn_rs_sys", "mnn-preprocess"]
+mnn-ocr = ["mnn-preprocess", "dep:ocr_rs"]
+
+[dependencies]
+pdf_oxide = { version = "0.3.64", default-features = false, features = ["legacy-crypto", "rendering"] }
+serde_json = "1.0"
+sha2 = "0.10"
+regex = "1.11"
+mnn_rs = { package = "mnn-rs", version = "0.1.5", optional = true, default-features = false, features = ["cpu", "static", "use-prebuilt"] }
+mnn_rs_sys = { package = "mnn-rs-sys", version = "0.1.5", optional = true, default-features = false }
+image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
+ocr_rs = { package = "ocr-rs", version = "2.2.2", optional = true, default-features = false }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"

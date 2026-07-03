@@ -1,0 +1,841 @@
+use assert_cmd::Command;
+use serde_json::Value;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+#[test]
+fn parse_pdf_emits_table_cells_for_borderless_aligned_text_pdf() {
+    let pdf = write_borderless_table_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let units = json["body"]["units"].as_array().unwrap();
+    let table_units: Vec<&Value> = units
+        .iter()
+        .filter(|unit| unit["kind"] == "TABLE_CELL")
+        .collect();
+
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0]["cells"].as_array().unwrap().len(), 4);
+    assert_eq!(table_units.len(), 4);
+    assert_eq!(tables[0]["cells"][0]["text"], "Name");
+    assert_eq!(tables[0]["cells"][1]["text"], "Score");
+    assert_eq!(tables[0]["cells"][2]["text"], "Alex");
+    assert_eq!(tables[0]["cells"][3]["text"], "98");
+    assert!(tables[0]["boundingBox"].is_object());
+    assert_eq!(
+        tables[0]["confidence"]["rationale"],
+        "borderless aligned text table extraction"
+    );
+    for cell in tables[0]["cells"].as_array().unwrap() {
+        assert!(cell["boundingBox"].is_object());
+    }
+    for unit in table_units {
+        assert!(unit["location"]["boundingBox"].is_object());
+        assert_eq!(
+            unit["confidence"]["rationale"],
+            "borderless aligned text table extraction"
+        );
+    }
+}
+
+#[test]
+fn parse_pdf_emits_cluster_table_for_sparse_wide_text_grid() {
+    let pdf = write_sparse_wide_table_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let table = &tables[0];
+    let cells = table["cells"].as_array().unwrap();
+
+    assert_eq!(tables.len(), 1);
+    assert_eq!(table["method"], "cluster");
+    assert_eq!(table["quality"]["rowCount"], 5);
+    assert_eq!(table["quality"]["columnCount"], 6);
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell["text"] == "Forecast(observed)")
+    );
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell["text"] == "Upper Confidence Bound(observed)")
+    );
+    assert!(cells.iter().any(|cell| {
+        cell["text"] == ""
+            && cell["rowRange"] == serde_json::json!({"start": 2, "end": 2})
+            && cell["columnRange"] == serde_json::json!({"start": 3, "end": 3})
+    }));
+}
+
+#[test]
+fn parse_pdf_emits_cluster_table_for_opendataloader_sparse_real_case() {
+    let pdf = opendataloader_fixture("01030000000128.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let table = &tables[0];
+    let cells = table["cells"].as_array().unwrap();
+
+    assert_eq!(tables.len(), 1);
+    assert_eq!(table["method"], "cluster");
+    assert!(table["quality"]["rowCount"].as_u64().unwrap() >= 10);
+    assert_eq!(table["quality"]["columnCount"], 6);
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell["text"] == "Forecast(observed)")
+    );
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell["text"] == "Lower Confidence Bound(observed)")
+    );
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell["text"] == "Upper Confidence Bound(observed)")
+    );
+    assert!(cells.iter().any(|cell| cell["text"] == ""));
+}
+
+#[test]
+fn parse_pdf_emits_conservation_practice_tables_real_case() {
+    let pdf = opendataloader_fixture("01030000000170.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(format!(
+            r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:conservation-practice","preset":"auto","offline_mode":true}}"#,
+            pdf.display()
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let conservation_tables = tables
+        .iter()
+        .filter(|table| {
+            table["quality"]["rationale"] == "opendataloader conservation practice table extraction"
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        conservation_tables.len() >= 2,
+        "expected contour and terrace conservation tables, got {tables:?}"
+    );
+    for table in &conservation_tables {
+        assert_ne!(
+            table["method"], "unknown",
+            "table method must be classified"
+        );
+        assert_table_cell_bboxes_sane(table);
+    }
+
+    let contour = conservation_tables
+        .iter()
+        .find(|table| table_cell_text(table).contains("Strip Width (ft)"))
+        .expect("missing contour strip conservation table");
+    assert_eq!(contour["quality"]["columnCount"], 6);
+    assert!(contour["quality"]["rowCount"].as_u64().unwrap_or(0) >= 8);
+    assert_table_has_cells(
+        contour,
+        &[
+            "Slope Gradient",
+            "Strip Width (ft)",
+            "P Value",
+            "1 - 2",
+            "0.30",
+        ],
+    );
+
+    let terrace = conservation_tables
+        .iter()
+        .find(|table| table_cell_text(table).contains("Terrace Interval"))
+        .expect("missing terrace conservation table");
+    assert_eq!(terrace["quality"]["columnCount"], 5);
+    assert!(terrace["quality"]["rowCount"].as_u64().unwrap_or(0) >= 8);
+    assert_table_has_cells(
+        terrace,
+        &[
+            "Terrace Interval",
+            "Underground Outlets",
+            "Pt Values",
+            "110-140",
+            "0.8",
+        ],
+    );
+
+    let cell_text = conservation_tables
+        .iter()
+        .map(|table| table_cell_text(table))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !cell_text.contains("146 | Soil Erosion and Conservation"),
+        "page footer should not be swallowed into table cells: {cell_text:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_emits_cluster_table_for_opendataloader_service_flow_real_case() {
+    let pdf = opendataloader_fixture("01030000000200.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(format!(
+            r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:service-flow","preset":"auto","offline_mode":true}}"#,
+            pdf.display()
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 4
+                && table["cells"]
+                    .as_array()
+                    .is_some_and(|cells| cells.iter().any(|cell| cell["text"] == "Service Stage"))
+                && table["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| cell["text"] == "Expected Benefit")
+                })
+        }),
+        "expected service-flow table with four columns, got {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_two_column_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000002.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(format!(
+            r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:two-column-prose","preset":"auto","offline_mode":true}}"#,
+            pdf.display()
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().all(|table| {
+            table["quality"]["rationale"] != "opendataloader dense cluster table extraction"
+        }),
+        "two-column prose should not be emitted as dense cluster table: {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_article_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000048.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "article prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_formula_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000028.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "formula prose");
+}
+
+#[test]
+fn parse_pdf_rejects_dense_cluster_table_with_merged_header_values_real_case() {
+    let pdf = opendataloader_fixture("01030000000127.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().all(|table| {
+            table["quality"]["rationale"] != "opendataloader dense cluster table extraction"
+                || table["cells"].as_array().is_none_or(|cells| {
+                    !cells
+                        .iter()
+                        .take(8)
+                        .any(|cell| cell["text"].as_str().unwrap_or("").contains("33.0%"))
+                })
+        }),
+        "dense cluster should not merge percentage values into the header row: {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_bibliography_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000193.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "bibliography prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_instructor_resource_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000158.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "instructor resource prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_wrapped_paragraph_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000140.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "wrapped paragraph prose");
+}
+
+#[test]
+fn parse_pdf_does_not_emit_dense_cluster_table_for_sift_sidebar_prose_real_case() {
+    let pdf = opendataloader_fixture("01030000000157.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_no_dense_cluster_table(&json, "sift sidebar prose");
+}
+
+#[test]
+fn parse_pdf_suppresses_dense_duplicate_for_party_registration_real_case() {
+    let pdf = opendataloader_fixture("01030000000046.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+    let party_tables = tables
+        .iter()
+        .filter(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| cell["text"] == "Political party")
+                    && cells
+                        .iter()
+                        .any(|cell| cell["text"] == "Cambodian People’s Party")
+            })
+        })
+        .count();
+
+    assert_eq!(party_tables, 1, "expected one party table, got {tables:?}");
+    assert_no_dense_cluster_table(&json, "party registration duplicate");
+}
+
+#[test]
+fn parse_pdf_keeps_nested_numeric_subtable_for_appendix_real_case() {
+    let pdf = opendataloader_fixture("01030000000082.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| cell["text"] == "15.6")
+                    && cells.iter().any(|cell| cell["text"] == "200.4")
+                    && cells.len() <= 12
+            })
+        }),
+        "expected nested numeric subtable, got {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_emits_remittance_growth_table_from_columnar_text_real_case() {
+    let pdf = opendataloader_fixture("01030000000078.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 7
+                && table["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| cell["text"] == "Cambodia")
+                        && cells.iter().any(|cell| cell["text"] == "7.5%")
+                        && cells.iter().any(|cell| cell["text"] == "1,272")
+                        && cells.iter().any(|cell| cell["text"] == "Viet Nam")
+                        && cells.iter().any(|cell| cell["text"] == "17,200")
+                })
+        }),
+        "expected remittance growth table, got {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_emits_dense_ablation_matrix_table_from_split_text_chunks_real_case() {
+    let pdf = opendataloader_fixture("01030000000189.pdf");
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.iter().any(|table| {
+            table["method"] == "cluster"
+                && table["quality"]["columnCount"].as_u64().unwrap_or(0) >= 10
+                && table["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| cell["text"] == "Model")
+                        && cells.iter().any(|cell| cell["text"] == "Alpaca-GPT4")
+                        && cells.iter().any(|cell| cell["text"] == "SFT v1")
+                        && cells.iter().any(|cell| cell["text"] == "69.15")
+                        && cells.iter().any(|cell| cell["text"] == "GSM8K")
+                })
+        }),
+        "expected dense ablation matrix cluster table, got {tables:?}"
+    );
+}
+
+#[test]
+fn parse_pdf_composes_bordered_and_cluster_table_processors() {
+    let pdf = write_bordered_plus_cluster_table_pdf_fixture();
+    let mut cmd = Command::cargo_bin("doctruth-runtime").unwrap();
+
+    let output = cmd
+        .write_stdin(parse_request(&pdf))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    let tables = json["body"]["tables"].as_array().unwrap();
+
+    assert!(
+        tables.len() >= 2,
+        "expected bordered and cluster tables to coexist, got {tables:?}"
+    );
+    assert!(
+        tables.iter().any(|table| table["method"] == "line-table"
+            && table["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|cell| cell["text"] == "Name")),
+        "missing bordered line-table in {tables:?}"
+    );
+    assert!(
+        tables.iter().any(|table| table["method"] == "cluster"
+            && table["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|cell| cell["text"] == "Forecast(observed)")),
+        "missing cluster table in {tables:?}"
+    );
+}
+
+fn parse_request(source_path: &Path) -> String {
+    format!(
+        r#"{{"command":"parse_pdf","source_path":"{}","source_hash":"sha256:test","preset":"lite","offline_mode":true,"allow_model_downloads":false}}"#,
+        source_path.display()
+    )
+}
+
+fn opendataloader_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../third_party/opendataloader-bench/pdfs")
+        .join(name)
+}
+
+fn assert_no_dense_cluster_table(json: &Value, label: &str) {
+    let tables = json["body"]["tables"].as_array().unwrap();
+    assert!(
+        tables.iter().all(|table| {
+            table["quality"]["rationale"] != "opendataloader dense cluster table extraction"
+        }),
+        "{label} should not be emitted as dense cluster table: {tables:?}"
+    );
+}
+
+fn table_cell_text(table: &Value) -> String {
+    table["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|cell| cell["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn assert_table_has_cells(table: &Value, expected_cells: &[&str]) {
+    let cell_text = table_cell_text(table);
+    for expected in expected_cells {
+        assert!(
+            cell_text.contains(expected),
+            "expected table cell text to include {expected:?}, got {cell_text:?}"
+        );
+    }
+}
+
+fn assert_table_cell_bboxes_sane(table: &Value) {
+    for cell in table["cells"].as_array().unwrap() {
+        let bbox = &cell["boundingBox"];
+        let x0 = bbox["x0"].as_f64().unwrap();
+        let y0 = bbox["y0"].as_f64().unwrap();
+        let x1 = bbox["x1"].as_f64().unwrap();
+        let y1 = bbox["y1"].as_f64().unwrap();
+        assert!(x1 > x0, "cell bbox must have nonzero width: {cell:?}");
+        assert!(y1 > y0, "cell bbox must have nonzero height: {cell:?}");
+        assert!(
+            y0 < 995.0 && y1 < 1000.0,
+            "cell bbox should not collapse to bottom-page placeholder values: {cell:?}"
+        );
+    }
+}
+
+fn write_borderless_table_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-borderless-table-fixture");
+    fs::write(&path, minimal_borderless_table_pdf()).unwrap();
+    path
+}
+
+fn write_sparse_wide_table_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-sparse-wide-table-fixture");
+    fs::write(&path, minimal_sparse_wide_table_pdf()).unwrap();
+    path
+}
+
+fn write_bordered_plus_cluster_table_pdf_fixture() -> PathBuf {
+    let path = temp_pdf_path("doctruth-runtime-composed-table-fixture");
+    fs::write(&path, minimal_bordered_plus_cluster_table_pdf()).unwrap();
+    path
+}
+
+fn temp_pdf_path(prefix: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let sequence = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "{prefix}-{}-{nanos}-{sequence}.pdf",
+        std::process::id()
+    ))
+}
+
+fn minimal_sparse_wide_table_pdf() -> Vec<u8> {
+    let stream = "\
+BT
+/F1 12 Tf
+1 0 0 1 84 720 Tm
+(A) Tj
+1 0 0 1 130 720 Tm
+(B) Tj
+1 0 0 1 220 720 Tm
+(C) Tj
+1 0 0 1 320 720 Tm
+(D) Tj
+1 0 0 1 448 720 Tm
+(E) Tj
+1 0 0 1 58 690 Tm
+(1) Tj
+1 0 0 1 84 690 Tm
+(time) Tj
+1 0 0 1 130 690 Tm
+(observed) Tj
+1 0 0 1 220 690 Tm
+(Forecast\\(observed\\)) Tj
+1 0 0 1 320 690 Tm
+(Lower Confidence Bound\\(observed\\)) Tj
+1 0 0 1 448 690 Tm
+(Upper Confidence Bound\\(observed\\)) Tj
+1 0 0 1 58 660 Tm
+(2) Tj
+1 0 0 1 84 660 Tm
+(0) Tj
+1 0 0 1 130 660 Tm
+(13) Tj
+1 0 0 1 58 630 Tm
+(3) Tj
+1 0 0 1 84 630 Tm
+(1) Tj
+1 0 0 1 130 630 Tm
+(12) Tj
+1 0 0 1 58 600 Tm
+(4) Tj
+1 0 0 1 84 600 Tm
+(2) Tj
+1 0 0 1 130 600 Tm
+(13.5) Tj
+1 0 0 1 220 600 Tm
+(17.90) Tj
+1 0 0 1 320 600 Tm
+(17.90) Tj
+1 0 0 1 448 600 Tm
+(17.90) Tj
+ET
+";
+    pdf_from_stream(stream)
+}
+
+fn minimal_borderless_table_pdf() -> Vec<u8> {
+    let stream = "\
+BT
+/F1 16 Tf
+90 700 Td
+(Name) Tj
+144 0 Td
+(Score) Tj
+-144 -40 Td
+(Alex) Tj
+144 0 Td
+(98) Tj
+ET
+";
+    pdf_from_stream(stream)
+}
+
+fn minimal_bordered_plus_cluster_table_pdf() -> Vec<u8> {
+    let stream = "\
+q
+72 720 m
+360 720 l
+360 640 l
+72 640 l
+72 720 l
+S
+216 720 m
+216 640 l
+S
+72 680 m
+360 680 l
+S
+BT
+/F1 12 Tf
+90 695 Td
+(Name) Tj
+144 0 Td
+(Score) Tj
+-144 -40 Td
+(Alex) Tj
+144 0 Td
+(98) Tj
+ET
+Q
+BT
+/F1 12 Tf
+1 0 0 1 84 560 Tm
+(A) Tj
+1 0 0 1 130 560 Tm
+(B) Tj
+1 0 0 1 220 560 Tm
+(C) Tj
+1 0 0 1 320 560 Tm
+(D) Tj
+1 0 0 1 448 560 Tm
+(E) Tj
+1 0 0 1 58 530 Tm
+(1) Tj
+1 0 0 1 84 530 Tm
+(time) Tj
+1 0 0 1 130 530 Tm
+(observed) Tj
+1 0 0 1 220 530 Tm
+(Forecast\\(observed\\)) Tj
+1 0 0 1 320 530 Tm
+(Lower Confidence Bound\\(observed\\)) Tj
+1 0 0 1 448 530 Tm
+(Upper Confidence Bound\\(observed\\)) Tj
+1 0 0 1 58 500 Tm
+(2) Tj
+1 0 0 1 84 500 Tm
+(0) Tj
+1 0 0 1 130 500 Tm
+(13) Tj
+1 0 0 1 58 470 Tm
+(3) Tj
+1 0 0 1 84 470 Tm
+(1) Tj
+1 0 0 1 130 470 Tm
+(12) Tj
+1 0 0 1 58 440 Tm
+(4) Tj
+1 0 0 1 84 440 Tm
+(2) Tj
+1 0 0 1 130 440 Tm
+(13.5) Tj
+1 0 0 1 220 440 Tm
+(17.90) Tj
+1 0 0 1 320 440 Tm
+(17.90) Tj
+1 0 0 1 448 440 Tm
+(17.90) Tj
+ET
+";
+    pdf_from_stream(stream)
+}
+
+fn pdf_from_stream(stream: &str) -> Vec<u8> {
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}endstream", stream.len(), stream),
+    ];
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{}\nendobj\n", index + 1, object).as_bytes());
+    }
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            objects.len() + 1,
+            xref_offset
+        )
+        .as_bytes(),
+    );
+    pdf
+}

@@ -9,6 +9,7 @@ import ai.doctruth.ParseException;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.PdfDocumentParser;
 import ai.doctruth.XlsxDocumentParser;
+import ai.doctruth.spi.OcrEngines;
 
 final class DocumentParsers {
 
@@ -19,7 +20,7 @@ final class DocumentParsers {
     static ParsedDocument parse(Path path) throws CliException {
         try {
             return switch (extension(path)) {
-                case "pdf" -> PdfDocumentParser.parse(path);
+                case "pdf" -> PdfDocumentParser.parse(path, OcrEngines.defaultLocal());
                 case "docx" -> DocxDocumentParser.parse(path);
                 case "xlsx" -> XlsxDocumentParser.parse(path);
                 case "csv" -> CsvDocumentParser.parse(path);

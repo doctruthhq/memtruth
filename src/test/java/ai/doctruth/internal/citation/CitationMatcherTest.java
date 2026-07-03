@@ -11,6 +11,7 @@ import java.util.Optional;
 import ai.doctruth.BoundingBox;
 import ai.doctruth.Citation;
 import ai.doctruth.DocumentMetadata;
+import ai.doctruth.FigureSection;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.ParsedSection;
 import ai.doctruth.SourceLocation;
@@ -68,6 +69,12 @@ class CitationMatcherTest {
         return new ParsedDocument("doc-1", List.of(section), new DocumentMetadata("test.pdf", 1, Optional.empty()));
     }
 
+    private static ParsedDocument docWithFigureBox(String caption, BoundingBox box) {
+        var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var section = new FigureSection(caption, loc, Optional.of(box));
+        return new ParsedDocument("doc-1", List.of(section), new DocumentMetadata("test.pdf", 1, Optional.empty()));
+    }
+
     @Nested
     @DisplayName("ExactMatch")
     class ExactMatch {
@@ -92,6 +99,18 @@ class CitationMatcherTest {
         void exactMatchCarriesBoundingBox() {
             var box = new BoundingBox(10.0, 20.0, 110.0, 40.0);
             var doc = docWithBox("Alex Chen, 30 years old", box);
+            var matcher = new CitationMatcher();
+
+            Map<String, Citation> out = matcher.matchAll(new Person("Alex Chen", 30), doc);
+
+            assertThat(out.get("name").boundingBox()).contains(box);
+        }
+
+        @Test
+        @DisplayName("an exact figure-caption match carries the caption bounding box onto the citation")
+        void exactFigureCaptionMatchCarriesBoundingBox() {
+            var box = new BoundingBox(10.0, 20.0, 210.0, 40.0);
+            var doc = docWithFigureBox("Alex Chen", box);
             var matcher = new CitationMatcher();
 
             Map<String, Citation> out = matcher.matchAll(new Person("Alex Chen", 30), doc);

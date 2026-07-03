@@ -1,0 +1,440 @@
+#!/usr/bin/env python3
+"""DocTruth JSON worker adapter for local RapidOCR/MNN-style OCR runtimes."""
+
+import base64
+import json
+import math
+import os
+import pathlib
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+
+
+def main() -> int:
+    if not python_oracle_allowed():
+        return emit_oracle_disabled()
+    if len(sys.argv) > 1 and sys.argv[1] == "--doctor":
+        return doctor()
+
+    return process_stdin_requests()
+
+
+def process_stdin_requests() -> int:
+    exit_code = 0
+    seen_request = False
+    for index, line in enumerate(sys.stdin, start=1):
+        if not line.strip():
+            continue
+        seen_request = True
+        try:
+            request = json.loads(line)
+        except Exception as exc:
+            print(json.dumps({
+                "ok": False,
+                "code": "worker_protocol_error",
+                "engine": "mnn",
+                "message": f"invalid JSONL request {index}: {exc}",
+                "pages": [],
+                "warnings": ["worker_protocol_error"],
+            }, ensure_ascii=False, separators=(",", ":")), flush=True)
+            exit_code = 2
+            continue
+        exit_code = max(exit_code, process_request(request, flush=True))
+    if not seen_request:
+        return emit_failure("worker_protocol_error", "empty request JSON", flush=True)
+    return exit_code
+
+
+def process_request(request: dict, flush: bool = False) -> int:
+    if request.get("command") == "parse_pdf":
+        return parse_pdf_request(request, flush=flush)
+
+    engine_name = str(request.get("engine") or "mnn")
+    try:
+        image_path = write_image(request)
+    except Exception as exc:
+        return emit_failure("worker_protocol_error", f"invalid image payload: {exc}", engine_name, flush=flush)
+
+    try:
+        from rapidocr import RapidOCR  # type: ignore
+    except Exception as exc:
+        return emit_failure("rapidocr_unavailable", str(exc), engine_name, flush=flush)
+
+    try:
+        result = RapidOCR()(str(image_path))
+        regions = normalize_regions(result)
+    except Exception as exc:
+        return emit_failure("rapidocr_failed", str(exc), engine_name, flush=flush)
+
+    text = "\n".join(region["text"] for region in regions if region["text"]).strip()
+    confidence_values = [region["confidence"] for region in regions]
+    confidence = statistics.fmean(confidence_values) if confidence_values else 0.0
+    payload = {
+        "ok": True,
+        "engine": engine_name,
+        "text": text,
+        "averageConfidence": round(float(confidence), 6),
+        "pages": [
+            {
+                "page": 1,
+                "text": text,
+                "confidence": round(float(confidence), 6),
+                "regions": regions,
+            }
+        ],
+        "warnings": [],
+    }
+    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=flush)
+    return 0
+
+
+def python_oracle_allowed() -> bool:
+    return os.environ.get("DOCTRUTH_ALLOW_PYTHON_ORACLE") == "1"
+
+
+def emit_oracle_disabled() -> int:
+    print(json.dumps({
+        "ok": False,
+        "runtime": "python",
+        "error_code": "python_oracle_disabled",
+        "message": "legacy Python worker is oracle-only; set DOCTRUTH_ALLOW_PYTHON_ORACLE=1 for migration tests",
+    }, ensure_ascii=False, separators=(",", ":")), file=sys.stderr)
+    return 2
+
+
+def parse_pdf_request(request: dict, flush: bool = False) -> int:
+    started = time.perf_counter()
+    engine_name = str(request.get("engine") or "mnn")
+    try:
+        image_path = page_image(request)
+    except Exception as exc:
+        return emit_failure("worker_protocol_error", f"invalid source image: {exc}", engine_name, flush=flush)
+    try:
+        from rapidocr import RapidOCR  # type: ignore
+    except Exception as exc:
+        return emit_failure("rapidocr_unavailable", str(exc), engine_name, flush=flush)
+    try:
+        result = RapidOCR()(str(image_path))
+        regions = normalize_regions(result)
+        document = trust_document(request, regions)
+    except Exception as exc:
+        return emit_failure("rapidocr_failed", str(exc), engine_name, flush=flush)
+    print(json.dumps({
+        "ok": True,
+        "document": document,
+        "metrics": {
+            "runtime": "rapidocr",
+            "wallMs": round((time.perf_counter() - started) * 1000.0, 3),
+        },
+    }, ensure_ascii=False, separators=(",", ":")), flush=flush)
+    return 0
+
+
+def doctor() -> int:
+    engine_name = "mnn"
+    backend = str(os.environ.get("DOCTRUTH_RAPIDOCR_BACKEND") or "auto").strip().lower()
+    try:
+        from rapidocr import RapidOCR  # type: ignore
+    except Exception as exc:
+        return emit_doctor(False, "rapidocr_unavailable", str(exc), engine_name, backend, False, "")
+    backend_ready, backend_version, backend_error = check_backend(backend)
+    if backend == "mnn" and not backend_ready:
+        return emit_doctor(False, "mnn_unavailable", backend_error, engine_name, backend, False, "")
+    try:
+        RapidOCR()
+    except Exception as exc:
+        return emit_doctor(False, "rapidocr_init_failed", str(exc), engine_name, backend, backend_ready, backend_version)
+    return emit_doctor(True, "ready", "rapidocr runtime initialized", engine_name, backend, backend_ready, backend_version)
+
+
+def check_backend(backend: str):
+    if backend != "mnn":
+        return False, "", ""
+    for module_name in ["MNN", "mnn"]:
+        try:
+            module = __import__(module_name)
+            return True, str(getattr(module, "__version__", "")), ""
+        except Exception as exc:
+            last_error = str(exc)
+    return False, "", last_error
+
+
+def write_image(request: dict) -> pathlib.Path:
+    data = base64.b64decode(request.get("bytesBase64") or "", validate=True)
+    suffix = "." + str(request.get("fileType") or "png").strip(".").lower()
+    handle = tempfile.NamedTemporaryFile(prefix="doctruth-ocr-", suffix=suffix, delete=False)
+    with handle:
+        handle.write(data)
+    return pathlib.Path(handle.name)
+
+
+def page_image(request: dict) -> pathlib.Path:
+    source = pathlib.Path(str(request.get("sourcePath") or request.get("source_path") or ""))
+    if source.is_file() and source.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+        return source
+    if source.is_file() and source.suffix.lower() == ".pdf":
+        rendered = render_pdf(source)
+        if rendered is not None:
+            return rendered
+    if request.get("bytesBase64"):
+        return write_image(request)
+    if source.is_file():
+        return source
+    raise ValueError("request must include sourcePath or bytesBase64")
+
+
+def render_pdf(source: pathlib.Path):
+    with tempfile.TemporaryDirectory(prefix="doctruth-rapidocr-page-") as tmp:
+        prefix = pathlib.Path(tmp) / "page"
+        try:
+            subprocess.run(
+                ["pdftoppm", "-singlefile", "-png", "-r", "150", str(source), str(prefix)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            return None
+        rendered = prefix.with_suffix(".png")
+        if not rendered.exists():
+            return None
+        stable = pathlib.Path(tempfile.mkstemp(prefix="doctruth-rapidocr-page-", suffix=".png")[1])
+        stable.write_bytes(rendered.read_bytes())
+        return stable
+
+
+def normalize_regions(result) -> list[dict]:
+    boxes = attr_sequence(result, "boxes")
+    texts = attr_sequence(result, "txts")
+    if not texts:
+        texts = attr_sequence(result, "texts")
+    scores = attr_sequence(result, "scores")
+    if len(boxes) > 0 and len(texts) > 0:
+        return regions_from_columns(boxes, texts, scores)
+    return regions_from_rows(result)
+
+
+def attr_sequence(result, name: str) -> list:
+    if not hasattr(result, name):
+        return []
+    value = getattr(result, name)
+    if value is None:
+        return []
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def regions_from_columns(boxes: list, texts: list, scores: list) -> list[dict]:
+    regions = []
+    for index, text in enumerate(texts):
+        box = box_from_any(boxes[index] if index < len(boxes) else None)
+        if box is None:
+            continue
+        regions.append(region(str(text), box, score_at(scores, index)))
+    return regions
+
+
+def regions_from_rows(result) -> list[dict]:
+    rows = result[0] if isinstance(result, tuple) and result else result
+    if not isinstance(rows, list):
+        return []
+    regions = []
+    for row in rows:
+        parsed = row_from_any(row)
+        if parsed is not None:
+            regions.append(parsed)
+    return regions
+
+
+def row_from_any(row):
+    if not isinstance(row, (list, tuple)) or len(row) < 2:
+        return None
+    box = box_from_any(row[0])
+    if box is None:
+        return None
+    text = row[1][0] if isinstance(row[1], (list, tuple)) and row[1] else row[1]
+    score = row[1][1] if isinstance(row[1], (list, tuple)) and len(row[1]) > 1 else 0.0
+    return region(str(text), box, score)
+
+
+def region(text: str, box: dict, score) -> dict:
+    return {"text": text, "bbox": box, "confidence": clamp_score(score)}
+
+
+def trust_document(request: dict, regions: list[dict]) -> dict:
+    source_path = pathlib.Path(str(request.get("sourcePath") or request.get("source_path") or "source.pdf"))
+    source_name = str(request.get("sourceFilename") or source_path.name or "source.pdf")
+    source_hash = str(request.get("sourceHash") or request.get("source_hash") or "sha256:unknown")
+    model_id = model_identity(request)
+    units = []
+    warnings = []
+    for index, item in enumerate(regions, start=1):
+        score = clamp_score(item.get("confidence", 0.0))
+        unit_warnings = []
+        if score < 0.85:
+            unit_warnings.append(warning("ocr_low_confidence", f"OCR confidence below 0.85: {score:.3f}"))
+        warnings.extend(unit_warnings)
+        units.append({
+            "unitId": f"unit-ocr-{index:04d}",
+            "kind": "OCR_REGION",
+            "page": 1,
+            "text": item["text"],
+            "evidenceSpanIds": [f"span-ocr-{index:04d}"],
+            "location": {
+                "page": 1,
+                "readingOrder": index,
+                "boundingBox": xywh_to_extents(item["bbox"]),
+            },
+            "sourceObjectId": f"rapidocr:{model_id}#region-{index:04d}",
+            "confidence": {"score": score, "rationale": "rapidocr region"},
+            "warnings": unit_warnings,
+        })
+    status = "NOT_AUDIT_GRADE" if warnings else "AUDIT_GRADE"
+    return {
+        "docId": source_hash,
+        "source": {
+            "sourceFilename": source_name,
+            "sourceHash": source_hash,
+            "metadata": {"sourceFilename": source_name, "pageCount": 1},
+        },
+        "body": {
+            "pages": [{
+                "pageNumber": 1,
+                "width": 612,
+                "height": 792,
+                "textLayerAvailable": False,
+                "imageHash": source_hash,
+            }],
+            "units": units,
+            "tables": [],
+        },
+        "parserRun": {
+            "parserRunId": "rapidocr-worker-run",
+            "parserVersion": "1.0.0",
+            "preset": request.get("preset") or "ocr",
+            "backend": "rapidocr-worker",
+            "models": [model_id],
+            "warnings": warnings,
+        },
+        "auditGradeStatus": status,
+    }
+
+
+def model_identity(request: dict) -> str:
+    models = request.get("models")
+    if isinstance(models, list) and models:
+        model = models[0]
+        return f"{model.get('name', 'ocr-router')}:{model.get('version', 'v1')}"
+    return "ocr-router:v1"
+
+
+def xywh_to_extents(box: dict) -> dict:
+    x = float(box.get("x", box.get("x0", 0.0)))
+    y = float(box.get("y", box.get("y0", 0.0)))
+    if "width" in box and "height" in box:
+        return {"x0": x, "y0": y, "x1": x + float(box["width"]), "y1": y + float(box["height"])}
+    return {
+        "x0": x,
+        "y0": y,
+        "x1": float(box.get("x1", x)),
+        "y1": float(box.get("y1", y)),
+    }
+
+
+def warning(code: str, message: str) -> dict:
+    return {"code": code, "severity": "SEVERE", "message": message}
+
+
+def score_at(scores: list, index: int) -> float:
+    return scores[index] if index < len(scores) else 0.0
+
+
+def box_from_any(value):
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, dict):
+        return box_from_dict(value)
+    if isinstance(value, (list, tuple)) and len(value) == 4 and all(is_number(item) for item in value):
+        return box_from_xywh(value)
+    if isinstance(value, (list, tuple)):
+        points = [point for point in value if isinstance(point, (list, tuple)) and len(point) >= 2]
+        if points:
+            xs = [float(point[0]) for point in points]
+            ys = [float(point[1]) for point in points]
+            return box_from_extents(min(xs), min(ys), max(xs), max(ys))
+    return None
+
+
+def box_from_dict(value: dict):
+    if {"x", "y", "width", "height"}.issubset(value):
+        return box_from_xywh([value["x"], value["y"], value["width"], value["height"]])
+    if {"x0", "y0", "x1", "y1"}.issubset(value):
+        return box_from_extents(value["x0"], value["y0"], value["x1"], value["y1"])
+    return None
+
+
+def box_from_xywh(value):
+    x, y, width, height = [int(round(float(item))) for item in value]
+    if x < 0 or y < 0 or width <= 0 or height <= 0:
+        return None
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def box_from_extents(x0, y0, x1, y1):
+    x0, y0, x1, y1 = [float(item) for item in [x0, y0, x1, y1]]
+    return box_from_xywh([x0, y0, x1 - x0, y1 - y0])
+
+
+def is_number(value) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(float(value))
+
+
+def clamp_score(value) -> float:
+    try:
+        score = float(value)
+    except Exception:
+        score = 0.0
+    if not math.isfinite(score):
+        return 0.0
+    return round(max(0.0, min(1.0, score)), 6)
+
+
+def emit_failure(code: str, message: str, engine_name: str = "mnn", flush: bool = False) -> int:
+    print(json.dumps({
+        "ok": False,
+        "code": code,
+        "engine": engine_name,
+        "message": message,
+        "pages": [],
+        "warnings": [code],
+    }, ensure_ascii=False, separators=(",", ":")), flush=flush)
+    return 0
+
+
+def emit_doctor(ok: bool, code: str, message: str, engine_name: str, backend: str, backend_ready: bool, backend_version: str) -> int:
+    print(json.dumps({
+        "ok": ok,
+        "code": code,
+        "runtime": "rapidocr",
+        "engine": engine_name,
+        "backend": backend,
+        "backendReady": backend_ready,
+        "backendVersion": backend_version,
+        "message": message,
+    }, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

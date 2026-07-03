@@ -313,7 +313,7 @@ work:
 | Region/data-residency enforcement | Customer-specific infrastructure policy. |
 | Managed key pools and vendor-key rotation | Operational integration outside the single-jar library. |
 | Compliance dashboard and auditor portal | Application surface for compliance teams, not a Java primitive. |
-| OCR engines and form-recognition models | Heavy runtime/model choices should be pluggable rather than bundled. |
+| OCR model/runtime packages | Heavy runtime/model choices should be pluggable; DocTruth core owns the `OcrEngine` SPI and local worker protocol, while desktop/deployment packages carry engines and model files. |
 
 Rule of thumb:
 

@@ -21,6 +21,10 @@ final class PdfPageBlockExtractor {
     private static final int ALLCAPS_MAX_LEN = 60;
     private static final double DIGIT_HEAVY_RATIO = 0.30;
     private static final Pattern NUMBERED_LIST = Pattern.compile("^\\s*\\d+[.)]\\s+");
+    private static final Pattern YEAR_LEADING_FRAGMENT = Pattern.compile("^\\s*(?:19|20)\\d{2}[.)]\\s+(.+)$");
+    private static final Pattern KEY_VALUE_FIELD =
+            Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} /&().-]{1,40}:\\s+\\S.+$");
+    private static final Pattern PAGE_LABEL = Pattern.compile("(?i)^(?:chapter|page)\\s+\\d+[\\p{L}\\p{N}.-]*$");
     private static final String LIST_BULLETS = "•▪*-·";
 
     private PdfPageBlockExtractor() {
@@ -33,24 +37,29 @@ final class PdfPageBlockExtractor {
             return List.of();
         }
         double medianHeight = medianHeight(positions);
-        var groups = groupByYGap(positions, estimateLineSpacing(positions, medianHeight));
-        var mediaBox = pdf.getPage(pageNumber - 1).getMediaBox();
+        var page = pdf.getPage(pageNumber - 1);
+        var separators = PdfPageGraphicsExtractor.extractHorizontalSeparators(page);
+        var groups = PdfVisualTextLayout.groupByColumnsAndTypography(
+                positions, estimateLineSpacing(positions, medianHeight), medianHeight, separators);
+        var mediaBox = page.getMediaBox();
         return renderBlocks(pageNumber, positions, groups, medianHeight, mediaBox.getWidth(), mediaBox.getHeight());
     }
 
-    private static List<TextPosition> capturePageTextPositions(PDDocument pdf, int pageNumber) throws IOException {
+    static List<TextPosition> capturePageTextPositions(PDDocument pdf, int pageNumber) throws IOException {
         var positions = new ArrayList<TextPosition>();
         var stripper = new PDFTextStripper() {
             @Override
-            protected void processTextPosition(TextPosition text) {
-                positions.add(text);
-                super.processTextPosition(text);
+            protected void writeString(String text, List<TextPosition> textPositions) {
+                positions.addAll(textPositions);
             }
         };
+        stripper.setSortByPosition(true);
+        stripper.setSuppressDuplicateOverlappingText(true);
         stripper.setStartPage(pageNumber);
         stripper.setEndPage(pageNumber);
         stripper.getText(pdf);
-        return positions;
+        var mediaBox = pdf.getPage(pageNumber - 1).getMediaBox();
+        return PdfTextPositionFilter.filter(positions, mediaBox.getWidth(), mediaBox.getHeight());
     }
 
     private static List<PdfTextBlock> renderBlocks(
@@ -74,73 +83,18 @@ final class PdfPageBlockExtractor {
             var loc = new SourceLocation(pageNumber, pageNumber, lineCursor, lineCursor + lineCount - 1, charOffset);
             out.add(new PdfTextBlock(
                     text,
-                    classify(text, avgHeight(group), medianHeight),
+                    classify(text, avgHeight(group), medianHeight, mostlyBold(group)),
                     loc,
                     PdfTextPositionBoxes.layoutBox(group, pageWidth, pageHeight)));
             charCursor = charOffset + text.length();
             lineCursor += lineCount;
         }
-        return out;
-    }
-
-    private static List<List<TextPosition>> groupByYGap(List<TextPosition> positions, double pageMedianHeight) {
-        var groups = new ArrayList<List<TextPosition>>();
-        float lineHeight = (float) Math.max(pageMedianHeight, MIN_LINE_HEIGHT);
-        float blockGap = lineHeight * BLOCK_GAP_FACTOR;
-        var current = new ArrayList<TextPosition>();
-        float lastBaseline = -1f;
-        for (var tp : positions) {
-            if (isBlank(tp)) {
-                addBlankToOpenGroup(current, tp);
-                continue;
-            }
-            float baseline = tp.getYDirAdj();
-            if (startsNewGroup(current, baseline, lastBaseline, lineHeight, blockGap)) {
-                groups.add(stripTrailingBlanks(current));
-                current = new ArrayList<>();
-            }
-            current.add(tp);
-            lastBaseline = baseline;
-        }
-        addLastGroup(groups, current);
-        return groups;
+        return PdfSemanticSectionCoalescer.coalesce(out);
     }
 
     private static boolean isBlank(TextPosition text) {
         String u = text.getUnicode();
         return u == null || u.isBlank();
-    }
-
-    private static void addBlankToOpenGroup(List<TextPosition> current, TextPosition text) {
-        if (!current.isEmpty()) {
-            current.add(text);
-        }
-    }
-
-    private static boolean startsNewGroup(
-            List<TextPosition> current, float baseline, float lastBaseline, float lineHeight, float blockGap) {
-        if (current.isEmpty()) {
-            return false;
-        }
-        return baseline - lastBaseline > blockGap || baseline < lastBaseline - lineHeight * 0.5f;
-    }
-
-    private static void addLastGroup(List<List<TextPosition>> groups, List<TextPosition> current) {
-        if (current.isEmpty()) {
-            return;
-        }
-        var stripped = stripTrailingBlanks(current);
-        if (!stripped.isEmpty()) {
-            groups.add(stripped);
-        }
-    }
-
-    private static List<TextPosition> stripTrailingBlanks(List<TextPosition> group) {
-        int end = group.size();
-        while (end > 0 && isBlank(group.get(end - 1))) {
-            end--;
-        }
-        return end == group.size() ? group : new ArrayList<>(group.subList(0, end));
     }
 
     private static String renderAll(List<TextPosition> positions) {
@@ -155,7 +109,7 @@ final class PdfPageBlockExtractor {
     }
 
     private static String renderGroup(List<TextPosition> group) {
-        return renderAll(group).stripTrailing();
+        return PdfVisualTextLayout.renderGroup(group);
     }
 
     private static double estimateLineSpacing(List<TextPosition> positions, double pageMedianHeight) {
@@ -237,19 +191,53 @@ final class PdfPageBlockExtractor {
     }
 
     static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight) {
+        return classify(blockText, avgCharHeight, pageMedianHeight, false);
+    }
+
+    static BlockKind classify(String blockText, double avgCharHeight, double pageMedianHeight, boolean bold) {
         Objects.requireNonNull(blockText, "blockText");
         String trimmed = blockText.stripLeading();
         if (trimmed.isEmpty()) {
             return BlockKind.OTHER;
         }
+        if (isYearLeadingSentenceFragment(trimmed)) {
+            return BlockKind.BODY;
+        }
         if (LIST_BULLETS.indexOf(trimmed.charAt(0)) >= 0
                 || NUMBERED_LIST.matcher(blockText).find()) {
             return BlockKind.LIST;
         }
+        if (looksLikeKeyValueField(trimmed)) {
+            return BlockKind.BODY;
+        }
+        if (looksLikeStandaloneKnownSection(trimmed)) {
+            return BlockKind.HEADING;
+        }
         if (pageMedianHeight > 0 && avgCharHeight > pageMedianHeight * HEADING_HEIGHT_FACTOR) {
             return BlockKind.HEADING;
         }
+        if (bold && PdfResumeSectionNames.isKnown(firstLine(trimmed))) {
+            return BlockKind.HEADING;
+        }
+        if (looksLikeStandaloneTitleHeading(trimmed)) {
+            return BlockKind.HEADING;
+        }
         return looksLikeAllCapsHeading(trimmed) ? BlockKind.HEADING : BlockKind.BODY;
+    }
+
+    private static boolean mostlyBold(List<TextPosition> group) {
+        int total = 0;
+        int bold = 0;
+        for (var p : group) {
+            if (PdfTextPositionMetrics.isBlank(p)) {
+                continue;
+            }
+            total++;
+            if (PdfTextPositionMetrics.isBold(p)) {
+                bold++;
+            }
+        }
+        return total > 0 && bold > total / 2;
     }
 
     private static boolean looksLikeAllCapsHeading(String trimmed) {
@@ -266,6 +254,81 @@ final class PdfPageBlockExtractor {
             return false;
         }
         return (double) counts.digits() / head.length() < DIGIT_HEAVY_RATIO;
+    }
+
+    private static boolean looksLikeKeyValueField(String trimmed) {
+        return !trimmed.contains("\n") && KEY_VALUE_FIELD.matcher(trimmed).matches();
+    }
+
+    private static boolean looksLikeStandaloneKnownSection(String trimmed) {
+        if (trimmed.contains("\n")) {
+            return false;
+        }
+        String head = firstLine(trimmed);
+        if (head.length() > ALLCAPS_MAX_LEN || head.endsWith(".") || head.endsWith(",")) {
+            return false;
+        }
+        return PdfResumeSectionNames.isKnown(head);
+    }
+
+    private static boolean looksLikeStandaloneTitleHeading(String trimmed) {
+        if (trimmed.contains("\n")) {
+            return false;
+        }
+        String head = firstLine(trimmed);
+        if (head.length() < 8 || head.length() > 80 || PAGE_LABEL.matcher(head).matches()) {
+            return false;
+        }
+        if (head.endsWith(".") || head.endsWith(",") || head.endsWith(":") || head.contains(";")) {
+            return false;
+        }
+        String[] words = head.split("\\s+");
+        if (words.length < 2 || words.length > 10) {
+            return false;
+        }
+        int titleWords = 0;
+        int letterWords = 0;
+        for (String word : words) {
+            String normalized = normalizeHeadingWord(word);
+            if (normalized.isBlank() || normalized.chars().allMatch(Character::isDigit)) {
+                continue;
+            }
+            if (normalized.length() <= 3 && normalized.equals(normalized.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            letterWords++;
+            if (isTitleWord(normalized)) {
+                titleWords++;
+            }
+        }
+        return letterWords >= 2 && titleWords == letterWords;
+    }
+
+    private static String normalizeHeadingWord(String word) {
+        return word.replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "");
+    }
+
+    private static boolean isTitleWord(String word) {
+        if (word.equals(word.toUpperCase(Locale.ROOT))) {
+            return true;
+        }
+        int firstLetter = -1;
+        for (int i = 0; i < word.length(); i++) {
+            if (Character.isLetter(word.charAt(i))) {
+                firstLetter = i;
+                break;
+            }
+        }
+        return firstLetter >= 0 && Character.isUpperCase(word.charAt(firstLetter));
+    }
+
+    private static boolean isYearLeadingSentenceFragment(String trimmed) {
+        var matcher = YEAR_LEADING_FRAGMENT.matcher(firstLine(trimmed));
+        if (!matcher.matches()) {
+            return false;
+        }
+        String tail = matcher.group(1).strip();
+        return tail.length() > 40 || tail.split("\\s+").length >= 5;
     }
 
     private static String firstLine(String trimmed) {

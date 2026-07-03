@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.awt.image.BufferedImage;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,6 +12,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import ai.doctruth.spi.OcrEngine;
+import ai.doctruth.spi.OcrPageResult;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -66,9 +70,39 @@ class DocTruthHappyPathTest {
 
         assertThat(client.fromPdf(samplePdf())).isNotNull();
         assertThat(client.fromPdf(samplePdf().toString())).isNotNull();
+        assertThat(client.parsePdf(samplePdf().toString())).isNotNull();
         assertThat(client.fromCsv(csv)).isNotNull();
         assertThat(client.fromDocx(sampleDocx())).isNotNull();
         assertThat(client.fromXlsx(sampleXlsx())).isNotNull();
+    }
+
+    @Test
+    void clientParsesPdfWithOcrEngine() throws Exception {
+        var calls = new AtomicInteger();
+        OcrEngine ocr = (BufferedImage image, int page) -> {
+            calls.incrementAndGet();
+            return new OcrPageResult("Name: Alex Chen", 0.9, List.of(), page);
+        };
+
+        var document = DocTruth.withProvider(provider(new AtomicInteger())).fromPdf(blankPdf(), ocr);
+
+        assertThat(calls).hasValue(1);
+        assertThat(document).isNotNull();
+    }
+
+    @Test
+    void clientParsesPdfStringWithOcrEngine() throws Exception {
+        var calls = new AtomicInteger();
+        OcrEngine ocr = (BufferedImage image, int page) -> {
+            calls.incrementAndGet();
+            return new OcrPageResult("Name: Alex Chen", 0.9, List.of(), page);
+        };
+
+        var document = DocTruth.withProvider(provider(new AtomicInteger()))
+                .fromPdf(blankPdf().toString(), ocr);
+
+        assertThat(calls).hasValue(1);
+        assertThat(document).isNotNull();
     }
 
     @Test
@@ -194,6 +228,15 @@ class DocTruthHappyPathTest {
                 cs.showText("Name: Alex Chen");
                 cs.endText();
             }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private Path blankPdf() throws Exception {
+        Path path = tempDir.resolve("blank.pdf");
+        try (var pdf = new PDDocument()) {
+            pdf.addPage(new PDPage());
             pdf.save(path.toFile());
         }
         return path;

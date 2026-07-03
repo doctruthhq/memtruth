@@ -65,6 +65,7 @@ final class ParsedDocumentJson {
     private static ObjectNode figureNode(FigureSection section) {
         ObjectNode node = base("figure", section.location());
         node.put("caption", section.caption());
+        section.boundingBox().ifPresent(box -> node.set("boundingBox", bbox(box)));
         return node;
     }
 

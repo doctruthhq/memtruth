@@ -36,6 +36,39 @@ This software has runtime dependencies on the following open-source libraries
 - Failsafe (dev.failsafe:failsafe)               — Apache License 2.0
 - Apache Commons Text (org.apache.commons:*)     — Apache License 2.0
 
+Bundled third-party benchmark material:
+
+- OpenDataLoader Bench
+  Source: https://github.com/opendataloader-project/opendataloader-bench
+  Imported commit: 7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109
+  Location: third_party/opendataloader-bench/
+  License: Apache License 2.0
+  Dataset notice: DP-Bench is listed by OpenDataLoader Bench as MIT in
+  third_party/opendataloader-bench/THIRD_PARTY_NOTICES.md.
+
+Reference implementations adapted in DocTruth-owned code:
+
+- OpenDataLoader PDF parser processors
+  Source: https://github.com/opendataloader-project/opendataloader-pdf
+  Reference commit: d1845179a1286bbb76f9618e8b6c8f51509a52f4
+  Location: third_party/opendataloader-pdf-reference
+  Reference files:
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorter.java
+    java/opendataloader-pdf-core/src/test/java/org/opendataloader/pdf/processors/readingorder/XYCutPlusPlusSorterTest.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ContentFilterProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TextLineProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/ClusterTableProcessor.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/TableStructureNormalizer.java
+    java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HeadingProcessor.java
+  License: Apache License 2.0
+  Adaptation: Java-owned geometry projection reading order in
+  src/main/java/ai/doctruth/PdfGeometryReadingOrderSorter.java plus
+  Rust-owned reading order, content filtering, line grouping, cluster-table
+  fallback, table-structure normalization, and heading behavior in
+  runtime/doctruth-runtime/src/lib.rs; TrustDocument remains the only canonical
+  DocTruth output contract.
+
 Test-scope dependencies (not bundled in published artifacts):
 
 - JUnit Jupiter, AssertJ, Mockito, WireMock, slf4j-simple — see their respective

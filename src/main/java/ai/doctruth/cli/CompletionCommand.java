@@ -2,7 +2,8 @@ package ai.doctruth.cli;
 
 final class CompletionCommand {
 
-    private static final String COMMANDS = "init parse schema extract audit migrate doctor completion version";
+    private static final String COMMANDS =
+            "init parse ingest-audit benchmark-corpus schema extract audit verify-audit verify-source-map verify-benchmark-report migrate mcp doctor completion version";
 
     private final CliContext context;
 

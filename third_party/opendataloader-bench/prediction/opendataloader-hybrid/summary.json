@@ -1,0 +1,9 @@
+{
+    "engine_name": "opendataloader-hybrid",
+    "engine_version": "2.2.1",
+    "processor": "arm64",
+    "document_count": 200,
+    "total_elapsed": 125.29678010940552,
+    "elapsed_per_doc": 0.6264839005470276,
+    "date": "2026-06-18"
+}

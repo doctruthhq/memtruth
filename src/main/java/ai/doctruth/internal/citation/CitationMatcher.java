@@ -201,7 +201,7 @@ public final class CitationMatcher {
         return switch (s) {
             case TextSection ts -> ts.boundingBox();
             case TableSection ignored -> Optional.empty();
-            case FigureSection ignored -> Optional.empty();
+            case FigureSection fs -> fs.boundingBox();
         };
     }
 

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -62,6 +63,27 @@ class TableSectionTest {
 
             assertThat(section).isInstanceOf(TableSection.class);
         }
+
+        @Test
+        @DisplayName("retains an optional table region bounding box")
+        void retainsBoundingBox() {
+            var box = new BoundingBox(10, 20, 300, 400);
+
+            var section = new TableSection(List.of(List.of("x")), LOC, Optional.of(box));
+
+            assertThat(section.boundingBox()).contains(box);
+        }
+
+        @Test
+        @DisplayName("retains optional table cell regions")
+        void retainsCellRegions() {
+            var region = new TableCellRegion(0, 0, new BoundingBox(10, 20, 100, 120));
+
+            var section = new TableSection(
+                    List.of(List.of("x")), LOC, Optional.of(new BoundingBox(0, 0, 200, 200)), List.of(region));
+
+            assertThat(section.cellRegions()).containsExactly(region);
+        }
     }
 
     @Nested
@@ -82,6 +104,22 @@ class TableSectionTest {
             assertThatThrownBy(() -> new TableSection(List.of(List.of("a")), null))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("location");
+        }
+
+        @Test
+        @DisplayName("rejects null bounding box optional with NullPointerException")
+        void nullBoundingBoxOptional() {
+            assertThatThrownBy(() -> new TableSection(List.of(List.of("a")), LOC, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("boundingBox");
+        }
+
+        @Test
+        @DisplayName("rejects null cell regions list with NullPointerException")
+        void nullCellRegions() {
+            assertThatThrownBy(() -> new TableSection(List.of(List.of("a")), LOC, Optional.empty(), null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("cellRegions");
         }
 
         @Test
@@ -145,6 +183,19 @@ class TableSectionTest {
             var section = new TableSection(rows, LOC);
 
             assertThatThrownBy(() -> section.rows().get(0).add("c")).isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        @DisplayName("calling cellRegions().add(...) throws UnsupportedOperationException")
+        void cellRegionsAreUnmodifiable() {
+            var section = new TableSection(
+                    List.of(List.of("x")),
+                    LOC,
+                    Optional.empty(),
+                    new ArrayList<>(List.of(new TableCellRegion(0, 0, new BoundingBox(1, 2, 3, 4)))));
+
+            assertThatThrownBy(() -> section.cellRegions().add(new TableCellRegion(0, 1, new BoundingBox(5, 6, 7, 8))))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
     }
 }

@@ -4,11 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import ai.doctruth.spi.OcrEngine;
+import ai.doctruth.spi.OcrPageResult;
+import ai.doctruth.spi.OcrRegion;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -27,6 +35,8 @@ import org.junit.jupiter.api.io.TempDir;
  * non-blank page. Tables and figures are covered by separate parser surfaces.
  */
 class PdfDocumentParserTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @TempDir
     Path tempDir;
@@ -119,6 +129,118 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("low-text PDF pages are routed to OCR before DocTruth section assembly")
+        void lowTextPageRoutesToOcrBeforeSectionAssembly() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            var calls = new AtomicInteger();
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> {
+                calls.incrementAndGet();
+                return new OcrPageResult(
+                        "OCR recovered resume text",
+                        0.91,
+                        List.of(new OcrRegion("OCR recovered resume text", 10, 20, 120, 30, 0.91)),
+                        pageNumber);
+            };
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(calls).hasValue(1);
+            assertThat(doc.sections()).hasSize(1);
+            var section = (TextSection) doc.sections().get(0);
+            assertThat(section.text()).isEqualTo("OCR recovered resume text");
+            assertThat(section.location().pageStart()).isEqualTo(1);
+            assertThat(section.boundingBox()).hasValueSatisfying(box -> {
+                assertThat(box.x0()).isGreaterThanOrEqualTo(0.0);
+                assertThat(box.x1()).isLessThanOrEqualTo(1000.0);
+                assertThat(box.y0()).isGreaterThanOrEqualTo(0.0);
+                assertThat(box.y1()).isLessThanOrEqualTo(1000.0);
+            });
+        }
+
+        @Test
+        @DisplayName("OCR page routing preserves region-level reading order and bounding boxes")
+        void lowTextPageRoutesOcrRegionsAsSeparateSections() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> new OcrPageResult(
+                    "second visual line\nfirst visual line",
+                    0.91,
+                    List.of(
+                            new OcrRegion("second visual line", 50, 160, 220, 30, 0.91),
+                            new OcrRegion("first visual line", 50, 80, 200, 30, 0.93)),
+                    pageNumber);
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(doc.sections()).hasSize(2);
+            assertThat(((TextSection) doc.sections().get(0)).text()).isEqualTo("second visual line");
+            assertThat(((TextSection) doc.sections().get(1)).text()).isEqualTo("first visual line");
+            var firstBox = ((TextSection) doc.sections().get(0)).boundingBox().orElseThrow();
+            var secondBox = ((TextSection) doc.sections().get(1)).boundingBox().orElseThrow();
+            assertThat(firstBox.y0()).isGreaterThan(secondBox.y0());
+        }
+
+        @Test
+        @DisplayName("OCR region source locations are compact after blank regions and multi-line regions")
+        void lowTextPageRoutesOcrRegionsWithCompactLineRanges() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> new OcrPageResult(
+                    "first line\nsecond line\nthird line",
+                    0.91,
+                    List.of(
+                            new OcrRegion("first line\nsecond line", 50, 80, 200, 60, 0.93),
+                            new OcrRegion("   ", 50, 150, 200, 30, 0.5),
+                            new OcrRegion("third line", 50, 190, 200, 30, 0.91)),
+                    pageNumber);
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(doc.sections()).hasSize(2);
+            var first = (TextSection) doc.sections().get(0);
+            var second = (TextSection) doc.sections().get(1);
+            assertThat(first.location().lineStart()).isEqualTo(1);
+            assertThat(first.location().lineEnd()).isEqualTo(2);
+            assertThat(second.location().lineStart()).isEqualTo(3);
+            assertThat(second.location().lineEnd()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("OCR page routing falls back to one aggregate section when no regions are returned")
+        void lowTextPageRoutesOcrTextWithoutRegionsAsAggregateSection() throws Exception {
+            var pdfPath = writeBlankPagePdf(tempDir);
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) ->
+                    new OcrPageResult("OCR recovered page text", 0.91, List.of(), pageNumber);
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(doc.sections()).hasSize(1);
+            var section = (TextSection) doc.sections().getFirst();
+            assertThat(section.text()).isEqualTo("OCR recovered page text");
+            assertThat(section.location().lineStart()).isEqualTo(1);
+            assertThat(section.location().lineEnd()).isEqualTo(1);
+            assertThat(section.boundingBox()).contains(new BoundingBox(0, 0, 1000, 1000));
+        }
+
+        @Test
+        @DisplayName("usable text-layer PDF pages do not call OCR")
+        void usableTextLayerPagesDoNotCallOcr() throws Exception {
+            var pdfPath = writeSinglePagePdf(
+                    tempDir, "This PDF has enough selectable text for DocTruth parsing without OCR routing.");
+            var calls = new AtomicInteger();
+            OcrEngine ocr = (BufferedImage pageImage, int pageNumber) -> {
+                calls.incrementAndGet();
+                return new OcrPageResult("should not be used", 0.5, List.of(), pageNumber);
+            };
+
+            var doc = PdfDocumentParser.parse(pdfPath, ocr);
+
+            assertThat(calls).hasValue(0);
+            assertThat(doc.sections()).hasSize(1);
+            assertThat(((TextSection) doc.sections().get(0)).text())
+                    .contains("This PDF has enough selectable text")
+                    .doesNotContain("should not be used");
+        }
+
+        @Test
         @DisplayName("every emitted section has a non-null BlockKind on the happy-path PDFs")
         void everySectionHasKind() throws Exception {
             var pdfPath = writeMultiPagePdf(tempDir, List.of("page one", "page two", "page three"));
@@ -127,6 +249,152 @@ class PdfDocumentParserTest {
 
             assertThat(doc.sections())
                     .allSatisfy(s -> assertThat(((TextSection) s).kind()).isNotNull());
+        }
+
+        @Test
+        @DisplayName("repeated page header and footer are suppressed from parsed body sections")
+        void repeatedHeaderFooterSuppressedFromBodySections() throws Exception {
+            var pdfPath = writeHeaderFooterPdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Unique body page 1")
+                    .contains("Unique body page 2")
+                    .contains("Unique body page 3")
+                    .doesNotContain("ACME Confidential")
+                    .doesNotContain("Page 1 of 3")
+                    .doesNotContain("Page 2 of 3")
+                    .doesNotContain("Page 3 of 3");
+        }
+
+        @Test
+        @DisplayName("suppressed repeated page header and footer are preserved in parse trace")
+        void repeatedHeaderFooterPreservedInParseTraceDiscardedBlocks() throws Exception {
+            var pdfPath = writeHeaderFooterPdf(tempDir);
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var trust = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+
+            var out = new StringWriter();
+            trust.writeParseTrace(out);
+            var tree = MAPPER.readTree(out.toString());
+            var firstPageDiscarded =
+                    tree.path("parseTrace").path("pages").get(0).path("discardedBlocks");
+
+            assertThat(firstPageDiscarded).hasSize(2);
+            assertThat(firstPageDiscarded.get(0).path("reason").asText()).isEqualTo("repeated_header");
+            assertThat(firstPageDiscarded.get(0).path("text").asText()).isEqualTo("ACME Confidential");
+            assertThat(firstPageDiscarded.get(0).path("bbox").isObject()).isTrue();
+            assertThat(firstPageDiscarded.get(1).path("reason").asText()).isEqualTo("repeated_footer");
+            assertThat(firstPageDiscarded.get(1).path("text").asText()).isEqualTo("Page 1 of 3");
+            assertThat(firstPageDiscarded.get(1).path("bbox").isObject()).isTrue();
+        }
+
+        @Test
+        @DisplayName("repeated body phrases and first-page-only title are not suppressed as furniture")
+        void repeatedBodyPhraseAndFirstPageTitleAreNotSuppressed() throws Exception {
+            var pdfPath = writeRepeatedBodyPhrasePdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Proposal Title")
+                    .contains("Shared body phrase page 1")
+                    .contains("Shared body phrase page 2");
+        }
+
+        @Test
+        @DisplayName("repeated top-band semantic titles are not suppressed as page furniture")
+        void repeatedTopBandSemanticTitlesAreNotSuppressed() throws Exception {
+            var pdfPath = writeRepeatedTopBandTitlePdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Executive Summary")
+                    .contains("Unique executive body page 1")
+                    .contains("Unique executive body page 2")
+                    .contains("Unique executive body page 3");
+        }
+
+        @Test
+        @DisplayName("top-band section titles with different numbers are not wildcard-suppressed")
+        void digitVariantTopBandSectionTitlesAreNotSuppressed() throws Exception {
+            var pdfPath = writeNumberedTopBandTitlesPdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            var bodyText = doc.sections().stream()
+                    .map(section -> ((TextSection) section).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertThat(bodyText)
+                    .contains("Section 1. Revenue")
+                    .contains("Section 2. Revenue")
+                    .contains("Section 3. Revenue");
+        }
+
+        @Test
+        @DisplayName("discarded trace artifacts are isolated between equal TrustDocument record instances")
+        void discardedTraceArtifactsAreIdentityScoped() throws Exception {
+            var pdfPath = writeHeaderFooterPdf(tempDir);
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var first = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+            var equalSecond = new TrustDocument(
+                    first.docId(), first.source(), first.body(), first.parserRun(), first.auditGradeStatus());
+
+            var firstTrace = new StringWriter();
+            var secondTrace = new StringWriter();
+            first.writeParseTrace(firstTrace);
+            equalSecond.writeParseTrace(secondTrace);
+
+            assertThat(MAPPER.readTree(firstTrace.toString())
+                            .path("parseTrace")
+                            .path("pages")
+                            .get(0)
+                            .path("discardedBlocks"))
+                    .hasSize(2);
+            assertThat(MAPPER.readTree(secondTrace.toString())
+                            .path("parseTrace")
+                            .path("pages")
+                            .get(0)
+                            .path("discardedBlocks"))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("standalone table captions adjacent to a table become FigureSection caption blocks")
+        void adjacentTableCaptionBecomesCaptionSection() throws Exception {
+            var pdfPath = writeCaptionedTablePdf(tempDir);
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(3);
+            assertThat(doc.sections().get(0)).isInstanceOf(TextSection.class);
+            assertThat(doc.sections().get(1)).isInstanceOf(FigureSection.class);
+            assertThat(doc.sections().get(2)).isInstanceOf(TableSection.class);
+            assertThat(((FigureSection) doc.sections().get(1)).caption())
+                    .isEqualTo("Table 1. Quarterly revenue by region");
+        }
+
+        @Test
+        @DisplayName("caption-like body sentences are not promoted without standalone caption shape")
+        void captionLikeBodySentenceStaysTextSection() throws Exception {
+            var pdfPath = writeSinglePagePdf(tempDir, "Figure 4.3 illustrates the process but this is body text.");
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(1);
+            assertThat(doc.sections().getFirst()).isInstanceOf(TextSection.class);
+            assertThat(((TextSection) doc.sections().getFirst()).text()).contains("Figure 4.3 illustrates the process");
         }
     }
 
@@ -280,6 +548,102 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("wrapped BODY lines split into visual blocks are merged into one paragraph")
+        void wrappedBodyBlocksMergeIntoOneParagraph() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("The buyer requires audit-ready extraction", 12f, 32f),
+                            new Run("with stable citations across wrapped", 12f, 32f),
+                            new Run("paragraph lines in the source PDF.", 12f, 32f)));
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(1);
+            var section = (TextSection) doc.sections().getFirst();
+            assertThat(section.kind()).isEqualTo(BlockKind.BODY);
+            assertThat(section.text())
+                    .isEqualTo(
+                            "The buyer requires audit-ready extraction with stable citations across wrapped paragraph lines in the source PDF.");
+            assertThat(section.location().lineStart()).isEqualTo(1);
+            assertThat(section.location().lineEnd()).isEqualTo(3);
+            assertThat(section.boundingBox()).hasValueSatisfying(box -> {
+                assertThat(box.x0()).isLessThan(box.x1());
+                assertThat(box.y0()).isLessThan(box.y1());
+            });
+        }
+
+        @Test
+        @DisplayName("wrapped BODY paragraph renders as one clean Markdown and content block")
+        void wrappedBodyParagraphRendersAsOneContentBlock() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("Clean Markdown should not keep", 12f, 32f),
+                            new Run("each wrapped paragraph line as", 12f, 32f),
+                            new Run("a separate document block.", 12f, 32f)));
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var trust = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+
+            assertThat(trust.toMarkdownClean()).isEqualTo("""
+                    Clean Markdown should not keep each wrapped paragraph line as a separate document block.
+                    """);
+            var out = new StringWriter();
+            trust.writeContentBlocks(out);
+            var blocks = MAPPER.readTree(out.toString()).path("contentBlocks");
+            assertThat(blocks).hasSize(1);
+            assertThat(blocks.get(0).path("text").asText())
+                    .isEqualTo(
+                            "Clean Markdown should not keep each wrapped paragraph line as a separate document block.");
+            assertThat(blocks.get(0).path("sourceUnitIds")).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("single BODY block with internal wrapped lines renders without hard line breaks")
+        void singleBodyBlockWithInternalWrappedLinesRendersAsOneParagraph() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(
+                            new Run("Single visual block keeps", 12f, 14f),
+                            new Run("wrapped body lines as", 12f, 14f),
+                            new Run("one paragraph.", 12f, 14f)));
+            var parsed = PdfDocumentParser.parse(pdfPath);
+            var section = (TextSection) parsed.sections().getFirst();
+
+            assertThat(parsed.sections()).hasSize(1);
+            assertThat(section.kind()).isEqualTo(BlockKind.BODY);
+            assertThat(section.text()).isEqualTo("Single visual block keeps wrapped body lines as one paragraph.");
+            assertThat(section.location().lineStart()).isEqualTo(1);
+            assertThat(section.location().lineEnd()).isEqualTo(3);
+            assertThat(section.boundingBox()).isPresent();
+
+            var trust = TrustDocument.fromParsed(parsed, "sha256:test", ParserPreset.LITE.parserRun());
+            assertThat(trust.toMarkdownClean()).isEqualTo("""
+                    Single visual block keeps wrapped body lines as one paragraph.
+                    """);
+            var out = new StringWriter();
+            trust.writeContentBlocks(out);
+            var blocks = MAPPER.readTree(out.toString()).path("contentBlocks");
+            assertThat(blocks).hasSize(1);
+            assertThat(blocks.get(0).path("text").asText())
+                    .isEqualTo("Single visual block keeps wrapped body lines as one paragraph.");
+        }
+
+        @Test
+        @DisplayName("separate list items are not merged as one wrapped paragraph")
+        void separateListItemsAreNotParagraphMerged() throws Exception {
+            var pdfPath = writeStructuredPdf(
+                    tempDir,
+                    List.of(new Run("- first requirement", 12f, 32f), new Run("- second requirement", 12f, 32f)));
+
+            var doc = PdfDocumentParser.parse(pdfPath);
+
+            assertThat(doc.sections()).hasSize(2);
+            assertThat(doc.sections()).allSatisfy(section -> assertThat(((TextSection) section).kind())
+                    .isEqualTo(BlockKind.LIST));
+        }
+
+        @Test
         @DisplayName("classify(): bullet-prefix → LIST")
         void classifyBullet() {
             assertThat(PdfDocumentParser.classify("• a bulleted item", 12.0, 12.0))
@@ -293,15 +657,40 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("classify(): year-leading sentence fragments stay BODY")
+        void classifyYearLeadingSentenceFragmentStaysBody() {
+            assertThat(PdfDocumentParser.classify(
+                            "1991. The biggest challenges came from cross-border logistics.", 18.0, 12.0))
+                    .isEqualTo(BlockKind.BODY);
+        }
+
+        @Test
         @DisplayName("classify(): avg height 1.5× page median → HEADING")
         void classifyHeadingBySize() {
             assertThat(PdfDocumentParser.classify("Some Title", 18.0, 12.0)).isEqualTo(BlockKind.HEADING);
         }
 
         @Test
+        @DisplayName("classify(): key-value field lines stay BODY even when the line is visually taller")
+        void classifyKeyValueFieldStaysBody() {
+            assertThat(PdfDocumentParser.classify("Party A: Acme Industrial Materials Pty Ltd", 18.0, 12.0))
+                    .isEqualTo(BlockKind.BODY);
+        }
+
+        @Test
         @DisplayName("classify(): 'MAKLUMAT PERIBADI' at body size → HEADING via all-caps rule")
         void classifyHeadingByAllCaps() {
             assertThat(PdfDocumentParser.classify("MAKLUMAT PERIBADI", 12.0, 12.0))
+                    .isEqualTo(BlockKind.HEADING);
+        }
+
+        @Test
+        @DisplayName("classify(): common section titles remain HEADING")
+        void classifyCommonSectionTitlesRemainHeading() {
+            assertThat(PdfDocumentParser.classify("WORK EXPERIENCE", 12.0, 12.0))
+                    .isEqualTo(BlockKind.HEADING);
+            assertThat(PdfDocumentParser.classify("EDUCATION", 12.0, 12.0)).isEqualTo(BlockKind.HEADING);
+            assertThat(PdfDocumentParser.classify("Executive Summary", 18.0, 12.0))
                     .isEqualTo(BlockKind.HEADING);
         }
 
@@ -332,6 +721,15 @@ class PdfDocumentParserTest {
         return writeMultiPagePdf(dir, List.of(text));
     }
 
+    private static Path writeBlankPagePdf(Path dir) throws IOException {
+        var path = dir.resolve("blank-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            pdf.addPage(new PDPage());
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
     private static Path writeMultiPagePdf(Path dir, List<String> pageTexts) throws IOException {
         var path = dir.resolve("doc-" + System.nanoTime() + ".pdf");
         try (var pdf = new PDDocument()) {
@@ -344,6 +742,73 @@ class PdfDocumentParserTest {
                     cs.newLineAtOffset(50, 700);
                     cs.showText(pageText);
                     cs.endText();
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeHeaderFooterPdf(Path dir) throws IOException {
+        var path = dir.resolve("header-footer-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 3; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    writeText(cs, "ACME Confidential", 50, 760);
+                    writeText(cs, "Unique body page " + i, 50, 700);
+                    writeText(cs, "Page " + i + " of 3", 50, 40);
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeRepeatedBodyPhrasePdf(Path dir) throws IOException {
+        var path = dir.resolve("body-repeat-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 2; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    if (i == 1) {
+                        writeText(cs, "Proposal Title", 50, 760);
+                    }
+                    writeText(cs, "Shared body phrase page " + i, 50, 500);
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeRepeatedTopBandTitlePdf(Path dir) throws IOException {
+        var path = dir.resolve("top-title-repeat-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 3; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    writeText(cs, "Executive Summary", 50, 760);
+                    writeText(cs, "Unique executive body page " + i, 50, 690);
+                }
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static Path writeNumberedTopBandTitlesPdf(Path dir) throws IOException {
+        var path = dir.resolve("numbered-top-title-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            for (int i = 1; i <= 3; i++) {
+                var page = new PDPage();
+                pdf.addPage(page);
+                try (var cs = new PDPageContentStream(pdf, page)) {
+                    writeText(cs, "Section " + i + ". Revenue", 50, 760);
+                    writeText(cs, "Unique revenue body page " + i, 50, 690);
                 }
             }
             pdf.save(path.toFile());
@@ -373,6 +838,45 @@ class PdfDocumentParserTest {
             pdf.save(path.toFile());
         }
         return path;
+    }
+
+    private static Path writeCaptionedTablePdf(Path dir) throws IOException {
+        var path = dir.resolve("captioned-table-" + System.nanoTime() + ".pdf");
+        try (var pdf = new PDDocument()) {
+            var page = new PDPage();
+            pdf.addPage(page);
+            try (var cs = new PDPageContentStream(pdf, page)) {
+                writeText(cs, "Revenue overview", 50, 750);
+                writeText(cs, "Table 1. Quarterly revenue by region", 72, 705);
+                drawLine(cs, 72, 680, 360, 680);
+                drawLine(cs, 72, 640, 360, 640);
+                drawLine(cs, 72, 600, 360, 600);
+                drawLine(cs, 72, 680, 72, 600);
+                drawLine(cs, 216, 680, 216, 600);
+                drawLine(cs, 360, 680, 360, 600);
+                writeText(cs, "Region", 100, 655);
+                writeText(cs, "Revenue", 245, 655);
+                writeText(cs, "North", 100, 615);
+                writeText(cs, "$10M", 245, 615);
+            }
+            pdf.save(path.toFile());
+        }
+        return path;
+    }
+
+    private static void writeText(PDPageContentStream stream, String text, float x, float y) throws IOException {
+        stream.beginText();
+        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        stream.newLineAtOffset(x, y);
+        stream.showText(text);
+        stream.endText();
+    }
+
+    private static void drawLine(PDPageContentStream stream, float x0, float y0, float x1, float y1)
+            throws IOException {
+        stream.moveTo(x0, y0);
+        stream.lineTo(x1, y1);
+        stream.stroke();
     }
 
     record Run(String text, float fontSize, float lineHeightAdvance) {}

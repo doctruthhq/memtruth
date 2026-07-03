@@ -50,17 +50,18 @@ Delete `private.asc` from the local disk afterwards.
 
 ## Cutting a release
 
-Replace `0.1.0` with the target version throughout.
+The commands below use `0.2.0-alpha` as the release being cut. Replace it with
+the target version throughout.
 
 ### 1. Bump version (drop `-SNAPSHOT`)
 
 ```bash
-mvn -B versions:set -DnewVersion=0.1.0 -DgenerateBackupPoms=false
+mvn -B versions:set -DnewVersion=0.2.0-alpha -DgenerateBackupPoms=false
 ```
 
 ### 2. Update `CHANGELOG.md`
 
-Move items from `## [Unreleased]` into a new `## [0.1.0] - YYYY-MM-DD` section.
+Move items from `## [Unreleased]` into a new `## [0.2.0-alpha] - YYYY-MM-DD` section.
 Keep the `## [Unreleased]` heading at the top with empty `### Added/Changed/Fixed`
 subheadings ready for the next cycle.
 
@@ -80,10 +81,10 @@ For patch releases, the snapshot should usually be unchanged.
 
 ```bash
 git add pom.xml CHANGELOG.md
-git commit -m "chore(release): 0.1.0"
-git tag -a v0.1.0 -m "v0.1.0"
+git commit -m "chore(release): 0.2.0-alpha"
+git tag -a v0.2.0-alpha -m "v0.2.0-alpha"
 git push origin main
-git push origin v0.1.0
+git push origin v0.2.0-alpha
 ```
 
 ### 5. GitHub Actions runs
@@ -114,9 +115,9 @@ after Central validation passes. Propagation to Maven Central usually takes
 ### 7. Bump to next `-SNAPSHOT`
 
 ```bash
-mvn -B versions:set -DnewVersion=0.2.0-SNAPSHOT -DgenerateBackupPoms=false
+mvn -B versions:set -DnewVersion=0.3.0-SNAPSHOT -DgenerateBackupPoms=false
 git add pom.xml
-git commit -m "chore: bump to 0.2.0-SNAPSHOT"
+git commit -m "chore: bump to 0.3.0-SNAPSHOT"
 git push origin main
 ```
 
@@ -127,11 +128,11 @@ git push origin main
 After Central propagation finishes:
 
 ```bash
-mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.1.0
+mvn dependency:get -Dartifact=ai.doctruth:doctruth-java:0.2.0-alpha
 ```
 
 A clean download confirms the artefact is live. Browse it at
-https://central.sonatype.com/artifact/ai.doctruth/doctruth-java/0.1.0.
+https://central.sonatype.com/artifact/ai.doctruth/doctruth-java/0.2.0-alpha.
 
 Smoke-test in a scratch project:
 
@@ -145,7 +146,7 @@ cat > pom.xml <<'EOF'
     <dependency>
       <groupId>ai.doctruth</groupId>
       <artifactId>doctruth-java</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0-alpha</version>
     </dependency>
   </dependencies>
 </project>
@@ -157,9 +158,9 @@ Verify the CLI release artifacts from the GitHub Release:
 
 ```bash
 shasum -a 256 -c checksums.txt
-tar -xzf doctruth-0.1.0.tar.gz
-JAVA=/path/to/java ./doctruth-0.1.0/bin/doctruth version
-JAVA=/path/to/java ./doctruth-0.1.0/bin/doctruth doctor
+tar -xzf doctruth-0.2.0-alpha.tar.gz
+JAVA=/path/to/java ./doctruth-0.2.0-alpha/bin/doctruth version
+JAVA=/path/to/java ./doctruth-0.2.0-alpha/bin/doctruth doctor
 ```
 
 When `HOMEBREW_TAP_TOKEN` is not configured, update the Homebrew tap manually
@@ -172,7 +173,7 @@ brew install --build-from-source ./Formula/doctruth.rb
 doctruth version
 doctruth doctor
 git add Formula/doctruth.rb
-git commit -m "doctruth 0.1.0"
+git commit -m "doctruth 0.2.0-alpha"
 git push origin main
 ```
 
@@ -186,7 +187,7 @@ GitHub Actions update PRs.
 ## Rolling back
 
 Maven Central releases are **immutable** after publish. Cut a new patch
-(`0.1.1`) that fixes or reverts the issue. Do NOT attempt to re-publish the
+(`0.2.1`) that fixes or reverts the issue. Do NOT attempt to re-publish the
 same coordinates.
 
 ---

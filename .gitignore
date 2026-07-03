@@ -63,5 +63,9 @@ examples/evidence-overlay/output/
 .doctruth/
 dist/
 
+# Generated benchmark predictions from local OpenDataLoader comparison runs.
+third_party/opendataloader-bench/prediction/doctruth-*/
+third_party/opendataloader-bench/prediction/kreuzberg-*/
+
 # Local Claude skill state (per-developer)
 .claude/

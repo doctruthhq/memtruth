@@ -102,12 +102,14 @@ smoke tests. Parser and schema inspection do not require an LLM key.
 
 ```bash
 mvn package -DskipTests
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf --bboxes
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf --json -o parsed.json
-java -jar target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv --json -o parsed.json
+java -jar target/doctruth-java-0.2.0-alpha-all.jar schema examples/pydantic-interop/resume.schema.json
 ```
 
-See [Install DocTruth CLI](docs/install.md) and [CLI](docs/cli.md).
+For a copy-pasteable Java parser example that also needs no provider key, see
+[No-LLM parse example](examples/no-llm-parse/). See [Install DocTruth CLI](docs/install.md)
+and [CLI](docs/cli.md).
 
 Tagged releases publish `doctruth-<version>.tar.gz`,
 `doctruth-java-<version>-all.jar`, checksums, and a generated Homebrew formula.

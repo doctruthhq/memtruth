@@ -9,7 +9,7 @@ runtime dependency.
 1. Export a Pydantic model to JSON Schema.
 2. Optionally check it with the DocTruth CLI.
 3. Load it with `JsonSchema.from(Path)`.
-4. Run `extractJson(...)` with required citations.
+4. Run the document-first `DocTruth.withOpenAi(...).fromPdf(...).extractJson(...)` flow with required citations.
 5. Write `result.toAuditJson(...)` for review or downstream ingestion.
 
 ## Export or Check the Schema
@@ -49,7 +49,7 @@ javac -cp "$CP" -d /tmp/pydantic-interop-build \
   examples/pydantic-interop/PydanticInteropExample.java
 java -cp "/tmp/pydantic-interop-build:$CP" \
   ai.doctruth.examples.pydanticinterop.PydanticInteropExample \
-  fixtures/pdf/004b85e6-b2dd-4d7f-aebc-5e0bab06e1f3.pdf \
+  /path/to/resume.pdf \
   examples/pydantic-interop/resume.schema.json \
   /tmp/doctruth-resume-audit.json
 ```

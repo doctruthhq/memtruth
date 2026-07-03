@@ -12,7 +12,7 @@ final class Usage {
 
                 Usage:
                   doctruth init
-                  doctruth parse <document> [--json] [--bboxes] [-o parsed.json]
+                  doctruth parse <document> [--parser opendataloader|pdfbox] [--json] [--bboxes] [-o parsed.json]
                   doctruth schema <schema.json> [--json]
                   doctruth extract <document> -s <schema.json> [-o out/]
                   doctruth audit <audit.json> [--json]

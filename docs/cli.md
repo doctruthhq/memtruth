@@ -58,12 +58,20 @@ Prints a summary:
 
 ```text
 contract.pdf
+parser: opendataloader
 pages: 3
 sections: 42
 text: 38
 tables: 2
 figures: 0
 bbox coverage: 31/38
+```
+
+PDF parsing defaults to the OpenDataLoader backend. Use the legacy PDFBox
+backend only for compatibility checks or parser debugging:
+
+```bash
+doctruth parse contract.pdf --parser pdfbox
 ```
 
 Write parsed sections as JSON:

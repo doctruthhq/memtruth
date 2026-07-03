@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import ai.doctruth.PdfParserBackend;
+
 final class ParseCommand {
 
     private final CliContext context;
@@ -14,7 +16,7 @@ final class ParseCommand {
 
     void run(String[] args) throws CliException {
         var options = ParseOptions.parse(args);
-        var doc = DocumentParsers.parse(options.document());
+        var doc = DocumentParsers.parse(options.document(), options.parser());
         String json = ParsedDocumentJson.toJson(doc);
         if (options.out() != null) {
             write(options.out(), json);
@@ -29,6 +31,7 @@ final class ParseCommand {
     private void printSummary(Path source, ai.doctruth.ParsedDocument doc, ParseOptions options) {
         var stats = ParsedDocumentStats.from(doc);
         context.out().println(source);
+        context.out().println("parser: " + options.parser().id());
         context.out().println("pages: " + doc.metadata().pageCount());
         context.out().println("sections: " + stats.sections());
         context.out().println("text: " + stats.text());
@@ -52,26 +55,44 @@ final class ParseCommand {
         }
     }
 
-    private record ParseOptions(Path document, boolean json, boolean bboxes, Path out) {
+    private record ParseOptions(Path document, boolean json, boolean bboxes, Path out, PdfParserBackend parser) {
         static ParseOptions parse(String[] args) {
             if (args.length < 2) {
-                throw new UsageException("usage: doctruth parse <document> [--json] [--bboxes] [-o parsed.json]");
+                throw new UsageException(
+                        "usage: doctruth parse <document> [--parser opendataloader|pdfbox] [--json] [--bboxes] [-o parsed.json]");
             }
             Path document = Path.of(args[1]);
             boolean json = false;
             boolean bboxes = false;
             Path out = null;
+            PdfParserBackend parser = PdfParserBackend.OPENDATALOADER;
             var cursor = new ArgCursor(args, 2);
             while (cursor.hasNext()) {
                 String arg = cursor.next();
                 switch (arg) {
                     case "--json" -> json = true;
                     case "--bboxes" -> bboxes = true;
+                    case "--parser" -> parser = parseBackend(nextValue(cursor, arg));
                     case "-o", "--out" -> out = cursor.nextPath(arg);
                     default -> throw new UsageException("unknown parse option: " + arg);
                 }
             }
-            return new ParseOptions(document, json, bboxes, out);
+            return new ParseOptions(document, json, bboxes, out, parser);
+        }
+
+        private static PdfParserBackend parseBackend(String raw) {
+            try {
+                return PdfParserBackend.fromId(raw);
+            } catch (IllegalArgumentException e) {
+                throw new UsageException(e.getMessage());
+            }
+        }
+
+        private static String nextValue(ArgCursor cursor, String option) {
+            if (!cursor.hasNext()) {
+                throw new UsageException(option + " requires a value");
+            }
+            return cursor.next();
         }
     }
 }

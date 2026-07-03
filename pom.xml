@@ -54,6 +54,8 @@
         <slf4j.version>2.0.18</slf4j.version>
         <log4j.version>2.24.3</log4j.version>
         <pdfbox.version>3.0.3</pdfbox.version>
+        <opendataloader-pdf.version>2.2.1</opendataloader-pdf.version>
+        <verapdf.version>1.31.83</verapdf.version>
         <poi.version>5.4.0</poi.version>
         <failsafe.version>3.3.2</failsafe.version>
         <commons-text.version>1.13.0</commons-text.version>
@@ -79,6 +81,30 @@
         <jacoco.version>0.8.15</jacoco.version>
         <cyclonedx-maven-plugin.version>2.9.2</cyclonedx-maven-plugin.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>vera-dev</id>
+            <name>Vera development</name>
+            <url>https://artifactory.openpreservation.org/artifactory/vera-dev</url>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- OpenDataLoader publishes veraPDF ranges; pin them for reproducible CI. -->
+            <dependency>
+                <groupId>org.verapdf</groupId>
+                <artifactId>validation-model</artifactId>
+                <version>${verapdf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.verapdf</groupId>
+                <artifactId>wcag-validation</artifactId>
+                <version>${verapdf.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- JSON / schema -->
@@ -110,6 +136,11 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>${pdfbox.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.opendataloader</groupId>
+            <artifactId>opendataloader-pdf-core</artifactId>
+            <version>${opendataloader-pdf.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.poi</groupId>
@@ -166,6 +197,12 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>${slf4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-to-slf4j</artifactId>
+            <version>${log4j.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -250,6 +287,16 @@
                                 <extraArtifact>org.slf4j:slf4j-nop:${slf4j.version}</extraArtifact>
                                 <extraArtifact>org.apache.logging.log4j:log4j-to-slf4j:${log4j.version}</extraArtifact>
                             </extraArtifacts>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>ai.doctruth.cli.DocTruthCli</mainClass>

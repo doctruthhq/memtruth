@@ -40,7 +40,7 @@ class PdfDocumentParserTest {
         void singlePageProducesOneTextSection() throws Exception {
             var pdfPath = writeSinglePagePdf(tempDir, "Hello world from doctruth-java");
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.docId()).isNotBlank();
             assertThat(doc.metadata().sourceFilename()).endsWith(".pdf");
@@ -71,7 +71,7 @@ class PdfDocumentParserTest {
         void multiPageProducesPerPageSections() throws Exception {
             var pdfPath = writeMultiPagePdf(tempDir, List.of("first page text", "second page text", "third page text"));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.metadata().pageCount()).isEqualTo(3);
             // One short single-line block per page → 3 sections (each kind defaulted via
@@ -97,8 +97,8 @@ class PdfDocumentParserTest {
         void docIdIsStable() throws Exception {
             var pdfPath = writeSinglePagePdf(tempDir, "stable docId test");
 
-            var docA = PdfDocumentParser.parse(pdfPath);
-            var docB = PdfDocumentParser.parse(pdfPath);
+            var docA = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
+            var docB = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(docA.docId()).isEqualTo(docB.docId());
         }
@@ -109,7 +109,7 @@ class PdfDocumentParserTest {
             // Write a PDF where one page has whitespace-only content
             var pdfPath = writeMultiPagePdf(tempDir, List.of("real content", "   "));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.metadata().pageCount()).isEqualTo(2);
             // Only the non-blank page becomes a section (matches CONTRIBUTING.md "engineering principles"
@@ -123,7 +123,7 @@ class PdfDocumentParserTest {
         void everySectionHasKind() throws Exception {
             var pdfPath = writeMultiPagePdf(tempDir, List.of("page one", "page two", "page three"));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections())
                     .allSatisfy(s -> assertThat(((TextSection) s).kind()).isNotNull());
@@ -143,11 +143,21 @@ class PdfDocumentParserTest {
         }
 
         @Test
+        @DisplayName("null backend throws NullPointerException with 'backend' in the message")
+        void nullBackend() throws Exception {
+            var pdfPath = writeSinglePagePdf(tempDir, "null backend");
+
+            assertThatNullPointerException()
+                    .isThrownBy(() -> PdfDocumentParser.parse(pdfPath, null))
+                    .withMessageContaining("backend");
+        }
+
+        @Test
         @DisplayName("a nonexistent file throws ParseException with errorCode and sourceName populated")
         void nonexistentFile() {
             var missing = tempDir.resolve("does-not-exist-" + System.nanoTime() + ".pdf");
 
-            assertThatThrownBy(() -> PdfDocumentParser.parse(missing))
+            assertThatThrownBy(() -> PdfDocumentParser.parse(missing, PdfParserBackend.PDFBOX))
                     .isInstanceOf(ParseException.class)
                     .satisfies(e -> {
                         var pe = (ParseException) e;
@@ -163,7 +173,7 @@ class PdfDocumentParserTest {
             var notPdf = tempDir.resolve("not-actually-pdf.pdf");
             Files.writeString(notPdf, "This is plain text, not a PDF binary.");
 
-            assertThatThrownBy(() -> PdfDocumentParser.parse(notPdf))
+            assertThatThrownBy(() -> PdfDocumentParser.parse(notPdf, PdfParserBackend.PDFBOX))
                     .isInstanceOf(ParseException.class)
                     .satisfies(e -> {
                         var pe = (ParseException) e;
@@ -175,7 +185,8 @@ class PdfDocumentParserTest {
         @Test
         @DisplayName("a directory passed where a file is expected throws ParseException")
         void directoryRejected() {
-            assertThatThrownBy(() -> PdfDocumentParser.parse(tempDir)).isInstanceOf(ParseException.class);
+            assertThatThrownBy(() -> PdfDocumentParser.parse(tempDir, PdfParserBackend.PDFBOX))
+                    .isInstanceOf(ParseException.class);
         }
     }
 
@@ -193,7 +204,7 @@ class PdfDocumentParserTest {
                             new Run("Second line of the same paragraph.", 12f, 14f),
                             new Run("Third line of the same paragraph.", 12f, 14f)));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections()).hasSize(1);
             var ts = (TextSection) doc.sections().get(0);
@@ -210,7 +221,7 @@ class PdfDocumentParserTest {
                             new Run("Section Heading", 16f, 60f),
                             new Run("Body paragraph following the heading.", 12f, 14f)));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections()).hasSize(2);
             var first = (TextSection) doc.sections().get(0);
@@ -230,7 +241,7 @@ class PdfDocumentParserTest {
                             new Run("MAKLUMAT PERIBADI", 12f, 60f),
                             new Run("Some body content beneath the heading.", 12f, 14f)));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections()).hasSize(2);
             var first = (TextSection) doc.sections().get(0);
@@ -244,7 +255,7 @@ class PdfDocumentParserTest {
         void bulletedList() throws Exception {
             var pdfPath = writeStructuredPdf(tempDir, List.of(new Run("- a hyphen list item", 12f, 14f)));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections()).hasSize(1);
             var ts = (TextSection) doc.sections().get(0);
@@ -256,7 +267,7 @@ class PdfDocumentParserTest {
         void numberedList() throws Exception {
             var pdfPath = writeStructuredPdf(tempDir, List.of(new Run("1. First numbered item", 12f, 14f)));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections()).hasSize(1);
             var ts = (TextSection) doc.sections().get(0);
@@ -272,7 +283,7 @@ class PdfDocumentParserTest {
                             new Run("Block one paragraph text.", 12f, 60f),
                             new Run("Block two paragraph text.", 12f, 14f)));
 
-            var doc = PdfDocumentParser.parse(pdfPath);
+            var doc = PdfDocumentParser.parse(pdfPath, PdfParserBackend.PDFBOX);
 
             assertThat(doc.sections()).hasSize(2);
             assertThat(((TextSection) doc.sections().get(0)).text()).contains("Block one");

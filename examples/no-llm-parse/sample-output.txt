@@ -1,7 +1,7 @@
-fixtures/pdf/ResumeAFIQDANISH.pdf
+examples/no-llm-parse/sample-contract.csv
 pages: 1
-sections: 12
-text: 12
-tables: 0
+sections: 1
+text: 0
+tables: 1
 figures: 0
-bbox coverage: 12/12
+bbox coverage: 0/0

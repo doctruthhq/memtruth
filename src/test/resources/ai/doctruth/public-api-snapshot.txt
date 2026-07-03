@@ -231,6 +231,14 @@ TYPE interface ai.doctruth.ParsedSection [public abstract interface]
 
 TYPE class ai.doctruth.PdfDocumentParser [public final]
   method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
+  method ai.doctruth.ParsedDocument parse(java.nio.file.Path, ai.doctruth.PdfParserBackend) [public static]
+
+TYPE enum ai.doctruth.PdfParserBackend [public final]
+  enum-constants OPENDATALOADER, PDFBOX
+  method ai.doctruth.PdfParserBackend fromId(java.lang.String) [public static]
+  method ai.doctruth.PdfParserBackend valueOf(java.lang.String) [public static]
+  method ai.doctruth.PdfParserBackend[] values() [public static]
+  method java.lang.String id() [public]
 
 TYPE record ai.doctruth.PriorityTruncate [public final]
   record-components java.util.List prioritySectionPatterns, int maxChars, ai.doctruth.OverBudgetPolicy onOverBudget

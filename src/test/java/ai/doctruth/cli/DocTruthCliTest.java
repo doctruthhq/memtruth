@@ -97,7 +97,7 @@ class DocTruthCliTest {
         int code = cli.run(new String[] {"parse", pdf.toString(), "--bboxes"});
 
         assertThat(code).isZero();
-        assertThat(cli.out()).contains("pages: 1").contains("sections:").contains("bbox coverage:");
+        assertThat(cli.out()).contains("parser: opendataloader", "pages: 1", "sections:", "bbox coverage:");
     }
 
     @Test

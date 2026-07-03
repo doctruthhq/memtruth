@@ -8,6 +8,7 @@ import ai.doctruth.DocxDocumentParser;
 import ai.doctruth.ParseException;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.PdfDocumentParser;
+import ai.doctruth.PdfParserBackend;
 import ai.doctruth.XlsxDocumentParser;
 
 final class DocumentParsers {
@@ -17,9 +18,13 @@ final class DocumentParsers {
     }
 
     static ParsedDocument parse(Path path) throws CliException {
+        return parse(path, PdfParserBackend.OPENDATALOADER);
+    }
+
+    static ParsedDocument parse(Path path, PdfParserBackend pdfBackend) throws CliException {
         try {
             return switch (extension(path)) {
-                case "pdf" -> PdfDocumentParser.parse(path);
+                case "pdf" -> PdfDocumentParser.parse(path, pdfBackend);
                 case "docx" -> DocxDocumentParser.parse(path);
                 case "xlsx" -> XlsxDocumentParser.parse(path);
                 case "csv" -> CsvDocumentParser.parse(path);

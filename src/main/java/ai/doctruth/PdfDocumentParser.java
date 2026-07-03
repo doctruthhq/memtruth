@@ -35,13 +35,34 @@ public final class PdfDocumentParser {
     }
 
     /**
-     * Parse the PDF at {@code pdfPath} into a {@link ParsedDocument}.
+     * Parse the PDF at {@code pdfPath} into a {@link ParsedDocument} using DocTruth's default
+     * PDF parser backend.
      *
      * @throws NullPointerException if {@code pdfPath} is null.
      * @throws ParseException       if the file is missing, is not a PDF, is encrypted with
-     *                              an unknown password, or PDFBox raises any IO error.
+     *                              an unknown password, or the parser raises any IO error.
      */
     public static ParsedDocument parse(Path pdfPath) throws ParseException {
+        return parse(pdfPath, PdfParserBackend.OPENDATALOADER);
+    }
+
+    /**
+     * Parse the PDF at {@code pdfPath} into a {@link ParsedDocument} using the requested
+     * backend.
+     *
+     * @throws NullPointerException if {@code pdfPath} or {@code backend} is null.
+     * @throws ParseException       if the file is missing, is not a PDF, is encrypted with
+     *                              an unknown password, or the parser raises any IO error.
+     */
+    public static ParsedDocument parse(Path pdfPath, PdfParserBackend backend) throws ParseException {
+        Objects.requireNonNull(backend, "backend");
+        return switch (backend) {
+            case OPENDATALOADER -> OpenDataLoaderPdfDocumentParser.parse(pdfPath);
+            case PDFBOX -> parseWithPdfBox(pdfPath);
+        };
+    }
+
+    static ParsedDocument parseWithPdfBox(Path pdfPath) throws ParseException {
         Objects.requireNonNull(pdfPath, "pdfPath");
         requireRegularFile(pdfPath);
         try (PDDocument pdf = Loader.loadPDF(pdfPath.toFile())) {

@@ -63,7 +63,7 @@ Check the install:
 ```bash
 doctruth version
 doctruth doctor
-doctruth parse fixtures/pdf/ResumeAFIQDANISH.pdf --bboxes
+doctruth parse examples/no-llm-parse/sample-contract.csv
 ```
 
 If `java` is not on `PATH`, point the launcher at your Java 25 runtime:
@@ -86,9 +86,9 @@ java -version
 No provider key is required for parser and schema inspection:
 
 ```bash
-doctruth parse contract.pdf --bboxes
-doctruth parse contract.pdf --json -o parsed.json
-doctruth schema contract.schema.json
+doctruth parse examples/no-llm-parse/sample-contract.csv
+doctruth parse examples/no-llm-parse/sample-contract.csv --json -o parsed.json
+doctruth schema examples/pydantic-interop/resume.schema.json
 ```
 
 This is the recommended first-run path. It proves the document evidence surface

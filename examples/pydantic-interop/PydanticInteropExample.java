@@ -3,9 +3,6 @@ package ai.doctruth.examples.pydanticinterop;
 
 import ai.doctruth.DocTruth;
 import ai.doctruth.JsonSchema;
-import ai.doctruth.OpenAiProvider;
-import ai.doctruth.ParsedDocument;
-import ai.doctruth.PdfDocumentParser;
 import java.nio.file.Path;
 
 public final class PydanticInteropExample {
@@ -29,17 +26,16 @@ public final class PydanticInteropExample {
         Path schemaPath = Path.of(args[1]);
         Path auditPath = Path.of(args[2]);
 
-        ParsedDocument doc = PdfDocumentParser.parse(pdfPath);
         JsonSchema schema = JsonSchema.from(schemaPath);
 
-        var result = DocTruth.from(new OpenAiProvider(apiKey))
+        var result = DocTruth.withOpenAi(apiKey)
+                .fromPdf(pdfPath)
                 .extractJson("Extract resume fields. Return JSON only.", schema)
                 .requireCitation("fullName")
                 .requireCitation("experience[0].company")
-                .withProvenance()
-                .withConfidence()
+                .withEvidence()
                 .withMaxRetries(2)
-                .runJson(doc);
+                .runJson();
 
         result.toAuditJson(auditPath);
         System.out.println("extracted JSON: " + result.value());

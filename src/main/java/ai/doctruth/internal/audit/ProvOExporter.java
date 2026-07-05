@@ -109,6 +109,10 @@ public final class ProvOExporter {
         entry.put("doctruth:matchScore", citation.matchScore());
         entry.set("doctruth:sourceLocation", locationNode(citation.location()));
         citation.boundingBox().ifPresent(box -> entry.set("doctruth:boundingBox", MAPPER.valueToTree(box)));
+        citation.source().ifPresent(source -> {
+            entry.put("doctruth:sourceDocId", source.docId());
+            entry.put("doctruth:sourceUnitId", source.unitId());
+        });
         return entry;
     }
 

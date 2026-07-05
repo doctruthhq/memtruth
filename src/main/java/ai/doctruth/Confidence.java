@@ -3,9 +3,8 @@ package ai.doctruth;
 import java.util.Objects;
 
 /**
- * A confidence score for a single extracted field, plus a free-form rationale. The score is
- * typically LLM-self-reported (a prior production extraction system-style {@code Field(ge=0.0, le=1.0)}) — the library
- * does NOT compute it from signals; it carries through what the model emits.
+ * A confidence score for a single extracted field, plus a free-form rationale. Scores can come from
+ * model output or DocTruth-owned evidence signals such as source quote matching.
  *
  * <p>Invariants (enforced by the compact constructor):
  *

@@ -32,6 +32,8 @@ This software has runtime dependencies on the following open-source libraries
 - Jackson (com.fasterxml.jackson.*)             — Apache License 2.0
 - SLF4J API (org.slf4j:slf4j-api)                — MIT License
 - Apache PDFBox (org.apache.pdfbox:pdfbox)       — Apache License 2.0
+- OpenDataLoader PDF Core (org.opendataloader:opendataloader-pdf-core)
+                                                    — Apache License 2.0
 - Apache POI (org.apache.poi:poi-ooxml)          — Apache License 2.0
 - Failsafe (dev.failsafe:failsafe)               — Apache License 2.0
 - Apache Commons Text (org.apache.commons:*)     — Apache License 2.0

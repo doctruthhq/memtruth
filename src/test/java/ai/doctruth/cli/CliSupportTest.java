@@ -51,6 +51,23 @@ class CliSupportTest {
     }
 
     @Test
+    void parsedDocumentJsonFileOutputMatchesStringOutput() throws Exception {
+        var loc = new SourceLocation(1, 1, 1, 1, 0);
+        var doc = new ParsedDocument(
+                "doc",
+                java.util.List.of(
+                        new TextSection("hello", loc, BlockKind.BODY),
+                        new TableSection(java.util.List.of(java.util.List.of("a", "b")), loc),
+                        new FigureSection("chart", loc)),
+                new DocumentMetadata("sample.pdf", 1, Optional.empty()));
+        Path output = tempDir.resolve("parsed.json");
+
+        ParsedDocumentJson.writeJson(doc, output);
+
+        assertThat(MAPPER.readTree(output.toFile())).isEqualTo(MAPPER.readTree(ParsedDocumentJson.toJson(doc)));
+    }
+
+    @Test
     void providerFactoryCreatesSupportedProviders() throws Exception {
         var env = Map.of(
                 "OPENAI_API_KEY", "openai-key",

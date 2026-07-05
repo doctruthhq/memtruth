@@ -7,7 +7,8 @@ import java.util.Optional;
  * The verifiable evidence anchor for a single extracted field. A {@code Citation} ties an
  * extracted value back to a specific span of the source document plus the exact quote
  * recovered from that span, an optional visual bounding box, and a confidence score for the
- * page-attribution match itself.
+ * page-attribution match itself. When available, {@code source} links the quote to
+ * the TrustDocument unit that generated the audit entry.
  *
  * <p>Invariants (enforced by the compact constructor):
  *
@@ -19,6 +20,8 @@ import java.util.Optional;
  *       fuzzy / Levenshtein-style matchers.
  *   <li>{@code boundingBox} is non-null; use {@link Optional#empty()} when the source format
  *       has no reliable page geometry.
+ *   <li>{@code source} is non-null; use {@link Optional#empty()} when this citation was not
+ *       produced from a TrustDocument-backed parser run.
  * </ul>
  *
  * @param location   the source-document span this citation points at.
@@ -26,15 +29,21 @@ import java.util.Optional;
  * @param matchScore similarity of {@code exactQuote} to the substring at {@code location};
  *                   downstream matchers should treat {@code matchScore < 0.85} as a warning.
  * @param boundingBox optional page-normalized visual region for PDF-originated text.
+ * @param source optional TrustDocument source identity.
  * @since 0.1.0
  */
 public record Citation(
-        SourceLocation location, String exactQuote, double matchScore, Optional<BoundingBox> boundingBox) {
+        SourceLocation location,
+        String exactQuote,
+        double matchScore,
+        Optional<BoundingBox> boundingBox,
+        Optional<CitationSource> source) {
 
     public Citation {
         Objects.requireNonNull(location, "location");
         Objects.requireNonNull(exactQuote, "exactQuote");
         Objects.requireNonNull(boundingBox, "boundingBox");
+        Objects.requireNonNull(source, "source");
         if (exactQuote.isBlank()) {
             throw new IllegalArgumentException("exactQuote must not be blank");
         }
@@ -47,6 +56,13 @@ public record Citation(
      * Backward-compat constructor — leaves the visual bounding box absent.
      */
     public Citation(SourceLocation location, String exactQuote, double matchScore) {
-        this(location, exactQuote, matchScore, Optional.empty());
+        this(location, exactQuote, matchScore, Optional.empty(), Optional.empty());
+    }
+
+    /**
+     * Backward-compat constructor — leaves TrustDocument source identity absent.
+     */
+    public Citation(SourceLocation location, String exactQuote, double matchScore, Optional<BoundingBox> boundingBox) {
+        this(location, exactQuote, matchScore, boundingBox, Optional.empty());
     }
 }

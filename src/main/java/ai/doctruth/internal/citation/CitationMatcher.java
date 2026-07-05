@@ -10,6 +10,7 @@ import java.util.Optional;
 
 import ai.doctruth.BoundingBox;
 import ai.doctruth.Citation;
+import ai.doctruth.CitationSource;
 import ai.doctruth.FigureSection;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.ParsedSection;
@@ -63,7 +64,7 @@ public final class CitationMatcher {
         var leaves = new ArrayList<Leaf>();
         traverse("", value, leaves);
         var sections = renderedSections(doc);
-        var fallback = fallbackLocation(doc);
+        var fallback = new SourceLocation(1, 1, 1, 1, 0);
         var out = new LinkedHashMap<String, Citation>();
         for (var leaf : leaves) {
             out.put(leaf.path(), matchOne(leaf.value(), leaf.path(), sections, fallback));
@@ -71,11 +72,12 @@ public final class CitationMatcher {
         return Map.copyOf(out);
     }
 
-    private Citation matchOne(String needle, String path, List<Rendered> sections, SourceLocation fallback) {
+    private Citation matchOne(
+            String needle, String path, List<RenderedCitationSection> sections, SourceLocation fallback) {
         for (var sec : sections) {
             int idx = sec.text().indexOf(needle);
             if (idx >= 0) {
-                return new Citation(sec.location(), needle, 1.0, sec.boundingBox());
+                return citation(sec, needle, 1.0);
             }
         }
         var best = bestFuzzy(needle, sections);
@@ -93,10 +95,10 @@ public final class CitationMatcher {
         return best;
     }
 
-    private static Citation bestFuzzy(String needle, List<Rendered> sections) {
+    private static Citation bestFuzzy(String needle, List<RenderedCitationSection> sections) {
         Citation best = null;
         for (var sec : sections) {
-            var c = bestFuzzyWindow(needle, sec.text(), sec.location(), sec.boundingBox());
+            var c = bestFuzzyWindow(needle, sec);
             if (c == null) {
                 continue;
             }
@@ -107,8 +109,8 @@ public final class CitationMatcher {
         return best;
     }
 
-    private static Citation bestFuzzyWindow(
-            String needle, String haystack, SourceLocation loc, Optional<BoundingBox> boundingBox) {
+    private static Citation bestFuzzyWindow(String needle, RenderedCitationSection sec) {
+        String haystack = sec.text();
         if (haystack.isEmpty() || needle.isEmpty()) {
             return null;
         }
@@ -135,8 +137,16 @@ public final class CitationMatcher {
         if (bestQuote == null || bestQuote.isBlank()) {
             return null;
         }
-        double clamped = Math.max(0.0, Math.min(1.0, bestScore));
-        return new Citation(loc, bestQuote, clamped, boundingBox);
+        return citation(sec, bestQuote, Math.max(0.0, Math.min(1.0, bestScore)));
+    }
+
+    private static Citation citation(RenderedCitationSection sec, String exactQuote, double matchScore) {
+        return new Citation(
+                sec.location(),
+                exactQuote,
+                matchScore,
+                sec.boundingBox(),
+                Optional.of(new CitationSource(sec.sourceDocId(), sec.sourceUnitId())));
     }
 
     private static List<Integer> candidatePositions(String needle, String haystack) {
@@ -164,10 +174,12 @@ public final class CitationMatcher {
         return out;
     }
 
-    private static List<Rendered> renderedSections(ParsedDocument doc) {
-        var out = new ArrayList<Rendered>(doc.sections().size());
-        for (var s : doc.sections()) {
-            out.add(new Rendered(textOf(s), locationOf(s), boundingBoxOf(s)));
+    private static List<RenderedCitationSection> renderedSections(ParsedDocument doc) {
+        var out = new ArrayList<RenderedCitationSection>(doc.sections().size());
+        for (int i = 0; i < doc.sections().size(); i++) {
+            var s = doc.sections().get(i);
+            out.add(new RenderedCitationSection(
+                    textOf(s), locationOf(s), boundingBoxOf(s), doc.docId(), "u" + (i + 1)));
         }
         return out;
     }
@@ -203,10 +215,6 @@ public final class CitationMatcher {
             case TableSection ignored -> Optional.empty();
             case FigureSection ignored -> Optional.empty();
         };
-    }
-
-    private static SourceLocation fallbackLocation(ParsedDocument doc) {
-        return new SourceLocation(1, 1, 1, 1, 0);
     }
 
     private static void traverse(String path, Object node, List<Leaf> out) {
@@ -270,11 +278,7 @@ public final class CitationMatcher {
             Object v;
             try {
                 var accessor = c.getAccessor();
-                // Records may be declared in a non-exported package or with non-public
-                // enclosing classes (common in tests). The component's accessor method
-                // is conceptually always public, but reflective invocation enforces the
-                // enclosing class's visibility. Records are not JDK built-ins, so
-                // setAccessible is permitted per CONTRIBUTING.md §1.
+                // Handles test records with package-private enclosing classes.
                 accessor.setAccessible(true);
                 v = accessor.invoke(record);
             } catch (ReflectiveOperationException e) {
@@ -290,6 +294,4 @@ public final class CitationMatcher {
     }
 
     private record Leaf(String path, String value) {}
-
-    private record Rendered(String text, SourceLocation location, Optional<BoundingBox> boundingBox) {}
 }

@@ -14,6 +14,7 @@ final class JsonExtractionBuilderState {
     final ContextStrategy contextStrategy;
     final Instant sourcePublishedAt;
     final Set<String> requiredCitations;
+    final boolean evidenceFirst;
 
     private JsonExtractionBuilderState(
             boolean recordProvenance,
@@ -22,7 +23,8 @@ final class JsonExtractionBuilderState {
             int maxRetries,
             ContextStrategy contextStrategy,
             Instant sourcePublishedAt,
-            Set<String> requiredCitations) {
+            Set<String> requiredCitations,
+            boolean evidenceFirst) {
         this.recordProvenance = recordProvenance;
         this.recordBitemporal = recordBitemporal;
         this.recordConfidence = recordConfidence;
@@ -30,10 +32,11 @@ final class JsonExtractionBuilderState {
         this.contextStrategy = contextStrategy;
         this.sourcePublishedAt = sourcePublishedAt;
         this.requiredCitations = Set.copyOf(requiredCitations);
+        this.evidenceFirst = evidenceFirst;
     }
 
     static JsonExtractionBuilderState defaults() {
-        return new JsonExtractionBuilderState(false, false, false, 0, null, null, Set.of());
+        return new JsonExtractionBuilderState(false, false, false, 0, null, null, Set.of(), false);
     }
 
     JsonExtractionBuilderState withProvenance() {
@@ -44,7 +47,8 @@ final class JsonExtractionBuilderState {
                 maxRetries,
                 contextStrategy,
                 sourcePublishedAt,
-                requiredCitations);
+                requiredCitations,
+                evidenceFirst);
     }
 
     JsonExtractionBuilderState withBitemporal() {
@@ -55,7 +59,8 @@ final class JsonExtractionBuilderState {
                 maxRetries,
                 contextStrategy,
                 sourcePublishedAt,
-                requiredCitations);
+                requiredCitations,
+                evidenceFirst);
     }
 
     JsonExtractionBuilderState withConfidence() {
@@ -66,7 +71,8 @@ final class JsonExtractionBuilderState {
                 maxRetries,
                 contextStrategy,
                 sourcePublishedAt,
-                requiredCitations);
+                requiredCitations,
+                evidenceFirst);
     }
 
     JsonExtractionBuilderState withMaxRetries(int retries) {
@@ -80,7 +86,8 @@ final class JsonExtractionBuilderState {
                 retries,
                 contextStrategy,
                 sourcePublishedAt,
-                requiredCitations);
+                requiredCitations,
+                evidenceFirst);
     }
 
     JsonExtractionBuilderState withContextStrategy(ContextStrategy strategy) {
@@ -91,7 +98,8 @@ final class JsonExtractionBuilderState {
                 maxRetries,
                 Objects.requireNonNull(strategy, "contextStrategy"),
                 sourcePublishedAt,
-                requiredCitations);
+                requiredCitations,
+                evidenceFirst);
     }
 
     JsonExtractionBuilderState withSourcePublishedAt(Instant publishedAt) {
@@ -102,7 +110,8 @@ final class JsonExtractionBuilderState {
                 maxRetries,
                 contextStrategy,
                 Objects.requireNonNull(publishedAt, "sourcePublishedAt"),
-                requiredCitations);
+                requiredCitations,
+                evidenceFirst);
     }
 
     JsonExtractionBuilderState requireCitation(String fieldPath) {
@@ -119,7 +128,20 @@ final class JsonExtractionBuilderState {
                 maxRetries,
                 contextStrategy,
                 sourcePublishedAt,
-                next);
+                next,
+                evidenceFirst);
+    }
+
+    JsonExtractionBuilderState withEvidenceFirst() {
+        return copy(
+                recordProvenance,
+                recordBitemporal,
+                recordConfidence,
+                maxRetries,
+                contextStrategy,
+                sourcePublishedAt,
+                requiredCitations,
+                true);
     }
 
     private JsonExtractionBuilderState copy(
@@ -129,8 +151,9 @@ final class JsonExtractionBuilderState {
             int retries,
             ContextStrategy context,
             Instant publishedAt,
-            Set<String> citations) {
+            Set<String> citations,
+            boolean nextEvidenceFirst) {
         return new JsonExtractionBuilderState(
-                provenance, bitemporal, confidence, retries, context, publishedAt, citations);
+                provenance, bitemporal, confidence, retries, context, publishedAt, citations, nextEvidenceFirst);
     }
 }

@@ -74,6 +74,10 @@ public final class JsonExtractionBuilder {
         return copy(state.requireCitation(fieldPath));
     }
 
+    public JsonExtractionBuilder withEvidenceFirst() {
+        return copy(state.withEvidenceFirst());
+    }
+
     public ExtractionResult<JsonNode> runJson(ParsedDocument doc) throws ExtractionException {
         Objects.requireNonNull(doc, "doc");
         String repairContext = null;
@@ -81,9 +85,15 @@ public final class JsonExtractionBuilder {
             var request = requestFor(doc, repairContext);
             ProviderResponse response = callProvider(request);
             try {
-                JsonNode value = parseJson(response.rawJson(), retry);
+                JsonNode rawValue = parseJson(response.rawJson(), retry);
+                if (state.evidenceFirst) {
+                    JsonSchemaValidator.validate(rawValue, EvidenceFirstJson.responseSchema(schema.node()), retry);
+                }
+                JsonNode value = state.evidenceFirst ? EvidenceFirstJson.unwrap(rawValue, schema.node()) : rawValue;
                 JsonSchemaValidator.validate(value, schema.node(), retry);
-                Map<String, Citation> citations = citations(value, doc, retry);
+                Object citationSource =
+                        state.evidenceFirst ? EvidenceFirstJson.quoteMap(rawValue, schema.node()) : value;
+                Map<String, Citation> citations = citations(citationSource, doc, retry);
                 return result(response, value, citations, retry);
             } catch (ExtractionException e) {
                 if (retry == state.maxRetries) {
@@ -112,8 +122,9 @@ public final class JsonExtractionBuilder {
         if (repairContext != null && !repairContext.isBlank()) {
             userPrompt = userPrompt + repairInstructions(repairContext);
         }
+        JsonNode responseSchema = state.evidenceFirst ? EvidenceFirstJson.responseSchema(schema.node()) : schema.node();
         return new ProviderRequest(
-                prompt, userPrompt, schema.node(), new ProviderOptions(state.maxRetries, DEFAULT_TIMEOUT));
+                prompt, userPrompt, responseSchema, new ProviderOptions(state.maxRetries, DEFAULT_TIMEOUT));
     }
 
     private static String repairInstructions(String repairContext) {
@@ -145,24 +156,24 @@ public final class JsonExtractionBuilder {
         }
     }
 
-    private Map<String, Citation> citations(JsonNode value, ParsedDocument doc, int retries)
+    private Map<String, Citation> citations(Object citationSource, ParsedDocument doc, int retries)
             throws ExtractionException {
         if (!state.recordProvenance && !state.recordConfidence && state.requiredCitations.isEmpty()) {
             return Map.of();
         }
-        Map<String, Citation> matched = new CitationMatcher().matchAll(value, doc);
+        Map<String, Citation> matched = new CitationMatcher().matchAll(citationSource, doc);
         requireStrongCitations(matched, retries);
         if (state.recordProvenance || state.recordConfidence) {
             return matched;
         }
         return matched.entrySet().stream()
-                .filter(e -> state.requiredCitations.contains(e.getKey()))
+                .filter(e -> isRequiredCitation(e.getKey()))
                 .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private void requireStrongCitations(Map<String, Citation> matched, int retries) throws ExtractionException {
         for (String fieldPath : state.requiredCitations) {
-            Citation citation = matched.get(fieldPath);
+            Citation citation = bestRequiredCitation(matched, fieldPath);
             if (citation == null || citation.matchScore() < CitationMatcher.DEFAULT_MIN_SCORE) {
                 throw new ExtractionException(
                         "EXTRACTION_EVIDENCE_MISSING",
@@ -170,6 +181,57 @@ public final class JsonExtractionBuilder {
                         retries);
             }
         }
+    }
+
+    private boolean isRequiredCitation(String actualPath) {
+        return state.requiredCitations.stream().anyMatch(requiredPath -> citationPathMatches(requiredPath, actualPath));
+    }
+
+    private static Citation bestRequiredCitation(Map<String, Citation> matched, String requiredPath) {
+        return matched.entrySet().stream()
+                .filter(entry -> citationPathMatches(requiredPath, entry.getKey()))
+                .map(Map.Entry::getValue)
+                .max((left, right) -> Double.compare(left.matchScore(), right.matchScore()))
+                .orElse(null);
+    }
+
+    private static boolean citationPathMatches(String requiredPath, String actualPath) {
+        if (requiredPath.equals(actualPath)) {
+            return true;
+        }
+        if (!requiredPath.contains("[]")) {
+            return false;
+        }
+        int requiredIndex = 0;
+        int actualIndex = 0;
+        while (requiredIndex < requiredPath.length()) {
+            if (requiredIndex + 1 < requiredPath.length()
+                    && requiredPath.charAt(requiredIndex) == '['
+                    && requiredPath.charAt(requiredIndex + 1) == ']') {
+                if (actualIndex >= actualPath.length() || actualPath.charAt(actualIndex) != '[') {
+                    return false;
+                }
+                int close = actualPath.indexOf(']', actualIndex);
+                if (close <= actualIndex + 1) {
+                    return false;
+                }
+                for (int i = actualIndex + 1; i < close; i++) {
+                    if (!Character.isDigit(actualPath.charAt(i))) {
+                        return false;
+                    }
+                }
+                actualIndex = close + 1;
+                requiredIndex += 2;
+                continue;
+            }
+            if (actualIndex >= actualPath.length()
+                    || requiredPath.charAt(requiredIndex) != actualPath.charAt(actualIndex)) {
+                return false;
+            }
+            requiredIndex++;
+            actualIndex++;
+        }
+        return actualIndex == actualPath.length();
     }
 
     private ExtractionResult<JsonNode> result(
@@ -194,7 +256,8 @@ public final class JsonExtractionBuilder {
         return citations.entrySet().stream()
                 .collect(Collectors.toUnmodifiableMap(
                         Map.Entry::getKey,
-                        e -> new Confidence(e.getValue().matchScore(), "source citation matched for JSON field")));
+                        e -> new Confidence(
+                                e.getValue().matchScore(), "source evidence quote matched for JSON field")));
     }
 
     private static String renderUserPrompt(ParsedDocument doc) {

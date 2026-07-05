@@ -35,6 +35,16 @@ final class DocumentParsers {
         }
     }
 
+    static String parserId(Path path) {
+        return switch (extension(path)) {
+            case "pdf" -> PdfParserBackend.OPENDATALOADER.id();
+            case "docx" -> "docx";
+            case "xlsx" -> "xlsx";
+            case "csv" -> "csv";
+            default -> "unknown";
+        };
+    }
+
     private static String extension(Path path) {
         String name = path.getFileName().toString();
         int dot = name.lastIndexOf('.');

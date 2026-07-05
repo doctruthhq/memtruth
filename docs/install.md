@@ -5,7 +5,7 @@ try/debug/inspect path: it lets a Java team verify the core promise before
 writing integration code:
 
 ```text
-document -> parsed sections with source locations -> schema check -> audit output
+document -> TrustDocument evidence -> schema check -> audit output
 ```
 
 ## SDK Install
@@ -63,7 +63,7 @@ Check the install:
 ```bash
 doctruth version
 doctruth doctor
-doctruth parse examples/no-llm-parse/sample-contract.csv
+doctruth parse contract.pdf --format json -o trust-document.json
 ```
 
 If `java` is not on `PATH`, point the launcher at your Java 25 runtime:
@@ -86,13 +86,15 @@ java -version
 No provider key is required for parser and schema inspection:
 
 ```bash
-doctruth parse examples/no-llm-parse/sample-contract.csv
-doctruth parse examples/no-llm-parse/sample-contract.csv --json -o parsed.json
+doctruth parse contract.pdf --format json -o trust-document.json
+doctruth profile contract.pdf --json
 doctruth schema examples/pydantic-interop/resume.schema.json
 ```
 
 This is the recommended first-run path. It proves the document evidence surface
-before a user spends time configuring model keys.
+before a user spends time configuring model keys. For PDF, the default backend
+is OpenDataLoader; `doctruth profile` gives local latency and heap evidence for
+the same backend.
 
 ## Extraction Run
 
@@ -106,6 +108,11 @@ doctruth audit .doctruth/runs/<run-id>/audit.json
 
 Use `--provider`, `--model`, and `--base-url` only when the defaults are not
 enough.
+
+Each extraction run writes `trust-document.json`, `result.json`, `audit.json`,
+and `manifest.json`. Use `--evidence-first` when the provider should return
+`value` plus `exactQuote` for each schema leaf before DocTruth validates and
+cites the result.
 
 The CLI and SDK use the same parser, citation, provenance, and audit primitives.
 

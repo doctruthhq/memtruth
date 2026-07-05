@@ -30,6 +30,10 @@ public final class DocumentJsonExtractionBuilder {
         return new DocumentJsonExtractionBuilder(delegate.requireCitation(fieldPath), document);
     }
 
+    public DocumentJsonExtractionBuilder withEvidenceFirst() {
+        return new DocumentJsonExtractionBuilder(delegate.withEvidenceFirst(), document);
+    }
+
     public DocumentJsonExtractionBuilder withMaxRetries(int n) {
         return new DocumentJsonExtractionBuilder(delegate.withMaxRetries(n), document);
     }

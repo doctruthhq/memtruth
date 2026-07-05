@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
@@ -13,7 +14,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.opendataloader.pdf.api.Config;
 import org.opendataloader.pdf.api.OpenDataLoaderPDF;
@@ -24,27 +25,12 @@ final class OpenDataLoaderPdfDocumentParser {
 
     private static final Logger LOG = LoggerFactory.getLogger(OpenDataLoaderPdfDocumentParser.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    static {
-        suppressOpenDataLoaderInfoLogging();
-    }
+    private static final Object OPENDATALOADER_LOCK = new Object();
+    private static OpenDataLoaderRunner openDataLoaderRunner =
+            (pdfPath, outputDir, config) -> OpenDataLoaderPDF.processFile(pdfPath.toString(), config);
 
     private OpenDataLoaderPdfDocumentParser() {
         throw new AssertionError("no instances");
-    }
-
-    private static void suppressOpenDataLoaderInfoLogging() {
-        for (String name : List.of(
-                "org.opendataloader",
-                "org.opendataloader.pdf",
-                "org.opendataloader.pdf.processors",
-                "org.opendataloader.pdf.processors.DocumentProcessor",
-                "org.opendataloader.pdf.json",
-                "org.opendataloader.pdf.json.JsonWriter")) {
-            java.util.logging.Logger logger = java.util.logging.Logger.getLogger(name);
-            logger.setLevel(java.util.logging.Level.WARNING);
-            logger.setUseParentHandlers(false);
-        }
     }
 
     static ParsedDocument parse(Path pdfPath) throws ParseException {
@@ -53,25 +39,27 @@ final class OpenDataLoaderPdfDocumentParser {
         Path outputDir = null;
         try {
             outputDir = Files.createTempDirectory("doctruth-opendataloader-");
-            var geometry = OpenDataLoaderPdfGeometry.read(pdfPath);
+            var geometry = OpenDataLoaderPdfGeometry.lazy(pdfPath);
             Config config = config(outputDir);
-            try (var suppression = JulInfoSuppression.open()) {
-                suppression.keepAlive();
-                OpenDataLoaderPDF.processFile(pdfPath.toString(), config);
+            synchronized (OPENDATALOADER_LOCK) {
+                try {
+                    openDataLoaderRunner.process(pdfPath, outputDir, config);
+                } finally {
+                    OpenDataLoaderPDF.shutdown();
+                }
             }
             Path jsonPath = outputDir.resolve(jsonFilename(pdfPath));
             if (!Files.isRegularFile(jsonPath)) {
                 throw new IOException("OpenDataLoader did not produce JSON output: " + jsonPath);
             }
-            JsonNode root = MAPPER.readTree(jsonPath.toFile());
-            int pageCount = root.path("number of pages").asInt(geometry.pageCount());
-            var metadata = new DocumentMetadata(pdfPath.getFileName().toString(), pageCount, Optional.empty());
+            var parsed = readOpenDataLoaderJson(jsonPath, geometry);
+            var metadata = new DocumentMetadata(pdfPath.getFileName().toString(), parsed.pageCount(), Optional.empty());
             var docId = "sha256:" + sha256Hex(pdfPath);
-            var sections = new OpenDataLoaderSectionMapper(geometry).map(root.path("kids"));
+            var sections = parsed.sections();
             LOG.debug(
                     "parsed pdf path={} backend=opendataloader pages={} sections={}",
                     pdfPath,
-                    pageCount,
+                    parsed.pageCount(),
                     sections.size());
             return new ParsedDocument(docId, sections, metadata);
         } catch (IOException | RuntimeException e) {
@@ -82,9 +70,85 @@ final class OpenDataLoaderPdfDocumentParser {
                     OptionalInt.empty(),
                     e);
         } finally {
-            OpenDataLoaderPDF.shutdown();
             deleteRecursively(outputDir);
         }
+    }
+
+    static ParsedOpenDataLoaderJson readOpenDataLoaderJson(Path jsonPath, OpenDataLoaderPdfGeometry geometry)
+            throws IOException {
+        int pageCount = 0;
+        var sections = new ArrayList<ParsedSection>();
+        var mapper = new OpenDataLoaderSectionMapper(geometry);
+        try (var parser = MAPPER.getFactory().createParser(jsonPath.toFile())) {
+            JsonToken token = parser.nextToken();
+            if (token == null) {
+                throw new IOException("OpenDataLoader JSON is empty: " + jsonPath);
+            }
+            if (token != JsonToken.START_OBJECT) {
+                throw new IOException("OpenDataLoader JSON root must be an object: " + token);
+            }
+            while (true) {
+                token = parser.nextToken();
+                if (token == JsonToken.END_OBJECT) {
+                    break;
+                }
+                if (token == null) {
+                    throw new IOException("OpenDataLoader JSON ended before the root object closed");
+                }
+                if (token != JsonToken.FIELD_NAME) {
+                    throw new IOException("OpenDataLoader JSON root fields must be named fields: " + token);
+                }
+                String field = parser.currentName();
+                token = parser.nextToken();
+                if (token == null) {
+                    throw new IOException("OpenDataLoader JSON field has no value: " + field);
+                }
+                if ("number of pages".equals(field)) {
+                    pageCount = parser.getValueAsInt(0);
+                } else if ("kids".equals(field)) {
+                    if (token != JsonToken.START_ARRAY) {
+                        throw new IOException("OpenDataLoader kids field must be an array: " + token);
+                    }
+                    while (true) {
+                        token = parser.nextToken();
+                        if (token == JsonToken.END_ARRAY) {
+                            break;
+                        }
+                        if (token == null) {
+                            throw new IOException("OpenDataLoader JSON kids array ended before it closed");
+                        }
+                        if (token != JsonToken.START_OBJECT) {
+                            throw new IOException("OpenDataLoader kids entries must be objects: " + token);
+                        }
+                        mapper.append(MAPPER.readTree(parser), sections);
+                    }
+                } else {
+                    parser.skipChildren();
+                }
+            }
+        }
+        return new ParsedOpenDataLoaderJson(pageCount > 0 ? pageCount : geometry.pageCount(), List.copyOf(sections));
+    }
+
+    record ParsedOpenDataLoaderJson(int pageCount, List<ParsedSection> sections) {}
+
+    @FunctionalInterface
+    interface OpenDataLoaderRunner {
+        void process(Path pdfPath, Path outputDir, Config config) throws IOException;
+    }
+
+    static AutoCloseable useOpenDataLoaderRunnerForTesting(OpenDataLoaderRunner runner) {
+        Objects.requireNonNull(runner, "runner");
+        OpenDataLoaderRunner previous;
+        synchronized (OPENDATALOADER_LOCK) {
+            previous = openDataLoaderRunner;
+            openDataLoaderRunner = runner;
+        }
+        return () -> {
+            synchronized (OPENDATALOADER_LOCK) {
+                openDataLoaderRunner = previous;
+            }
+        };
     }
 
     private static Config config(Path outputDir) {
@@ -153,49 +217,6 @@ final class OpenDataLoaderPdfDocumentParser {
             });
         } catch (IOException e) {
             LOG.debug("failed to inspect temporary OpenDataLoader directory {}", dir, e);
-        }
-    }
-
-    private static final class JulInfoSuppression implements AutoCloseable {
-        private final java.util.logging.Logger root;
-        private final java.util.logging.Level rootLevel;
-        private final java.util.logging.Handler[] handlers;
-        private final java.util.logging.Level[] handlerLevels;
-
-        private JulInfoSuppression(
-                java.util.logging.Logger root,
-                java.util.logging.Level rootLevel,
-                java.util.logging.Handler[] handlers,
-                java.util.logging.Level[] handlerLevels) {
-            this.root = root;
-            this.rootLevel = rootLevel;
-            this.handlers = handlers;
-            this.handlerLevels = handlerLevels;
-        }
-
-        static JulInfoSuppression open() {
-            java.util.logging.Logger root = java.util.logging.Logger.getLogger("");
-            java.util.logging.Handler[] handlers = root.getHandlers();
-            java.util.logging.Level[] handlerLevels = new java.util.logging.Level[handlers.length];
-            for (int i = 0; i < handlers.length; i++) {
-                handlerLevels[i] = handlers[i].getLevel();
-                handlers[i].setLevel(java.util.logging.Level.WARNING);
-            }
-            java.util.logging.Level rootLevel = root.getLevel();
-            root.setLevel(java.util.logging.Level.WARNING);
-            return new JulInfoSuppression(root, rootLevel, handlers, handlerLevels);
-        }
-
-        void keepAlive() {
-            // Referenced to keep javac -Xlint:try satisfied for this scoped guard.
-        }
-
-        @Override
-        public void close() {
-            root.setLevel(rootLevel);
-            for (int i = 0; i < handlers.length; i++) {
-                handlers[i].setLevel(handlerLevels[i]);
-            }
         }
     }
 }

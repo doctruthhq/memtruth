@@ -29,26 +29,8 @@ final class OpenDataLoaderPdfDocumentParser {
     private static OpenDataLoaderRunner openDataLoaderRunner =
             (pdfPath, outputDir, config) -> OpenDataLoaderPDF.processFile(pdfPath.toString(), config);
 
-    static {
-        suppressOpenDataLoaderInfoLogging();
-    }
-
     private OpenDataLoaderPdfDocumentParser() {
         throw new AssertionError("no instances");
-    }
-
-    private static void suppressOpenDataLoaderInfoLogging() {
-        for (String name : List.of(
-                "org.opendataloader",
-                "org.opendataloader.pdf",
-                "org.opendataloader.pdf.processors",
-                "org.opendataloader.pdf.processors.DocumentProcessor",
-                "org.opendataloader.pdf.json",
-                "org.opendataloader.pdf.json.JsonWriter")) {
-            java.util.logging.Logger logger = java.util.logging.Logger.getLogger(name);
-            logger.setLevel(java.util.logging.Level.WARNING);
-            logger.setUseParentHandlers(false);
-        }
     }
 
     static ParsedDocument parse(Path pdfPath) throws ParseException {
@@ -61,10 +43,7 @@ final class OpenDataLoaderPdfDocumentParser {
             Config config = config(outputDir);
             synchronized (OPENDATALOADER_LOCK) {
                 try {
-                    try (var suppression = JulInfoSuppression.open()) {
-                        suppression.keepAlive();
-                        openDataLoaderRunner.process(pdfPath, outputDir, config);
-                    }
+                    openDataLoaderRunner.process(pdfPath, outputDir, config);
                 } finally {
                     OpenDataLoaderPDF.shutdown();
                 }
@@ -238,49 +217,6 @@ final class OpenDataLoaderPdfDocumentParser {
             });
         } catch (IOException e) {
             LOG.debug("failed to inspect temporary OpenDataLoader directory {}", dir, e);
-        }
-    }
-
-    private static final class JulInfoSuppression implements AutoCloseable {
-        private final java.util.logging.Logger root;
-        private final java.util.logging.Level rootLevel;
-        private final java.util.logging.Handler[] handlers;
-        private final java.util.logging.Level[] handlerLevels;
-
-        private JulInfoSuppression(
-                java.util.logging.Logger root,
-                java.util.logging.Level rootLevel,
-                java.util.logging.Handler[] handlers,
-                java.util.logging.Level[] handlerLevels) {
-            this.root = root;
-            this.rootLevel = rootLevel;
-            this.handlers = handlers;
-            this.handlerLevels = handlerLevels;
-        }
-
-        static JulInfoSuppression open() {
-            java.util.logging.Logger root = java.util.logging.Logger.getLogger("");
-            java.util.logging.Handler[] handlers = root.getHandlers();
-            java.util.logging.Level[] handlerLevels = new java.util.logging.Level[handlers.length];
-            for (int i = 0; i < handlers.length; i++) {
-                handlerLevels[i] = handlers[i].getLevel();
-                handlers[i].setLevel(java.util.logging.Level.WARNING);
-            }
-            java.util.logging.Level rootLevel = root.getLevel();
-            root.setLevel(java.util.logging.Level.WARNING);
-            return new JulInfoSuppression(root, rootLevel, handlers, handlerLevels);
-        }
-
-        void keepAlive() {
-            // Referenced to keep javac -Xlint:try satisfied for this scoped guard.
-        }
-
-        @Override
-        public void close() {
-            root.setLevel(rootLevel);
-            for (int i = 0; i < handlers.length; i++) {
-                handlers[i].setLevel(handlerLevels[i]);
-            }
         }
     }
 }

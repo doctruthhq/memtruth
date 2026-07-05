@@ -46,13 +46,18 @@ class DocTruthCliExtractContractTest {
         var trust = MAPPER.readTree(Files.readString(out.resolve("trust-document.json")));
         var audit = MAPPER.readTree(Files.readString(out.resolve("audit.json")));
         var firstDerivation = audit.path("prov:wasDerivedFrom").get(0);
-        assertThat(firstDerivation.path("doctruth:sourceDocId").asText()).isEqualTo(trust.path("docId").asText());
+        assertThat(firstDerivation.path("doctruth:sourceDocId").asText())
+                .isEqualTo(trust.path("docId").asText());
         assertThat(firstDerivation.path("doctruth:sourceUnitId").asText()).isNotBlank();
         assertThat(trust.path("units"))
                 .anySatisfy(unit -> assertThat(unit.path("id").asText())
                         .isEqualTo(firstDerivation.path("doctruth:sourceUnitId").asText()));
         var manifest = MAPPER.readTree(Files.readString(out.resolve("manifest.json")));
         assertThat(manifest.path("schemaVersion").asText()).isEqualTo("doctruth.extract-run.v1");
+        assertThat(manifest.has("source")).isFalse();
+        assertThat(manifest.path("sourceFilename").asText())
+                .isEqualTo(pdf.getFileName().toString());
+        assertThat(manifest.path("sourceSha256").asText()).isNotBlank();
         assertThat(manifest.path("artifacts").path("trustDocument").asText()).isEqualTo("trust-document.json");
     }
 
@@ -68,7 +73,24 @@ class DocTruthCliExtractContractTest {
         assertThat(code).isZero();
         var audit = MAPPER.readTree(Files.readString(out.resolve("audit.json")));
         assertThat(audit.path("prov:wasDerivedFrom"))
-                .anySatisfy(entry -> assertThat(entry.path("doctruth:fieldPath").asText()).isEqualTo("party.name"));
+                .anySatisfy(entry ->
+                        assertThat(entry.path("doctruth:fieldPath").asText()).isEqualTo("party.name"));
+    }
+
+    @Test
+    void extractRequiresArrayItemSchemaLeafCitationsByDefault() throws Exception {
+        Path pdf = samplePdf();
+        Path schema = arraySchemaFile();
+        Path out = tempDir.resolve("array-run");
+        var cli = cliWithProvider(providerReturning("{\"items\":[{\"name\":\"Premium Support Plan\"}]}"));
+
+        int code = cli.run(new String[] {"extract", pdf.toString(), "-s", schema.toString(), "-o", out.toString()});
+
+        assertThat(code).isZero();
+        var audit = MAPPER.readTree(Files.readString(out.resolve("audit.json")));
+        assertThat(audit.path("prov:wasDerivedFrom"))
+                .anySatisfy(entry ->
+                        assertThat(entry.path("doctruth:fieldPath").asText()).isEqualTo("items[0].name"));
     }
 
     @Test
@@ -120,12 +142,19 @@ class DocTruthCliExtractContractTest {
         return new OpenAiProvider("test", URI.create("http://localhost"), "test-model") {
             @Override
             public ProviderResponse complete(ProviderRequest request) {
-                assertThat(request.responseSchema().path("properties").path("partyA").path("properties").has("value"))
+                assertThat(request.responseSchema()
+                                .path("properties")
+                                .path("partyA")
+                                .path("properties")
+                                .has("value"))
                         .isTrue();
-                assertThat(request.responseSchema().path("properties").path("partyA").path("properties").has("exactQuote"))
+                assertThat(request.responseSchema()
+                                .path("properties")
+                                .path("partyA")
+                                .path("properties")
+                                .has("exactQuote"))
                         .isTrue();
-                return new ProviderResponse(
-                        """
+                return new ProviderResponse("""
                         {
                           "partyA": {
                             "value": "Acme Industrial Materials Pty Ltd",
@@ -136,8 +165,7 @@ class DocTruthCliExtractContractTest {
                             "exactQuote": "Total Value: AUD 2,450,000"
                           }
                         }
-                        """,
-                        new ProviderUsage(1, 1, "test-model"));
+                        """, new ProviderUsage(1, 1, "test-model"));
             }
         };
     }
@@ -179,6 +207,31 @@ class DocTruthCliExtractContractTest {
         return schema;
     }
 
+    private Path arraySchemaFile() throws IOException {
+        Path schema = tempDir.resolve("array.schema.json");
+        Files.writeString(schema, """
+                {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" }
+                        },
+                        "required": ["name"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+                """);
+        return schema;
+    }
+
     private Path samplePdf() throws IOException {
         Path path = tempDir.resolve("contract.pdf");
         try (var pdf = new PDDocument()) {
@@ -191,6 +244,8 @@ class DocTruthCliExtractContractTest {
                 cs.showText("Party A: Acme Industrial Materials Pty Ltd");
                 cs.newLineAtOffset(0, -18);
                 cs.showText("Total Value: AUD 2,450,000");
+                cs.newLineAtOffset(0, -18);
+                cs.showText("Line item: Premium Support Plan");
                 cs.endText();
             }
             pdf.save(path.toFile());

@@ -9,12 +9,7 @@ import ai.doctruth.ParsedDocument;
 import ai.doctruth.PdfParserBackend;
 import ai.doctruth.TrustDocumentJson;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-
 final class ProfileCommand {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final CliContext context;
 
@@ -84,11 +79,16 @@ final class ProfileCommand {
     private static OutputMeasurement renderOutput(ParsedDocument doc, ProfileOptions options) throws CliException {
         return switch (options.includeOutput()) {
             case PARSER_ONLY -> new OutputMeasurement(0, 0);
-            case TRUST_JSON -> new OutputMeasurement(
-                    TrustDocumentJson.toJson(doc, options.document(), options.parser()).length(), 0);
-            case PARSED_JSON -> new OutputMeasurement(ParsedDocumentJson.toJson(doc).length(), 0);
-            case TRUST_JSON_FILE -> renderFileOutput(output -> TrustDocumentJson.writeJson(
-                    doc, options.document(), options.parser(), output));
+            case TRUST_JSON ->
+                new OutputMeasurement(
+                        TrustDocumentJson.toJson(doc, options.document(), options.parser())
+                                .length(),
+                        0);
+            case PARSED_JSON ->
+                new OutputMeasurement(ParsedDocumentJson.toJson(doc).length(), 0);
+            case TRUST_JSON_FILE ->
+                renderFileOutput(
+                        output -> TrustDocumentJson.writeJson(doc, options.document(), options.parser(), output));
             case PARSED_JSON_FILE -> renderFileOutput(output -> ParsedDocumentJson.writeJson(doc, output));
         };
     }
@@ -146,35 +146,6 @@ final class ProfileCommand {
 
     private record OutputMeasurement(long chars, long bytes) {}
 
-    private enum IncludeOutput {
-        PARSER_ONLY("parser-only"),
-        TRUST_JSON("trust-json"),
-        PARSED_JSON("parsed-json"),
-        TRUST_JSON_FILE("trust-json-file"),
-        PARSED_JSON_FILE("parsed-json-file");
-
-        private final String id;
-
-        IncludeOutput(String id) {
-            this.id = id;
-        }
-
-        String id() {
-            return id;
-        }
-
-        static IncludeOutput parse(String raw) {
-            return switch (raw) {
-                case "parser-only", "none" -> PARSER_ONLY;
-                case "trust-json", "json", "trust-document-json" -> TRUST_JSON;
-                case "parsed-json" -> PARSED_JSON;
-                case "trust-json-file", "trust-document-json-file", "json-file" -> TRUST_JSON_FILE;
-                case "parsed-json-file" -> PARSED_JSON_FILE;
-                default -> throw new UsageException("unsupported profile output mode: " + raw);
-            };
-        }
-    }
-
     private record ProfileOptions(
             Path document, PdfParserBackend parser, int iterations, boolean json, IncludeOutput includeOutput) {
         static ProfileOptions parse(String[] args) {
@@ -226,71 +197,6 @@ final class ProfileCommand {
                 throw new UsageException(option + " requires a value");
             }
             return cursor.next();
-        }
-    }
-
-    private record ProfileResult(
-            String parser,
-            int iterations,
-            long fileSizeBytes,
-            int sectionCount,
-            IncludeOutput includeOutput,
-            long[] parseLatencyMillis,
-            long[] outputLatencyMillis,
-            long profiledOutputChars,
-            long profiledOutputBytes,
-            long heapUsedBeforeBytes,
-            long heapUsedAfterBytes) {
-        long coldLatencyMillis() {
-            return parseLatencyMillis.length == 0 ? -1 : parseLatencyMillis[0];
-        }
-
-        long warmAverageLatencyMillis() {
-            return warmAverage(parseLatencyMillis);
-        }
-
-        long coldOutputLatencyMillis() {
-            return outputLatencyMillis.length == 0 ? -1 : outputLatencyMillis[0];
-        }
-
-        long warmAverageOutputLatencyMillis() {
-            return warmAverage(outputLatencyMillis);
-        }
-
-        String toJson() throws CliException {
-            try {
-                ObjectNode node = MAPPER.createObjectNode();
-                node.put("parser", parser);
-                node.put("iterations", iterations);
-                node.put("fileSizeBytes", fileSizeBytes);
-                node.put("sectionCount", sectionCount);
-                node.put("includeOutput", includeOutput.id());
-                node.set("parseLatencyMillis", MAPPER.valueToTree(parseLatencyMillis));
-                node.set("outputLatencyMillis", MAPPER.valueToTree(outputLatencyMillis));
-                node.put("coldLatencyMillis", coldLatencyMillis());
-                node.put("warmAverageLatencyMillis", warmAverageLatencyMillis());
-                node.put("coldOutputLatencyMillis", coldOutputLatencyMillis());
-                node.put("warmAverageOutputLatencyMillis", warmAverageOutputLatencyMillis());
-                node.put("profiledOutputChars", profiledOutputChars);
-                node.put("profiledOutputBytes", profiledOutputBytes);
-                node.put("heapUsedBeforeBytes", heapUsedBeforeBytes);
-                node.put("heapUsedAfterBytes", heapUsedAfterBytes);
-                node.put("heapDeltaBytes", heapUsedAfterBytes - heapUsedBeforeBytes);
-                return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(node);
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-                throw new CliException("failed to serialize profile JSON", e);
-            }
-        }
-
-        private static long warmAverage(long[] values) {
-            if (values.length <= 1) {
-                return -1;
-            }
-            long total = 0;
-            for (int i = 1; i < values.length; i++) {
-                total += values[i];
-            }
-            return total / (values.length - 1);
         }
     }
 }

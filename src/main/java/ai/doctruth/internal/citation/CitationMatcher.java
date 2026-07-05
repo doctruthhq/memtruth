@@ -72,7 +72,8 @@ public final class CitationMatcher {
         return Map.copyOf(out);
     }
 
-    private Citation matchOne(String needle, String path, List<Rendered> sections, SourceLocation fallback) {
+    private Citation matchOne(
+            String needle, String path, List<RenderedCitationSection> sections, SourceLocation fallback) {
         for (var sec : sections) {
             int idx = sec.text().indexOf(needle);
             if (idx >= 0) {
@@ -94,7 +95,7 @@ public final class CitationMatcher {
         return best;
     }
 
-    private static Citation bestFuzzy(String needle, List<Rendered> sections) {
+    private static Citation bestFuzzy(String needle, List<RenderedCitationSection> sections) {
         Citation best = null;
         for (var sec : sections) {
             var c = bestFuzzyWindow(needle, sec);
@@ -108,7 +109,7 @@ public final class CitationMatcher {
         return best;
     }
 
-    private static Citation bestFuzzyWindow(String needle, Rendered sec) {
+    private static Citation bestFuzzyWindow(String needle, RenderedCitationSection sec) {
         String haystack = sec.text();
         if (haystack.isEmpty() || needle.isEmpty()) {
             return null;
@@ -139,7 +140,7 @@ public final class CitationMatcher {
         return citation(sec, bestQuote, Math.max(0.0, Math.min(1.0, bestScore)));
     }
 
-    private static Citation citation(Rendered sec, String exactQuote, double matchScore) {
+    private static Citation citation(RenderedCitationSection sec, String exactQuote, double matchScore) {
         return new Citation(
                 sec.location(),
                 exactQuote,
@@ -173,11 +174,12 @@ public final class CitationMatcher {
         return out;
     }
 
-    private static List<Rendered> renderedSections(ParsedDocument doc) {
-        var out = new ArrayList<Rendered>(doc.sections().size());
+    private static List<RenderedCitationSection> renderedSections(ParsedDocument doc) {
+        var out = new ArrayList<RenderedCitationSection>(doc.sections().size());
         for (int i = 0; i < doc.sections().size(); i++) {
             var s = doc.sections().get(i);
-            out.add(new Rendered(textOf(s), locationOf(s), boundingBoxOf(s), doc.docId(), "u" + (i + 1)));
+            out.add(new RenderedCitationSection(
+                    textOf(s), locationOf(s), boundingBoxOf(s), doc.docId(), "u" + (i + 1)));
         }
         return out;
     }
@@ -292,7 +294,4 @@ public final class CitationMatcher {
     }
 
     private record Leaf(String path, String value) {}
-
-    private record Rendered(String text, SourceLocation location, Optional<BoundingBox> boundingBox, String sourceDocId,
-            String sourceUnitId) {}
 }

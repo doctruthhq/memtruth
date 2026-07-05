@@ -42,11 +42,13 @@ class DocTruthCliTrustDocumentTest {
         assertThat(code).isZero();
         var tree = MAPPER.readTree(Files.readString(out));
         assertThat(tree.path("schemaVersion").asText()).isEqualTo("doctruth.trust-document.v1");
-        assertThat(tree.path("source").path("filename").asText()).isEqualTo(pdf.getFileName().toString());
+        assertThat(tree.path("source").path("filename").asText())
+                .isEqualTo(pdf.getFileName().toString());
         assertThat(tree.path("source").path("sha256").asText()).hasSize(64);
         assertThat(tree.path("parserRun").path("backend").asText()).isEqualTo("opendataloader");
         assertThat(tree.path("units")).isNotEmpty();
-        assertThat(tree.path("units").get(0).path("location").path("pageStart").asInt()).isEqualTo(1);
+        assertThat(tree.path("units").get(0).path("location").path("pageStart").asInt())
+                .isEqualTo(1);
     }
 
     @Test
@@ -71,7 +73,8 @@ class DocTruthCliTrustDocumentTest {
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
-        assertThat(tree.path("metadata").path("sourceFilename").asText()).isEqualTo(pdf.getFileName().toString());
+        assertThat(tree.path("metadata").path("sourceFilename").asText())
+                .isEqualTo(pdf.getFileName().toString());
         assertThat(tree.path("sections")).isNotEmpty();
     }
 
@@ -100,9 +103,9 @@ class DocTruthCliTrustDocumentTest {
         Path pdf = samplePdf();
         var cli = cli();
 
-        int code = cli.run(new String[] {
-            "profile", pdf.toString(), "--iterations", "1", "--include-output", "trust-json", "--json"
-        });
+        int code = cli.run(
+                new String[] {"profile", pdf.toString(), "--iterations", "1", "--include-output", "trust-json", "--json"
+                });
 
         assertThat(code).isZero();
         var tree = MAPPER.readTree(cli.out());
@@ -181,9 +184,8 @@ class DocTruthCliTrustDocumentTest {
         Path pdf = samplePdf();
         var cli = cli();
 
-        int code = cli.run(new String[] {
-            "profile", pdf.toString(), "--iterations", "1", "--include-output", "trust-json"
-        });
+        int code = cli.run(
+                new String[] {"profile", pdf.toString(), "--iterations", "1", "--include-output", "trust-json"});
 
         assertThat(code).isZero();
         assertThat(cli.out())

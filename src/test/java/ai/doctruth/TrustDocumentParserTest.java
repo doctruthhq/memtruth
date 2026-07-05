@@ -3,8 +3,8 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.lang.reflect.InvocationTargetException;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -80,10 +80,7 @@ class TrustDocumentParserTest {
                 "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 List.of(
                         new TextSection(
-                                "Intro",
-                                location,
-                                BlockKind.BODY,
-                                Optional.of(new BoundingBox(10, 20, 30, 40))),
+                                "Intro", location, BlockKind.BODY, Optional.of(new BoundingBox(10, 20, 30, 40))),
                         new TableSection(List.of(List.of("A", "B")), location),
                         new FigureSection("Chart", location)),
                 metadata);
@@ -104,8 +101,8 @@ class TrustDocumentParserTest {
                 List.of(new TextSection("Intro", location)),
                 metadata);
 
-        TrustDocument doc =
-                TrustDocument.fromParsed(parsed, Path.of("/documents/customer-contract.pdf"), PdfParserBackend.OPENDATALOADER);
+        TrustDocument doc = TrustDocument.fromParsed(
+                parsed, Path.of("/documents/customer-contract.pdf"), PdfParserBackend.OPENDATALOADER);
         String streamed = TrustDocumentJson.toJson(
                 parsed, Path.of("/documents/customer-contract.pdf"), PdfParserBackend.OPENDATALOADER);
 
@@ -124,7 +121,8 @@ class TrustDocumentParserTest {
                 metadata);
         var doc = TrustDocument.fromParsed(parsed, Path.of("contract.pdf"), PdfParserBackend.OPENDATALOADER);
         var materializedDoc = TrustDocumentJson.toJson(doc);
-        var materializedParsed = TrustDocumentJson.toJson(parsed, Path.of("contract.pdf"), PdfParserBackend.OPENDATALOADER);
+        var materializedParsed =
+                TrustDocumentJson.toJson(parsed, Path.of("contract.pdf"), PdfParserBackend.OPENDATALOADER);
         var docWriter = new StringWriter();
         var parsedWriter = new StringWriter();
 

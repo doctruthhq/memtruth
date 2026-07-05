@@ -17,11 +17,7 @@ import java.util.Optional;
  * @since 0.2.0
  */
 public record TrustDocument(
-        String schemaVersion,
-        String docId,
-        TrustDocumentSource source,
-        ParserRun parserRun,
-        List<TrustUnit> units) {
+        String schemaVersion, String docId, TrustDocumentSource source, ParserRun parserRun, List<TrustUnit> units) {
 
     public static final String SCHEMA_VERSION = "doctruth.trust-document.v1";
 
@@ -52,7 +48,9 @@ public record TrustDocument(
         Objects.requireNonNull(sourcePath, "sourcePath");
         Objects.requireNonNull(backend, "backend");
         var source = new TrustDocumentSource(
-                sourceFilename(sourcePath), sha256FromDocId(parsed.docId()), parsed.metadata().pageCount());
+                sourceFilename(sourcePath),
+                sha256FromDocId(parsed.docId()),
+                parsed.metadata().pageCount());
         return new TrustDocument(SCHEMA_VERSION, parsed.docId(), source, new ParserRun(backend), units(parsed));
     }
 
@@ -81,24 +79,27 @@ public record TrustDocument(
 
     private static TrustUnit unit(String id, ParsedSection section) {
         return switch (section) {
-            case TextSection text -> new TrustUnit(
-                    id,
-                    "text",
-                    text.text(),
-                    List.of(),
-                    new TrustUnitEvidence(text.location(), text.boundingBox(), Optional.of(text.kind())));
-            case TableSection table -> new TrustUnit(
-                    id,
-                    "table",
-                    "",
-                    table.rows(),
-                    new TrustUnitEvidence(table.location(), Optional.empty(), Optional.empty()));
-            case FigureSection figure -> new TrustUnit(
-                    id,
-                    "figure",
-                    figure.caption(),
-                    List.of(),
-                    new TrustUnitEvidence(figure.location(), Optional.empty(), Optional.empty()));
+            case TextSection text ->
+                new TrustUnit(
+                        id,
+                        "text",
+                        text.text(),
+                        List.of(),
+                        new TrustUnitEvidence(text.location(), text.boundingBox(), Optional.of(text.kind())));
+            case TableSection table ->
+                new TrustUnit(
+                        id,
+                        "table",
+                        "",
+                        table.rows(),
+                        new TrustUnitEvidence(table.location(), Optional.empty(), Optional.empty()));
+            case FigureSection figure ->
+                new TrustUnit(
+                        id,
+                        "figure",
+                        figure.caption(),
+                        List.of(),
+                        new TrustUnitEvidence(figure.location(), Optional.empty(), Optional.empty()));
         };
     }
 }

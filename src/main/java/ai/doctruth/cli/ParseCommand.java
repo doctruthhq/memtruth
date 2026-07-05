@@ -21,8 +21,7 @@ final class ParseCommand {
             }
 
             @Override
-            public void write(
-                    ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument, Path out)
+            public void write(ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument, Path out)
                     throws CliException {
                 writeJson(doc, source, parser, trustDocument, out);
             }

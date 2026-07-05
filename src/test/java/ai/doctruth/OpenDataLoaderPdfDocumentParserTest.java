@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -83,8 +85,8 @@ class OpenDataLoaderPdfDocumentParserTest {
                   ]
                 }
                 """);
-        var geometry = new OpenDataLoaderPdfGeometry(
-                Map.of(1, new OpenDataLoaderPdfGeometry.PageGeometry(200.0, 400.0)));
+        var geometry =
+                new OpenDataLoaderPdfGeometry(Map.of(1, new OpenDataLoaderPdfGeometry.PageGeometry(200.0, 400.0)));
 
         var parsed = OpenDataLoaderPdfDocumentParser.readOpenDataLoaderJson(json, geometry);
 
@@ -188,6 +190,49 @@ class OpenDataLoaderPdfDocumentParserTest {
 
         assertThat(calls).hasValue(2);
         assertThat(maxActiveRuns).hasValue(1);
+    }
+
+    @Test
+    void parseDoesNotMutateRootJulLogger() throws Exception {
+        Path pdf = tempDir.resolve("logger.pdf");
+        Files.writeString(pdf, "fake pdf bytes");
+        Logger root = Logger.getLogger("");
+        Level previousRootLevel = root.getLevel();
+        var handlers = root.getHandlers();
+        var previousHandlerLevels = new Level[handlers.length];
+        for (int i = 0; i < handlers.length; i++) {
+            previousHandlerLevels[i] = handlers[i].getLevel();
+        }
+        OpenDataLoaderPdfDocumentParser.OpenDataLoaderRunner runner = (pdfPath, outputDir, config) -> {
+            assertThat(root.getLevel()).isEqualTo(previousRootLevel);
+            for (int i = 0; i < handlers.length; i++) {
+                assertThat(handlers[i].getLevel()).isEqualTo(previousHandlerLevels[i]);
+            }
+            String outputName = pdfPath.getFileName().toString().replaceFirst("\\.[^.]+$", "") + ".json";
+            Files.writeString(outputDir.resolve(outputName), """
+                    {
+                      "number of pages": 1,
+                      "kids": [
+                        { "type": "heading", "page number": 1, "content": "logger safe" }
+                      ]
+                    }
+                    """);
+        };
+
+        try (var runnerOverride = OpenDataLoaderPdfDocumentParser.useOpenDataLoaderRunnerForTesting(runner)) {
+            assertThat(runnerOverride).isNotNull();
+            OpenDataLoaderPdfDocumentParser.parse(pdf);
+        } finally {
+            root.setLevel(previousRootLevel);
+            for (int i = 0; i < handlers.length; i++) {
+                handlers[i].setLevel(previousHandlerLevels[i]);
+            }
+        }
+
+        assertThat(root.getLevel()).isEqualTo(previousRootLevel);
+        for (int i = 0; i < handlers.length; i++) {
+            assertThat(handlers[i].getLevel()).isEqualTo(previousHandlerLevels[i]);
+        }
     }
 
     private static void sleepBriefly() throws java.io.IOException {

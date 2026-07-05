@@ -13,8 +13,7 @@ import java.util.Objects;
  * @param evidence source anchor and visual evidence.
  * @since 0.2.0
  */
-public record TrustUnit(
-        String id, String type, String text, List<List<String>> rows, TrustUnitEvidence evidence) {
+public record TrustUnit(String id, String type, String text, List<List<String>> rows, TrustUnitEvidence evidence) {
 
     public TrustUnit {
         Objects.requireNonNull(id, "id");

@@ -72,32 +72,24 @@ class ParseCommandPerformanceTest {
                 opts -> {
                     throw new AssertionError("provider is not used by parse");
                 });
-        var command = new ParseCommand(
-                context,
-                (path, backend) -> parsed(path),
-                new ParseCommand.JsonRenderer() {
-                    @Override
-                    public String render(ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument) {
-                        renderCalls.incrementAndGet();
-                        return "{}";
-                    }
+        var command = new ParseCommand(context, (path, backend) -> parsed(path), new ParseCommand.JsonRenderer() {
+            @Override
+            public String render(ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument) {
+                renderCalls.incrementAndGet();
+                return "{}";
+            }
 
-                    @Override
-                    public void write(
-                            ParsedDocument doc,
-                            Path source,
-                            PdfParserBackend parser,
-                            boolean trustDocument,
-                            Path out)
-                            throws CliException {
-                        writeCalls.incrementAndGet();
-                        try {
-                            Files.writeString(out, "{}");
-                        } catch (java.io.IOException e) {
-                            throw new CliException("write failed", e);
-                        }
-                    }
-                });
+            @Override
+            public void write(ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument, Path out)
+                    throws CliException {
+                writeCalls.incrementAndGet();
+                try {
+                    Files.writeString(out, "{}");
+                } catch (java.io.IOException e) {
+                    throw new CliException("write failed", e);
+                }
+            }
+        });
 
         command.run(new String[] {"parse", "contract.pdf", "--format", "json", "-o", output.toString()});
 
@@ -121,8 +113,7 @@ class ParseCommandPerformanceTest {
             }
 
             @Override
-            public void write(
-                    ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument, Path out)
+            public void write(ParsedDocument doc, Path source, PdfParserBackend parser, boolean trustDocument, Path out)
                     throws CliException {
                 writeCalls.incrementAndGet();
                 try {

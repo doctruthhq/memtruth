@@ -15,6 +15,7 @@ import ai.doctruth.ExtractionResult;
 import ai.doctruth.JsonSchema;
 import ai.doctruth.ParsedDocument;
 import ai.doctruth.TrustDocumentJson;
+import ai.doctruth.internal.schema.JsonSchemaResolver;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,14 +69,16 @@ final class ExtractCommand {
         }
     }
 
-    private static void writeOutputs(
-            Path dir, Path source, ParsedDocument doc, ExtractionResult<JsonNode> result) throws CliException {
+    private static void writeOutputs(Path dir, Path source, ParsedDocument doc, ExtractionResult<JsonNode> result)
+            throws CliException {
         try {
             Files.createDirectories(dir);
-            TrustDocumentJson.writeJson(doc, source, DocumentParsers.parserId(source), dir.resolve("trust-document.json"));
+            TrustDocumentJson.writeJson(
+                    doc, source, DocumentParsers.parserId(source), dir.resolve("trust-document.json"));
             Files.writeString(dir.resolve("result.json"), result.value().toPrettyString());
             result.toAuditJson(dir.resolve("audit.json"));
-            Files.writeString(dir.resolve("manifest.json"), manifest(source, doc).toPrettyString());
+            Files.writeString(
+                    dir.resolve("manifest.json"), manifest(source, doc).toPrettyString());
         } catch (IOException e) {
             throw new CliException("failed to write extraction outputs: " + e.getMessage(), e);
         }
@@ -84,7 +87,8 @@ final class ExtractCommand {
     private static ObjectNode manifest(Path source, ParsedDocument doc) {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("schemaVersion", RUN_SCHEMA_VERSION);
-        root.put("source", source.toString());
+        root.put("sourceFilename", source.getFileName().toString());
+        root.put("sourceSha256", sourceSha256(doc.docId()));
         root.put("docId", doc.docId());
         root.put("parser", DocumentParsers.parserId(source));
         ObjectNode artifacts = MAPPER.createObjectNode();
@@ -93,6 +97,10 @@ final class ExtractCommand {
         artifacts.put("audit", "audit.json");
         root.set("artifacts", artifacts);
         return root;
+    }
+
+    private static String sourceSha256(String docId) {
+        return docId.startsWith("sha256:") ? docId.substring("sha256:".length()) : docId;
     }
 
     private void printSummary(Path dir, ExtractionResult<JsonNode> result) {
@@ -180,23 +188,37 @@ final class ExtractCommand {
                 return require;
             }
             var fields = new LinkedHashSet<String>();
-            collectLeafFields("", schema.node(), fields);
+            JsonNode root = schema.node();
+            collectLeafFields("", root, root, fields);
             return Set.copyOf(fields);
         }
 
-        private static void collectLeafFields(String path, JsonNode schema, Set<String> fields) {
-            var properties = schema.path("properties");
-            if ("object".equals(schema.path("type").asText()) && properties.isObject()) {
-                properties.fields().forEachRemaining(e -> collectLeafFields(joinPath(path, e.getKey()), e.getValue(), fields));
+        private static void collectLeafFields(String path, JsonNode schema, JsonNode root, Set<String> fields) {
+            JsonNode activeSchema = JsonSchemaResolver.resolveLocal(schema, root);
+            var properties = activeSchema.path("properties");
+            if (isObjectSchema(activeSchema)) {
+                properties
+                        .fields()
+                        .forEachRemaining(
+                                e -> collectLeafFields(joinPath(path, e.getKey()), e.getValue(), root, fields));
                 return;
             }
-            if ("array".equals(schema.path("type").asText()) && schema.has("items")) {
-                collectLeafFields(path, schema.path("items"), fields);
+            if (isArraySchema(activeSchema)) {
+                collectLeafFields(path + "[]", activeSchema.path("items"), root, fields);
                 return;
             }
             if (!path.isBlank()) {
                 fields.add(path);
             }
+        }
+
+        private static boolean isObjectSchema(JsonNode schema) {
+            return schema.path("properties").isObject()
+                    && ("object".equals(schema.path("type").asText()) || schema.has("properties"));
+        }
+
+        private static boolean isArraySchema(JsonNode schema) {
+            return schema.has("items") && ("array".equals(schema.path("type").asText()) || schema.has("items"));
         }
 
         private static String joinPath(String parent, String child) {

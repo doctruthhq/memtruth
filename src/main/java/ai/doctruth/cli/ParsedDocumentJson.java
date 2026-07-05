@@ -63,7 +63,9 @@ final class ParsedDocumentJson {
         json.writeStringField("sourceFilename", doc.metadata().sourceFilename());
         json.writeNumberField("pageCount", doc.metadata().pageCount());
         if (doc.metadata().sourcePublishedAt().isPresent()) {
-            json.writeStringField("sourcePublishedAt", doc.metadata().sourcePublishedAt().get().toString());
+            json.writeStringField(
+                    "sourcePublishedAt",
+                    doc.metadata().sourcePublishedAt().get().toString());
         }
         json.writeEndObject();
         json.writeArrayFieldStart("sections");

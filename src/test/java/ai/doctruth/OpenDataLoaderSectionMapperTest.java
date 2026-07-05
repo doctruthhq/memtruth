@@ -169,8 +169,7 @@ class OpenDataLoaderSectionMapperTest {
         var loads = new AtomicInteger();
         var geometry = OpenDataLoaderPdfGeometry.lazy(() -> {
             loads.incrementAndGet();
-            return new OpenDataLoaderPdfGeometry(
-                    Map.of(1, new OpenDataLoaderPdfGeometry.PageGeometry(200.0, 400.0)));
+            return new OpenDataLoaderPdfGeometry(Map.of(1, new OpenDataLoaderPdfGeometry.PageGeometry(200.0, 400.0)));
         });
 
         new OpenDataLoaderSectionMapper(geometry).map(MAPPER.readTree("""

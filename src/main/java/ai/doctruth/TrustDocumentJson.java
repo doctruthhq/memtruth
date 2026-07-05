@@ -113,8 +113,12 @@ public final class TrustDocumentJson {
         json.writeStartObject();
         json.writeStringField("schemaVersion", TrustDocument.SCHEMA_VERSION);
         json.writeStringField("docId", doc.docId());
-        writeSource(json, new TrustDocumentSource(
-                sourceFilename(source), sha256FromDocId(doc.docId()), doc.metadata().pageCount()));
+        writeSource(
+                json,
+                new TrustDocumentSource(
+                        sourceFilename(source),
+                        sha256FromDocId(doc.docId()),
+                        doc.metadata().pageCount()));
         writeParserRun(json, backend);
         json.writeArrayFieldStart("units");
         int id = 1;

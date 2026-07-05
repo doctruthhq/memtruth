@@ -18,17 +18,17 @@ final class OpenDataLoaderSectionMapper {
     }
 
     List<ParsedSection> map(JsonNode kids) {
-        var sections = new ArrayList<ParsedSection>();
         if (kids == null || !kids.isArray()) {
-            return sections;
+            return new ArrayList<>();
         }
+        var sections = new ArrayList<ParsedSection>(kids.size());
         for (JsonNode kid : kids) {
             append(kid, sections);
         }
         return sections;
     }
 
-    private void append(JsonNode node, List<ParsedSection> sections) {
+    void append(JsonNode node, List<ParsedSection> sections) {
         String type = node.path("type").asText("");
         switch (type) {
             case "paragraph", "heading", "list item", "line", "text chunk", "text block" ->
@@ -59,8 +59,8 @@ final class OpenDataLoaderSectionMapper {
     }
 
     private void appendTable(JsonNode node, List<ParsedSection> sections) {
-        var rows = new ArrayList<List<String>>();
         JsonNode tableRows = node.path("rows");
+        var rows = new ArrayList<List<String>>(tableRows.isArray() ? tableRows.size() : 0);
         if (tableRows.isArray()) {
             for (JsonNode row : tableRows) {
                 rows.add(tableCells(row));
@@ -70,8 +70,9 @@ final class OpenDataLoaderSectionMapper {
     }
 
     private List<String> tableCells(JsonNode row) {
-        var cells = new ArrayList<String>();
-        for (JsonNode cell : row.path("cells")) {
+        JsonNode cellsNode = row.path("cells");
+        var cells = new ArrayList<String>(cellsNode.isArray() ? cellsNode.size() : 0);
+        for (JsonNode cell : cellsNode) {
             cells.add(textFrom(cell).trim());
         }
         return cells;
@@ -92,43 +93,46 @@ final class OpenDataLoaderSectionMapper {
     }
 
     private String textFrom(JsonNode node) {
+        var text = new StringBuilder();
+        appendTextFrom(node, text);
+        return text.toString();
+    }
+
+    private boolean appendTextFrom(JsonNode node, StringBuilder text) {
         if (node == null || node.isMissingNode() || node.isNull()) {
-            return "";
+            return false;
         }
         if (node.isArray()) {
-            return textFromArray(node);
+            return appendTextFromArray(node, text);
         }
         String direct = node.path("content").asText("");
         if (!direct.isBlank()) {
-            return direct;
+            appendTextSegment(text, direct.trim());
+            return true;
         }
-        var parts = new ArrayList<String>();
-        collectText(node.path("kids"), parts);
-        collectText(node.path("list items"), parts);
-        return String.join("\n", parts);
+        boolean appended = appendTextFromArray(node.path("kids"), text);
+        return appendTextFromArray(node.path("list items"), text) || appended;
     }
 
-    private String textFromArray(JsonNode nodes) {
-        var parts = new ArrayList<String>();
-        for (JsonNode child : nodes) {
-            String childText = textFrom(child).trim();
-            if (!childText.isEmpty()) {
-                parts.add(childText);
-            }
-        }
-        return String.join("\n", parts);
-    }
-
-    private void collectText(JsonNode nodes, List<String> parts) {
+    private boolean appendTextFromArray(JsonNode nodes, StringBuilder text) {
         if (!nodes.isArray()) {
+            return false;
+        }
+        boolean appended = false;
+        for (JsonNode child : nodes) {
+            appended = appendTextFrom(child, text) || appended;
+        }
+        return appended;
+    }
+
+    private static void appendTextSegment(StringBuilder text, String segment) {
+        if (segment.isEmpty()) {
             return;
         }
-        for (JsonNode child : nodes) {
-            String childText = textFrom(child).trim();
-            if (!childText.isEmpty()) {
-                parts.add(childText);
-            }
+        if (!text.isEmpty()) {
+            text.append('\n');
         }
+        text.append(segment);
     }
 
     private SourceLocation location(int page) {

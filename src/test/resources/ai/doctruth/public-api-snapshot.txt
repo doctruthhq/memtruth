@@ -22,9 +22,10 @@ TYPE record ai.doctruth.BoundingBox [public final]
   method java.lang.String toString() [public final]
 
 TYPE record ai.doctruth.Citation [public final]
-  record-components ai.doctruth.SourceLocation location, java.lang.String exactQuote, double matchScore, java.util.Optional boundingBox
+  record-components ai.doctruth.SourceLocation location, java.lang.String exactQuote, double matchScore, java.util.Optional boundingBox, java.util.Optional source
   ctor Citation(ai.doctruth.SourceLocation, java.lang.String, double)
   ctor Citation(ai.doctruth.SourceLocation, java.lang.String, double, java.util.Optional)
+  ctor Citation(ai.doctruth.SourceLocation, java.lang.String, double, java.util.Optional, java.util.Optional)
   method ai.doctruth.SourceLocation location() [public]
   method boolean equals(java.lang.Object) [public final]
   method double matchScore() [public]
@@ -32,6 +33,16 @@ TYPE record ai.doctruth.Citation [public final]
   method java.lang.String exactQuote() [public]
   method java.lang.String toString() [public final]
   method java.util.Optional boundingBox() [public]
+  method java.util.Optional source() [public]
+
+TYPE record ai.doctruth.CitationSource [public final]
+  record-components java.lang.String docId, java.lang.String unitId
+  ctor CitationSource(java.lang.String, java.lang.String)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String docId() [public]
+  method java.lang.String toString() [public final]
+  method java.lang.String unitId() [public]
 
 TYPE record ai.doctruth.Confidence [public final]
   record-components double score, java.lang.String rationale
@@ -87,6 +98,7 @@ TYPE class ai.doctruth.DocumentJsonExtractionBuilder [public final]
   method ai.doctruth.DocumentJsonExtractionBuilder requireCitation(java.lang.String) [public]
   method ai.doctruth.DocumentJsonExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
   method ai.doctruth.DocumentJsonExtractionBuilder withEvidence() [public]
+  method ai.doctruth.DocumentJsonExtractionBuilder withEvidenceFirst() [public]
   method ai.doctruth.DocumentJsonExtractionBuilder withMaxRetries(int) [public]
   method ai.doctruth.DocumentJsonExtractionBuilder withSourcePublishedAt(java.time.Instant) [public]
   method ai.doctruth.ExtractionResult runJson() [public]
@@ -173,6 +185,7 @@ TYPE class ai.doctruth.JsonExtractionBuilder [public final]
   method ai.doctruth.JsonExtractionBuilder withBitemporal() [public]
   method ai.doctruth.JsonExtractionBuilder withConfidence() [public]
   method ai.doctruth.JsonExtractionBuilder withContextStrategy(ai.doctruth.ContextStrategy) [public]
+  method ai.doctruth.JsonExtractionBuilder withEvidenceFirst() [public]
   method ai.doctruth.JsonExtractionBuilder withMaxRetries(int) [public]
   method ai.doctruth.JsonExtractionBuilder withProvenance() [public]
   method ai.doctruth.JsonExtractionBuilder withSourcePublishedAt(java.time.Instant) [public]
@@ -228,6 +241,14 @@ TYPE record ai.doctruth.ParsedDocument [public final]
 
 TYPE interface ai.doctruth.ParsedSection [public abstract interface]
   permits ai.doctruth.TextSection, ai.doctruth.TableSection, ai.doctruth.FigureSection
+
+TYPE record ai.doctruth.ParserRun [public final]
+  record-components java.lang.String backend
+  ctor ParserRun(java.lang.String)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String backend() [public]
+  method java.lang.String toString() [public final]
 
 TYPE class ai.doctruth.PdfDocumentParser [public final]
   method ai.doctruth.ParsedDocument parse(java.nio.file.Path) [public static]
@@ -366,6 +387,66 @@ TYPE record ai.doctruth.TextSection [public final]
   method int hashCode() [public final]
   method java.lang.String text() [public]
   method java.lang.String toString() [public final]
+  method java.util.Optional boundingBox() [public]
+
+TYPE record ai.doctruth.TrustDocument [public final]
+  record-components java.lang.String schemaVersion, java.lang.String docId, ai.doctruth.TrustDocumentSource source, ai.doctruth.ParserRun parserRun, java.util.List units
+  ctor TrustDocument(java.lang.String, java.lang.String, ai.doctruth.TrustDocumentSource, ai.doctruth.ParserRun, java.util.List)
+  method ai.doctruth.ParserRun parserRun() [public]
+  method ai.doctruth.TrustDocument fromParsed(ai.doctruth.ParsedDocument, java.nio.file.Path, ai.doctruth.PdfParserBackend) [public static]
+  method ai.doctruth.TrustDocument fromParsed(ai.doctruth.ParsedDocument, java.nio.file.Path, java.lang.String) [public static]
+  method ai.doctruth.TrustDocumentSource source() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String docId() [public]
+  method java.lang.String schemaVersion() [public]
+  method java.lang.String toString() [public final]
+  method java.util.List units() [public]
+
+TYPE class ai.doctruth.TrustDocumentJson [public final]
+  method java.lang.String toJson(ai.doctruth.ParsedDocument, java.nio.file.Path, ai.doctruth.PdfParserBackend) [public static]
+  method java.lang.String toJson(ai.doctruth.ParsedDocument, java.nio.file.Path, java.lang.String) [public static]
+  method java.lang.String toJson(ai.doctruth.TrustDocument) [public static]
+  method void writeJson(ai.doctruth.ParsedDocument, java.nio.file.Path, ai.doctruth.PdfParserBackend, java.io.Writer) [public static]
+  method void writeJson(ai.doctruth.ParsedDocument, java.nio.file.Path, ai.doctruth.PdfParserBackend, java.nio.file.Path) [public static]
+  method void writeJson(ai.doctruth.ParsedDocument, java.nio.file.Path, java.lang.String, java.io.Writer) [public static]
+  method void writeJson(ai.doctruth.ParsedDocument, java.nio.file.Path, java.lang.String, java.nio.file.Path) [public static]
+  method void writeJson(ai.doctruth.TrustDocument, java.io.Writer) [public static]
+
+TYPE class ai.doctruth.TrustDocumentParser [public final]
+  method ai.doctruth.TrustDocument parse(java.nio.file.Path) [public static]
+  method ai.doctruth.TrustDocument parse(java.nio.file.Path, ai.doctruth.PdfParserBackend) [public static]
+
+TYPE record ai.doctruth.TrustDocumentSource [public final]
+  record-components java.lang.String filename, java.lang.String sha256, int pageCount
+  ctor TrustDocumentSource(java.lang.String, java.lang.String, int)
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method int pageCount() [public]
+  method java.lang.String filename() [public]
+  method java.lang.String sha256() [public]
+  method java.lang.String toString() [public final]
+
+TYPE record ai.doctruth.TrustUnit [public final]
+  record-components java.lang.String id, java.lang.String type, java.lang.String text, java.util.List rows, ai.doctruth.TrustUnitEvidence evidence
+  ctor TrustUnit(java.lang.String, java.lang.String, java.lang.String, java.util.List, ai.doctruth.TrustUnitEvidence)
+  method ai.doctruth.TrustUnitEvidence evidence() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String id() [public]
+  method java.lang.String text() [public]
+  method java.lang.String toString() [public final]
+  method java.lang.String type() [public]
+  method java.util.List rows() [public]
+
+TYPE record ai.doctruth.TrustUnitEvidence [public final]
+  record-components ai.doctruth.SourceLocation location, java.util.Optional boundingBox, java.util.Optional blockKind
+  ctor TrustUnitEvidence(ai.doctruth.SourceLocation, java.util.Optional, java.util.Optional)
+  method ai.doctruth.SourceLocation location() [public]
+  method boolean equals(java.lang.Object) [public final]
+  method int hashCode() [public final]
+  method java.lang.String toString() [public final]
+  method java.util.Optional blockKind() [public]
   method java.util.Optional boundingBox() [public]
 
 TYPE class ai.doctruth.XlsxDocumentParser [public final]

@@ -333,6 +333,50 @@ class JsonSchemaExtractionContractTest {
         }
 
         @Test
+        @DisplayName("evidence-first JSON wraps provider schema, unwraps values, and cites exact quotes")
+        void evidenceFirstJsonUsesProviderQuotesAsCitations() throws ExtractionException {
+            var captured = new AtomicReference<JsonNode>();
+            LlmProvider fake = new AnthropicProvider("test-key") {
+                @Override
+                public ProviderResponse complete(ProviderRequest req) {
+                    captured.set(req.responseSchema());
+                    return response("""
+                            {
+                              "partyA": {
+                                "value": "Acme",
+                                "exactQuote": "Party A: Acme"
+                              },
+                              "status": {
+                                "value": "signed",
+                                "exactQuote": "status signed"
+                              },
+                              "totalValue": {
+                                "value": 1000,
+                                "exactQuote": "value 1000"
+                              }
+                            }
+                            """);
+                }
+            };
+
+            var result = DocTruth.from(fake)
+                    .extractJson("extract contract", JsonSchema.from(CONTRACT_SCHEMA))
+                    .withEvidenceFirst()
+                    .withProvenance()
+                    .withConfidence()
+                    .runJson(doc("Party A: Acme status signed value 1000"));
+
+            assertThat(captured.get().path("properties").path("partyA").path("properties").has("value"))
+                    .isTrue();
+            assertThat(captured.get().path("properties").path("partyA").path("properties").has("exactQuote"))
+                    .isTrue();
+            assertThat(result.value().path("partyA").asText()).isEqualTo("Acme");
+            assertThat(result.value().path("totalValue").asInt()).isEqualTo(1000);
+            assertThat(result.citations().get("partyA").exactQuote()).isEqualTo("Party A: Acme");
+            assertThat(result.confidence().get("partyA").rationale()).contains("evidence quote");
+        }
+
+        @Test
         @DisplayName("builder invariants reject invalid retry and citation arguments")
         void builderInvariants() {
             var builder = DocTruth.from(new AnthropicProvider("test-key"))

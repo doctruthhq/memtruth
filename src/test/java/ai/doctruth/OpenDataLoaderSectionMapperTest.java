@@ -3,6 +3,7 @@ package ai.doctruth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -110,5 +111,87 @@ class OpenDataLoaderSectionMapperTest {
                 .filteredOn(TextSection.class::isInstance)
                 .map(TextSection.class::cast)
                 .allSatisfy(section -> assertThat(section.boundingBox()).isEmpty());
+    }
+
+    @Test
+    void flattensNestedTextWithoutBlankSegments() throws Exception {
+        var geometry =
+                new OpenDataLoaderPdfGeometry(Map.of(1, new OpenDataLoaderPdfGeometry.PageGeometry(200.0, 400.0)));
+        var kids = MAPPER.readTree("""
+                [
+                  {
+                    "type": "paragraph",
+                    "page number": 1,
+                    "kids": [
+                      { "content": "Alpha" },
+                      { "content": "   " },
+                      {
+                        "list items": [
+                          { "content": "Beta" },
+                          {
+                            "kids": [
+                              { "content": "Gamma" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "table",
+                    "page number": 1,
+                    "rows": [
+                      {
+                        "cells": [
+                          {
+                            "kids": [
+                              { "content": "Cell A" },
+                              { "content": "Cell B" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+                """);
+
+        var sections = new OpenDataLoaderSectionMapper(geometry).map(kids);
+
+        assertThat((TextSection) sections.get(0)).extracting(TextSection::text).isEqualTo("Alpha\nBeta\nGamma");
+        assertThat((TableSection) sections.get(1))
+                .extracting(TableSection::rows)
+                .isEqualTo(java.util.List.of(java.util.List.of("Cell A\nCell B")));
+    }
+
+    @Test
+    void loadsGeometryOnlyWhenBoundingBoxesArePresent() throws Exception {
+        var loads = new AtomicInteger();
+        var geometry = OpenDataLoaderPdfGeometry.lazy(() -> {
+            loads.incrementAndGet();
+            return new OpenDataLoaderPdfGeometry(
+                    Map.of(1, new OpenDataLoaderPdfGeometry.PageGeometry(200.0, 400.0)));
+        });
+
+        new OpenDataLoaderSectionMapper(geometry).map(MAPPER.readTree("""
+                [
+                  { "type": "paragraph", "page number": 1, "content": "No box" }
+                ]
+                """));
+
+        assertThat(loads).hasValue(0);
+
+        new OpenDataLoaderSectionMapper(geometry).map(MAPPER.readTree("""
+                [
+                  {
+                    "type": "paragraph",
+                    "page number": 1,
+                    "content": "Has box",
+                    "bounding box": [20, 100, 100, 150]
+                  }
+                ]
+                """));
+
+        assertThat(loads).hasValue(1);
     }
 }

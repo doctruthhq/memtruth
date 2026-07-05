@@ -74,7 +74,16 @@ backend only for compatibility checks or parser debugging:
 doctruth parse contract.pdf --parser pdfbox
 ```
 
-Write parsed sections as JSON:
+Write DocTruth's audit-ready TrustDocument JSON:
+
+```bash
+doctruth parse contract.pdf --format json -o trust-document.json
+```
+
+The output includes the source SHA-256, page count, parser backend, ordered
+content units, page/line anchors, tables, and optional PDF bounding boxes.
+
+Write the lower-level parsed section JSON for parser debugging:
 
 ```bash
 doctruth parse contract.pdf --json -o parsed.json
@@ -85,6 +94,55 @@ Show that bbox recovery is enabled in the summary:
 ```bash
 doctruth parse contract.pdf --bboxes
 ```
+
+### Profile
+
+Measure local parser latency and heap movement without an LLM key:
+
+```bash
+doctruth profile contract.pdf --iterations 3 --json
+```
+
+Include output serialization cost when comparing parser plus JSON rendering:
+
+```bash
+doctruth profile contract.pdf --iterations 3 --include-output trust-json --json
+```
+
+Measure the streaming file-writer path used by `parse -o`:
+
+```bash
+doctruth profile contract.pdf --iterations 3 --include-output trust-json-file --json
+```
+
+The JSON includes:
+
+```text
+parser
+iterations
+fileSizeBytes
+sectionCount
+includeOutput
+parseLatencyMillis
+outputLatencyMillis
+coldLatencyMillis
+warmAverageLatencyMillis
+coldOutputLatencyMillis
+warmAverageOutputLatencyMillis
+profiledOutputChars
+profiledOutputBytes
+heapUsedBeforeBytes
+heapUsedAfterBytes
+heapDeltaBytes
+```
+
+`trust-json` and `parsed-json` measure string rendering. `trust-json-file` and
+`parsed-json-file` measure temporary file writer output and report bytes.
+Warm latency is a subsequent full parse in the same JVM, not a persistent
+parser-worker residency metric.
+
+Use this command to compare `opendataloader` and `pdfbox` on a named corpus
+before proposing Rust, Go, or other native optimization work.
 
 ### Schema
 
@@ -112,8 +170,9 @@ By default, DocTruth:
 
 - reads provider/model/output defaults from `doctruth.yml` when present
 - uses `openai` as the default provider
-- requires citations for top-level schema fields
-- writes `result.json` and `audit.json` to `.doctruth/runs/<run-id>/`
+- requires citations for schema leaf fields
+- writes `trust-document.json`, `result.json`, `audit.json`, and `manifest.json`
+  to `.doctruth/runs/<run-id>/`
 
 Common overrides:
 
@@ -124,7 +183,15 @@ doctruth extract contract.pdf -s contract.schema.json --model gpt-4o-mini
 doctruth extract contract.pdf -s contract.schema.json --base-url http://localhost:11434/v1
 doctruth extract contract.pdf -s contract.schema.json --allow-uncited
 doctruth extract contract.pdf -s contract.schema.json --require partyA,totalValue
+doctruth extract contract.pdf -s contract.schema.json --evidence-first
 ```
+
+`--evidence-first` wraps each schema leaf as `{ "value": ..., "exactQuote": ... }`
+for the provider response. DocTruth unwraps `value` into `result.json`, validates
+it against the original schema, and uses `exactQuote` for citation matching.
+
+`audit.json` derivations include the TrustDocument `docId` and `unit` id when a
+field citation maps to a parsed unit.
 
 Provider keys:
 

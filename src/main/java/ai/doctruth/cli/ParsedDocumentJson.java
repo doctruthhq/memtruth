@@ -1,15 +1,21 @@
 package ai.doctruth.cli;
 
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import ai.doctruth.BoundingBox;
 import ai.doctruth.FigureSection;
 import ai.doctruth.ParsedDocument;
+import ai.doctruth.ParsedSection;
 import ai.doctruth.SourceLocation;
 import ai.doctruth.TableSection;
 import ai.doctruth.TextSection;
 
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 final class ParsedDocumentJson {
@@ -22,60 +28,112 @@ final class ParsedDocumentJson {
 
     static String toJson(ParsedDocument doc) throws CliException {
         try {
-            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(toNode(doc));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            var out = new StringWriter();
+            writeJson(doc, out);
+            return out.toString();
+        } catch (IOException e) {
             throw new CliException("failed to serialize parsed document", e);
         }
     }
 
-    private static ObjectNode toNode(ParsedDocument doc) {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("docId", doc.docId());
-        ObjectNode metadata = MAPPER.createObjectNode();
-        metadata.put("sourceFilename", doc.metadata().sourceFilename());
-        metadata.put("pageCount", doc.metadata().pageCount());
-        doc.metadata().sourcePublishedAt().ifPresent(t -> metadata.put("sourcePublishedAt", t.toString()));
-        root.set("metadata", metadata);
-        ArrayNode sections = MAPPER.createArrayNode();
-        doc.sections().forEach(section -> {
-            switch (section) {
-                case TextSection text -> sections.add(textNode(text));
-                case TableSection table -> sections.add(tableNode(table));
-                case FigureSection figure -> sections.add(figureNode(figure));
+    static void writeJson(ParsedDocument doc, Path output) throws CliException {
+        try {
+            Path parent = output.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
             }
-        });
-        root.set("sections", sections);
-        return root;
+            try (Writer writer = Files.newBufferedWriter(output)) {
+                writeJson(doc, writer);
+            }
+        } catch (IOException e) {
+            throw new CliException("failed to write parsed document JSON: " + e.getMessage(), e);
+        }
     }
 
-    private static ObjectNode textNode(TextSection section) {
-        ObjectNode node = base("text", section.location());
-        node.put("kind", section.kind().name());
-        node.put("text", section.text());
-        section.boundingBox().ifPresent(box -> node.set("boundingBox", bbox(box)));
-        return node;
+    private static void writeJson(ParsedDocument doc, Writer writer) throws IOException {
+        try (JsonGenerator json = MAPPER.getFactory().createGenerator(writer).useDefaultPrettyPrinter()) {
+            writeDocument(json, doc);
+        }
     }
 
-    private static ObjectNode tableNode(TableSection section) {
-        ObjectNode node = base("table", section.location());
-        node.set("rows", MAPPER.valueToTree(section.rows()));
-        return node;
+    private static void writeDocument(JsonGenerator json, ParsedDocument doc) throws IOException {
+        json.writeStartObject();
+        json.writeStringField("docId", doc.docId());
+        json.writeObjectFieldStart("metadata");
+        json.writeStringField("sourceFilename", doc.metadata().sourceFilename());
+        json.writeNumberField("pageCount", doc.metadata().pageCount());
+        if (doc.metadata().sourcePublishedAt().isPresent()) {
+            json.writeStringField("sourcePublishedAt", doc.metadata().sourcePublishedAt().get().toString());
+        }
+        json.writeEndObject();
+        json.writeArrayFieldStart("sections");
+        for (ParsedSection section : doc.sections()) {
+            writeSection(json, section);
+        }
+        json.writeEndArray();
+        json.writeEndObject();
     }
 
-    private static ObjectNode figureNode(FigureSection section) {
-        ObjectNode node = base("figure", section.location());
-        node.put("caption", section.caption());
-        return node;
+    private static void writeSection(JsonGenerator json, ParsedSection section) throws IOException {
+        switch (section) {
+            case TextSection text -> writeTextSection(json, text);
+            case TableSection table -> writeTableSection(json, table);
+            case FigureSection figure -> writeFigureSection(json, figure);
+        }
     }
 
-    private static ObjectNode base(String type, SourceLocation location) {
-        ObjectNode node = MAPPER.createObjectNode();
-        node.put("type", type);
-        node.set("location", MAPPER.valueToTree(location));
-        return node;
+    private static void writeTextSection(JsonGenerator json, TextSection section) throws IOException {
+        writeSectionStart(json, "text", section.location());
+        json.writeStringField("kind", section.kind().name());
+        json.writeStringField("text", section.text());
+        if (section.boundingBox().isPresent()) {
+            writeBoundingBox(json, section.boundingBox().get());
+        }
+        json.writeEndObject();
     }
 
-    private static ObjectNode bbox(BoundingBox box) {
-        return MAPPER.valueToTree(box);
+    private static void writeTableSection(JsonGenerator json, TableSection section) throws IOException {
+        writeSectionStart(json, "table", section.location());
+        json.writeArrayFieldStart("rows");
+        for (var row : section.rows()) {
+            json.writeStartArray();
+            for (String cell : row) {
+                json.writeString(cell);
+            }
+            json.writeEndArray();
+        }
+        json.writeEndArray();
+        json.writeEndObject();
+    }
+
+    private static void writeFigureSection(JsonGenerator json, FigureSection section) throws IOException {
+        writeSectionStart(json, "figure", section.location());
+        json.writeStringField("caption", section.caption());
+        json.writeEndObject();
+    }
+
+    private static void writeSectionStart(JsonGenerator json, String type, SourceLocation location) throws IOException {
+        json.writeStartObject();
+        json.writeStringField("type", type);
+        writeLocation(json, location);
+    }
+
+    private static void writeLocation(JsonGenerator json, SourceLocation location) throws IOException {
+        json.writeObjectFieldStart("location");
+        json.writeNumberField("pageStart", location.pageStart());
+        json.writeNumberField("pageEnd", location.pageEnd());
+        json.writeNumberField("lineStart", location.lineStart());
+        json.writeNumberField("lineEnd", location.lineEnd());
+        json.writeNumberField("charOffset", location.charOffset());
+        json.writeEndObject();
+    }
+
+    private static void writeBoundingBox(JsonGenerator json, BoundingBox box) throws IOException {
+        json.writeObjectFieldStart("boundingBox");
+        json.writeNumberField("x0", box.x0());
+        json.writeNumberField("y0", box.y0());
+        json.writeNumberField("x1", box.x1());
+        json.writeNumberField("y1", box.y1());
+        json.writeEndObject();
     }
 }

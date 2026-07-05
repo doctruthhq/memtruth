@@ -74,6 +74,10 @@ public final class JsonExtractionBuilder {
         return copy(state.requireCitation(fieldPath));
     }
 
+    public JsonExtractionBuilder withEvidenceFirst() {
+        return copy(state.withEvidenceFirst());
+    }
+
     public ExtractionResult<JsonNode> runJson(ParsedDocument doc) throws ExtractionException {
         Objects.requireNonNull(doc, "doc");
         String repairContext = null;
@@ -81,9 +85,14 @@ public final class JsonExtractionBuilder {
             var request = requestFor(doc, repairContext);
             ProviderResponse response = callProvider(request);
             try {
-                JsonNode value = parseJson(response.rawJson(), retry);
+                JsonNode rawValue = parseJson(response.rawJson(), retry);
+                if (state.evidenceFirst) {
+                    JsonSchemaValidator.validate(rawValue, EvidenceFirstJson.responseSchema(schema.node()), retry);
+                }
+                JsonNode value = state.evidenceFirst ? EvidenceFirstJson.unwrap(rawValue) : rawValue;
                 JsonSchemaValidator.validate(value, schema.node(), retry);
-                Map<String, Citation> citations = citations(value, doc, retry);
+                Object citationSource = state.evidenceFirst ? EvidenceFirstJson.quoteMap(rawValue) : value;
+                Map<String, Citation> citations = citations(citationSource, doc, retry);
                 return result(response, value, citations, retry);
             } catch (ExtractionException e) {
                 if (retry == state.maxRetries) {
@@ -112,8 +121,9 @@ public final class JsonExtractionBuilder {
         if (repairContext != null && !repairContext.isBlank()) {
             userPrompt = userPrompt + repairInstructions(repairContext);
         }
+        JsonNode responseSchema = state.evidenceFirst ? EvidenceFirstJson.responseSchema(schema.node()) : schema.node();
         return new ProviderRequest(
-                prompt, userPrompt, schema.node(), new ProviderOptions(state.maxRetries, DEFAULT_TIMEOUT));
+                prompt, userPrompt, responseSchema, new ProviderOptions(state.maxRetries, DEFAULT_TIMEOUT));
     }
 
     private static String repairInstructions(String repairContext) {
@@ -145,12 +155,12 @@ public final class JsonExtractionBuilder {
         }
     }
 
-    private Map<String, Citation> citations(JsonNode value, ParsedDocument doc, int retries)
+    private Map<String, Citation> citations(Object citationSource, ParsedDocument doc, int retries)
             throws ExtractionException {
         if (!state.recordProvenance && !state.recordConfidence && state.requiredCitations.isEmpty()) {
             return Map.of();
         }
-        Map<String, Citation> matched = new CitationMatcher().matchAll(value, doc);
+        Map<String, Citation> matched = new CitationMatcher().matchAll(citationSource, doc);
         requireStrongCitations(matched, retries);
         if (state.recordProvenance || state.recordConfidence) {
             return matched;
@@ -194,7 +204,7 @@ public final class JsonExtractionBuilder {
         return citations.entrySet().stream()
                 .collect(Collectors.toUnmodifiableMap(
                         Map.Entry::getKey,
-                        e -> new Confidence(e.getValue().matchScore(), "source citation matched for JSON field")));
+                        e -> new Confidence(e.getValue().matchScore(), "source evidence quote matched for JSON field")));
     }
 
     private static String renderUserPrompt(ParsedDocument doc) {

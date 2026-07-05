@@ -16,13 +16,13 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**Auditable LLM extraction for Java.** DocTruth turns PDFs, DOCX, XLSX, and CSV files into schema-bound structured output with field-level source citations, optional PDF bounding boxes, confidence scores, provenance, and PROV-O audit JSON.
+**Auditable LLM extraction for Java.** DocTruth turns documents into TrustDocument evidence, schema-bound structured output, field-level source citations, optional PDF bounding boxes, confidence scores, provenance, and PROV-O audit JSON.
 
 DocTruth is for teams that need to answer one question reliably:
 
 > Where did this extracted value come from?
 
-The core boundary is simple: source document in, validated structured output plus evidence trail out.
+The core boundary is simple: source document in, TrustDocument plus validated structured output and evidence trail out. For PDFs, DocTruth uses OpenDataLoader as the default parser backend while keeping the public SDK, CLI JSON, citations, confidence, provenance, and audit contracts under DocTruth.
 
 It is framework-agnostic and fits into plain Java, Spring Boot, LangChain4j, Spring AI, Quarkus, Micronaut, or any Java service that already calls OpenAI, Anthropic, Gemini, DeepSeek, or an OpenAI-compatible model endpoint.
 
@@ -65,6 +65,16 @@ java -version
 
 ## Quick Start
 
+First prove the document evidence surface without an LLM key:
+
+```bash
+doctruth parse contract.pdf --format json -o trust-document.json
+doctruth profile contract.pdf --json
+```
+
+The TrustDocument JSON includes the source SHA-256, page count, parser backend,
+page/line anchors, optional PDF bounding boxes, text units, tables, and figures.
+
 ```java
 import ai.doctruth.DocTruth;
 import java.math.BigDecimal;
@@ -104,6 +114,8 @@ smoke tests. Parser and schema inspection do not require an LLM key.
 mvn package -DskipTests
 java -jar target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv
 java -jar target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv --json -o parsed.json
+java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf --format json -o trust-document.json
+java -jar target/doctruth-java-0.2.0-alpha-all.jar profile contract.pdf --json
 java -jar target/doctruth-java-0.2.0-alpha-all.jar schema examples/pydantic-interop/resume.schema.json
 ```
 
@@ -127,7 +139,8 @@ doctruth version
   <img src="docs/assets/capabilities.png" alt="DocTruth capabilities: parse, assemble context, extract with LLM providers, validate schema, attach evidence, and export audit JSON">
 </p>
 
-- Parses PDF, DOCX, XLSX, and CSV into sections with source locations; PDF text sections include page-normalized bounding boxes when layout data is available.
+- Parses PDF, DOCX, XLSX, and CSV into evidence-bearing sections; PDF defaults to the OpenDataLoader backend and emits page-normalized bounding boxes when layout data is available.
+- Normalizes parser output into DocTruth's TrustDocument JSON contract for source identity, parser provenance, page/line anchors, content units, tables, and visual evidence.
 - Extracts Java records or JSON Schema-bound objects through LLM providers.
 - Validates structured output locally and retries repairable failures.
 - Matches extracted fields back to exact source quotes.
@@ -159,10 +172,15 @@ var result = DocTruth.withProvider(provider)
         .extractJson("Extract contract terms", schema)
         .requireCitation("partyA")
         .requireCitation("totalValue")
+        .withEvidenceFirst()
         .withEvidence()
         .withMaxRetries(2)
         .runJson();
 ```
+
+`withEvidenceFirst()` asks the provider for `{ "value": ..., "exactQuote": ... }`
+at each schema leaf, then DocTruth unwraps the value, validates it against the
+original schema, and verifies the quote against the parsed document.
 
 If a team already owns Pydantic v2 models, export them to JSON Schema at build
 time and treat the output as a normal schema file. DocTruth does not import
@@ -196,7 +214,8 @@ var local = DocTruth.withProvider(LlmProviders.openAiCompatible(
 
 ```bash
 doctruth init
-doctruth parse contract.pdf --bboxes
+doctruth parse contract.pdf --format json -o trust-document.json
+doctruth profile contract.pdf --json
 doctruth schema contract.schema.json
 doctruth doctor
 doctruth extract contract.pdf -s contract.schema.json
@@ -210,6 +229,7 @@ doctruth audit .doctruth/runs/<run-id>/audit.json
   - [No-LLM parse example](examples/no-llm-parse/)
   - [Install DocTruth CLI](docs/install.md)
   - [CLI](docs/cli.md)
+  - [Parser profiling](docs/parser-profiling.md)
   - [Evidence schema](docs/evidence-schema.md)
 - Integrate:
   - [Java integration guide](docs/java-integration.md)

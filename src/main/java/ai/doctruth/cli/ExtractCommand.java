@@ -13,12 +13,18 @@ import ai.doctruth.DocTruth;
 import ai.doctruth.ExtractionException;
 import ai.doctruth.ExtractionResult;
 import ai.doctruth.JsonSchema;
+import ai.doctruth.ParsedDocument;
+import ai.doctruth.TrustDocumentJson;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 final class ExtractCommand {
 
     private static final String DEFAULT_PROMPT = "Extract the document fields according to the supplied schema.";
+    private static final String RUN_SCHEMA_VERSION = "doctruth.extract-run.v1";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final CliContext context;
 
@@ -34,7 +40,7 @@ final class ExtractCommand {
         var provider = context.providers().create(options.providerConfig(config));
         var result = runExtraction(doc, schema, provider, options);
         Path dir = options.out().orElseGet(() -> defaultRunDir(config));
-        writeOutputs(dir, result);
+        writeOutputs(dir, options.document(), doc, result);
         printSummary(dir, result);
     }
 
@@ -48,6 +54,9 @@ final class ExtractCommand {
                     .withConfidence()
                     .withBitemporal()
                     .withMaxRetries(2);
+            if (options.evidenceFirst()) {
+                builder = builder.withEvidenceFirst();
+            }
             if (!options.allowUncited()) {
                 for (String field : options.requiredFields(schema)) {
                     builder = builder.requireCitation(field);
@@ -59,14 +68,31 @@ final class ExtractCommand {
         }
     }
 
-    private static void writeOutputs(Path dir, ExtractionResult<JsonNode> result) throws CliException {
+    private static void writeOutputs(
+            Path dir, Path source, ParsedDocument doc, ExtractionResult<JsonNode> result) throws CliException {
         try {
             Files.createDirectories(dir);
+            TrustDocumentJson.writeJson(doc, source, DocumentParsers.parserId(source), dir.resolve("trust-document.json"));
             Files.writeString(dir.resolve("result.json"), result.value().toPrettyString());
             result.toAuditJson(dir.resolve("audit.json"));
+            Files.writeString(dir.resolve("manifest.json"), manifest(source, doc).toPrettyString());
         } catch (IOException e) {
             throw new CliException("failed to write extraction outputs: " + e.getMessage(), e);
         }
+    }
+
+    private static ObjectNode manifest(Path source, ParsedDocument doc) {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("schemaVersion", RUN_SCHEMA_VERSION);
+        root.put("source", source.toString());
+        root.put("docId", doc.docId());
+        root.put("parser", DocumentParsers.parserId(source));
+        ObjectNode artifacts = MAPPER.createObjectNode();
+        artifacts.put("trustDocument", "trust-document.json");
+        artifacts.put("result", "result.json");
+        artifacts.put("audit", "audit.json");
+        root.set("artifacts", artifacts);
+        return root;
     }
 
     private void printSummary(Path dir, ExtractionResult<JsonNode> result) {
@@ -95,6 +121,7 @@ final class ExtractCommand {
             Optional<String> model,
             Optional<URI> baseUrl,
             boolean allowUncited,
+            boolean evidenceFirst,
             Set<String> require,
             String prompt) {
 
@@ -109,6 +136,7 @@ final class ExtractCommand {
             Optional<String> model = Optional.empty();
             Optional<URI> baseUrl = Optional.empty();
             boolean allowUncited = false;
+            boolean evidenceFirst = false;
             Set<String> require = new LinkedHashSet<>();
             String prompt = DEFAULT_PROMPT;
             var cursor = new ArgCursor(args, 2);
@@ -121,6 +149,7 @@ final class ExtractCommand {
                     case "--model" -> model = Optional.of(cursor.next());
                     case "--base-url" -> baseUrl = Optional.of(URI.create(cursor.next()));
                     case "--allow-uncited" -> allowUncited = true;
+                    case "--evidence-first" -> evidenceFirst = true;
                     case "--require" -> addRequired(require, cursor.next());
                     case "--prompt" -> prompt = cursor.next();
                     default -> throw new UsageException("unknown extract option: " + arg);
@@ -137,6 +166,7 @@ final class ExtractCommand {
                     model,
                     baseUrl,
                     allowUncited,
+                    evidenceFirst,
                     Set.copyOf(require),
                     prompt);
         }
@@ -149,12 +179,28 @@ final class ExtractCommand {
             if (!require.isEmpty()) {
                 return require;
             }
-            var properties = schema.node().path("properties");
             var fields = new LinkedHashSet<String>();
-            if (properties.isObject()) {
-                properties.fieldNames().forEachRemaining(fields::add);
-            }
+            collectLeafFields("", schema.node(), fields);
             return Set.copyOf(fields);
+        }
+
+        private static void collectLeafFields(String path, JsonNode schema, Set<String> fields) {
+            var properties = schema.path("properties");
+            if ("object".equals(schema.path("type").asText()) && properties.isObject()) {
+                properties.fields().forEachRemaining(e -> collectLeafFields(joinPath(path, e.getKey()), e.getValue(), fields));
+                return;
+            }
+            if ("array".equals(schema.path("type").asText()) && schema.has("items")) {
+                collectLeafFields(path, schema.path("items"), fields);
+                return;
+            }
+            if (!path.isBlank()) {
+                fields.add(path);
+            }
+        }
+
+        private static String joinPath(String parent, String child) {
+            return parent.isEmpty() ? child : parent + "." + child;
         }
 
         private static void addRequired(Set<String> require, String csv) {

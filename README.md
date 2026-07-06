@@ -1,4 +1,4 @@
-# DocTruth - Auditable LLM Extraction for Java
+# Memtruth Parse, formerly DocTruth - Auditable LLM Extraction for Java
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -16,15 +16,33 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**Auditable LLM extraction for Java.** DocTruth turns PDFs, DOCX, XLSX, and CSV files into schema-bound structured output with field-level source citations, optional PDF bounding boxes, confidence scores, provenance, and PROV-O audit JSON.
+**Memtruth is becoming the local-first memory and trust monorepo. DocTruth is
+now the document evidence and parsing module inside that stack.** During the
+transition, the public Java package, Maven coordinate, CLI command, and
+`doctruth` runtime names remain compatibility surfaces.
 
-DocTruth is for teams that need to answer one question reliably:
+**Auditable LLM extraction for Java.** Memtruth Parse, formerly DocTruth, turns
+PDFs, DOCX, XLSX, and CSV files into schema-bound structured output with
+field-level source citations, optional PDF bounding boxes, confidence scores,
+provenance, and PROV-O audit JSON.
+
+Memtruth Parse is for teams that need to answer one question reliably:
 
 > Where did this extracted value come from?
 
 The core boundary is simple: source document in, validated structured output plus evidence trail out.
 
-It is framework-agnostic and fits into plain Java, Spring Boot, LangChain4j, Spring AI, Quarkus, Micronaut, or any Java service that already calls OpenAI, Anthropic, Gemini, DeepSeek, or an OpenAI-compatible model endpoint.
+The first Memtruth module imported into this repository is
+[`memtruth-sdk`](memtruth-sdk/), a Rust workspace for corpus contracts,
+section-aware chunking, retrieval projection, and Vespa preflight diagnostics.
+It is intentionally separate from the extraction surface: document output should
+flow through stable evidence/corpus contracts instead of coupling memory,
+search, or MCP behavior to parser internals.
+
+Memtruth Parse is framework-agnostic and fits into plain Java, Spring Boot,
+LangChain4j, Spring AI, Quarkus, Micronaut, or any Java service that already
+calls OpenAI, Anthropic, Gemini, DeepSeek, or an OpenAI-compatible model
+endpoint.
 
 ```text
 contract.pdf

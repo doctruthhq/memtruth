@@ -14,6 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  memtruth-sdk:
+    name: memtruth-sdk (rust 1.95)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust 1.95
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.95.0
+
+      - name: Format
+        working-directory: memtruth-sdk
+        run: cargo fmt --check
+
+      - name: Test
+        working-directory: memtruth-sdk
+        run: cargo test
+
+      - name: Clippy
+        working-directory: memtruth-sdk
+        run: cargo clippy --all-targets -- -D warnings
+
   build:
     name: build (${{ matrix.java }})
     runs-on: ubuntu-latest

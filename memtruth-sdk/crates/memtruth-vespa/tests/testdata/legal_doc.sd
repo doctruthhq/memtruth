@@ -1,0 +1,252 @@
+schema legal_doc {
+    document legal_doc {
+        field doc_id type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field parent_doc_id type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field version_id type string {
+            indexing: summary | attribute
+        }
+
+        field chunk_type type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field section_ordinal type int {
+            indexing: summary | attribute
+        }
+
+        field section_number type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field section_number_attr type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field section_tokens type array<string> {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field section_heading type string {
+            indexing: summary | index
+            index: enable-bm25
+        }
+
+        field heading_tokens type array<string> {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field part_label type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field division_label type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field subdivision_label type string {
+            indexing: summary | attribute
+        }
+
+        field citation type string {
+            indexing: summary | index
+            index: enable-bm25
+        }
+
+        field citation_attr type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field citation_tokens type array<string> {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field title type string {
+            indexing: summary | index
+            index: enable-bm25
+        }
+
+        field title_tokens type array<string> {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field jurisdiction type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field doc_type type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field source type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field authority_type type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field authority_rank type int {
+            indexing: summary | attribute
+        }
+
+        field court_name type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field court_rank type int {
+            indexing: summary | attribute
+        }
+
+        field instrument_status type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+
+        field is_current type int {
+            indexing: summary | attribute
+        }
+
+        field version_date_days type int {
+            indexing: summary | attribute
+        }
+
+        field effective_from_days type int {
+            indexing: summary | attribute
+        }
+
+        field effective_to_days type int {
+            indexing: summary | attribute
+        }
+
+        field decision_date type string {
+            indexing: summary | attribute
+        }
+
+        field url type string {
+            indexing: summary
+        }
+
+        field source_locator type string {
+            indexing: summary
+        }
+
+        field page_start type int {
+            indexing: summary | attribute
+        }
+
+        field page_end type int {
+            indexing: summary | attribute
+        }
+
+        field page_numbers type array<int> {
+            indexing: summary | attribute
+        }
+
+        field char_start type int {
+            indexing: summary | attribute
+        }
+
+        field char_end type int {
+            indexing: summary | attribute
+        }
+
+        field source_format type string {
+            indexing: summary | attribute
+        }
+
+        field locator_confidence type string {
+            indexing: summary | attribute
+        }
+
+        field body_text type string {
+            indexing: summary | index
+            index: enable-bm25
+        }
+
+        field dense_embedding_v1_256_native type tensor<bfloat16>(x[256]) {
+            indexing: attribute | index
+            attribute {
+                distance-metric: prenormalized-angular
+            }
+            index {
+                hnsw {
+                    max-links-per-node: 16
+                    neighbors-to-explore-at-insert: 200
+                }
+            }
+        }
+    }
+
+    fieldset default {
+        fields: citation, title, section_heading, body_text
+    }
+
+    rank-profile bm25_recall inherits default {
+        first-phase {
+            expression: bm25(body_text) + bm25(section_heading) + bm25(citation) + bm25(title)
+        }
+        summary-features {
+            bm25(body_text)
+            bm25(section_heading)
+            bm25(citation)
+            bm25(title)
+        }
+    }
+
+    rank-profile dense_v1_256_native_recall inherits default {
+        inputs {
+            query(q_embedding_v1_256_native) tensor<float>(x[256])
+        }
+        first-phase {
+            expression: closeness(field, dense_embedding_v1_256_native)
+        }
+        match-features {
+            closeness(field, dense_embedding_v1_256_native)
+        }
+    }
+
+    rank-profile neural_sparse_recall inherits default {
+        first-phase {
+            expression: rawScore(neural_sparse_tokens)
+        }
+        match-features {
+            rawScore(neural_sparse_tokens)
+        }
+    }
+
+    rank-profile legal_answer_candidate_v1 inherits default {
+        function bm25_score() {
+            expression: bm25(body_text) + bm25(section_heading) + bm25(citation) + bm25(title)
+        }
+        first-phase {
+            expression: bm25_score
+        }
+        global-phase {
+            expression: reciprocal_rank(bm25_score)
+            rerank-count: 200
+        }
+    }
+}

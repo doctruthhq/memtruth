@@ -1,0 +1,266 @@
+{
+  "version": "0.1",
+  "updatedAt": "2026-07-05",
+  "principle": "This matrix is the product capability boundary. Search, UI, and eval must not imply support for a source family unless coverageStatus is supported. Adjacent means the current corpus may answer a narrow sub-question but not the whole legal domain.",
+  "families": [
+    {
+      "sourceFamily": "privacy",
+      "displayName": "Commonwealth privacy legislation",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Privacy Act 1988"
+      ],
+      "businessQuestions": [
+        "personal information",
+        "APPs",
+        "NDB statutory sections",
+        "employee records privacy edge cases"
+      ],
+      "knownLimits": [
+        "Does not by itself cover employment, discrimination, consumer law, or family law obligations."
+      ]
+    },
+    {
+      "sourceFamily": "oaic-app-guidelines",
+      "displayName": "OAIC Australian Privacy Principles Guidelines",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "OAIC APP Guidelines"
+      ],
+      "businessQuestions": [
+        "APP 1-13 practical guidance",
+        "privacy policy",
+        "security of personal information"
+      ],
+      "knownLimits": [
+        "NDB-specific OAIC operational pages are not yet separated as their own source family."
+      ]
+    },
+    {
+      "sourceFamily": "spam",
+      "displayName": "Spam Act and electronic marketing",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Spam Act 2003"
+      ],
+      "businessQuestions": [
+        "commercial electronic messages",
+        "unsubscribe",
+        "harvested-address lists"
+      ],
+      "knownLimits": [
+        "Does not cover all ACMA guidance yet."
+      ]
+    },
+    {
+      "sourceFamily": "do-not-call",
+      "displayName": "Do Not Call Register",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Do Not Call Register Act 2006"
+      ],
+      "businessQuestions": [
+        "telemarketing calls",
+        "consent",
+        "registered numbers"
+      ],
+      "knownLimits": [
+        "Does not cover all ACMA guidance yet."
+      ]
+    },
+    {
+      "sourceFamily": "online-safety",
+      "displayName": "Online Safety Act",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Online Safety Act 2021"
+      ],
+      "businessQuestions": [
+        "eSafety Commissioner",
+        "online service references",
+        "children-facing service adjacency"
+      ],
+      "knownLimits": [
+        "Does not yet include eSafety guidance pages."
+      ]
+    },
+    {
+      "sourceFamily": "soci",
+      "displayName": "Security of Critical Infrastructure",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Security of Critical Infrastructure Act 2018"
+      ],
+      "businessQuestions": [
+        "critical infrastructure asset",
+        "responsible entity",
+        "risk management program"
+      ],
+      "knownLimits": [
+        "Only Commonwealth Act text is covered; regulator guidance is not yet separate."
+      ]
+    },
+    {
+      "sourceFamily": "family-law",
+      "displayName": "Family law",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Family Law Act 1975"
+      ],
+      "businessQuestions": [
+        "Family Law Act",
+        "parent/guardian/child issues",
+        "family court materials"
+      ],
+      "knownLimits": [
+        "Family Law Act text is indexed; family court decisions are not yet indexed."
+      ]
+    },
+    {
+      "sourceFamily": "employment",
+      "displayName": "Employment and workplace relations",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Fair Work Act 2009"
+      ],
+      "businessQuestions": [
+        "unfair dismissal",
+        "employee/applicant obligations",
+        "Fair Work",
+        "workplace relations"
+      ],
+      "knownLimits": [
+        "Fair Work Act text is indexed; regulator guidance and employment case law are not yet indexed."
+      ]
+    },
+    {
+      "sourceFamily": "consumer-law",
+      "displayName": "Australian consumer law and misleading conduct",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Competition and Consumer Act 2010"
+      ],
+      "businessQuestions": [
+        "security claims",
+        "bank-grade security marketing",
+        "misleading or deceptive conduct"
+      ],
+      "knownLimits": [
+        "Competition and Consumer Act text is indexed; ACCC guidance and case law are not yet indexed."
+      ]
+    },
+    {
+      "sourceFamily": "whs",
+      "displayName": "Work health and safety",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Work Health and Safety Act 2011"
+      ],
+      "businessQuestions": [
+        "work health and safety duty employer",
+        "small business WHS obligations"
+      ],
+      "knownLimits": [
+        "Commonwealth WHS Act text is indexed; state WHS legislation and regulator guidance are not yet indexed."
+      ]
+    },
+    {
+      "sourceFamily": "federal-court",
+      "displayName": "Federal Court decisions",
+      "coverageStatus": "planned",
+      "currentCorpus": [],
+      "businessQuestions": [
+        "case match",
+        "Federal Court legal research",
+        "case citations"
+      ],
+      "knownLimits": [
+        "No production case-law corpus is currently indexed."
+      ]
+    },
+    {
+      "sourceFamily": "high-court",
+      "displayName": "High Court decisions",
+      "coverageStatus": "planned",
+      "currentCorpus": [],
+      "businessQuestions": [
+        "High Court negligence duty of care",
+        "authority ranking",
+        "case citations"
+      ],
+      "knownLimits": [
+        "No production High Court corpus is currently indexed."
+      ]
+    },
+    {
+      "sourceFamily": "nsw-caselaw",
+      "displayName": "NSW Caselaw",
+      "coverageStatus": "planned",
+      "currentCorpus": [],
+      "businessQuestions": [
+        "NSW sample decisions",
+        "state case law"
+      ],
+      "knownLimits": [
+        "No NSW Caselaw source is currently indexed."
+      ]
+    },
+    {
+      "sourceFamily": "tribunals",
+      "displayName": "Tribunal decisions",
+      "coverageStatus": "planned",
+      "currentCorpus": [],
+      "businessQuestions": [
+        "tribunal decisions",
+        "AAT-style administrative review"
+      ],
+      "knownLimits": [
+        "No tribunal source is currently indexed."
+      ]
+    },
+    {
+      "sourceFamily": "bills",
+      "displayName": "Bills and explanatory material",
+      "coverageStatus": "planned",
+      "currentCorpus": [],
+      "businessQuestions": [
+        "bill text",
+        "explanatory memoranda",
+        "legislative history"
+      ],
+      "knownLimits": [
+        "No bills source is currently indexed."
+      ]
+    },
+    {
+      "sourceFamily": "corporations",
+      "displayName": "Corporations law",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Corporations Act 2001"
+      ],
+      "businessQuestions": [
+        "company obligations",
+        "director/company law"
+      ],
+      "knownLimits": [
+        "Corporations Act text is indexed; ASIC guidance and case law are not yet indexed."
+      ]
+    },
+    {
+      "sourceFamily": "migration",
+      "displayName": "Migration law",
+      "coverageStatus": "supported",
+      "currentCorpus": [
+        "Migration Act 1958"
+      ],
+      "businessQuestions": [
+        "visa status",
+        "migration compliance adjacency"
+      ],
+      "knownLimits": [
+        "Migration Act text is indexed; migration case law and department guidance are not yet indexed."
+      ]
+    }
+  ]
+}

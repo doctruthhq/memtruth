@@ -23,9 +23,9 @@ Infer Cloud     hosted enterprise control plane
 
 ## Decision
 
-Use the current `doctruthhq/DocTruth` repository as the migration target and
-rename the repository direction to Memtruth. DocTruth becomes the parse/document
-evidence module inside the Memtruth repository identity.
+Use the then-current `doctruthhq/DocTruth` repository as the migration target
+and rename the repository direction to Memtruth. DocTruth becomes the
+parse/document evidence module inside the Memtruth repository identity.
 
 The existing `doctruth` Java package, Maven coordinate, CLI command, runtime
 binary, and audit contracts remain compatibility surfaces during the migration.

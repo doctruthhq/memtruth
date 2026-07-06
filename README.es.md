@@ -11,7 +11,7 @@
   <a href="README.es.md">Español</a>
 </p>
 
-[![CI](https://github.com/doctruthhq/DocTruth/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/DocTruth/actions)
+[![CI](https://github.com/doctruthhq/memtruth/actions/workflows/ci.yml/badge.svg)](https://github.com/doctruthhq/memtruth/actions)
 [![Maven Central](https://img.shields.io/maven-central/v/ai.doctruth/doctruth-java.svg?label=Maven%20Central)](#instalación)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)

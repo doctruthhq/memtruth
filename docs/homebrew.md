@@ -10,7 +10,7 @@ dist/homebrew/doctruth.rb
 The formula downloads the release tarball:
 
 ```text
-https://github.com/doctruthhq/DocTruth/releases/download/v<VERSION>/doctruth-<VERSION>.tar.gz
+https://github.com/doctruthhq/memtruth/releases/download/v<VERSION>/doctruth-<VERSION>.tar.gz
 ```
 
 ## Maintainer Flow

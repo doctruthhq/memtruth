@@ -33,7 +33,7 @@ gpg --keyserver keys.openpgp.org    --send-keys <KEYID>
 
 ### 3. Add GitHub Actions secrets
 
-In `doctruthhq/DocTruth → Settings → Secrets and variables → Actions`:
+In `doctruthhq/memtruth → Settings → Secrets and variables → Actions`:
 
 | Secret | Value |
 | --- | --- |
@@ -104,7 +104,7 @@ The `Release` workflow (`.github/workflows/release.yml`) fires on the `v*` tag:
 - Uploads signed artefacts and CLI distribution files as workflow artifacts
   (30-day retention)
 
-Watch it at https://github.com/doctruthhq/DocTruth/actions.
+Watch it at https://github.com/doctruthhq/memtruth/actions.
 
 ### 6. Wait for Central propagation
 

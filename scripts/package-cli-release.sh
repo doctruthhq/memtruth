@@ -2,7 +2,7 @@
 set -eu
 
 version="${VERSION:-}"
-repo="${GITHUB_REPOSITORY:-doctruthhq/DocTruth}"
+repo="${GITHUB_REPOSITORY:-doctruthhq/memtruth}"
 jar="${JAR:-}"
 dist="${DIST_DIR:-dist}"
 

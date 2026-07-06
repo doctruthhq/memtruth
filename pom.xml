@@ -15,9 +15,9 @@
     <url>https://doctruth.ai</url>
 
     <scm>
-        <connection>scm:git:git://github.com/doctruthhq/DocTruth.git</connection>
-        <developerConnection>scm:git:ssh://github.com:doctruthhq/DocTruth.git</developerConnection>
-        <url>https://github.com/doctruthhq/DocTruth/tree/main</url>
+        <connection>scm:git:git://github.com/doctruthhq/memtruth.git</connection>
+        <developerConnection>scm:git:ssh://github.com:doctruthhq/memtruth.git</developerConnection>
+        <url>https://github.com/doctruthhq/memtruth/tree/main</url>
     </scm>
 
     <distributionManagement>

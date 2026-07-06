@@ -98,6 +98,6 @@ missing — every LLM-extracted field carries a verifiable evidence chain
   failures via `dev.failsafe:failsafe`; per-call retry count carried on
   `Provenance`.
 
-[Unreleased]: https://github.com/doctruthhq/DocTruth/compare/v0.2.0-alpha...HEAD
-[0.2.0-alpha]: https://github.com/doctruthhq/DocTruth/compare/v0.1.0-alpha...v0.2.0-alpha
-[0.1.0-alpha]: https://github.com/doctruthhq/DocTruth/releases/tag/v0.1.0-alpha
+[Unreleased]: https://github.com/doctruthhq/memtruth/compare/v0.2.0-alpha...HEAD
+[0.2.0-alpha]: https://github.com/doctruthhq/memtruth/compare/v0.1.0-alpha...v0.2.0-alpha
+[0.1.0-alpha]: https://github.com/doctruthhq/memtruth/releases/tag/v0.1.0-alpha

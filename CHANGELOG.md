@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to DocTruth are documented in this file.
+All notable changes to Memtruth SDK and its Memtruth Parse compatibility
+surface are documented in this file.
 
 The format is based on [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+
+- Repositioned the repository as Memtruth SDK while keeping the existing
+  `doctruth` Java package, Maven coordinate, CLI command, and release artifact
+  names as compatibility surfaces.
 
 ### Fixed
 

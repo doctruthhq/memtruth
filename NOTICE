@@ -1,4 +1,4 @@
-DocTruth
+Memtruth SDK
 Copyright 2026 doctruthhq
 
 This product includes software developed by doctruthhq
@@ -11,13 +11,15 @@ in the project root for the full text and disclaimers.
 TRADEMARK NOTICE
 ================================================================================
 
-"DocTruth", "doctruth.ai", and the DocTruth logo are trademarks of doctruthhq.
+"Memtruth", "Memtruth Parse", "DocTruth", "doctruth.ai", and related logos are
+trademarks of doctruthhq.
 The Apache License grants you permission to use, copy, modify, and
 redistribute the source code and binaries; it does NOT grant permission to use
-the DocTruth name or logo to identify, market, or describe a fork, derivative,
-or competing service. Forks and downstream distributions must use a different
-name and logo. See https://www.apache.org/foundation/marks/ for the rationale
-behind keeping trademark policy separate from the copyright license.
+the Memtruth, Memtruth Parse, or DocTruth names or logos to identify, market, or
+describe a fork, derivative, or competing service. Forks and downstream
+distributions must use a different name and logo. See
+https://www.apache.org/foundation/marks/ for the rationale behind keeping
+trademark policy separate from the copyright license.
 
 If you are unsure whether your use is permitted, open an issue at
 https://github.com/doctruthhq/DocTruth before publishing.

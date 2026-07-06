@@ -1,4 +1,4 @@
-# Memtruth Parse, formerly DocTruth - Auditable LLM Extraction for Java
+# Memtruth SDK - Evidence and Parse SDK for AI Applications
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -16,15 +16,21 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**Memtruth is becoming the local-first memory and trust monorepo. DocTruth is
-now the document evidence and parsing module inside that stack.** During the
-transition, the public Java package, Maven coordinate, CLI command, and
-`doctruth` runtime names remain compatibility surfaces.
+**Memtruth SDK is the open-source SDK surface for evidence-backed AI
+applications.** It includes document parsing, source-grounded extraction,
+corpus contracts, chunking, retrieval projection, and local diagnostics.
 
-**Auditable LLM extraction for Java.** Memtruth Parse, formerly DocTruth, turns
-PDFs, DOCX, XLSX, and CSV files into schema-bound structured output with
-field-level source citations, optional PDF bounding boxes, confidence scores,
-provenance, and PROV-O audit JSON.
+The document evidence module is **Memtruth Parse, formerly DocTruth**. During
+the transition, the public Java package, Maven coordinate, CLI command, release
+artifacts, and `doctruth` runtime names remain compatibility surfaces.
+
+Memtruth SDK does not include the long-term memory server, MCP runtime, storage
+engine, or replay service implementation. Those belong in the separate
+`memtruth-server` line.
+
+Memtruth Parse turns PDFs, DOCX, XLSX, and CSV files into schema-bound
+structured output with field-level source citations, optional PDF bounding
+boxes, confidence scores, provenance, and PROV-O audit JSON.
 
 Memtruth Parse is for teams that need to answer one question reliably:
 
@@ -32,12 +38,11 @@ Memtruth Parse is for teams that need to answer one question reliably:
 
 The core boundary is simple: source document in, validated structured output plus evidence trail out.
 
-The first Memtruth module imported into this repository is
-[`memtruth-sdk`](memtruth-sdk/), a Rust workspace for corpus contracts,
+[`memtruth-sdk`](memtruth-sdk/) is the Rust SDK workspace for corpus contracts,
 section-aware chunking, retrieval projection, and Vespa preflight diagnostics.
-It is intentionally separate from the extraction surface: document output should
-flow through stable evidence/corpus contracts instead of coupling memory,
-search, or MCP behavior to parser internals.
+It is intentionally separate from any server memory layer: document output
+should flow through stable evidence/corpus contracts instead of coupling
+storage, MCP behavior, or hosted services to parser internals.
 
 Memtruth Parse is framework-agnostic and fits into plain Java, Spring Boot,
 LangChain4j, Spring AI, Quarkus, Micronaut, or any Java service that already
@@ -106,7 +111,8 @@ partyACitation.boundingBox().ifPresent(System.out::println);
 result.writeAudit(Path.of("audit.json"));
 ```
 
-See [`examples/quickstart`](examples/quickstart/) for a runnable example.
+See [`examples/quickstart`](examples/quickstart/) for a runnable compatibility
+example using the current `ai.doctruth` Java API.
 
 `withEvidence()` is the opinionated default for auditable extraction. It enables
 field citations, confidence scores, bitemporal provenance, and audit metadata in
@@ -126,7 +132,7 @@ java -jar target/doctruth-java-0.2.0-alpha-all.jar schema examples/pydantic-inte
 ```
 
 For a copy-pasteable Java parser example that also needs no provider key, see
-[No-LLM parse example](examples/no-llm-parse/). See [Install DocTruth CLI](docs/install.md)
+[No-LLM parse example](examples/no-llm-parse/). See [Install Memtruth Parse CLI](docs/install.md)
 and [CLI](docs/cli.md).
 
 Tagged releases publish `doctruth-<version>.tar.gz`,
@@ -154,7 +160,7 @@ doctruth version
 
 ## Java Schema and JSON Schema Interop
 
-Java records and simple POJOs are the native path. DocTruth turns the target
+Java records and simple POJOs are the native path. Memtruth Parse turns the target
 Java type into the same JSON Schema contract it sends to providers and validates
 locally before deserializing the response.
 
@@ -183,7 +189,7 @@ var result = DocTruth.withProvider(provider)
 ```
 
 If a team already owns Pydantic v2 models, export them to JSON Schema at build
-time and treat the output as a normal schema file. DocTruth does not import
+time and treat the output as a normal schema file. Memtruth Parse does not import
 Python in Java production.
 
 ## Providers
@@ -226,7 +232,7 @@ doctruth audit .doctruth/runs/<run-id>/audit.json
 - Start here:
   - [Quickstart example](examples/quickstart/)
   - [No-LLM parse example](examples/no-llm-parse/)
-  - [Install DocTruth CLI](docs/install.md)
+  - [Install Memtruth Parse CLI](docs/install.md)
   - [CLI](docs/cli.md)
   - [Evidence schema](docs/evidence-schema.md)
 - Integrate:
@@ -260,4 +266,5 @@ present. Coverage gates are 90% line / 79% branch.
 
 Code is licensed under [Apache License 2.0](LICENSE).
 
-`DocTruth`, `doctruth.ai`, and the DocTruth logo are trademarks of doctruthhq. See [NOTICE](NOTICE).
+`Memtruth`, `Memtruth Parse`, `DocTruth`, `doctruth.ai`, and related logos are
+trademarks of doctruthhq. See [NOTICE](NOTICE).

@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible DocTruth bug
+description: Report a reproducible Memtruth SDK bug
 title: "fix: "
 labels:
   - bug
@@ -13,7 +13,7 @@ body:
     attributes:
       label: Summary
       description: What went wrong?
-      placeholder: DocTruth returned a weak citation for an exact source quote.
+      placeholder: Memtruth Parse returned a weak citation for an exact source quote.
     validations:
       required: true
   - type: textarea

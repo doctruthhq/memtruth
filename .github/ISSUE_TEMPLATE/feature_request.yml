@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a narrowly-scoped DocTruth capability
+description: Propose a narrowly-scoped Memtruth SDK capability
 title: "feat: "
 labels:
   - enhancement
@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        DocTruth accepts features that strengthen source evidence, provenance, confidence, schema validation, or audit export. General agent, RAG, UI, or workflow features are usually out of scope.
+        Memtruth SDK accepts features that strengthen source evidence, provenance, confidence, schema validation, corpus contracts, projection, or audit export. Long-term memory server, MCP runtime, storage, replay service, general agent, RAG, UI, or workflow features belong elsewhere.
   - type: textarea
     id: problem
     attributes:

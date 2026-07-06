@@ -1,8 +1,8 @@
-# ADR 0012: Rename the Repository Direction to Memtruth Monorepo
+# ADR 0012: Initial Memtruth Repository Rename Direction
 
 ## Status
 
-Accepted, 2026-07-06.
+Superseded by [ADR 0013](0013-memtruth-sdk-server-boundary.md), 2026-07-06.
 
 ## Context
 
@@ -25,7 +25,7 @@ Infer Cloud     hosted enterprise control plane
 
 Use the current `doctruthhq/DocTruth` repository as the migration target and
 rename the repository direction to Memtruth. DocTruth becomes the parse/document
-evidence module inside the Memtruth monorepo.
+evidence module inside the Memtruth repository identity.
 
 The existing `doctruth` Java package, Maven coordinate, CLI command, runtime
 binary, and audit contracts remain compatibility surfaces during the migration.
@@ -57,15 +57,19 @@ document -> TrustDocument -> Source/EvidenceSpan/Claim inputs -> Memory/ContextP
 Do not make Memtruth memory, MCP, Vespa, or hosted modules call parser-private
 types directly. Use stable contract adapters.
 
-## Migration Plan
+## Supersession Note
 
-1. Import `memtruth-sdk/` and document the monorepo boundary.
-2. Add `memtruth parse` CLI aliases while keeping `doctruth` commands working.
-3. Move the existing Memtruth core crates into this repository under reviewable
-   package boundaries.
-4. Replace the legal Vespa repo's local SDK copy with the monorepo module path.
-5. Rename repository metadata, docs, and release packaging after compatibility
-   aliases and contract migration tests exist.
+This ADR's broad monorepo direction was narrowed by
+[ADR 0013](0013-memtruth-sdk-server-boundary.md). The accepted direction is now:
+
+```text
+this repository = Memtruth SDK main repository
+memtruth-server = memory, MCP, storage, replay, and server runtime
+```
+
+Do not use this ADR as authorization to import the old Memtruth memory layer,
+MCP runtime, storage implementation, replay service, server process, or
+embedding worker into this SDK repository.
 
 ## Consequences
 

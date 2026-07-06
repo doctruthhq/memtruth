@@ -10,8 +10,8 @@
     <version>0.2.0-alpha</version>
     <packaging>jar</packaging>
 
-    <name>DocTruth</name>
-    <description>Open-source auditable LLM extraction for Java — every field carries source, confidence, and bi-temporal provenance.</description>
+    <name>Memtruth SDK</name>
+    <description>Open-source evidence SDK for AI applications, with Memtruth Parse compatibility APIs for auditable Java extraction.</description>
     <url>https://doctruth.ai</url>
 
     <scm>
@@ -32,7 +32,7 @@
             <name>Apache License, Version 2.0</name>
             <url>https://www.apache.org/licenses/LICENSE-2.0</url>
             <distribution>repo</distribution>
-            <comments>Code is Apache 2.0. The DocTruth and doctruth.ai names and logos are
+            <comments>Code is Apache 2.0. The Memtruth, Memtruth Parse, DocTruth, and doctruth.ai names and logos are
             trademarks of doctruthhq — see the NOTICE file for trademark policy.</comments>
         </license>
     </licenses>

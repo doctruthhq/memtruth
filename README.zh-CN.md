@@ -1,4 +1,4 @@
-# DocTruth - 面向 Java 的可审计 LLM 抽取
+# Memtruth SDK - 面向 AI 应用的证据与解析 SDK
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -16,9 +16,15 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**面向 Java 的可审计 LLM 抽取库。** DocTruth 将 PDF、DOCX、XLSX 和 CSV 转成 schema-bound structured output，并为每个字段附上来源引用、可选 PDF bounding box、置信度、provenance 和 PROV-O audit JSON。
+**Memtruth SDK 是面向 evidence-backed AI 应用的开源 SDK。** 它包含文档解析、来源可追溯抽取、语料契约、chunking、retrieval projection 和本地诊断。
 
-DocTruth 主要回答一个问题：
+文档证据模块叫 **Memtruth Parse，原 DocTruth**。迁移期间，公开 Java package、Maven 坐标、CLI 命令、release artifacts 和 `doctruth` runtime 名称都作为兼容面保留。
+
+Memtruth SDK 不包含长期记忆 server、MCP runtime、storage engine 或 replay service 实现；这些属于独立的 `memtruth-server` 方向。
+
+Memtruth Parse 将 PDF、DOCX、XLSX 和 CSV 转成 schema-bound structured output，并为每个字段附上来源引用、可选 PDF bounding box、置信度、provenance 和 PROV-O audit JSON。
+
+Memtruth Parse 主要回答一个问题：
 
 > 这个抽取值从哪里来？
 
@@ -107,7 +113,7 @@ var result = DocTruth.from(provider)
         .runJson(doc);
 ```
 
-DocTruth 支持常见 Pydantic v2 JSON Schema 输出，包括本地 `$defs` / `$ref`、nullable unions、嵌套对象、数组、枚举、required 字段、标量约束和 `additionalProperties=false`。
+Memtruth Parse 支持常见 Pydantic v2 JSON Schema 输出，包括本地 `$defs` / `$ref`、nullable unions、嵌套对象、数组、枚举、required 字段、标量约束和 `additionalProperties=false`。
 
 构建期迁移工具：
 
@@ -118,7 +124,7 @@ java -jar target/doctruth-java-0.2.0-alpha-all.jar \
   --check
 ```
 
-生产环境 Java 抽取只需要导出的 schema 文件和 DocTruth jar。
+生产环境 Java 抽取只需要导出的 schema 文件和当前兼容的 DocTruth jar。
 
 ## Provider
 
@@ -162,4 +168,4 @@ java -jar target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contr
 
 代码使用 [Apache License 2.0](LICENSE)。
 
-`DocTruth`、`doctruth.ai` 和 DocTruth logo 是 doctruthhq 的商标。见 [NOTICE](NOTICE)。
+`Memtruth`、`Memtruth Parse`、`DocTruth`、`doctruth.ai` 和相关 logo 是 doctruthhq 的商标。见 [NOTICE](NOTICE)。

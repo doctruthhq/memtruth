@@ -1,4 +1,4 @@
-# DocTruth - Extracción LLM Auditable para Java
+# Memtruth SDK - SDK de Evidencia y Parsing para Apps de IA
 
 <p align="center">
   <img src="docs/assets/readme-hero.png" alt="DocTruth source-cited extraction: every extracted field cites a source page and line">
@@ -16,9 +16,23 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-25+-007396?logo=openjdk)](https://openjdk.org)
 
-**Extracción LLM auditable para Java.** DocTruth convierte PDF, DOCX, XLSX y CSV en structured output basado en schema, con citas de fuente por campo, bounding boxes opcionales para PDF, confianza, provenance y PROV-O audit JSON.
+**Memtruth SDK is the open-source SDK surface for evidence-backed AI
+applications.** It includes document parsing, source-grounded extraction,
+corpus contracts, chunking, retrieval projection, and local diagnostics.
 
-DocTruth existe para responder una pregunta:
+The document evidence module is **Memtruth Parse, formerly DocTruth**. During
+the transition, the public Java package, Maven coordinate, CLI command, release
+artifacts, and `doctruth` runtime names remain compatibility surfaces.
+
+Memtruth SDK does not include the long-term memory server, MCP runtime, storage
+engine, or replay service implementation. Those belong in the separate
+`memtruth-server` line.
+
+Memtruth Parse convierte PDF, DOCX, XLSX y CSV en structured output basado en
+schema, con citas de fuente por campo, bounding boxes opcionales para PDF,
+confianza, provenance y PROV-O audit JSON.
+
+Memtruth Parse existe para responder una pregunta:
 
 > ¿De dónde salió este valor extraído?
 
@@ -107,7 +121,7 @@ var result = DocTruth.from(provider)
         .runJson(doc);
 ```
 
-DocTruth soporta exportaciones comunes de Pydantic v2 JSON Schema, incluyendo `$defs` / `$ref` locales, uniones nullable, objetos anidados, arrays, enums, campos requeridos, restricciones escalares y `additionalProperties=false`.
+Memtruth Parse soporta exportaciones comunes de Pydantic v2 JSON Schema, incluyendo `$defs` / `$ref` locales, uniones nullable, objetos anidados, arrays, enums, campos requeridos, restricciones escalares y `additionalProperties=false`.
 
 Herramienta de migración en build-time:
 
@@ -118,7 +132,7 @@ java -jar target/doctruth-java-0.2.0-alpha-all.jar \
   --check
 ```
 
-La extracción Java en producción solo necesita el archivo schema exportado y el jar de DocTruth.
+La extracción Java en producción solo necesita el archivo schema exportado y el jar compatible actual de DocTruth.
 
 ## Proveedores
 
@@ -162,4 +176,4 @@ Baseline actual: 645 unit tests y 16 integration tests pasando, con 2 smoke test
 
 Código bajo [Apache License 2.0](LICENSE).
 
-`DocTruth`, `doctruth.ai` y el logo de DocTruth son marcas de doctruthhq. Ver [NOTICE](NOTICE).
+`Memtruth`, `Memtruth Parse`, `DocTruth`, `doctruth.ai` y los logos relacionados son marcas de doctruthhq. Ver [NOTICE](NOTICE).

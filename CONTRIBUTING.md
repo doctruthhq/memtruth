@@ -1,4 +1,4 @@
-# Contributing to DocTruth
+# Contributing to Memtruth SDK
 
 Thanks for considering a contribution. The bar for merged code is high, and the bar for new dependencies and new public types is higher. Please read this document end-to-end before opening a non-trivial PR.
 
@@ -44,7 +44,9 @@ Review `src/test/resources/ai/doctruth/public-api-snapshot.txt` before committin
 
 Scope boundaries:
 
-- DocTruth is a document-grounded structured extraction library.
+- Memtruth SDK is an evidence SDK for AI applications.
+- Memtruth Parse, formerly DocTruth, is the document-grounded structured extraction compatibility surface inside this SDK.
+- The long-term memory server, MCP runtime, storage engine, and replay service implementation belong in `memtruth-server`, not this SDK repository.
 - It is not a chain framework, agent framework, vector-store wrapper, Spring extension, UI viewer, Android library, or document Q&A application.
 - New capabilities should be accepted only when they need source evidence, provenance, confidence, schema validation, or audit export semantics.
 - Keep the jar single-module while the published artifact stays small and the build remains easy to audit.
@@ -63,7 +65,7 @@ If a PR contains both new tests and a public-API change, split it: one PR for th
 
 ## Setup
 
-DocTruth targets Java 25.
+Memtruth Parse compatibility APIs target Java 25.
 
 One-time:
 
@@ -107,7 +109,7 @@ SPIs live in `ai.doctruth.spi.*`. To plug in a custom implementation:
 
 1. Implement the SPI interface (e.g. `SignatureProvider`, `RegionResolver`, `AuditEventListener`).
 2. Register it via Java `ServiceLoader` — drop a file under `META-INF/services/ai.doctruth.spi.<InterfaceName>` listing the fully-qualified impl class.
-3. Add it to the classpath alongside `doctruth-java`. The DocTruth jar will discover and use it without any API change.
+3. Add it to the classpath alongside `doctruth-java`. The current compatibility jar will discover and use it without any API change.
 
 Default implementations stay conservative and no-op where appropriate. Custom implementations can add signing, region enforcement, SIEM listeners, or other organization-specific policy without changing the public API. Community contributions are welcome — open an issue first to discuss scope.
 

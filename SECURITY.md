@@ -1,7 +1,9 @@
 # Security Policy
 
-DocTruth is an OSS Java library for auditable document extraction. Security
-reports are welcome and should be handled privately before public disclosure.
+Memtruth SDK is an OSS evidence SDK for AI applications. Its current Java
+compatibility surface, Memtruth Parse formerly DocTruth, provides auditable
+document extraction. Security reports are welcome and should be handled
+privately before public disclosure.
 
 ## Supported Versions
 
@@ -45,6 +47,7 @@ synthetic fixtures whenever possible.
 Security-sensitive areas include:
 
 - parser behavior for untrusted PDF, DOCX, XLSX, and CSV files
+- corpus contracts, chunking, projection, and feed/preflight diagnostics
 - provider request and response handling
 - prompt, source text, and audit JSON logging
 - citation and provenance integrity

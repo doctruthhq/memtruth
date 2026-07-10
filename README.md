@@ -38,7 +38,7 @@ Memtruth Parse is for teams that need to answer one question reliably:
 
 The core boundary is simple: source document in, validated structured output plus evidence trail out.
 
-[`memtruth-sdk`](memtruth-sdk/) is the Rust SDK workspace for corpus contracts,
+[`rust`](rust/) is the Rust SDK workspace for corpus contracts,
 section-aware chunking, retrieval projection, and Vespa preflight diagnostics.
 It is intentionally separate from any server memory layer: document output
 should flow through stable evidence/corpus contracts instead of coupling

@@ -24,8 +24,8 @@ jobs:
       - name: Verify language-first layout
         run: scripts/check-repository-layout.sh
 
-  memtruth-sdk:
-    name: memtruth-sdk (rust 1.95)
+  rust-sdk:
+    name: Rust SDK (1.95)
     runs-on: ubuntu-latest
     needs: repository-layout
 
@@ -38,15 +38,15 @@ jobs:
           rustup default 1.95.0
 
       - name: Format
-        working-directory: memtruth-sdk
+        working-directory: rust
         run: cargo fmt --check
 
       - name: Test
-        working-directory: memtruth-sdk
+        working-directory: rust
         run: cargo test
 
       - name: Clippy
-        working-directory: memtruth-sdk
+        working-directory: rust
         run: cargo clippy --all-targets -- -D warnings
 
   build:

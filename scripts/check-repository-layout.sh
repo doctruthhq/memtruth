@@ -42,6 +42,10 @@ require_dir "rust/crates"
 require_file "java/pom.xml"
 require_dir "java/src/main/java"
 require_dir "java/src/test/java"
+require_dir "config"
+require_dir "docs"
+require_dir "examples"
+require_dir "scripts"
 require_text ".github/workflows/ci.yml" 'name: build (${{ matrix.java }})'
 
 reject_path "memtruth-sdk"

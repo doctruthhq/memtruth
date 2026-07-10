@@ -24,7 +24,10 @@ import org.junit.jupiter.api.Test;
 @DisplayName("real-world XLSX fixture smoke test")
 class RealWorldXlsxFixtureIT {
 
-    private static final Path FIXTURE_DIR = Path.of("fixtures/xlsx");
+    private static final Path REPO_ROOT = Path.of(System.getProperty("memtruth.repoRoot", ".."))
+            .toAbsolutePath()
+            .normalize();
+    private static final Path FIXTURE_DIR = REPO_ROOT.resolve("fixtures/xlsx");
 
     @BeforeAll
     static void skipIfFixturesMissing() throws IOException {

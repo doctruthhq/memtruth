@@ -31,7 +31,10 @@ class RealWorldCsvFixtureIT {
 
     private static final Logger LOG = LoggerFactory.getLogger(RealWorldCsvFixtureIT.class);
 
-    private static final Path FIXTURES_DIR = Path.of("fixtures/csv");
+    private static final Path REPO_ROOT = Path.of(System.getProperty("memtruth.repoRoot", ".."))
+            .toAbsolutePath()
+            .normalize();
+    private static final Path FIXTURES_DIR = REPO_ROOT.resolve("fixtures/csv");
     private static final double MIN_PASS_RATE = 0.90;
 
     @Test

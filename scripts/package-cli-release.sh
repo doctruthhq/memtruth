@@ -73,7 +73,7 @@ fi
 
 if [ ! -f "$jar" ]; then
     echo "CLI jar not found: $jar" >&2
-    echo "Build it first: mvn -f java/pom.xml package -DskipTests" >&2
+    printf 'Build it first: mvn -f "%s/pom.xml" package -DskipTests\n' "$java_root" >&2
     exit 1
 fi
 

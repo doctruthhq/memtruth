@@ -9,9 +9,13 @@ import org.junit.jupiter.api.Test;
 
 class ErrorSemanticsDocumentationTest {
 
+    private static final Path REPO_ROOT = Path.of(System.getProperty("memtruth.repoRoot", ".."))
+            .toAbsolutePath()
+            .normalize();
+
     @Test
     void integrationErrorSemanticsDocumentCoversStableCodes() throws Exception {
-        String doc = Files.readString(Path.of("docs/error-handling.md"));
+        String doc = Files.readString(REPO_ROOT.resolve("docs/error-handling.md"));
 
         assertThat(doc)
                 .contains("EXTRACTION_SCHEMA_VALIDATION_FAILED")

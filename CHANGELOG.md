@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Updated Jackson Databind to 2.18.8 to close polymorphic type validator
+  bypasses tracked as CVE-2026-54512 and CVE-2026-54513.
 - Aligned veraPDF validation components so the OpenDataLoader PDF backend does
   not fail at runtime with a `StreamInfo` linkage error.
 

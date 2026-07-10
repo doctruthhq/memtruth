@@ -27,15 +27,15 @@ You need the lib jar built first:
 
 ```bash
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
-mvn -B -ntp package -DskipTests
+mvn -B -ntp -f java/pom.xml package -DskipTests
 ```
 
 Then compile + run the standalone example (no Maven submodule):
 
 ```bash
 JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
-  mvn -q dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
-CP="target/doctruth-java-0.2.0-alpha.jar:$(cat /tmp/cp.txt)"
+  mvn -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
+CP="java/target/doctruth-java-0.2.0-alpha.jar:$(cat /tmp/cp.txt)"
 javac -cp "$CP" -d /tmp/overlay-build examples/evidence-overlay/EvidenceOverlay.java
 java  -cp "/tmp/overlay-build:$CP" ai.doctruth.examples.evidenceoverlay.EvidenceOverlay
 ```

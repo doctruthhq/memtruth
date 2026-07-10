@@ -8,10 +8,11 @@
 
 ## Verification
 
-- [ ] `mvn test`
-- [ ] `mvn verify`
-- [ ] `mvn spotless:check`
-- [ ] `mvn checkstyle:check`
+- [ ] `cd java && mvn test`
+- [ ] `cd java && mvn verify`
+- [ ] `cd java && mvn spotless:check`
+- [ ] `cd java && mvn checkstyle:check`
+- [ ] `cd rust && cargo test`
 - [ ] Documentation updated, if behavior changed
 
 ## Contract Checklist

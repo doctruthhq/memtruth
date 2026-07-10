@@ -9,13 +9,13 @@ directory.
 Build the standalone CLI jar:
 
 ```bash
-mvn package -DskipTests
+mvn -f java/pom.xml package -DskipTests
 ```
 
 Run it:
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha-all.jar --help
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar --help
 ```
 
 Install a local launcher:

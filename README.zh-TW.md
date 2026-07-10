@@ -118,7 +118,7 @@ Memtruth Parse 支援常見 Pydantic v2 JSON Schema 輸出，包括本地 `$defs
 建置期遷移工具：
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha-all.jar \
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   -o schemas/resume.schema.json \
   --check
@@ -142,10 +142,10 @@ Provider client 使用 JDK `java.net.http.HttpClient`，不引入 vendor SDK。
 ## CLI
 
 ```bash
-mvn package -DskipTests
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
-java -jar target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
-java -jar target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contract.schema.json
+mvn -f java/pom.xml package -DskipTests
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contract.schema.json
 ```
 
 ## 文件

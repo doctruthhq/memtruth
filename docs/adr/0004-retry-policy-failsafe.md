@@ -24,7 +24,7 @@ The question is whether to hand-roll exponential-backoff loops or pull a communi
 
 Use **Failsafe (`dev.failsafe:failsafe`)** for retry policy, exponential backoff, jitter,
 and abort-on-non-retryable. Failsafe is added as a direct dependency at the version
-declared in `pom.xml`.
+declared in `java/pom.xml`.
 
 ## Consequences
 

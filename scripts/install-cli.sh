@@ -1,8 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
+repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 prefix="${HOME}/.local"
-jar="target/doctruth-java-0.2.0-alpha-all.jar"
+jar="$repo_root/java/target/doctruth-java-0.2.0-alpha-all.jar"
 
 usage() {
     cat <<'EOF'
@@ -14,7 +15,7 @@ Installs the DocTruth CLI wrapper:
 
 Defaults:
   --prefix "$HOME/.local"
-  --jar    target/doctruth-java-0.2.0-alpha-all.jar
+  --jar    java/target/doctruth-java-0.2.0-alpha-all.jar
 EOF
 }
 
@@ -51,7 +52,7 @@ done
 
 if [ ! -f "$jar" ]; then
     echo "CLI jar not found: $jar" >&2
-    echo "Build it first: mvn package -DskipTests" >&2
+    printf 'Build it first: mvn -f "%s/java/pom.xml" package -DskipTests\n' "$repo_root" >&2
     exit 1
 fi
 

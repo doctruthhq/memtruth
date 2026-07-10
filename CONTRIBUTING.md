@@ -37,10 +37,11 @@ Public API compatibility:
   public API, regenerate it with:
 
 ```bash
+cd java
 mvn -Dtest=ai.doctruth.PublicApiSnapshotTest -Ddoctruth.updatePublicApiSnapshot=true test
 ```
 
-Review `src/test/resources/ai/doctruth/public-api-snapshot.txt` before committing.
+Review `java/src/test/resources/ai/doctruth/public-api-snapshot.txt` before committing.
 
 Scope boundaries:
 
@@ -78,9 +79,19 @@ export PATH=$JAVA_HOME/bin:$PATH
 Build + test:
 
 ```bash
+cd java
 mvn test                 # unit tests only (~3s)
 mvn verify               # unit + integration + JaCoCo coverage gate (~10s)
 mvn spotless:apply       # auto-format
+```
+
+Rust workspace:
+
+```bash
+cd rust
+cargo fmt --check
+cargo test
+cargo clippy --all-targets -- -D warnings
 ```
 
 `mvn verify` runs the JaCoCo coverage check (line ≥ 90% and branch ≥ 79%
@@ -96,11 +107,11 @@ OpenAI chat-completions shape. Add a new first-class provider only when the
 vendor has materially different structured-output semantics, authentication,
 retry behavior, or audit metadata.
 
-1. **Wire records** — `src/main/java/ai/doctruth/internal/providers/<vendor>/wire/` with one record per request/response shape (immutable, Jackson-annotated).
-2. **HTTP client** — `<Vendor>HttpClient` in `src/main/java/ai/doctruth/internal/providers/<vendor>/`, hand-rolled on `java.net.http.HttpClient`. No vendor SDK on the classpath.
+1. **Wire records** — `java/src/main/java/ai/doctruth/internal/providers/<vendor>/wire/` with one record per request/response shape (immutable, Jackson-annotated).
+2. **HTTP client** — `<Vendor>HttpClient` in `java/src/main/java/ai/doctruth/internal/providers/<vendor>/`, hand-rolled on `java.net.http.HttpClient`. No vendor SDK on the classpath.
 3. **Sealed `LlmProvider`** — add the new permits clause. This is a public-API change → MAJOR version bump (or ship as a separate artifact post-1.0).
 4. **Public `<Vendor>Provider` class** — in `ai.doctruth` root package, delegating to the internal `<Vendor>HttpClient`. Mirror the OpenAI-compatible / Anthropic / Gemini shape where possible.
-5. **WireMock-backed test class** — `<Vendor>ProviderHttpTest` exercising happy path, retry, HTTP errors, response validation. Recorded responses go in `src/test/resources/wiremock/<vendor>/`.
+5. **WireMock-backed test class** — `<Vendor>ProviderHttpTest` exercising happy path, retry, HTTP errors, response validation. Recorded responses go in `java/src/test/resources/wiremock/<vendor>/`.
 6. **ADR update** — if the provider introduces an architecturally novel concern (e.g. multimodal request shape, server-sent events), update or add an ADR.
 
 ## How to add an SPI implementation
@@ -117,8 +128,8 @@ Default implementations stay conservative and no-op where appropriate. Custom im
 
 Before opening a PR, confirm:
 
-- [ ] `mvn test` is green
-- [ ] `mvn verify` is green (includes integration tests + JaCoCo gate)
+- [ ] `cd java && mvn test` is green
+- [ ] `cd java && mvn verify` is green (includes integration tests + JaCoCo gate)
 - [ ] No file exceeds 300 LOC; no method body exceeds 30 LOC
 - [ ] No new entries in `<dependencies>` without an ADR in the same PR
 - [ ] Public-API changes flagged in the PR title (e.g. `feat!:` or `BREAKING CHANGE:` footer)

@@ -42,7 +42,7 @@ doctruth doctor
 Build and package locally:
 
 ```bash
-mvn package -DskipTests
+mvn -f java/pom.xml package -DskipTests
 scripts/package-cli-release.sh
 ```
 

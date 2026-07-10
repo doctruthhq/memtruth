@@ -126,7 +126,7 @@ Memtruth Parse soporta exportaciones comunes de Pydantic v2 JSON Schema, incluye
 Herramienta de migración en build-time:
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha-all.jar \
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   -o schemas/resume.schema.json \
   --check
@@ -150,10 +150,10 @@ Los clientes usan `java.net.http.HttpClient` del JDK; no hay SDKs de proveedores
 ## CLI
 
 ```bash
-mvn package -DskipTests
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
-java -jar target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
-java -jar target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contract.schema.json
+mvn -f java/pom.xml package -DskipTests
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar parse contract.pdf
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar schema contract.schema.json
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar extract contract.pdf -s contract.schema.json
 ```
 
 ## Documentación

@@ -45,13 +45,22 @@ class RealWorldPdfFixtureIT {
 
     private static final Logger LOG = LoggerFactory.getLogger(RealWorldPdfFixtureIT.class);
 
-    private static final Path FIXTURE_DIR = Path.of(System.getenv().getOrDefault("DOCTRUTH_FIXTURES_DIR", "fixtures"))
-            .resolve("pdf");
+    private static final Path REPO_ROOT = Path.of(System.getProperty("memtruth.repoRoot", ".."))
+            .toAbsolutePath()
+            .normalize();
+    private static final Path FIXTURE_DIR = fixtureRoot().resolve("pdf");
 
     private static final double PASS_RATE_GATE = 0.95;
     private static final long LARGE_PDF_BYTES = 1_000_000L;
     private static final long LARGE_PDF_BUDGET_NANOS = 10L * 1_000_000_000L;
     private static final int LIKELY_SCANNED_THRESHOLD_CHARS = 50;
+
+    private static Path fixtureRoot() {
+        String override = System.getenv("DOCTRUTH_FIXTURES_DIR");
+        return override == null || override.isBlank()
+                ? REPO_ROOT.resolve("fixtures")
+                : Path.of(override).toAbsolutePath().normalize();
+    }
 
     @BeforeAll
     static void requireFixtures() throws IOException {

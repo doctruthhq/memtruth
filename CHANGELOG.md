@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repositioned the repository as Memtruth SDK while keeping the existing
   `doctruth` Java package, Maven coordinate, CLI command, and release artifact
   names as compatibility surfaces.
+- Organized the public SDK repository into `rust/` and `java/` language
+  workspaces, with shared docs, examples, configuration, and release scripts at
+  the root.
 
 ### Fixed
 

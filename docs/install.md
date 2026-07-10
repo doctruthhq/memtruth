@@ -37,13 +37,13 @@ Requires Java 25+ and Maven.
 Build the standalone jar:
 
 ```bash
-mvn package -DskipTests
+mvn -f java/pom.xml package -DskipTests
 ```
 
 Run it directly:
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha-all.jar --help
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar --help
 ```
 
 Install a `doctruth` launcher:

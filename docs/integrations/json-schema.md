@@ -62,7 +62,7 @@ If schemas start in Python, export JSON Schema at build time and feed the schema
 file to the Java runtime:
 
 ```bash
-java -jar target/doctruth-java-0.2.0-alpha-all.jar \
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar \
   migrate pydantic myapp.schemas:ResumeExtraction \
   -o schemas/resume.schema.json \
   --check

@@ -2,7 +2,7 @@
 
 How to cut a `doctruth-java` release to Maven Central via the Sonatype Central Portal.
 
-> Default profile (`mvn install`) does NOT sign or publish. Everything in this doc runs
+> The default Java profile (`cd java && mvn install`) does NOT sign or publish. Everything in this doc runs
 > via `-P release` or the GitHub Actions tag-triggered workflow.
 
 ---
@@ -56,7 +56,7 @@ the target version throughout.
 ### 1. Bump version (drop `-SNAPSHOT`)
 
 ```bash
-mvn -B versions:set -DnewVersion=0.2.0-alpha -DgenerateBackupPoms=false
+mvn -B -f java/pom.xml versions:set -DnewVersion=0.2.0-alpha -DgenerateBackupPoms=false
 ```
 
 ### 2. Update `CHANGELOG.md`
@@ -71,8 +71,8 @@ If this release intentionally changes `ai.doctruth.*` or `ai.doctruth.spi.*`,
 regenerate and review the API snapshot before tagging:
 
 ```bash
-mvn -Dtest=ai.doctruth.PublicApiSnapshotTest -Ddoctruth.updatePublicApiSnapshot=true test
-git diff -- src/test/resources/ai/doctruth/public-api-snapshot.txt
+mvn -f java/pom.xml -Dtest=ai.doctruth.PublicApiSnapshotTest -Ddoctruth.updatePublicApiSnapshot=true test
+git diff -- java/src/test/resources/ai/doctruth/public-api-snapshot.txt
 ```
 
 For patch releases, the snapshot should usually be unchanged.
@@ -80,7 +80,7 @@ For patch releases, the snapshot should usually be unchanged.
 ### 4. Commit, tag, push
 
 ```bash
-git add pom.xml CHANGELOG.md
+git add java/pom.xml CHANGELOG.md
 git commit -m "chore(release): 0.2.0-alpha"
 git tag -a v0.2.0-alpha -m "v0.2.0-alpha"
 git push origin main
@@ -115,8 +115,8 @@ after Central validation passes. Propagation to Maven Central usually takes
 ### 7. Bump to next `-SNAPSHOT`
 
 ```bash
-mvn -B versions:set -DnewVersion=0.3.0-SNAPSHOT -DgenerateBackupPoms=false
-git add pom.xml
+mvn -B -f java/pom.xml versions:set -DnewVersion=0.3.0-SNAPSHOT -DgenerateBackupPoms=false
+git add java/pom.xml
 git commit -m "chore: bump to 0.3.0-SNAPSHOT"
 git push origin main
 ```
@@ -196,7 +196,7 @@ same coordinates.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `gpg: signing failed: No pinentry` | CI missing loopback pinentry | Already configured in `pom.xml` `release` profile (`--pinentry-mode loopback`) — re-check the GPG key was imported by `setup-java` |
+| `gpg: signing failed: No pinentry` | CI missing loopback pinentry | Already configured in `java/pom.xml` `release` profile (`--pinentry-mode loopback`) — re-check the GPG key was imported by `setup-java` |
 | `401 Unauthorized` from Central | Stale or wrong token | Regenerate user token in Central Portal; update `MAVEN_USERNAME` / `MAVEN_PASSWORD` secrets |
-| Validation: missing `scm` / `developers` / `licenses` | pom.xml drift | Block lives in root `pom.xml`; do not move into a profile |
+| Validation: missing `scm` / `developers` / `licenses` | `java/pom.xml` drift | Block lives in `java/pom.xml`; do not move into a profile |
 | Release succeeded but not on Central search | Index lag | Wait ~4h; the artefact is downloadable via `dependency:get` immediately |

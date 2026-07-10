@@ -38,11 +38,20 @@ Memtruth Parse is for teams that need to answer one question reliably:
 
 The core boundary is simple: source document in, validated structured output plus evidence trail out.
 
-[`memtruth-sdk`](memtruth-sdk/) is the Rust SDK workspace for corpus contracts,
+[`rust`](rust/) is the Rust SDK workspace for corpus contracts,
 section-aware chunking, retrieval projection, and Vespa preflight diagnostics.
 It is intentionally separate from any server memory layer: document output
 should flow through stable evidence/corpus contracts instead of coupling
 storage, MCP behavior, or hosted services to parser internals.
+
+## Repository Layout
+
+| Path | Responsibility |
+| --- | --- |
+| [`rust/`](rust/) | Rust contracts, chunking, retrieval projection, and Vespa adapters |
+| [`java/`](java/) | Java SDK, CLI, packaging, and `ai.doctruth` compatibility surface |
+| [`docs/`](docs/) | Architecture, contracts, integration guides, and ADRs |
+| [`examples/`](examples/) | Runnable Java integration and no-LLM parsing examples |
 
 Memtruth Parse is framework-agnostic and fits into plain Java, Spring Boot,
 LangChain4j, Spring AI, Quarkus, Micronaut, or any Java service that already
@@ -125,10 +134,10 @@ The CLI is for first-run inspection, parser debugging, schema checks, and CI
 smoke tests. Parser and schema inspection do not require an LLM key.
 
 ```bash
-mvn package -DskipTests
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv
-java -jar target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv --json -o parsed.json
-java -jar target/doctruth-java-0.2.0-alpha-all.jar schema examples/pydantic-interop/resume.schema.json
+mvn -f java/pom.xml package -DskipTests
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar parse examples/no-llm-parse/sample-contract.csv --json -o parsed.json
+java -jar java/target/doctruth-java-0.2.0-alpha-all.jar schema examples/pydantic-interop/resume.schema.json
 ```
 
 For a copy-pasteable Java parser example that also needs no provider key, see
@@ -258,9 +267,9 @@ doctruth audit .doctruth/runs/<run-id>/audit.json
 
 `0.2.0-alpha` is an early public alpha. The API is usable, tested, and published for feedback, but may still change before `1.0`.
 
-Current verification baseline: `mvn verify` passes with 703 unit tests and the
-tracked integration suite; optional local corpus tests run when `fixtures/` is
-present. Coverage gates are 90% line / 79% branch.
+Java CI runs `cd java && mvn verify -P recorded`; Rust CI runs format, test, and
+clippy gates from `rust/`. Optional local corpus tests run when `fixtures/` is
+present. Java coverage gates are 90% line / 79% branch.
 
 ## License
 

@@ -17,11 +17,14 @@ import org.junit.jupiter.api.Test;
 
 class ExamplesCompileTest {
 
+    private static final Path REPO_ROOT = Path.of(System.getProperty("memtruth.repoRoot", ".."))
+            .toAbsolutePath()
+            .normalize();
     private static final List<Path> EXAMPLE_SOURCES = List.of(
-            Path.of("examples/quickstart/Quickstart.java"),
-            Path.of("examples/pydantic-interop/PydanticInteropExample.java"),
-            Path.of("examples/evidence-overlay/EvidenceOverlay.java"),
-            Path.of("examples/no-llm-parse/NoLlmParse.java"));
+            REPO_ROOT.resolve("examples/quickstart/Quickstart.java"),
+            REPO_ROOT.resolve("examples/pydantic-interop/PydanticInteropExample.java"),
+            REPO_ROOT.resolve("examples/evidence-overlay/EvidenceOverlay.java"),
+            REPO_ROOT.resolve("examples/no-llm-parse/NoLlmParse.java"));
 
     @Test
     @DisplayName("public Java examples compile against the project classpath")
@@ -52,7 +55,7 @@ class ExamplesCompileTest {
     @Test
     @DisplayName("no-LLM sample document is tracked and parseable")
     void noLlmSampleDocumentIsParseable() throws Exception {
-        Path sample = Path.of("examples/no-llm-parse/sample-contract.csv");
+        Path sample = REPO_ROOT.resolve("examples/no-llm-parse/sample-contract.csv");
 
         assertThat(sample).exists();
         assertThat(Files.readString(sample).toLowerCase(Locale.ROOT)).contains("totalvalue");

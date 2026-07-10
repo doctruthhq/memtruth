@@ -22,7 +22,7 @@ Use **Apache Maven** for the build.
 
 - **Enterprise familiarity.** Maven is the lingua franca of regulated-industry
   Java teams. Teams running Spring Boot, JBoss, WebLogic, or WAS overwhelmingly
-  read `pom.xml` daily and have internal Nexus / Artifactory mirrors already
+  read `java/pom.xml` daily and have internal Nexus / Artifactory mirrors already
   wired for Maven. Gradle adoption is heavier in Android and greenfield startups
   — neither is the target user.
 - **Declarative XML over Groovy/Kotlin DSL.** A `pom.xml` is data; a

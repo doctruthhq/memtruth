@@ -28,6 +28,7 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: java/pom.xml
           server-id: central
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
@@ -35,6 +36,7 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Verify release commit
+        working-directory: java
         run: mvn -B -ntp spotless:check checkstyle:check verify -P recorded
 
       - name: Package CLI release artifacts
@@ -44,11 +46,13 @@ jobs:
         run: scripts/smoke-cli-release.sh --version "${GITHUB_REF_NAME#v}"
 
       - name: Generate CycloneDX SBOM
+        working-directory: java
         run: |
           mvn -B -ntp -DskipTests cyclonedx:makeAggregateBom
-          cp target/bom.json dist/doctruth-${GITHUB_REF_NAME#v}-sbom.cdx.json
+          cp target/bom.json ../dist/doctruth-${GITHUB_REF_NAME#v}-sbom.cdx.json
 
       - name: Deploy to Sonatype Central Portal
+        working-directory: java
         run: mvn -B -ntp -P release deploy -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
@@ -63,9 +67,9 @@ jobs:
           path: |
             dist/*
             dist/homebrew/*
-            target/*.jar
-            target/*.jar.asc
-            target/*.pom
+            java/target/*.jar
+            java/target/*.jar.asc
+            java/target/*.pom
           retention-days: 30
 
       - name: Create GitHub Release

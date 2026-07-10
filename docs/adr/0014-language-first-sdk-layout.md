@@ -50,6 +50,7 @@ This decision does not rename public contracts:
 - Maven coordinates remain `ai.doctruth:doctruth-java`.
 - Java packages remain under `ai.doctruth`.
 - CLI artifact and launcher names remain unchanged.
+- The Java CI status check remains `build (25)` for branch-protection compatibility.
 - The SDK/server boundary in ADR 0013 remains unchanged.
 
 ## Consequences

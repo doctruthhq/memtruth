@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Aligned veraPDF validation components so the OpenDataLoader PDF backend does
+  not fail at runtime with a `StreamInfo` linkage error.
+
 ## [0.2.0-alpha] - 2026-05-09
 
 Second public alpha focused on Java-native structured extraction hardening and

@@ -14,9 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  repository-layout:
+    name: repository layout
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify language-first layout
+        run: scripts/check-repository-layout.sh
+
   memtruth-sdk:
     name: memtruth-sdk (rust 1.95)
     runs-on: ubuntu-latest
+    needs: repository-layout
 
     steps:
       - uses: actions/checkout@v6
@@ -41,6 +52,7 @@ jobs:
   build:
     name: build (${{ matrix.java }})
     runs-on: ubuntu-latest
+    needs: repository-layout
     strategy:
       fail-fast: false
       matrix:

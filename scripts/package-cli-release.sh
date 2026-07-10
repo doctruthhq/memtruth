@@ -1,10 +1,12 @@
 #!/usr/bin/env sh
 set -eu
 
+repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+java_root="$repo_root/java"
 version="${VERSION:-}"
 repo="${GITHUB_REPOSITORY:-doctruthhq/memtruth}"
 jar="${JAR:-}"
-dist="${DIST_DIR:-dist}"
+dist="${DIST_DIR:-$repo_root/dist}"
 
 usage() {
     cat <<'EOF'
@@ -62,16 +64,16 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$version" ]; then
-    version="$(awk -F'[<>]' '/<version>/ { print $3; exit }' pom.xml)"
+    version="$(awk -F'[<>]' '/<version>/ { print $3; exit }' "$java_root/pom.xml")"
 fi
 
 if [ -z "$jar" ]; then
-    jar="target/doctruth-java-${version}-all.jar"
+    jar="$java_root/target/doctruth-java-${version}-all.jar"
 fi
 
 if [ ! -f "$jar" ]; then
     echo "CLI jar not found: $jar" >&2
-    echo "Build it first: mvn package -DskipTests" >&2
+    echo "Build it first: mvn -f java/pom.xml package -DskipTests" >&2
     exit 1
 fi
 

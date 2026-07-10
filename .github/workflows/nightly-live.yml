@@ -27,8 +27,10 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: java/pom.xml
 
       - name: Run bounded live LLM smoke
+        working-directory: java
         run: mvn -B -ntp -P live -Dit.test=ExternalLlmSmokeIT failsafe:integration-test failsafe:verify
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

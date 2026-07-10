@@ -1,9 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
+repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 version="${VERSION:-0.2.0-alpha}"
-dist="${DIST_DIR:-dist}"
-work="${SMOKE_DIR:-target/cli-release-smoke}"
+dist="${DIST_DIR:-$repo_root/dist}"
+work="${SMOKE_DIR:-$repo_root/target/cli-release-smoke}"
 java_bin="${JAVA:-java}"
 
 contains() {

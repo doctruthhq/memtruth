@@ -32,14 +32,16 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: java/pom.xml
 
       - name: Generate Javadocs
+        working-directory: java
         run: mvn -B -ntp javadoc:javadoc
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: target/site/apidocs
+          path: java/target/site/apidocs
 
       - name: Deploy to GitHub Pages
         id: deployment

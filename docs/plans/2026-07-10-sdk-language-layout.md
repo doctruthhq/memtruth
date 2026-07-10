@@ -213,7 +213,7 @@ git commit -m "ci: align automation with language directories"
 **Step 1: Record the architecture decision**
 
 Add ADR 0014 with context, decision, compatibility guarantees, automation
-impact, and the known pre-existing Java baseline failure.
+impact, and the prerequisite resolution of the Java baseline failure.
 
 **Step 2: Update active build instructions**
 
@@ -273,10 +273,9 @@ cd java && mvn test
 cd java && mvn verify -P recorded
 ```
 
-Compare any OpenDataLoader/veraPDF failures to the recorded pre-migration
-baseline: 712 tests, 12 errors, all with the same `StreamInfo` constructor
-`NoSuchMethodError`. Treat different or additional failures as migration
-regressions.
+Both commands must pass. The prerequisite veraPDF alignment in PR #25 removed
+the pre-migration linkage failure, so any OpenDataLoader/veraPDF failure is a
+migration regression rather than a tolerated baseline condition.
 
 **Step 4: Run release smokes and repository checks**
 

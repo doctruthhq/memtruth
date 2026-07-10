@@ -86,7 +86,7 @@ scripts/smoke-cli-release.sh --version 0.2.0-alpha
 git diff --check
 ```
 
-The Java baseline currently has a pre-existing OpenDataLoader/veraPDF runtime
-linkage failure. Migration verification must distinguish that known baseline
-from new path failures and must not silently include an unrelated dependency
-fix in this layout change.
+The pre-existing OpenDataLoader/veraPDF runtime linkage failure was resolved by
+prerequisite PR #25 before this layout change was integrated. Migration
+verification must therefore pass without dependency overrides or tolerated
+baseline failures.

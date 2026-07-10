@@ -52,7 +52,7 @@
         <!-- Runtime deps -->
         <jackson.version>2.18.8</jackson.version>
         <slf4j.version>2.0.18</slf4j.version>
-        <log4j.version>2.24.3</log4j.version>
+        <log4j.version>2.26.1</log4j.version>
         <pdfbox.version>3.0.3</pdfbox.version>
         <opendataloader-pdf.version>2.2.1</opendataloader-pdf.version>
         <verapdf.version>1.31.99</verapdf.version>
@@ -61,7 +61,7 @@
         <commons-text.version>1.13.0</commons-text.version>
 
         <!-- Test deps -->
-        <junit.version>6.1.0</junit.version>
+        <junit.version>6.1.1</junit.version>
         <assertj.version>3.27.7</assertj.version>
         <mockito.version>5.23.0</mockito.version>
         <wiremock.version>3.13.2</wiremock.version>
@@ -77,7 +77,7 @@
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
-        <spotless.version>3.7.0</spotless.version>
+        <spotless.version>3.8.0</spotless.version>
         <jacoco.version>0.8.15</jacoco.version>
         <cyclonedx-maven-plugin.version>2.9.2</cyclonedx-maven-plugin.version>
     </properties>

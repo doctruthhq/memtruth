@@ -12,6 +12,10 @@ import org.junit.jupiter.api.Test;
 
 class JavaBaselineContractTest {
 
+    private static final Path REPO_ROOT = Path.of(System.getProperty("memtruth.repoRoot", ".."))
+            .toAbsolutePath()
+            .normalize();
+
     @Test
     @DisplayName("Maven compiler release is Java 25")
     void mavenCompilerReleaseIsJava25() throws IOException {
@@ -27,8 +31,8 @@ class JavaBaselineContractTest {
     @DisplayName("GitHub workflows use Java 25")
     void githubWorkflowsUseJava25() throws IOException {
         var workflowTexts = Map.of(
-                ".github/workflows/ci.yml", Files.readString(Path.of(".github/workflows/ci.yml")),
-                ".github/workflows/release.yml", Files.readString(Path.of(".github/workflows/release.yml")));
+                ".github/workflows/ci.yml", Files.readString(REPO_ROOT.resolve(".github/workflows/ci.yml")),
+                ".github/workflows/release.yml", Files.readString(REPO_ROOT.resolve(".github/workflows/release.yml")));
 
         assertThat(workflowTexts.get(".github/workflows/ci.yml")).contains("java: ['25']");
         assertThat(workflowTexts.get(".github/workflows/release.yml")).contains("Set up JDK 25");
@@ -49,10 +53,10 @@ class JavaBaselineContractTest {
 
     private static Path[] currentJavaBaselineDocs() {
         return new Path[] {
-            Path.of("CONTRIBUTING.md"),
-            Path.of("README.md"),
-            Path.of("examples/quickstart/README.md"),
-            Path.of("examples/quickstart/Quickstart.java")
+            REPO_ROOT.resolve("CONTRIBUTING.md"),
+            REPO_ROOT.resolve("README.md"),
+            REPO_ROOT.resolve("examples/quickstart/README.md"),
+            REPO_ROOT.resolve("examples/quickstart/Quickstart.java")
         };
     }
 }
